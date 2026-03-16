@@ -3,7 +3,50 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#2563eb">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ALS Portal">
 <title>ALS · Portal Operativo</title>
+<link rel="manifest" id="pwa-manifest">
+<script>
+// Inject PWA manifest dynamically
+const manifest={name:"ALS Portal Operativo",short_name:"ALS Portal",description:"Algeciras Logistic Solutions — Portal Operativo",start_url:window.location.href,display:"standalone",background_color:"#ffffff",theme_color:"#2563eb",orientation:"portrait-primary",icons:[{src:"data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="28" fill="#2563eb"/><text x="96" y="128" text-anchor="middle" font-family="Arial Black,sans-serif" font-size="80" font-weight="900" fill="white">ALS</text></svg>'),sizes:"192x192",type:"image/svg+xml"},{src:"data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="72" fill="#2563eb"/><text x="256" y="340" text-anchor="middle" font-family="Arial Black,sans-serif" font-size="210" font-weight="900" fill="white">ALS</text></svg>'),sizes:"512x512",type:"image/svg+xml"}]};
+const blob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
+document.getElementById('pwa-manifest').href=URL.createObjectURL(blob);
+// Register Service Worker for offline + install
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    const swCode=`
+const CACHE='als-v1';
+const ASSETS=[self.location.href||'/'];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
+self.addEventListener('fetch',e=>{
+  if(e.request.method!=='GET')return;
+  if(e.request.url.includes('supabase'))return; // always network for API
+  e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{if(res.ok){const c=res.clone();caches.open(CACHE).then(ca=>ca.put(e.request,c));}return res;}).catch(()=>caches.match('/'))));
+});`;
+    const swBlob=new Blob([swCode],{type:'text/javascript'});
+    const swUrl=URL.createObjectURL(swBlob);
+    navigator.serviceWorker.register(swUrl,{scope:'./'}).then(r=>{
+      // Install prompt
+      window.addEventListener('beforeinstallprompt',e=>{
+        e.preventDefault();
+        window._pwaPrompt=e;
+        // Show install button if not already installed
+        setTimeout(()=>{
+          if(!window.matchMedia('(display-mode: standalone)').matches){
+            const btn=document.getElementById('pwa-install-btn');
+            if(btn)btn.style.display='flex';
+          }
+        },2000);
+      });
+    }).catch(()=>{});
+  });
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -395,6 +438,7 @@ textarea.fi{resize:vertical;min-height:72px}
     <div style="display:flex;align-items:center;gap:10px">
       <div class="hm-cert">ISO 9001 · ISO 14001<br>BUREAU VERITAS</div>
       <a class="grist-hm-btn" href="https://docs.getgrist.com" target="_blank">Grist ↗</a>
+      <button id="pwa-install-btn" onclick="installPWA()" style="display:none;align-items:center;gap:6px;background:var(--b600);color:#fff;border:none;padding:7px 14px;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer">📲 Instalar app</button>
       <div class="hm-user"><div class="hm-av" id="hm-av">?</div><span id="hm-name">—</span><button class="hm-logout" onclick="doLogout()">Cerrar sesión</button></div>
     </div>
   </div>
@@ -692,6 +736,10 @@ const ROLES_LABELS={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',a
 function estOpCls(op){
   const m={'Sin comenzar':'noiniciado','En proceso':'proceso','Embarcado':'embarcado','Cancelado':'cancelado','Aplazado':'aplazado','Finalizado':'embarcado','':'noiniciado'};
   return 'st-'+(m[op]||'noiniciado');
+}
+
+function installPWA(){
+  if(window._pwaPrompt){window._pwaPrompt.prompt();window._pwaPrompt.userChoice.then(()=>{window._pwaPrompt=null;document.getElementById('pwa-install-btn').style.display='none';});}
 }
 
 function optsUbic(sinPendiente=false,selected=''){
@@ -1096,20 +1144,22 @@ async function loadDash(){
   const est  = document.getElementById('df-est')?.value||'';
   const sta  = document.getElementById('df-sta')?.value||'';
 
-  // 1. Siempre cargar TODOS los buques activos (sin filtro fecha) para secciones operativas
+  // 1. Cargar TODOS los buques sin ningún filtro de servidor, filtrar en JS
   const {data:BALL} = await sb.from('buques')
     .select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)')
-    .not('estado_operacion','eq','Embarcado')
-    .not('estado_operacion','eq','Finalizado')
     .order('eta_buque',{ascending:true,nullsFirst:false});
 
-  // 2. Siempre cargar TODAS las expediciones activas para calcular listos
+  // 2. Cargar TODAS las expediciones activas
   const {data:EALL} = await sb.from('expediciones')
     .select('id,buque_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,bultos,kilos')
     .neq('estado_semaforo','🚢 EMBARCADO');
 
-  const allBuques = BALL || [];
-  const allExps   = EALL || [];
+  // Filtrar en JS: excluir solo Embarcado y Finalizado
+  const allBuques = (BALL||[]).filter(b => {
+    const op = b.estado_operacion;
+    return op !== 'Embarcado' && op !== 'Finalizado';
+  });
+  const allExps = EALL || [];
 
   // Mapa buqueId -> conteo real
   const expMap = {};
@@ -1117,7 +1167,8 @@ async function loadDash(){
     if(!e.buque_id) return;
     if(!expMap[e.buque_id]) expMap[e.buque_id] = {total:0, auth:0};
     expMap[e.buque_id].total++;
-    if(e.estado_carga === '✅ AUTORIZADO') expMap[e.buque_id].auth++;
+    // Listo = AUTORIZADO o ya cargado en camión
+    if(e.estado_carga === '✅ AUTORIZADO' || e.estado_semaforo === '🚛 CARGADO CAMIÓN') expMap[e.buque_id].auth++;
   });
   allBuques.forEach(b => {
     const em = expMap[b.id] || {total:0, auth:0};
@@ -1127,16 +1178,16 @@ async function loadDash(){
 
   const listos = allBuques.filter(b => b.total_expediciones > 0 && b.total_expediciones === b.total_autorizadas);
   const listosIds = new Set(listos.map(b => b.id));
+  // En proceso = solo estado "En proceso" (o null/vacío), excluyendo los ya listos
   const enProceso = allBuques.filter(b => {
     const op = b.estado_operacion;
-    const esActivo = !op || op === 'En proceso' || op === 'Sin comenzar' || op === 'Aplazado' || op === 'Cancelado';
-    return esActivo && !listosIds.has(b.id);
+    const esEnProceso = !op || op === 'En proceso';
+    return esEnProceso && !listosIds.has(b.id);
   });
 
-  // 3. Query FILTRADA para estadísticas/KPIs
+  // 3. Query FILTRADA para estadísticas — cargar todo en JS también
   let bQ = sb.from('buques').select('id,eta_buque,estado_operacion,cliente_id,consignatario_id');
-  if(est) bQ = bQ.eq('estado_operacion', est);
-  else { bQ = bQ.not('estado_operacion','eq','Embarcado').not('estado_operacion','eq','Finalizado'); }
+  // No server-side estado filter — filter in JS to avoid NULL issues
   if(cliId) bQ = bQ.eq('cliente_id', cliId);
   if(conId) bQ = bQ.eq('consignatario_id', conId);
   if(año && mes){
@@ -1152,14 +1203,16 @@ async function loadDash(){
   if(sta) eQ = eQ.eq('status_aduanero', sta);
 
   const [bR, eR, iR] = await Promise.all([bQ, eQ, sb.from('incidencias').select('id').eq('estado','Abierta')]);
-  const Bfilt = bR.data || [];
-  let   Efilt = eR.data || [];
+  let Bfilt = (bR.data || []).filter(b => {
+    const op = b.estado_operacion;
+    if(est) return op === est;
+    return op !== 'Embarcado' && op !== 'Finalizado';
+  });
+  let Efilt = eR.data || [];
 
   // Post-filtrar expediciones para que correspondan a los buques filtrados
-  if(cliId || conId || año || mes){
-    const bFiltIds = new Set(Bfilt.map(b => b.id));
-    Efilt = Efilt.filter(e => !e.buque_id || bFiltIds.has(e.buque_id));
-  }
+  const bFiltIds = new Set(Bfilt.map(b => b.id));
+  Efilt = Efilt.filter(e => !e.buque_id || bFiltIds.has(e.buque_id));
 
   const I = iR.data || [];
   const authF       = Efilt.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
