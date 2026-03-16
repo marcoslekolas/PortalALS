@@ -568,11 +568,8 @@ textarea.fi{resize:vertical;min-height:72px}
       <div id="nav-alm" style="display:none">
         <div class="sb-sec">Almacén & Embarque</div>
         <div class="nav-item" onclick="nav('alm-dashboard',this)"><span class="ni">🏠</span>Dashboard</div>
-        <div class="nav-item" onclick="nav('almacen',this)"><span class="ni">📱</span>Acciones</div>
         <div class="nav-item" onclick="nav('alm-fotos',this)"><span class="ni">📸</span>Fotos & Confirmar</div>
-        <div class="nav-item" onclick="nav('ubicaciones',this)"><span class="ni">📍</span>Ubicaciones</div>
-        <div class="nav-item" onclick="nav('listos',this)"><span class="ni">✅</span>Listos embarcar</div>
-        <div class="nav-item" onclick="nav('kanban',this)"><span class="ni">🎛</span>Panel de control</div>
+        <div class="nav-item" onclick="nav('alm-exp-buque',this)"><span class="ni">📦</span>Expediciones por buque</div>
         <div class="nav-item" onclick="nav('flota',this)"><span class="ni">🛳</span>Flota en vivo</div>
         <div class="nav-item" onclick="nav('timeline',this)"><span class="ni">📊</span>Timeline</div>
       </div>
@@ -703,12 +700,12 @@ textarea.fi{resize:vertical;min-height:72px}
       <div class="view" id="view-timeline"><div id="tl-wrap"></div></div>
       <div class="view" id="view-alertas"><div id="alertas-list"></div></div>
       <div class="view" id="view-alm-dashboard">
-        <div class="ph"><div class="pt">Dashboard Almacén</div></div>
         <div class="kpi-grid" id="alm-kpi-grid"></div>
         <div class="ph" style="margin-top:4px"><div class="pt">🚢 Buques listos para embarcar</div></div>
         <div id="alm-listos-dash" class="buque-list"></div>
-        <div class="ph" style="margin-top:20px"><div class="pt">📦 Expediciones pendientes de acción</div></div>
-        <div class="tc" id="alm-pend-dash"></div>
+      </div>
+      <div class="view" id="view-alm-exp-buque">
+        <div id="alm-exp-buque-content"></div>
       </div>
       <div class="view" id="view-alm-fotos">
         <!-- Tabs top -->
@@ -1075,7 +1072,7 @@ function enterMod(mod){
 function volverHome(){document.getElementById('app').style.display='none';showHome();}
 function doLogout(){CU=null;MOD=null;document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
 
-const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas'};
+const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas'};
 let CV='dashboard';
 function nav(view,el){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -1141,6 +1138,7 @@ async function loadView(view){
     case 'almacen':await loadAlmacen();break;
     case 'alm-dashboard':await loadAlmDash();break;
     case 'alm-fotos':await loadAlmFotos('llegadas');break;
+    case 'alm-exp-buque':await loadAlmExpBuque();break;
     case 'ubicaciones':await loadUbic();break;
     case 'listos':await loadListos();break;
     case 'incidencias':await loadInc();break;
@@ -1998,17 +1996,67 @@ async function loadAlmDash(){
 
   document.getElementById('alm-kpi-grid').innerHTML=`
     <div class="kpi bl"><div class="kpi-lbl">Buques activos</div><div class="kpi-val">${B.length}</div><div class="kpi-sub" style="color:var(--b600)">${B.filter(b=>b.estado_operacion==='En proceso'||!b.estado_operacion).length} en proceso</div></div>
-    <div class="kpi am"><div class="kpi-lbl">Pendientes llegada</div><div class="kpi-val">${pend}</div></div>
+    <div class="kpi am"><div class="kpi-lbl">Exped. pendientes llegada</div><div class="kpi-val">${pend}</div></div>
     <div class="kpi rd"><div class="kpi-lbl">En almacén — revisar</div><div class="kpi-val">${rev}</div></div>
     <div class="kpi gr"><div class="kpi-lbl">Autorizados embarcar</div><div class="kpi-val">${aut}</div></div>`;
   document.getElementById('alm-listos-dash').innerHTML=lis.length
     ?lis.map(b=>buqueCard(b,true)).join('')
     :'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques con todas las expediciones autorizadas</div></div>';
-  const pendRows=E.filter(e=>e.estado_semaforo==='⏳ EN TRÁNSITO'||e.estado_semaforo==='⌛ ESPERANDO ALMACÉN').slice(0,10);
-  document.getElementById('alm-pend-dash').innerHTML=`<div class="tc"><table class="tbl"><thead><tr><th>Expedición</th><th>Buque</th><th>Estado</th><th>Bultos</th><th>Acción</th></tr></thead><tbody>${pendRows.map(e=>`<tr><td class="fw">${e.nº_expedicion}</td><td class="sm">${e.buques?.nombre||'—'}</td><td>${bdg(e.estado_semaforo)}</td><td class="sm">${e.bultos}</td><td><button class="btn btn-g btn-sm" onclick="confirmLlegada('${e.id}')">✅ Confirmar llegada</button></td></tr>`).join('')||'<tr><td colspan="5"><div class="empty"><div class="empty-txt">Sin pendientes</div></div></td></tr>'}</tbody></table></div>`;
 }
 
-// ── FOTOS & CONFIRMAR (4 pestañas) ────────────────────────
+// ── EXPEDICIONES POR BUQUE (vista informativa, sin links) ──
+async function loadAlmExpBuque(){
+  const cont=document.getElementById('alm-exp-buque-content');
+  if(!cont)return;
+  cont.innerHTML='<div class="loading"><div class="spinner"></div>Cargando...</div>';
+  const [{data:BALL},{data:exps}]=await Promise.all([
+    sb.from('buques').select('id,nombre,eta_buque,estado_operacion,puerto_terminal').order('eta_buque',{ascending:true,nullsFirst:false}),
+    sb.from('expediciones').select('*,empresas(nombre)').neq('estado_semaforo','🚢 EMBARCADO')
+  ]);
+  const buques=(BALL||[]).filter(b=>b.estado_operacion!=='Embarcado'&&b.estado_operacion!=='Finalizado');
+  const expMap={};
+  (exps||[]).forEach(e=>{if(!e.buque_id)return;if(!expMap[e.buque_id])expMap[e.buque_id]=[];expMap[e.buque_id].push(e);});
+  const buquesConExps=buques.filter(b=>expMap[b.id]?.length>0);
+  if(!buquesConExps.length){
+    cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">📦</div><div class="empty-txt">No hay expediciones activas</div></div>';
+    return;
+  }
+  cont.innerHTML=buquesConExps.map(b=>{
+    const bExps=expMap[b.id]||[];
+    const stCls=estOpCls(b.estado_operacion||'');
+    const totalB=bExps.reduce((a,e)=>a+(e.bultos||0),0);
+    const totalK=bExps.reduce((a,e)=>a+(e.kilos||0),0);
+    const auth=bExps.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
+    return`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
+      <div style="background:var(--g50);border-bottom:1px solid var(--g200);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:20px">🚢</span>
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--g900)">${b.nombre}</div>
+            <div style="font-size:11px;color:var(--g500)">ETA: ${b.eta_buque?fdl(b.eta_buque):'—'} · ${b.puerto_terminal||'—'}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="badge ${stCls}">${b.estado_operacion||'Sin estado'}</span>
+          <span class="badge bgr">${bExps.length} exp. · ${totalB} btos · ${totalK} kg</span>
+          <span class="badge ${auth===bExps.length&&bExps.length>0?'bg':'ba'}">${auth}/${bExps.length} autorizadas</span>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="tbl"><thead><tr><th>Referencia</th><th>Estado</th><th>Status</th><th>MRN</th><th>Ubicación</th><th>Bultos</th><th>Kilos</th></tr></thead>
+        <tbody>${bExps.map(e=>`<tr>
+          <td class="fw">${e.nº_expedicion}</td>
+          <td>${bdg(e.estado_semaforo)}</td>
+          <td><span class="badge bgr" style="font-size:10px">${e.status_aduanero||'—'}</span></td>
+          <td style="font-family:var(--mono);font-size:10px;color:var(--g500)">${e.nº_mrn||'—'}</td>
+          <td class="sm">${e.ubicacion||'—'}</td>
+          <td class="sm">${e.bultos}</td>
+          <td class="sm">${e.kilos}</td>
+        </tr>`).join('')}</tbody></table>
+      </div>
+    </div>`;
+  }).join('');
+}
 let currentFotosTab='llegadas';
 function switchFotosTab(tab,el){
   currentFotosTab=tab;
@@ -2022,39 +2070,59 @@ async function loadAlmFotos(tab){
   if(!cont)return;
   cont.innerHTML='<div class="loading"><div class="spinner"></div>Cargando...</div>';
   if(currentFotosTab==='llegadas'){
-    // Show expeditions in transit/pending, grouped by buque+ETA
-    const {data:buques}=await sb.from('buques').select('id,nombre,eta_buque').not('estado_operacion','in','("Embarcado","Finalizado")').order('eta_buque',{ascending:true,nullsFirst:false});
-    const {data:exps}=await sb.from('expediciones').select('*,buques(nombre,eta_buque)').in('ubicacion',['Pendiente recibir','En tránsito']).or('estado_semaforo.eq.⏳ EN TRÁNSITO,estado_semaforo.eq.⌛ ESPERANDO ALMACÉN');
-    if(!exps||!exps.length){cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">✅</div><div class="empty-txt">No hay expediciones pendientes de llegada</div></div>';return;}
-    // Group by buque
-    const byBuque={};(exps||[]).forEach(e=>{const bn=e.buques?.nombre||'Sin buque';if(!byBuque[bn])byBuque[bn]={eta:e.buques?.eta_buque,items:[]};byBuque[bn].items.push(e);});
-    cont.innerHTML=Object.entries(byBuque).map(([bNom,d])=>`
+    // Expediciones pendientes: ubicacion = Pendiente recibir O contiene "Aeropuerto"
+    const {data:exps}=await sb.from('expediciones')
+      .select('*,buques(id,nombre,eta_buque)')
+      .neq('estado_semaforo','🚢 EMBARCADO')
+      .or('ubicacion.eq.Pendiente recibir,ubicacion.ilike.%Aeropuerto%');
+    if(!exps||!exps.length){
+      cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">✅</div><div class="empty-txt">No hay expediciones pendientes de llegada</div></div>';
+      return;
+    }
+    // Group by buque, sorted by ETA
+    const byBuque={};
+    (exps||[]).forEach(e=>{
+      const bid=e.buques?.id||'sin-buque';
+      const bNom=e.buques?.nombre||'Sin buque';
+      if(!byBuque[bid])byBuque[bid]={nombre:bNom,eta:e.buques?.eta_buque,items:[]};
+      byBuque[bid].items.push(e);
+    });
+    // Sort by ETA ascending
+    const sorted=Object.entries(byBuque).sort(([,a],[,b])=>{
+      if(!a.eta)return 1;if(!b.eta)return -1;
+      return new Date(a.eta)-new Date(b.eta);
+    });
+    cont.innerHTML=sorted.map(([bid,d])=>`
       <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
         <div style="background:var(--b50);border-bottom:1px solid var(--b100);padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
-          <div style="font-weight:700;color:var(--b700)">🚢 ${bNom}</div>
+          <div style="font-weight:700;color:var(--b700)">🚢 ${d.nombre}</div>
           <div style="font-size:12px;color:var(--b600)">ETA: ${d.eta?fd(d.eta):'—'} · ${d.items.length} exp.</div>
         </div>
-        ${d.items.map(e=>`<div class="ll-row" style="flex-direction:column;align-items:flex-start;gap:12px;padding:16px">
-          <div style="display:flex;align-items:center;gap:12px;width:100%">
-            <span style="font-size:22px">📦</span>
-            <div style="flex:1"><div class="ll-ref">${e.nº_expedicion}</div><div class="ll-sub">${e.bultos} btos · ${e.kilos} kg · ${e.ubicacion||'—'}</div></div>
+        ${d.items.map(e=>`
+        <div style="border-bottom:1px solid var(--g100);padding:16px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <span style="font-size:22px">${(e.ubicacion||'').includes('Aeropuerto')?'✈️':'📦'}</span>
+            <div style="flex:1">
+              <div class="ll-ref">${e.nº_expedicion}</div>
+              <div class="ll-sub">${e.bultos} btos · ${e.kilos} kg · <span style="color:var(--am600);font-weight:600">${e.ubicacion||'—'}</span></div>
+            </div>
             ${bdg(e.estado_semaforo)}
           </div>
-          <div style="width:100%">
-            <div class="fg2" style="margin-bottom:8px"><label class="fl2">Ubicación destino</label><select id="fl-ubic-${e.id}" class="fi fs">${optsUbic(true,'Almacén-Sin Ubicar')}</select></div>
-            <div class="fg2" style="margin-bottom:8px"><label class="fl2">Fotos llegada <span style="color:var(--gr600);font-size:11px">— opcional, compresión auto 75%</span></label>
-              <div class="foto-area" onclick="document.getElementById('fl-fi-${e.id}').click()">
-                <input type="file" id="fl-fi-${e.id}" accept="image/*" multiple>
-                <div style="font-size:22px;margin-bottom:4px">📸</div>
-                <div style="font-size:12px;color:var(--g600)">Toca para añadir fotos</div>
-              </div>
-              <div class="foto-prev" id="fl-pv-${e.id}"></div>
+          <div class="fg2" style="margin-bottom:8px">
+            <label class="fl2">Fotos llegada <span style="color:var(--gr600);font-size:11px">— compresión auto 75%</span></label>
+            <div class="foto-area" onclick="document.getElementById('fl-fi-${e.id}').click()">
+              <input type="file" id="fl-fi-${e.id}" accept="image/*" multiple>
+              <div style="font-size:22px;margin-bottom:4px">📸</div>
+              <div style="font-size:12px;color:var(--g600)">Toca para seleccionar fotos</div>
             </div>
-            <button class="btn btn-g btn-full" onclick="confirmarLlegadaFotos('${e.id}')">✅ Confirmar llegada</button>
+            <div class="foto-prev" id="fl-pv-${e.id}"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-g" style="flex:1" onclick="confirmarLlegadaFotos('${e.id}')">✅ Confirmar llegada → Almacén-Sin Ubicar</button>
+            <button class="btn btn-w" onclick="abrirIncidenciaLlegada('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">⚠️ Incidencia</button>
           </div>
         </div>`).join('')}
       </div>`).join('');
-    // Setup foto inputs
     (exps||[]).forEach(e=>setupFotos('fl-fi-'+e.id,'fl-pv-'+e.id,null));
   } else if(currentFotosTab==='carga'){
     const {data:buques}=await sb.from('buques').select('id,nombre,eta_buque').not('estado_operacion','in','("Embarcado","Finalizado")').order('eta_buque',{ascending:true,nullsFirst:false});
@@ -2129,13 +2197,42 @@ async function loadAlmFotos(tab){
 }
 
 async function confirmarLlegadaFotos(id){
-  const ubic=document.getElementById('fl-ubic-'+id)?.value||'Almacén-Sin Ubicar';
   const {data:e}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',id).single();
-  await sb.from('expediciones').update({ubicacion:ubic,notif_llegada_sent:true}).eq('id',id);
-  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir',ubic);
+  await sb.from('expediciones').update({ubicacion:'Almacén-Sin Ubicar',notif_llegada_sent:true}).eq('id',id);
+  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir','Almacén-Sin Ubicar');
   await alertarOperativa(id,e?.nº_expedicion||'',e?.buques?.nombre||'');
-  showToast('✅ Llegada confirmada');
+  showToast('✅ Llegada confirmada → Almacén-Sin Ubicar');
   await loadAlmFotos('llegadas');
+}
+
+function abrirIncidenciaLlegada(expId,expRef){
+  document.getElementById('m-title').textContent='⚠️ Nueva incidencia — '+expRef;
+  document.getElementById('m-body').innerHTML=`
+    <div class="info-box">Registra una incidencia detectada durante la llegada de <strong>${expRef}</strong>.</div>
+    <input type="hidden" id="inc-ll-exp" value="${expId}">
+    <div class="fg2"><label class="fl2">Tipo</label>
+      <select id="inc-ll-tip" class="fi fs">
+        <option>Embalaje</option><option>Faltas</option><option>Humedad</option><option>Roto</option><option>Precinto</option><option>Otro</option>
+      </select>
+    </div>
+    <div class="fg2"><label class="fl2">Descripción *</label>
+      <textarea id="inc-ll-des" class="fi" placeholder="Describe la incidencia con detalle…"></textarea>
+    </div>`;
+  document.getElementById('m-foot').innerHTML=`
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="guardarIncidenciaLlegada()">⚠️ Crear incidencia</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+async function guardarIncidenciaLlegada(){
+  const expId=document.getElementById('inc-ll-exp')?.value;
+  const tipo=document.getElementById('inc-ll-tip')?.value;
+  const des=document.getElementById('inc-ll-des')?.value;
+  if(!des||!des.trim()){alert('La descripción es obligatoria');return;}
+  const {data}=await sb.from('incidencias').insert({expedicion_id:expId,tipo,descripcion:des,nombre:tipo}).select().single();
+  await logAct('incidencias',data?.id,tipo,'crear',null,null,tipo);
+  showToast('⚠️ Incidencia creada');
+  closeModal();
 }
 function onCargaFoto(bid){const f=document.getElementById('cg-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='';setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);}}
 async function confirmarCargaBuque(bid){
@@ -2526,6 +2623,8 @@ function prevIMO(imo){
 
 // ── DETALLE BUQUE (totalmente editable) ────────────────────
 async function openBuque(id){
+  // Read-only in almacen mode
+  if(MOD==='almacen') return;
   const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre,email_confronta,otros_emails),en:consignatario_id(nombre,email_confronta)').eq('id',id).single();
   if(!b)return;
   const [{data:exps},{data:emps}]=await Promise.all([sb.from('expediciones').select('*').eq('buque_id',id).order('nº_expedicion'),sb.from('empresas').select('id,nombre').order('nombre')]);
@@ -2643,7 +2742,7 @@ async function saveBuqueEst(id,val){
 
 // ── DETALLE EXPEDICIÓN ─────────────────────────────────────
 async function openExpD(id){
-  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas(nombre,email_confronta)').eq('id',id).single();
+  if(MOD==='almacen') return; // read-only in almacen mode
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
   const emailCli=e.empresas?.email_confronta||'';
