@@ -178,6 +178,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .cal-nav{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .cal-btn{background:var(--w);border:1px solid var(--g300);color:var(--g700);border-radius:var(--r);padding:5px 12px;cursor:pointer;font-family:var(--f);font-size:13px}
 .cal-btn:hover{background:var(--g50)}
+.cal-vbtn.active-view{background:var(--b600);color:#fff;border-color:var(--b700)}
 .cal-m{font-size:16px;font-weight:700;flex:1}
 .cal-legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .cal-leg-item{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid transparent}
@@ -562,7 +563,7 @@ textarea.fi{resize:vertical;min-height:72px}
       </div>
       <div class="view" id="view-kanban"><div class="kb-board" id="kb-board"></div></div>
       <div class="view" id="view-calendario">
-        <!-- Legend -->
+        <!-- Leyenda de estados -->
         <div class="cal-legend">
           <span class="cal-leg-item st-proceso">● En proceso</span>
           <span class="cal-leg-item st-embarcado">● Embarcado</span>
@@ -570,17 +571,24 @@ textarea.fi{resize:vertical;min-height:72px}
           <span class="cal-leg-item st-aplazado">● Aplazado</span>
           <span class="cal-leg-item st-noiniciado">● No iniciado</span>
         </div>
+        <!-- Barra de navegación + selector de vista -->
         <div class="cal-nav">
           <button class="cal-btn" onclick="calP()">‹</button>
-          <div class="cal-m" id="cal-m"></div>
+          <div class="cal-m" id="cal-m" style="min-width:180px;text-align:center"></div>
           <button class="cal-btn" onclick="calN()">›</button>
           <button class="cal-btn" onclick="calH()" style="margin-left:auto">Hoy</button>
+          <div style="display:flex;gap:4px;margin-left:8px">
+            <button id="cal-v-mes"    class="cal-btn cal-vbtn active-view" onclick="calSetView('mes')"    style="font-size:12px;padding:5px 10px">Mes</button>
+            <button id="cal-v-15d"    class="cal-btn cal-vbtn"             onclick="calSetView('15d')"    style="font-size:12px;padding:5px 10px">15 días</button>
+            <button id="cal-v-semana" class="cal-btn cal-vbtn"             onclick="calSetView('semana')" style="font-size:12px;padding:5px 10px">Semana</button>
+          </div>
         </div>
-        <div class="cal-grid" style="margin-bottom:4px">
+        <!-- Cabecera días de la semana -->
+        <div class="cal-grid" id="cal-dheader" style="margin-bottom:4px">
           <div class="cal-dh">Lun</div><div class="cal-dh">Mar</div><div class="cal-dh">Mié</div>
           <div class="cal-dh">Jue</div><div class="cal-dh">Vie</div><div class="cal-dh">Sáb</div><div class="cal-dh">Dom</div>
         </div>
-        <div class="cal-grid" id="cal-body"></div>
+        <div id="cal-body"></div>
       </div>
       <div class="view" id="view-timeline"><div id="tl-wrap"></div></div>
       <div class="view" id="view-alertas"><div id="alertas-list"></div></div>
@@ -1236,20 +1244,21 @@ async function loadFlota(){
     }
 
     return`<div data-bid="${b.id}" draggable="true"
-      style="background:var(--w);border:1px solid ${listo?'#a5d6a7':'var(--g200)'};border-radius:var(--rl);overflow:hidden;cursor:pointer;transition:all .15s;box-shadow:var(--sh0);border-top:4px solid ${listo?'#2e7d32':BAR[key]||'#ccc'}"
+      style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;cursor:pointer;transition:all .15s;box-shadow:var(--sh0);border-top:4px solid ${BAR[key]||'#ccc'}"
       ondragstart="calDragId='${b.id}';event.dataTransfer.effectAllowed='move'"
       onclick="openBuque('${b.id}')"
       onmouseenter="this.style.boxShadow='var(--sh)';this.style.transform='translateY(-2px)'"
       onmouseleave="this.style.boxShadow='var(--sh0)';this.style.transform=''">
 
-      <div style="padding:14px 16px 10px;background:${listo?'#e8f5e9':BG[key]||'#f5f5f5'}">
+      <div style="padding:14px 16px 10px;background:${BG[key]||'#f5f5f5'}">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
           <div>
             <div style="font-size:15px;font-weight:700;color:var(--g900)">${b.nombre}</div>
-            <div style="font-size:11px;color:${listo?'#2e7d32':CLR[key]||'#424242'};margin-top:2px">IMO ${b.imo||'Sin IMO'} · ${b.puerto_terminal||b.place||'—'}</div>
+            <div style="font-size:11px;color:${CLR[key]||'#424242'};margin-top:2px">IMO ${b.imo||'Sin IMO'} · ${b.puerto_terminal||b.place||'—'}</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-            ${listo?'<span class="badge bg">✅ Listo embarcar</span>':`<span class="badge ${stCls}">${b.estado_operacion||'Sin estado'}</span>`}
+            <span class="badge ${stCls}">${b.estado_operacion||'Sin estado'}</span>
+            ${listo?'<span class="badge bg">✅ Listo embarcar</span>':''}
             ${etaBadge}
           </div>
         </div>
@@ -1397,8 +1406,8 @@ async function loadKanban(){
       const counts={};
       b.exps.forEach(e=>{counts[e.estado_semaforo]=(counts[e.estado_semaforo]||0)+1;});
 
-      return`<div style="background:var(--w);border:1px solid ${listo?'#a5d6a7':'var(--g200)'};border-radius:var(--rl);margin-bottom:14px;overflow:hidden;box-shadow:var(--sh0)">
-        <div style="background:${listo?'#e8f5e9':'var(--g50)'};border-bottom:1px solid ${listo?'#a5d6a7':'var(--g200)'};padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;cursor:pointer" onclick="openBuque('${b.id}')">
+      return`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:14px;overflow:hidden;box-shadow:var(--sh0)">
+        <div style="background:var(--g50);border-bottom:1px solid var(--g200);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;cursor:pointer" onclick="openBuque('${b.id}')">
           <div style="display:flex;align-items:center;gap:10px">
             <span style="font-size:20px">🚢</span>
             <div>
@@ -1440,69 +1449,181 @@ async function loadKanban(){
 }
 
 // ── CALENDARIO CON DRAG & DROP + COLORES ESTADO ──────────────
-let calY,calM;
-window.calDragId=null; // id del buque siendo arrastrado
+// ── CALENDARIO MULTI-VISTA ────────────────────────────────
+let calY, calM;
+let calView = 'mes';       // 'mes' | '15d' | 'semana'
+let calAnchor = null;      // fecha base para 15d/semana (Date)
+window.calDragId = null;
+
+function calSetView(v){
+  calView = v;
+  // Sync anchor with current month/year so navigation is consistent
+  if(!calAnchor) calAnchor = new Date();
+  document.querySelectorAll('.cal-vbtn').forEach(b => b.classList.remove('active-view'));
+  const btn = document.getElementById('cal-v-'+v);
+  if(btn) btn.classList.add('active-view');
+  // Header días semana: hidden in 15d/semana if we use custom layout
+  renderCal();
+}
 
 async function renderCal(){
-  const now=new Date();if(!calY){calY=now.getFullYear();calM=now.getMonth();}
-  const {data:bqs}=await sb.from('buques').select('id,nombre,eta_buque,ref_visual_trans,puerto_terminal,place,estado_operacion').not('eta_buque','is',null);
-  const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  document.getElementById('cal-m').textContent=meses[calM]+' '+calY;
-  const first=new Date(calY,calM,1);let dow=first.getDay();dow=dow===0?6:dow-1;
-  const days=new Date(calY,calM+1,0).getDate();
-  const body=document.getElementById('cal-body');
-  body.innerHTML='';
-  for(let i=0;i<dow;i++){const d=document.createElement('div');d.className='cal-day om';body.appendChild(d);}
-  for(let d=1;d<=days;d++){
-    const ds=`${calY}-${String(calM+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const isT=d===now.getDate()&&calM===now.getMonth()&&calY===now.getFullYear();
-    const cell=document.createElement('div');
-    cell.className='cal-day'+(isT?' today':'');
-    cell.dataset.date=ds;
-    const dn=document.createElement('div');
-    dn.className='cal-dn';
-    if(isT){const s=document.createElement('span');s.className='cal-dn-today';s.textContent=d;dn.appendChild(s);}
-    else dn.textContent=d;
+  const now = new Date();
+  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const DOW  = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+  if(!calY){ calY = now.getFullYear(); calM = now.getMonth(); }
+  if(!calAnchor){ calAnchor = new Date(calY, calM, 1); }
+
+  const {data:bqs} = await sb.from('buques')
+    .select('id,nombre,eta_buque,ref_visual_trans,puerto_terminal,place,estado_operacion')
+    .not('eta_buque','is',null);
+
+  const calBody   = document.getElementById('cal-body');
+  const calTitle  = document.getElementById('cal-m');
+  const calHeader = document.getElementById('cal-dheader');
+
+  // Helper: build a single day cell
+  function buildDayCell(ds, dayNum, isToday, isOtherMonth, buquesOfDay){
+    const cell = document.createElement('div');
+    cell.className = 'cal-day' + (isToday ? ' today' : '') + (isOtherMonth ? ' om' : '');
+    cell.dataset.date = ds;
+
+    const dn = document.createElement('div');
+    dn.className = 'cal-dn';
+    if(isToday){
+      const s = document.createElement('span'); s.className = 'cal-dn-today'; s.textContent = dayNum;
+      dn.appendChild(s);
+    } else { dn.textContent = dayNum; }
     cell.appendChild(dn);
-    const bq=(bqs||[]).filter(b=>b.eta_buque&&b.eta_buque.startsWith(ds));
-    bq.forEach(b=>{
-      const stCls=estOpCls(b.estado_operacion||'');
-      const ev=document.createElement('div');
-      ev.className='cal-ev '+stCls;
-      ev.draggable=true;
-      ev.dataset.bid=b.id;
-      ev.innerHTML=`🚢 <strong>${b.nombre}</strong>${b.ref_visual_trans?` · VT ${b.ref_visual_trans}`:''}${(b.puerto_terminal||b.place)?`<br><span style="opacity:.75">${b.puerto_terminal||b.place}</span>`:''}`;
-      ev.addEventListener('click',e=>{e.stopPropagation();openBuque(b.id);});
-      ev.addEventListener('dragstart',e=>{calDragId=b.id;ev.style.opacity='0.5';e.dataTransfer.effectAllowed='move';});
-      ev.addEventListener('dragend',()=>{ev.style.opacity='1';});
+
+    buquesOfDay.forEach(b => {
+      const stCls = estOpCls(b.estado_operacion || '');
+      const ev = document.createElement('div');
+      ev.className = 'cal-ev ' + stCls;
+      ev.draggable = true;
+      ev.dataset.bid = b.id;
+      ev.innerHTML = `🚢 <strong>${b.nombre}</strong>${b.ref_visual_trans ? ` · VT ${b.ref_visual_trans}` : ''}${(b.puerto_terminal||b.place) ? `<br><span style="opacity:.75">${b.puerto_terminal||b.place}</span>` : ''}`;
+      ev.addEventListener('click', e => { e.stopPropagation(); openBuque(b.id); });
+      ev.addEventListener('dragstart', e => { calDragId = b.id; ev.style.opacity = '0.5'; e.dataTransfer.effectAllowed = 'move'; });
+      ev.addEventListener('dragend', () => { ev.style.opacity = '1'; });
       cell.appendChild(ev);
     });
-    // Drag & drop target
-    cell.addEventListener('dragover',e=>{e.preventDefault();cell.classList.add('drag-over');});
-    cell.addEventListener('dragleave',()=>cell.classList.remove('drag-over'));
-    cell.addEventListener('drop',async e=>{
-      e.preventDefault();cell.classList.remove('drag-over');
-      if(!calDragId)return;
-      const newDate=cell.dataset.date;
-      // Update in Supabase - set eta_buque to the new date (keep time as noon)
-      const {error}=await sb.from('buques').update({eta_buque:newDate+'T12:00:00'}).eq('id',calDragId);
-      if(!error){
-        showToast('ETA actualizado → '+newDate);
-        // Sync with timeline if same month is shown
-        if(window.tlYear===calY&&window.tlMonth===calM&&document.getElementById('tl-wrap')?.children.length){
-          loadTL();
-        }
-        await renderCal();
-      }
-      else{mostrarBanner('Error al actualizar fecha','red');}
-      calDragId=null;
+
+    cell.addEventListener('dragover',  e => { e.preventDefault(); cell.classList.add('drag-over'); });
+    cell.addEventListener('dragleave', ()  => cell.classList.remove('drag-over'));
+    cell.addEventListener('drop', async e => {
+      e.preventDefault(); cell.classList.remove('drag-over');
+      if(!calDragId) return;
+      const {error} = await sb.from('buques').update({eta_buque: ds + 'T12:00:00'}).eq('id', calDragId);
+      if(!error){ showToast('ETA → ' + ds); await renderCal(); } else { mostrarBanner('Error al mover','red'); }
+      calDragId = null;
     });
-    body.appendChild(cell);
+    return cell;
+  }
+
+  // ── VISTA MES ────────────────────────────────────────────
+  if(calView === 'mes'){
+    calHeader.style.display = 'grid';
+    calBody.className = 'cal-grid';
+    calTitle.textContent = MESES[calM] + ' ' + calY;
+    calBody.innerHTML = '';
+
+    const first = new Date(calY, calM, 1);
+    let dow = first.getDay(); dow = dow === 0 ? 6 : dow - 1;
+    const days = new Date(calY, calM + 1, 0).getDate();
+
+    for(let i = 0; i < dow; i++){
+      const d = document.createElement('div'); d.className = 'cal-day om'; calBody.appendChild(d);
+    }
+    for(let d = 1; d <= days; d++){
+      const ds = `${calY}-${String(calM+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const isT = d === now.getDate() && calM === now.getMonth() && calY === now.getFullYear();
+      const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
+      calBody.appendChild(buildDayCell(ds, d, isT, false, bq));
+    }
+  }
+
+  // ── VISTA 15 DÍAS ────────────────────────────────────────
+  else if(calView === '15d'){
+    calHeader.style.display = 'grid';
+    calBody.className = 'cal-grid';
+    // Show from anchor date, 15 days
+    const start = new Date(calAnchor);
+    start.setHours(0,0,0,0);
+    const end = new Date(start); end.setDate(end.getDate() + 14);
+    calTitle.textContent = `${start.getDate()} ${MESES[start.getMonth()].slice(0,3)} — ${end.getDate()} ${MESES[end.getMonth()].slice(0,3)} ${end.getFullYear()}`;
+    calBody.innerHTML = '';
+
+    // pad to Lun
+    let padDow = start.getDay(); padDow = padDow === 0 ? 6 : padDow - 1;
+    for(let i = 0; i < padDow; i++){
+      const d = document.createElement('div'); d.className = 'cal-day om'; calBody.appendChild(d);
+    }
+    for(let i = 0; i < 15; i++){
+      const cur = new Date(start); cur.setDate(start.getDate() + i);
+      const ds  = cur.toISOString().slice(0,10);
+      const isT = ds === now.toISOString().slice(0,10);
+      const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
+      calBody.appendChild(buildDayCell(ds, cur.getDate(), isT, false, bq));
+    }
+  }
+
+  // ── VISTA SEMANA ─────────────────────────────────────────
+  else if(calView === 'semana'){
+    calHeader.style.display = 'grid';
+    calBody.className = 'cal-grid';
+    // Find Monday of the anchor week
+    const anchor = new Date(calAnchor);
+    anchor.setHours(0,0,0,0);
+    let dow2 = anchor.getDay(); dow2 = dow2 === 0 ? 6 : dow2 - 1;
+    const mon = new Date(anchor); mon.setDate(anchor.getDate() - dow2);
+    const sun = new Date(mon);    sun.setDate(mon.getDate() + 6);
+    calTitle.textContent = `Semana: ${mon.getDate()} ${MESES[mon.getMonth()].slice(0,3)} — ${sun.getDate()} ${MESES[sun.getMonth()].slice(0,3)} ${sun.getFullYear()}`;
+    calBody.innerHTML = '';
+
+    for(let i = 0; i < 7; i++){
+      const cur = new Date(mon); cur.setDate(mon.getDate() + i);
+      const ds  = cur.toISOString().slice(0,10);
+      const isT = ds === now.toISOString().slice(0,10);
+      const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
+      // In week view use taller cells
+      const cell = buildDayCell(ds, cur.getDate(), isT, false, bq);
+      cell.style.minHeight = '160px';
+      calBody.appendChild(cell);
+    }
   }
 }
-function calP(){calM--;if(calM<0){calM=11;calY--;}renderCal();}
-function calN(){calM++;if(calM>11){calM=0;calY++;}renderCal();}
-function calH(){calY=null;calM=null;renderCal();}
+
+function calP(){
+  if(calView === 'mes'){
+    calM--; if(calM < 0){ calM = 11; calY--; }
+    calAnchor = new Date(calY, calM, 1);
+  } else if(calView === '15d'){
+    calAnchor = new Date(calAnchor); calAnchor.setDate(calAnchor.getDate() - 15);
+  } else {
+    calAnchor = new Date(calAnchor); calAnchor.setDate(calAnchor.getDate() - 7);
+  }
+  renderCal();
+}
+
+function calN(){
+  if(calView === 'mes'){
+    calM++; if(calM > 11){ calM = 0; calY++; }
+    calAnchor = new Date(calY, calM, 1);
+  } else if(calView === '15d'){
+    calAnchor = new Date(calAnchor); calAnchor.setDate(calAnchor.getDate() + 15);
+  } else {
+    calAnchor = new Date(calAnchor); calAnchor.setDate(calAnchor.getDate() + 7);
+  }
+  renderCal();
+}
+
+function calH(){
+  const now = new Date();
+  calY = now.getFullYear(); calM = now.getMonth();
+  calAnchor = new Date(now); calAnchor.setHours(0,0,0,0);
+  renderCal();
+}
 
 // ── Global drag: allow dragging buque cards from any view to change ETA ──
 // Attach after any buque list renders
@@ -1946,18 +2067,110 @@ async function delExpedicion(id,ref){
 
 async function loadUsuarios(){
   const {data}=await sb.from('usuarios').select('*').order('rol');
-  const rC={admin:'br',oficina:'bb',almacen:'ba',aduanas:'bt',transportista:'bgr'};const rL={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
-  document.getElementById('users-list').innerHTML=`<div class="tc">${(data||[]).map(u=>`<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--g100)"><div style="width:36px;height:36px;border-radius:50%;background:${u.rol==='admin'?'var(--rd500)':u.rol==='oficina'?'var(--b600)':'var(--am500)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">${(u.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div><div style="flex:1"><div style="font-weight:600;font-size:13px">${u.nombre}${u.must_change_password?'<span class="badge ba" style="margin-left:6px;font-size:10px">⚠️ debe cambiar contraseña</span>':''}</div><div style="font-size:12px;color:var(--g500)">${u.email}${u.ultimo_acceso?` · Último acceso: ${fdt(u.ultimo_acceso)}`:''}</div></div><span class="badge ${rC[u.rol]||'bgr'}">${rL[u.rol]||u.rol}</span>${u.id!==CU?.id?`<button class="btn btn-s btn-sm" onclick="editUser('${u.id}')">Editar</button>`:''}<span class="badge bg" style="${u.id===CU?.id?'':'display:none'}">Tú</span></div>`).join('')}</div>`;
+  const rC={admin:'br',oficina:'bb',almacen:'ba',aduanas:'bt',transportista:'bgr'};
+  const rL={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
+  document.getElementById('users-list').innerHTML=`<div class="tc">${(data||[]).map(u=>{
+    const isMe=u.id===CU?.id;
+    const avatar=(u.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const avatarBg=u.rol==='admin'?'var(--rd500)':u.rol==='oficina'?'var(--b600)':'var(--am500)';
+    return`<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--g100)">
+      <div style="width:36px;height:36px;border-radius:50%;background:${avatarBg};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">${avatar}</div>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:13px">${u.nombre}
+          ${isMe?'<span class="badge bg" style="margin-left:6px;font-size:10px">Tú</span>':''}
+          ${u.must_change_password?'<span class="badge ba" style="margin-left:6px;font-size:10px">⚠️ debe cambiar contraseña</span>':''}
+        </div>
+        <div style="font-size:12px;color:var(--g500)">${u.email}${u.ultimo_acceso?` · Último acceso: ${fdt(u.ultimo_acceso)}`:''}</div>
+      </div>
+      <span class="badge ${rC[u.rol]||'bgr'}">${rL[u.rol]||u.rol}</span>
+      <button class="btn btn-s btn-sm" onclick="editUser('${u.id}')">✏️ Editar</button>
+    </div>`;
+  }).join('')}</div>`;
 }
+
 async function editUser(id){
-  const {data:u}=await sb.from('usuarios').select('*').eq('id',id).single();if(!u)return;
-  document.getElementById('m-title').textContent='👤 Editar usuario';
-  document.getElementById('m-body').innerHTML=`<div class="fr2"><div class="fg2"><label class="fl2">Nombre</label><input id="eu-n" class="fi" value="${u.nombre||''}"></div><div class="fg2"><label class="fl2">Email</label><input id="eu-e" class="fi" value="${u.email||''}"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Rol</label><select id="eu-r" class="fi fs"><option value="almacen" ${u.rol==='almacen'?'selected':''}>Almacén</option><option value="oficina" ${u.rol==='oficina'?'selected':''}>Oficina</option><option value="aduanas" ${u.rol==='aduanas'?'selected':''}>Aduanas</option><option value="transportista" ${u.rol==='transportista'?'selected':''}>Transportista</option><option value="admin" ${u.rol==='admin'?'selected':''}>Administrador</option></select></div><div class="fg2"><label class="fl2">Nueva contraseña</label><input id="eu-p" class="fi" type="password" placeholder="Dejar vacío = no cambiar"></div></div><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="eu-mcp" style="accent-color:var(--am600)" ${u.must_change_password?'checked':''}><label for="eu-mcp" style="font-size:13px;cursor:pointer">Forzar cambio de contraseña en el próximo inicio de sesión</label></div><div class="warn-box">Almacén: APP Almacén · Oficina: operativa completa · Admin: acceso total</div>`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-d btn-sm" onclick="delUser('${u.id}')">Eliminar</button><button class="btn btn-p" onclick="saveUser('${u.id}')">💾 Guardar</button>`;
+  if(CU?.rol!=='admin'){alert('Solo el administrador puede editar usuarios.');return;}
+  const {data:u}=await sb.from('usuarios').select('*').eq('id',id).single();
+  if(!u)return;
+  const isMe=u.id===CU?.id;
+  document.getElementById('m-title').textContent=`✏️ Editar usuario${isMe?' (tú)':''}`;
+  document.getElementById('m-body').innerHTML=`
+    <div class="fr2">
+      <div class="fg2">
+        <label class="fl2">Nombre completo</label>
+        <input id="eu-n" class="fi" value="${u.nombre||''}" placeholder="Nombre y apellidos">
+      </div>
+      <div class="fg2">
+        <label class="fl2">Email</label>
+        <input id="eu-e" class="fi" value="${u.email||''}" placeholder="email@als.com">
+      </div>
+    </div>
+    <div class="fr2">
+      <div class="fg2">
+        <label class="fl2">Rol</label>
+        <select id="eu-r" class="fi fs">
+          <option value="almacen" ${u.rol==='almacen'?'selected':''}>Almacén</option>
+          <option value="oficina" ${u.rol==='oficina'?'selected':''}>Oficina</option>
+          <option value="aduanas" ${u.rol==='aduanas'?'selected':''}>Aduanas</option>
+          <option value="transportista" ${u.rol==='transportista'?'selected':''}>Transportista</option>
+          <option value="admin" ${u.rol==='admin'?'selected':''}>Administrador</option>
+        </select>
+      </div>
+      <div class="fg2">
+        <label class="fl2">Nueva contraseña <span style="color:var(--g400);font-weight:400">(vacío = sin cambios)</span></label>
+        <input id="eu-p" class="fi" type="password" placeholder="••••••••">
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <input type="checkbox" id="eu-mcp" style="accent-color:var(--am600)" ${u.must_change_password?'checked':''}>
+      <label for="eu-mcp" style="font-size:13px;cursor:pointer">Forzar cambio de contraseña en el próximo inicio de sesión</label>
+    </div>
+    ${isMe?`<div class="info-box">Estás editando tu propio usuario. Los cambios de nombre se aplicarán en la sesión actual.</div>`:''}
+    <div class="warn-box">Almacén: APP Almacén · Oficina: operativa completa · Admin: acceso total</div>`;
+  document.getElementById('m-foot').innerHTML=`
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    ${!isMe?`<button class="btn btn-d btn-sm" onclick="delUser('${u.id}')">🗑️ Eliminar</button>`:''}
+    <button class="btn btn-p" onclick="saveUser('${u.id}')">💾 Guardar cambios</button>`;
   document.getElementById('mo').classList.add('open');
 }
-async function saveUser(id){const obj={nombre:gv('eu-n'),email:gv('eu-e'),rol:gv('eu-r'),must_change_password:document.getElementById('eu-mcp')?.checked||false};const p=gv('eu-p');if(p){obj.password_hash=p;obj.must_change_password=true;}await sb.from('usuarios').update(obj).eq('id',id);await logAct('usuarios',id,gv('eu-n'),'editar','rol/pass',null,gv('eu-r'));showToast('Usuario guardado');closeModal();loadView(CV);}
-async function delUser(id){if(id===CU?.id){alert('No puedes eliminar tu propio usuario');return;}if(!confirm('¿Eliminar usuario?'))return;await sb.from('usuarios').delete().eq('id',id);closeModal();loadView(CV);}
+
+async function saveUser(id){
+  if(CU?.rol!=='admin'){alert('Solo el administrador puede editar usuarios.');return;}
+  const nuevoNombre=gv('eu-n').trim();
+  if(!nuevoNombre){alert('El nombre no puede estar vacío.');return;}
+  const obj={
+    nombre:nuevoNombre,
+    email:gv('eu-e'),
+    rol:gv('eu-r'),
+    must_change_password:document.getElementById('eu-mcp')?.checked||false
+  };
+  const p=gv('eu-p');
+  if(p){obj.password_hash=p;obj.must_change_password=true;}
+  await sb.from('usuarios').update(obj).eq('id',id);
+  await logAct('usuarios',id,nuevoNombre,'editar','nombre/rol',null,`${nuevoNombre} · ${obj.rol}`);
+  // Si el usuario editado es el propio admin logueado, actualizar CU en memoria
+  if(id===CU?.id){
+    CU.nombre=nuevoNombre;
+    CU.email=obj.email;
+    // Actualizar avatar y nombre en la UI
+    const init=nuevoNombre.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const sbAv=document.getElementById('sb-av');if(sbAv)sbAv.textContent=init;
+    const sbName=document.getElementById('sb-name');if(sbName)sbName.textContent=nuevoNombre;
+    const hmAv=document.getElementById('hm-av');if(hmAv)hmAv.textContent=init;
+    const hmName=document.getElementById('hm-name');if(hmName)hmName.textContent=nuevoNombre;
+  }
+  showToast('✅ Usuario actualizado: '+nuevoNombre);
+  closeModal();
+  loadView(CV);
+}
+
+async function delUser(id){
+  if(CU?.rol!=='admin'){alert('Solo el administrador puede eliminar usuarios.');return;}
+  if(id===CU?.id){alert('No puedes eliminar tu propio usuario.');return;}
+  if(!confirm('¿Eliminar este usuario? Esta acción no se puede deshacer.'))return;
+  await sb.from('usuarios').delete().eq('id',id);
+  closeModal();loadView(CV);
+}
 
 async function loadLog(){
   const {data}=await sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(300);
