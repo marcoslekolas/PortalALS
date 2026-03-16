@@ -738,12 +738,57 @@ async function doLogin(){
     if(!sb){try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});}catch(e3){console.warn('SDK init:',e3);}}
     // Update last access
     fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,{method:'PATCH',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({ultimo_acceso:new Date().toISOString()})}).catch(()=>{});
+    // Check if must change password
+    if(CU.must_change_password){showChangePwd();return;}
     showHome();
   }catch(e){
     if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
     console.error('Login exception:',e);
     if(errEl)errEl.textContent='Error inesperado: '+e.message;
   }
+}
+
+function showChangePwd(){
+  document.getElementById('screen-login').style.display='none';
+  // Show change password screen
+  let scr=document.getElementById('screen-changepwd');
+  if(!scr){
+    scr=document.createElement('div');
+    scr.id='screen-changepwd';
+    scr.style.cssText='position:fixed;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;z-index:999;padding:20px';
+    scr.innerHTML=`<div style="width:100%;max-width:400px">
+      <div style="font-size:22px;font-weight:700;margin-bottom:6px">🔒 Cambiar contraseña</div>
+      <div style="font-size:14px;color:var(--g500);margin-bottom:24px">El administrador requiere que establezcas una nueva contraseña antes de continuar.</div>
+      <div class="li-card">
+        <div class="fg2"><label class="fl2">Nueva contraseña *</label><input id="cp-p1" class="fi" type="password" placeholder="Mínimo 6 caracteres"></div>
+        <div class="fg2"><label class="fl2">Confirmar contraseña *</label><input id="cp-p2" class="fi" type="password" placeholder="Repite la contraseña" onkeydown="if(event.key==='Enter')doChangePwd()"></div>
+        <div id="cp-err" style="color:var(--rd600);font-size:12px;min-height:16px;margin-top:4px"></div>
+        <button class="btn btn-p btn-full" style="margin-top:16px" onclick="doChangePwd()">Guardar y continuar →</button>
+      </div>
+    </div>`;
+    document.body.appendChild(scr);
+  }
+  scr.style.display='flex';
+}
+
+async function doChangePwd(){
+  const p1=document.getElementById('cp-p1').value;
+  const p2=document.getElementById('cp-p2').value;
+  const err=document.getElementById('cp-err');
+  if(!p1||p1.length<6){err.textContent='Mínimo 6 caracteres';return;}
+  if(p1!==p2){err.textContent='Las contraseñas no coinciden';return;}
+  err.textContent='';
+  const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,{
+    method:'PATCH',
+    headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
+    body:JSON.stringify({password_hash:p1,must_change_password:false})
+  });
+  if(!r.ok){err.textContent='Error al guardar. Inténtalo de nuevo.';return;}
+  CU.must_change_password=false;
+  CU.password_hash=p1;
+  document.getElementById('screen-changepwd').style.display='none';
+  showToast('Contraseña actualizada correctamente');
+  showHome();
 }
 
 function showHome(){
@@ -1255,19 +1300,36 @@ async function openEmpD(id){
 async function saveEmp(id){const roles=['Cliente','Consignatario','Transportista'].filter(r=>document.getElementById('ep-r-'+r)?.checked);const otros=gv('ep-o').split(',').map(s=>s.trim()).filter(Boolean);await sb.from('empresas').update({nombre:gv('ep-n'),persona_contacto:gv('ep-p')||null,email_confronta:gv('ep-e')||null,telefono:gv('ep-t')||null,otros_emails:otros,rol:roles}).eq('id',id);await logAct('empresas',id,gv('ep-n'),'editar','datos',null,'actualizado');showToast('Empresa guardada');closeModal();loadView(CV);}
 async function delEmp(id){if(!confirm('¿Eliminar empresa?'))return;await sb.from('empresas').delete().eq('id',id);closeModal();loadView(CV);}
 
+async function delBuque(id,nombre){
+  if(!confirm('⚠️ ¿Eliminar el buque "'+nombre+'" y TODAS sus expediciones asociadas? Esta acción no se puede deshacer.'))return;
+  // Delete related expediciones first
+  await sb.from('expediciones').delete().eq('buque_id',id);
+  await sb.from('buques').delete().eq('id',id);
+  await logAct('buques',id,nombre,'eliminar',null,nombre,null);
+  showToast('Buque eliminado');closeModal();loadView(CV);
+}
+
+async function delExpedicion(id,ref){
+  if(!confirm('⚠️ ¿Eliminar la expedición "'+ref+'"? Esta acción no se puede deshacer.'))return;
+  await sb.from('incidencias').delete().eq('expedicion_id',id);
+  await sb.from('expediciones').delete().eq('id',id);
+  await logAct('expediciones',id,ref,'eliminar',null,ref,null);
+  showToast('Expedición eliminada');closeModal();loadView(CV);
+}
+
 async function loadUsuarios(){
   const {data}=await sb.from('usuarios').select('*').order('rol');
   const rC={admin:'br',oficina:'bb',almacen:'ba',aduanas:'bt',transportista:'bgr'};const rL={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
-  document.getElementById('users-list').innerHTML=`<div class="tc">${(data||[]).map(u=>`<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--g100)"><div style="width:36px;height:36px;border-radius:50%;background:${u.rol==='admin'?'var(--rd500)':u.rol==='oficina'?'var(--b600)':'var(--am500)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">${(u.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div><div style="flex:1"><div style="font-weight:600;font-size:13px">${u.nombre}</div><div style="font-size:12px;color:var(--g500)">${u.email}${u.ultimo_acceso?` · Último acceso: ${fdt(u.ultimo_acceso)}`:''}</div></div><span class="badge ${rC[u.rol]||'bgr'}">${rL[u.rol]||u.rol}</span>${u.id!==CU?.id?`<button class="btn btn-s btn-sm" onclick="editUser('${u.id}')">Editar</button>`:'<span class="badge bg">Tú</span>'}</div>`).join('')}</div>`;
+  document.getElementById('users-list').innerHTML=`<div class="tc">${(data||[]).map(u=>`<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--g100)"><div style="width:36px;height:36px;border-radius:50%;background:${u.rol==='admin'?'var(--rd500)':u.rol==='oficina'?'var(--b600)':'var(--am500)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">${(u.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div><div style="flex:1"><div style="font-weight:600;font-size:13px">${u.nombre}${u.must_change_password?'<span class="badge ba" style="margin-left:6px;font-size:10px">⚠️ debe cambiar contraseña</span>':''}</div><div style="font-size:12px;color:var(--g500)">${u.email}${u.ultimo_acceso?` · Último acceso: ${fdt(u.ultimo_acceso)}`:''}</div></div><span class="badge ${rC[u.rol]||'bgr'}">${rL[u.rol]||u.rol}</span>${u.id!==CU?.id?`<button class="btn btn-s btn-sm" onclick="editUser('${u.id}')">Editar</button>`:''}<span class="badge bg" style="${u.id===CU?.id?'':'display:none'}">Tú</span></div>`).join('')}</div>`;
 }
 async function editUser(id){
   const {data:u}=await sb.from('usuarios').select('*').eq('id',id).single();if(!u)return;
   document.getElementById('m-title').textContent='👤 Editar usuario';
-  document.getElementById('m-body').innerHTML=`<div class="fr2"><div class="fg2"><label class="fl2">Nombre</label><input id="eu-n" class="fi" value="${u.nombre||''}"></div><div class="fg2"><label class="fl2">Email</label><input id="eu-e" class="fi" value="${u.email||''}"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Rol</label><select id="eu-r" class="fi fs"><option value="almacen" ${u.rol==='almacen'?'selected':''}>Almacén</option><option value="oficina" ${u.rol==='oficina'?'selected':''}>Oficina</option><option value="aduanas" ${u.rol==='aduanas'?'selected':''}>Aduanas</option><option value="transportista" ${u.rol==='transportista'?'selected':''}>Transportista</option><option value="admin" ${u.rol==='admin'?'selected':''}>Administrador</option></select></div><div class="fg2"><label class="fl2">Nueva contraseña</label><input id="eu-p" class="fi" type="password" placeholder="Dejar vacío = no cambiar"></div></div><div class="warn-box">Almacén: APP Almacén · Oficina: operativa completa · Admin: acceso total</div>`;
+  document.getElementById('m-body').innerHTML=`<div class="fr2"><div class="fg2"><label class="fl2">Nombre</label><input id="eu-n" class="fi" value="${u.nombre||''}"></div><div class="fg2"><label class="fl2">Email</label><input id="eu-e" class="fi" value="${u.email||''}"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Rol</label><select id="eu-r" class="fi fs"><option value="almacen" ${u.rol==='almacen'?'selected':''}>Almacén</option><option value="oficina" ${u.rol==='oficina'?'selected':''}>Oficina</option><option value="aduanas" ${u.rol==='aduanas'?'selected':''}>Aduanas</option><option value="transportista" ${u.rol==='transportista'?'selected':''}>Transportista</option><option value="admin" ${u.rol==='admin'?'selected':''}>Administrador</option></select></div><div class="fg2"><label class="fl2">Nueva contraseña</label><input id="eu-p" class="fi" type="password" placeholder="Dejar vacío = no cambiar"></div></div><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="eu-mcp" style="accent-color:var(--am600)" ${u.must_change_password?'checked':''}><label for="eu-mcp" style="font-size:13px;cursor:pointer">Forzar cambio de contraseña en el próximo inicio de sesión</label></div><div class="warn-box">Almacén: APP Almacén · Oficina: operativa completa · Admin: acceso total</div>`;
   document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-d btn-sm" onclick="delUser('${u.id}')">Eliminar</button><button class="btn btn-p" onclick="saveUser('${u.id}')">💾 Guardar</button>`;
   document.getElementById('mo').classList.add('open');
 }
-async function saveUser(id){const obj={nombre:gv('eu-n'),email:gv('eu-e'),rol:gv('eu-r')};const p=gv('eu-p');if(p)obj.password_hash=p;await sb.from('usuarios').update(obj).eq('id',id);showToast('Usuario guardado');closeModal();loadView(CV);}
+async function saveUser(id){const obj={nombre:gv('eu-n'),email:gv('eu-e'),rol:gv('eu-r'),must_change_password:document.getElementById('eu-mcp')?.checked||false};const p=gv('eu-p');if(p){obj.password_hash=p;obj.must_change_password=true;}await sb.from('usuarios').update(obj).eq('id',id);await logAct('usuarios',id,gv('eu-n'),'editar','rol/pass',null,gv('eu-r'));showToast('Usuario guardado');closeModal();loadView(CV);}
 async function delUser(id){if(id===CU?.id){alert('No puedes eliminar tu propio usuario');return;}if(!confirm('¿Eliminar usuario?'))return;await sb.from('usuarios').delete().eq('id',id);closeModal();loadView(CV);}
 
 async function loadLog(){
@@ -1312,7 +1374,8 @@ const MODALS={
   },
   action:async()=>{
     const obj={nombre:gv('nb-n'),imo:gv('nb-imo')||null,ref_visual_trans:gv('nb-vt')||null,nº_escala:gv('nb-esc')||null,eta_buque:gv('nb-eta')||null,puerto_terminal:gv('nb-pto')||null,place:gv('nb-plc')||null,estado_operacion:gv('nb-est'),cliente_id:gv('nb-cli')||null,consignatario_id:gv('nb-con')||null,created_by:CU?.id,created_by_nombre:CU?.nombre};
-    if(!obj.nombre){alert('El nombre es obligatorio');return;}
+    if(!obj.nombre){alert('El nombre del buque es obligatorio');return;}
+    if(!obj.ref_visual_trans){alert('La Ref. Visual Trans es obligatoria');return;}
     const {data,error}=await sb.from('buques').insert(obj).select().single();
     if(error){alert('Error: '+error.message);return;}
     await logAct('buques',data?.id,obj.nombre,'crear',null,null,obj.nombre);
@@ -1383,7 +1446,7 @@ const MODALS={
 },
 'nuevo-usuario':{t:'👤 Nuevo usuario',btn:'👤 Crear usuario',
   body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre y apellidos"></div><div class="fg2"><label class="fl2">Email *</label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="oficina">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
-  action:async()=>{const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');if(!n||!e||!p){alert('Nombre, email y contraseña son obligatorios');return;}const {error}=await sb.from('usuarios').insert({nombre:n,email:e,rol:r,password_hash:p});if(error){alert('Error: '+error.message);return;}showToast('Usuario creado');closeModal();loadView(CV);}
+  action:async()=>{const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');if(!n||!e||!p){alert('Nombre, email y contraseña son obligatorios');return;}const {error}=await sb.from('usuarios').insert({nombre:n,email:e,rol:r,password_hash:p,must_change_password:true});if(error){alert('Error: '+error.message);return;}showToast('Usuario creado — deberá cambiar su contraseña al primer inicio de sesión');closeModal();loadView(CV);}
 },
 'nueva-empresa':{t:'🏢 Nueva empresa',btn:'🏢 Crear empresa',
   body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="nmp-n" class="fi" placeholder="Nombre empresa"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="nmp-p" class="fi" placeholder="Nombre y apellidos"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="nmp-e" class="fi" type="email" placeholder="email@empresa.com"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="nmp-t" class="fi" placeholder="+34 956…"></div></div><div class="fg2"><label class="fl2">Otros emails <span style="color:var(--g400);font-weight:400">(separados por coma)</span></label><input id="nmp-o" class="fi" placeholder="email2@, email3@…"></div><div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="nmp-r-${r}" style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>`,
@@ -1458,7 +1521,7 @@ async function openBuque(id){
       <div><div style="font-weight:600;font-size:13px">${e.nº_expedicion}</div><div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div></div>
       ${bdg(e.estado_semaforo)}
     </div>`).join('')||'<div class="empty" style="padding:20px"><div class="empty-txt">Sin expediciones</div></div>'}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Email Confronta</button><button class="btn btn-g btn-sm" onclick="closeModal();setTimeout(()=>openModal('embarque-buque'),60)">🚢 Embarcar</button><button class="btn btn-p btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${b.nombre.replace(/'/g,"\'")}'))">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Email Confronta</button><button class="btn btn-g btn-sm" onclick="closeModal();setTimeout(()=>openModal('embarque-buque'),60)">🚢 Embarcar</button><button class="btn btn-p btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button>`;
   document.getElementById('mo').classList.add('open');
 }
 
@@ -1548,7 +1611,7 @@ async function openExpD(id){
     </div>`:''}
     <div id="grist-link-container" style="margin-bottom:14px"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button><button class="btn btn-p btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"'")}'))">🗑️ Eliminar</button>`:''}<button class="btn btn-p btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button>`;
   document.getElementById('mo').classList.add('open');
   const gLink=gristLink(Object.assign({},e,{buques:e.buques,empresas:e.empresas}));
   const gc2=document.getElementById('grist-link-container');
