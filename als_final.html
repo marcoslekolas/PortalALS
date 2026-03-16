@@ -1,0 +1,1770 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ALS · Portal Operativo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --w:#fff;--g50:#f8f9fa;--g100:#f1f3f5;--g200:#e9ecef;--g300:#dee2e6;--g400:#ced4da;
+  --g500:#adb5bd;--g600:#6c757d;--g700:#495057;--g800:#343a40;--g900:#212529;
+  --b50:#e7f1ff;--b100:#c5dbff;--b500:#3b82f6;--b600:#2563eb;--b700:#1d4ed8;
+  --gr50:#f0fdf4;--gr500:#22c55e;--gr600:#16a34a;--gr700:#15803d;
+  --am50:#fffbeb;--am500:#f59e0b;--am600:#d97706;
+  --rd50:#fef2f2;--rd500:#ef4444;--rd600:#dc2626;
+  --tl500:#14b8a6;--tl600:#0d9488;
+  /* Estado buque: azul proceso, verde embarcado, rojo cancelado, naranja aplazado, gris no iniciado */
+  --st-proceso-bg:#e3f2fd;--st-proceso-c:#0d47a1;--st-proceso-bd:#90caf9;--st-proceso-bar:#1565c0;
+  --st-embarcado-bg:#e8f5e9;--st-embarcado-c:#1b5e20;--st-embarcado-bd:#a5d6a7;--st-embarcado-bar:#2e7d32;
+  --st-cancelado-bg:#ffebee;--st-cancelado-c:#b71c1c;--st-cancelado-bd:#ef9a9a;--st-cancelado-bar:#c62828;
+  --st-aplazado-bg:#fff3e0;--st-aplazado-c:#e65100;--st-aplazado-bd:#ffcc80;--st-aplazado-bar:#ef6c00;
+  --st-noiniciado-bg:#f5f5f5;--st-noiniciado-c:#424242;--st-noiniciado-bd:#bdbdbd;--st-noiniciado-bar:#9e9e9e;
+  --f:'Inter',sans-serif;--mono:'DM Mono',monospace;
+  --r:8px;--rl:12px;--rxl:16px;
+  --sh0:0 1px 3px rgba(0,0,0,.08);--sh:0 2px 8px rgba(0,0,0,.10);--shl:0 8px 24px rgba(0,0,0,.12);
+  --sw:240px;--hh:56px;
+}
+html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px;overflow:hidden}
+
+/* ── STATUS BADGES ── */
+.st-proceso{background:var(--st-proceso-bg);color:var(--st-proceso-c);border:1px solid var(--st-proceso-bd)}
+.st-embarcado{background:var(--st-embarcado-bg);color:var(--st-embarcado-c);border:1px solid var(--st-embarcado-bd)}
+.st-cancelado{background:var(--st-cancelado-bg);color:var(--st-cancelado-c);border:1px solid var(--st-cancelado-bd)}
+.st-aplazado{background:var(--st-aplazado-bg);color:var(--st-aplazado-c);border:1px solid var(--st-aplazado-bd)}
+.st-noiniciado{background:var(--st-noiniciado-bg);color:var(--st-noiniciado-c);border:1px solid var(--st-noiniciado-bd)}
+
+/* ── LOGIN ── */
+#screen-login{position:fixed;inset:0;background:var(--w);display:flex;align-items:center;justify-content:center;z-index:999;padding:20px}
+.li-wrap{width:100%;max-width:400px}
+.li-logo{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.li-mark{width:52px;height:52px;background:var(--b600);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--w)}
+.li-logotext{font-size:18px;font-weight:700;line-height:1.2}
+.li-logotext small{display:block;font-size:12px;color:var(--g500);font-weight:400}
+.li-title{font-size:24px;font-weight:700;margin-bottom:4px}
+.li-sub{font-size:14px;color:var(--g500);margin-bottom:28px}
+.li-card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:32px;box-shadow:var(--shl)}
+.li-err{color:var(--rd600);font-size:12px;margin-top:10px;min-height:16px;font-weight:500}
+
+/* ── HOME ── */
+#screen-home{position:fixed;inset:0;background:var(--g50);display:none;flex-direction:column;z-index:998}
+.hm-hdr{background:var(--w);border-bottom:1px solid var(--g200);padding:0 24px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;min-height:var(--hh)}
+.hm-logo{display:flex;align-items:center;gap:12px}
+.hm-lmark{width:32px;height:32px;background:var(--b600);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--w)}
+.hm-contact{display:flex;gap:16px;font-size:11px;color:var(--g500)}
+.hm-contact span{display:flex;align-items:center;gap:4px}
+.hm-cert{background:#cc0000;color:#fff;font-size:9px;font-weight:600;padding:3px 7px;border-radius:4px;line-height:1.4;text-align:center}
+.hm-user{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--g600)}
+.hm-av{width:30px;height:30px;border-radius:50%;background:var(--b600);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--w)}
+.hm-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+.hm-title{font-size:26px;font-weight:700;text-align:center;margin-bottom:6px}
+.hm-sub{font-size:15px;color:var(--g500);text-align:center;margin-bottom:36px}
+.hm-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;width:100%;max-width:720px}
+.hm-card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:32px;cursor:pointer;transition:all .2s;box-shadow:var(--sh0)}
+.hm-card:hover{border-color:var(--b500);box-shadow:var(--shl);transform:translateY(-2px)}
+.hm-icon{width:56px;height:56px;border-radius:var(--rl);display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:16px}
+.hm-icon.blue{background:var(--b50)}.hm-icon.teal{background:#f0fdfa}
+.hm-ctitle{font-size:18px;font-weight:700;margin-bottom:6px}
+.hm-cdesc{font-size:13px;color:var(--g500);line-height:1.6;margin-bottom:14px}
+.hm-feat{font-size:12px;color:var(--g600);display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.hm-feat::before{content:"→";color:var(--b500);font-size:11px}
+.hm-logout{font-size:12px;color:var(--g500);cursor:pointer;background:none;border:none;font-family:var(--f);text-decoration:underline}
+.grist-hm-btn{background:#1a6b4a;color:#fff;border:none;padding:6px 14px;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+
+/* ── APP LAYOUT ── */
+#app{display:none;height:100vh;flex-direction:column;overflow:hidden}
+#app-hdr{background:var(--w);border-bottom:1px solid var(--g200);display:flex;align-items:center;padding:0;flex-shrink:0;box-shadow:var(--sh0);overflow:hidden}
+.hdr-top{width:100%;display:flex;align-items:center;padding:0 16px;min-height:var(--hh);gap:10px}
+#app-body{flex:1;display:flex;overflow:hidden}
+#sidebar{width:var(--sw);background:var(--w);border-right:1px solid var(--g200);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;transition:transform .25s;z-index:50}
+#content{flex:1;overflow-y:auto;background:var(--g50)}
+
+/* ── HEADER ── */
+.app-mark{width:30px;height:30px;background:var(--b600);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--w);flex-shrink:0}
+.app-ltxt{font-size:13px;font-weight:600;margin-right:4px;white-space:nowrap}
+.app-contact{display:flex;gap:12px;font-size:11px;color:var(--g500);flex:1}
+.app-contact a{color:var(--g500);text-decoration:none}
+.app-contact a:hover{color:var(--b600)}
+.bc{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--g500)}
+.bc-sep{color:var(--g300)}.bc-cur{color:var(--g800);font-weight:500}
+.h-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.grist-btn{background:#1a6b4a;color:#fff;border:none;padding:5px 10px;border-radius:var(--r);font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.hdr-cert{background:#cc0000;color:#fff;font-size:9px;font-weight:600;padding:3px 7px;border-radius:4px;line-height:1.4;text-align:center;white-space:nowrap}
+.hamburger{display:none;background:none;border:none;color:var(--g600);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0}
+
+/* ── BUTTONS ── */
+.btn{padding:7px 14px;border-radius:var(--r);border:1px solid transparent;cursor:pointer;font-family:var(--f);font-size:13px;font-weight:500;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn-p{background:var(--b600);color:var(--w);border-color:var(--b600)}.btn-p:hover{background:var(--b700)}
+.btn-s{background:var(--w);color:var(--g700);border-color:var(--g300)}.btn-s:hover{background:var(--g50);border-color:var(--g400)}
+.btn-w{background:var(--am50);color:var(--am600);border-color:#fde68a}
+.btn-d{background:var(--rd50);color:var(--rd600);border-color:#fecaca}
+.btn-g{background:var(--gr50);color:var(--gr700);border-color:#bbf7d0}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-full{width:100%;justify-content:center;padding:10px}
+
+/* ── SIDEBAR ── */
+.sb-sec{padding:16px 12px 4px;font-size:10px;font-weight:600;color:var(--g400);text-transform:uppercase;letter-spacing:.8px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 12px;border-radius:var(--r);margin:1px 8px;cursor:pointer;color:var(--g600);font-size:13px;font-weight:500;transition:all .12s;user-select:none}
+.nav-item:hover{background:var(--g100);color:var(--g900)}
+.nav-item.active{background:var(--b50);color:var(--b700)}
+.nav-item .ni{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.nb{margin-left:auto;background:var(--rd500);color:var(--w);font-size:10px;font-weight:600;padding:1px 6px;border-radius:10px}
+.sb-bot{margin-top:auto;padding:12px;border-top:1px solid var(--g200)}
+.sb-user{display:flex;align-items:center;gap:9px;padding:8px;border-radius:var(--r);cursor:pointer;transition:background .15s}
+.sb-user:hover{background:var(--g100)}
+.sb-av{width:30px;height:30px;border-radius:50%;background:var(--b600);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--w);flex-shrink:0}
+.sb-name{font-size:12px;font-weight:600;color:var(--g800)}.sb-role{font-size:11px;color:var(--g500)}
+
+/* ── CONTENT ── */
+.view{display:none;padding:24px;animation:fi .18s ease}
+.view.active{display:block}
+@keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap}
+.pt{font-size:20px;font-weight:700;color:var(--g900)}
+
+/* ── KPI ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px}
+.kpi{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:18px 20px;box-shadow:var(--sh0)}
+.kpi.bl{border-left:3px solid var(--b500)}.kpi.gr{border-left:3px solid var(--gr500)}
+.kpi.am{border-left:3px solid var(--am500)}.kpi.rd{border-left:3px solid var(--rd500)}
+.kpi-lbl{font-size:12px;color:var(--g500);font-weight:500;margin-bottom:6px}
+.kpi-val{font-size:28px;font-weight:700;line-height:1}
+.kpi-sub{font-size:12px;margin-top:5px;font-weight:500}
+.ks-g{color:var(--gr600)}.ks-a{color:var(--am600)}.ks-r{color:var(--rd600)}
+
+/* ── TABLE ── */
+.tc{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;box-shadow:var(--sh0)}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{padding:10px 16px;text-align:left;font-size:11px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--g200);background:var(--g50);white-space:nowrap}
+.tbl td{padding:12px 16px;border-bottom:1px solid var(--g100);font-size:13px;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr:hover td{background:var(--g50);cursor:pointer}
+.fw{font-weight:500;color:var(--g900)}.sm{font-size:12px;color:var(--g500);margin-top:2px}
+
+/* ── BADGES ── */
+.badge{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+.bg{background:var(--gr50);color:var(--gr700);border:1px solid #bbf7d0}
+.bb{background:var(--b50);color:var(--b700);border:1px solid var(--b100)}
+.ba{background:var(--am50);color:var(--am600);border:1px solid #fde68a}
+.br{background:var(--rd50);color:var(--rd600);border:1px solid #fecaca}
+.bgr{background:var(--g100);color:var(--g600);border:1px solid var(--g200)}
+.bt{background:#f0fdfa;color:var(--tl600);border:1px solid #99f6e4}
+
+/* ── BUQUE CARD ── */
+.buque-list{display:flex;flex-direction:column;gap:10px}
+.buque-card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px 18px;display:flex;align-items:flex-start;gap:14px;cursor:pointer;transition:all .15s;box-shadow:var(--sh0)}
+.buque-card:hover{border-color:var(--b500);box-shadow:var(--sh)}
+.buque-icon{width:44px;height:44px;border-radius:var(--rl);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.buque-info{flex:1;min-width:0}
+.buque-name{font-size:15px;font-weight:700;color:var(--g900);margin-bottom:3px}
+.buque-meta{font-size:12px;color:var(--g500)}
+.ext-link{padding:3px 8px;border-radius:6px;font-size:11px;font-weight:500;background:var(--g100);border:1px solid var(--g200);color:var(--g600);text-decoration:none;white-space:nowrap;transition:all .15s;display:inline-block}
+.ext-link:hover{background:var(--b50);border-color:var(--b100);color:var(--b700)}
+.prog{height:5px;background:var(--g200);border-radius:3px;overflow:hidden;width:80px;display:inline-block}
+.prog-f{height:100%;border-radius:3px}
+.prog-g{background:var(--gr500)}.prog-a{background:var(--am500)}.prog-r{background:var(--rd500)}
+
+/* ── KANBAN ── */
+.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px}
+.kb-col{min-width:220px;max-width:260px;flex-shrink:0}
+.kb-head{padding:8px 12px;border-radius:var(--r) var(--r) 0 0;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;background:var(--g100);border:1px solid var(--g200)}
+.kb-body{background:var(--w);border:1px solid var(--g200);border-top:none;border-radius:0 0 var(--r) var(--r);padding:8px;min-height:80px;display:flex;flex-direction:column;gap:6px}
+.kb-item{background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:10px 12px;cursor:pointer;transition:all .12s}
+.kb-item:hover{border-color:var(--b500);background:var(--b50)}
+
+/* ── CALENDAR ── */
+.cal-nav{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.cal-btn{background:var(--w);border:1px solid var(--g300);color:var(--g700);border-radius:var(--r);padding:5px 12px;cursor:pointer;font-family:var(--f);font-size:13px}
+.cal-btn:hover{background:var(--g50)}
+.cal-m{font-size:16px;font-weight:700;flex:1}
+.cal-legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.cal-leg-item{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid transparent}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-dh{text-align:center;font-size:10px;font-weight:600;color:var(--g400);padding:6px 0;text-transform:uppercase}
+.cal-day{background:var(--w);border:1px solid var(--g200);border-radius:var(--r);min-height:100px;padding:6px 8px;transition:background .1s}
+.cal-day.today{border-color:var(--b500);border-width:2px}
+.cal-day.om{background:var(--g50);opacity:.4}
+.cal-day.drag-over{background:var(--b50);outline:2px dashed var(--b500)}
+.cal-dn{font-size:12px;font-weight:600;color:var(--g600);margin-bottom:4px}
+.cal-dn-today{background:var(--b600);color:#fff;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+/* Cal event tags with status colors */
+.cal-ev{font-size:10px;padding:3px 6px;border-radius:4px;margin-bottom:2px;cursor:grab;line-height:1.4;display:block;border-left:3px solid transparent;user-select:none}
+.cal-ev:active{cursor:grabbing;opacity:.7}
+.cal-ev.st-proceso{background:var(--st-proceso-bg);color:var(--st-proceso-c);border-left-color:var(--st-proceso-bar)}
+.cal-ev.st-embarcado{background:var(--st-embarcado-bg);color:var(--st-embarcado-c);border-left-color:var(--st-embarcado-bar)}
+.cal-ev.st-cancelado{background:var(--st-cancelado-bg);color:var(--st-cancelado-c);border-left-color:var(--st-cancelado-bar)}
+.cal-ev.st-aplazado{background:var(--st-aplazado-bg);color:var(--st-aplazado-c);border-left-color:var(--st-aplazado-bar)}
+.cal-ev.st-noiniciado{background:var(--st-noiniciado-bg);color:var(--st-noiniciado-c);border-left-color:var(--st-noiniciado-bar)}
+.cal-ev:hover{filter:brightness(.96)}
+
+/* ── TIMELINE ── */
+.tl-wrap{overflow-x:auto;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px;box-shadow:var(--sh0)}
+.tl-ruler{display:flex;border-bottom:1px solid var(--g200);margin-left:170px;margin-bottom:10px}
+.tl-rd{flex-shrink:0;text-align:center;font-size:10px;color:var(--g400);font-weight:500;padding:4px 0;border-right:1px solid var(--g100)}
+.tl-row{display:flex;align-items:center;margin-bottom:7px}
+.tl-lbl{width:170px;flex-shrink:0;font-size:12px;font-weight:600;color:var(--g700);padding-right:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-track{flex:1;position:relative;height:28px}
+.tl-bar{position:absolute;height:22px;top:3px;border-radius:6px;display:flex;align-items:center;padding:0 10px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;transition:filter .15s}
+.tl-bar:hover{filter:brightness(.95)}
+.tl-b{background:var(--b50);border:1px solid var(--b100);color:var(--b700)}
+.tl-g{background:var(--gr50);border:1px solid #bbf7d0;color:var(--gr700)}
+.tl-today{position:absolute;top:0;bottom:0;width:2px;background:var(--rd500);opacity:.5}
+
+/* ── ALERTS ── */
+.a-item{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px;display:flex;align-items:center;gap:12px;margin-bottom:8px;cursor:pointer;transition:all .12s;box-shadow:var(--sh0)}
+.a-item.crit{border-left:3px solid var(--rd500)}.a-item.wrn{border-left:3px solid var(--am500)}
+.a-icon{font-size:18px;flex-shrink:0;width:28px;text-align:center}
+.a-info{flex:1}.a-title{font-weight:600;font-size:13px;margin-bottom:2px}.a-detail{font-size:12px;color:var(--g500)}
+
+/* ── ALMACÉN ── */
+.ac-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:24px}
+.ac-card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:18px 14px;text-align:center;cursor:pointer;transition:all .15s;box-shadow:var(--sh0)}
+.ac-card:hover{border-color:var(--b400);box-shadow:var(--sh);transform:translateY(-1px)}
+.ac-icon{font-size:28px;margin-bottom:10px}.ac-lbl{font-size:13px;font-weight:600;color:var(--g800);margin-bottom:3px}.ac-desc{font-size:11px;color:var(--g500)}
+.ll-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--g100);cursor:pointer;transition:background .12s}
+.ll-row:last-child{border-bottom:none}.ll-row:hover{background:var(--g50)}
+.ll-info{flex:1;min-width:0}.ll-ref{font-weight:600;font-size:13px;color:var(--g900)}.ll-sub{font-size:11px;color:var(--g500);margin-top:2px}
+.ll-acts{display:flex;gap:6px}
+.ib{width:32px;height:32px;border-radius:var(--r);border:1px solid var(--g300);background:var(--w);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .12s;flex-shrink:0}
+.ib:hover{border-color:var(--b400);background:var(--b50)}
+
+/* ── UBICACIONES ── */
+.ug{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.uc{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px;cursor:pointer;transition:all .15s;box-shadow:var(--sh0)}
+.uc:hover{border-color:var(--b400);box-shadow:var(--sh)}
+.uz{font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.ucv{font-size:24px;font-weight:700}.us{font-size:12px;color:var(--g500);margin-top:3px}
+.ui-list{margin-top:10px;display:flex;flex-direction:column;gap:3px}
+.ui-item{font-size:11px;padding:3px 8px;background:var(--g50);border-radius:6px;color:var(--g700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── FLOTA ── */
+.fg{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.fc{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;cursor:pointer;transition:all .15s;box-shadow:var(--sh0)}
+.fc:hover{border-color:var(--b400);box-shadow:var(--sh)}
+.fc-top{padding:14px 16px;background:var(--g50);border-bottom:1px solid var(--g200);display:flex;align-items:center;gap:10px}
+.fc-body{padding:14px 16px}
+.fc-row{display:flex;justify-content:space-between;margin-bottom:8px;font-size:12px}
+.fc-rl{color:var(--g500);font-weight:500}.fc-rv{font-weight:600;color:var(--g800);font-family:var(--mono);font-size:11px}
+.fc-links{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--g200)}
+
+/* ── MODAL ── */
+.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:300;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(2px)}
+.mo.open{display:flex}
+.modal{background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);width:100%;max-width:560px;max-height:92vh;overflow-y:auto;box-shadow:var(--shl)}
+.mh{padding:18px 22px;border-bottom:1px solid var(--g200);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--w);z-index:1}
+.mt{font-size:16px;font-weight:700;color:var(--g900)}
+.mc{background:none;border:none;color:var(--g400);font-size:22px;cursor:pointer;line-height:1;padding:0 4px;transition:color .12s}
+.mc:hover{color:var(--g800)}
+.mb{padding:22px}
+.mf{padding:14px 22px;border-top:1px solid var(--g200);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;background:var(--g50);border-radius:0 0 var(--rxl) var(--rxl)}
+
+/* ── FORMS ── */
+.fg2{margin-bottom:16px}
+.fl2{display:block;font-size:12px;font-weight:600;color:var(--g700);margin-bottom:5px}
+.fi{width:100%;padding:8px 12px;background:var(--w);border:1px solid var(--g300);border-radius:var(--r);color:var(--g900);font-family:var(--f);font-size:13px;outline:none;transition:border-color .15s;box-shadow:var(--sh0)}
+.fi:focus{border-color:var(--b500);box-shadow:0 0 0 3px var(--b50)}
+.fi::placeholder{color:var(--g400)}
+textarea.fi{resize:vertical;min-height:72px}
+.fs{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236c757d' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:32px}
+.fr2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.fdiv{border:none;border-top:1px solid var(--g200);margin:18px 0}
+.dl{font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+.dv{font-size:13px;font-weight:500;color:var(--g900)}
+.dg{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:6px}
+.df{margin-bottom:12px}
+.sbar{display:flex;align-items:center;gap:8px;background:var(--w);border:1px solid var(--g300);border-radius:var(--r);padding:8px 12px;margin-bottom:14px;box-shadow:var(--sh0)}
+.sbar input{background:none;border:none;outline:none;color:var(--g900);font-family:var(--f);font-size:13px;flex:1}
+.sbar input::placeholder{color:var(--g400)}
+
+/* ── FOTOS ── */
+.foto-area{border:2px dashed var(--g300);border-radius:var(--r);padding:20px;text-align:center;cursor:pointer;transition:all .15s;background:var(--g50)}
+.foto-area:hover{border-color:var(--b400);background:var(--b50)}
+.foto-area input{display:none}
+.foto-prev{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px;margin-top:10px}
+.foto-thumb{aspect-ratio:1;border-radius:var(--r);overflow:hidden;background:var(--g200)}
+.foto-thumb img{width:100%;height:100%;object-fit:cover}
+.foto-st{font-size:11px;color:var(--gr600);font-weight:500;margin-top:5px}
+
+/* ── STATS ── */
+.cg{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.cc{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:18px;box-shadow:var(--sh0)}
+.ct{font-size:12px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.bar-lbl{width:120px;flex-shrink:0;font-size:12px;color:var(--g700);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-track{flex:1;height:7px;background:var(--g100);border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px}
+.bar-val{width:28px;text-align:right;font-size:12px;color:var(--g500);flex-shrink:0}
+
+/* ── MISC ── */
+.loading{display:flex;align-items:center;justify-content:center;padding:48px;color:var(--g400);gap:10px;font-size:13px}
+.spinner{width:18px;height:18px;border:2px solid var(--g200);border-top-color:var(--b500);border-radius:50%;animation:spin .65s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:40px}
+.empty-icon{font-size:32px;margin-bottom:10px;opacity:.35}
+.empty-txt{font-size:14px;color:var(--g400);font-weight:500}
+.info-box{background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--b700);margin-bottom:14px;line-height:1.5}
+.warn-box{background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--am600);font-weight:500}
+/* ── TOAST ── */
+.toast{position:fixed;bottom:20px;right:20px;background:#1b5e20;color:#fff;padding:10px 16px;border-radius:var(--r);font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;box-shadow:var(--shl)}
+.toast.show{opacity:1}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--g300);border-radius:3px}
+@media(max-width:900px){
+  .app-contact{display:none}
+  .hdr-cert{display:none}
+}
+@media(max-width:768px){
+  #sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);box-shadow:var(--shl)}
+  #sidebar.open{transform:translateX(0)}
+  .hamburger{display:block}
+  .mob-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:49}
+  .mob-ov.show{display:block}
+  .fr2{grid-template-columns:1fr}.dg{grid-template-columns:1fr}
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .hm-cards{grid-template-columns:1fr}
+  .kb-board{flex-direction:column}.kb-col{min-width:unset;max-width:unset}
+  .hm-contact{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="screen-login">
+  <div class="li-wrap">
+    <div class="li-logo">
+      <div class="li-mark">ALS</div>
+      <div class="li-logotext">Logistic Solutions<small>Algeciras Logistic Solutions</small></div>
+    </div>
+    <div class="li-title">Portal Operativo</div>
+    <div class="li-sub">Sistema de gestión logística portuaria</div>
+    <div class="li-card">
+      <div class="fg2"><label class="fl2">Email</label><input id="li-email" class="fi" type="email" placeholder="usuario@als.com" autocomplete="username"></div>
+      <div class="fg2" style="margin-bottom:8px"><label class="fl2">Contraseña</label><input id="li-pass" class="fi" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="li-err" id="li-err"></div>
+      <button class="btn btn-p btn-full" style="margin-top:16px" onclick="doLogin()">Entrar al sistema →</button>
+      <div style="text-align:center;margin-top:12px">
+        <span style="font-size:11px;color:var(--g400);cursor:pointer;text-decoration:underline" onclick="testConexion()">Probar conexión</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HOME -->
+<div id="screen-home">
+  <div class="hm-hdr">
+    <div class="hm-logo">
+      <div class="hm-lmark">ALS</div>
+      <div style="font-size:15px;font-weight:600">Algeciras Logistic Solutions</div>
+    </div>
+    <div class="hm-contact">
+      <span>📞 +34 956 58 13 16</span>
+      <span>📠 +34 956 676591</span>
+      <span>✉️ <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="1e7f726d5e7f726d7f72797b7d776c7f6d307d7173">[email&#160;protected]</a></span>
+      <span>📍 36.183099, -5.433061</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="hm-cert">ISO 9001 · ISO 14001<br>BUREAU VERITAS</div>
+      <a class="grist-hm-btn" href="https://docs.getgrist.com" target="_blank">Grist ↗</a>
+      <div class="hm-user"><div class="hm-av" id="hm-av">?</div><span id="hm-name">—</span><button class="hm-logout" onclick="doLogout()">Cerrar sesión</button></div>
+    </div>
+  </div>
+  <div class="hm-body">
+    <div class="hm-title">Bienvenido al Portal ALS</div>
+    <div class="hm-sub">Selecciona el área de trabajo para continuar</div>
+    <div class="hm-cards" id="hm-cards"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <header id="app-hdr">
+    <div class="hdr-top">
+      <button class="hamburger" onclick="toggleSB()">☰</button>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <div class="app-mark">ALS</div>
+        <div class="app-ltxt">Portal ALS</div>
+      </div>
+      <div class="app-contact">
+        <a href="tel:+34956581316">📞 +34 956 58 13 16</a>
+        <a href="/cdn-cgi/l/email-protection#0e6f627d4e6f627d6f62696b6d677c6f7d206d6163">✉️ <span class="__cf_email__" data-cfemail="fa9b9689ba9b96899b969d9f9993889b89d4999597">[email&#160;protected]</span></a>
+        <span>📍 Algeciras</span>
+      </div>
+      <div class="bc" style="flex:1;min-width:0;padding:0 8px">
+        <span style="cursor:pointer;color:var(--g500);white-space:nowrap" onclick="volverHome()" id="bc-mod">Inicio</span>
+        <span class="bc-sep">/</span>
+        <span class="bc-cur" id="bc-page" style="white-space:nowrap">—</span>
+      </div>
+      <div class="h-right">
+        <div class="hdr-cert">ISO 9001<br>ISO 14001</div>
+        <a class="grist-btn" href="https://docs.getgrist.com" target="_blank">Grist ↗</a>
+        <button class="btn btn-p btn-sm" id="btn-nb" onclick="openModal('nuevo-buque')" style="display:none">+ Buque</button>
+        <button class="btn btn-s btn-sm" id="btn-ne" onclick="openModal('nueva-expedicion')" style="display:none">+ Expedición</button>
+      </div>
+    </div>
+  </header>
+  <div id="app-body">
+    <nav id="sidebar">
+      <div id="nav-op" style="display:none">
+        <div class="sb-sec">Operaciones</div>
+        <div class="nav-item" onclick="nav('dashboard',this)"><span class="ni">🏠</span>Dashboard</div>
+        <div class="nav-item" onclick="nav('flota',this)"><span class="ni">🛳</span>Flota en vivo</div>
+        <div class="nav-item" onclick="nav('buques',this)"><span class="ni">⚓</span>Buques / Embarques</div>
+        <div class="nav-item" onclick="nav('expediciones',this)"><span class="ni">📦</span>Expediciones</div>
+        <div class="nav-item" onclick="nav('kanban',this)"><span class="ni">🎛</span>Panel de control</div>
+        <div class="nav-item" onclick="nav('calendario',this)"><span class="ni">📅</span>Calendario</div>
+        <div class="nav-item" onclick="nav('timeline',this)"><span class="ni">📊</span>Timeline</div>
+        <div class="nav-item" id="nav-al" onclick="nav('alertas',this)"><span class="ni">🔔</span>Alertas<span class="nb" id="badge-al" style="display:none">0</span></div>
+        <div class="sb-sec">Gestión</div>
+        <div class="nav-item" onclick="nav('incidencias',this)"><span class="ni">⚠️</span>Incidencias</div>
+        <div class="nav-item" onclick="nav('empresas',this)"><span class="ni">🏢</span>Empresas</div>
+        <div class="nav-item" onclick="nav('estadisticas',this)"><span class="ni">📈</span>Estadísticas</div>
+        <div class="nav-item" onclick="nav('log',this)"><span class="ni">📋</span>Log de actividad</div>
+        <div id="nav-adm" style="display:none">
+          <div class="sb-sec">Administración</div>
+          <div class="nav-item" onclick="nav('usuarios',this)"><span class="ni">👥</span>Usuarios</div>
+        </div>
+      </div>
+      <div id="nav-alm" style="display:none">
+        <div class="sb-sec">Almacén & Embarque</div>
+        <div class="nav-item" onclick="nav('almacen',this)"><span class="ni">📱</span>Acciones</div>
+        <div class="nav-item" onclick="nav('ubicaciones',this)"><span class="ni">📍</span>Ubicaciones</div>
+        <div class="nav-item" onclick="nav('listos',this)"><span class="ni">✅</span>Listos embarcar</div>
+        <div class="nav-item" onclick="nav('kanban',this)"><span class="ni">🎛</span>Panel de control</div>
+      </div>
+      <div class="sb-bot">
+        <div class="sb-user" onclick="volverHome()">
+          <div class="sb-av" id="sb-av">?</div>
+          <div><div class="sb-name" id="sb-name">—</div><div class="sb-role" id="sb-role">← Volver al inicio</div></div>
+        </div>
+      </div>
+    </nav>
+    <div id="content">
+      <div class="view" id="view-dashboard">
+        <div class="kpi-grid" id="kpi-grid"></div>
+        <div class="ph"><div class="pt">Listos para embarcar ✅</div></div>
+        <div id="listos-dash" class="buque-list"></div>
+        <div class="ph" style="margin-top:20px"><div class="pt">Buques en operación</div></div>
+        <div id="buques-dash" class="buque-list"></div>
+        <div class="ph" style="margin-top:20px"><div class="pt">Últimas expediciones</div></div>
+        <div class="tc" id="exp-dash"></div>
+      </div>
+      <div class="view" id="view-flota"><div class="fg" id="flota-grid"></div></div>
+      <div class="view" id="view-buques">
+        <div class="sbar"><span style="color:var(--g400)">🔍</span><input type="text" placeholder="Buscar buque, IMO, escala..." oninput="filtrarB(this.value)"></div>
+        <div id="buques-list" class="buque-list"></div>
+      </div>
+      <div class="view" id="view-expediciones">
+        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+          <div class="sbar" style="flex:1;min-width:200px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" placeholder="Buscar referencia, buque..." oninput="filtrarE(this.value)"></div>
+          <select class="fi fs" style="width:auto" onchange="filtrarEst(this.value)">
+            <option value="">Todos los estados</option>
+            <option>⏳ EN TRÁNSITO</option><option>⌛ ESPERANDO ALMACÉN</option>
+            <option>📦 UBICADA</option><option>🚨 EN ALMACÉN - REVISAR</option>
+            <option>✅ AUTORIZADO</option><option>🚛 CARGADO CAMIÓN</option>
+          </select>
+        </div>
+        <div class="tc"><table class="tbl"><thead><tr><th>Referencia</th><th>Buque</th><th>Empresa</th><th>Carga</th><th>Estado</th><th>Aduanas</th><th>Ubicación</th></tr></thead><tbody id="exp-tbody"></tbody></table></div>
+      </div>
+      <div class="view" id="view-kanban"><div class="kb-board" id="kb-board"></div></div>
+      <div class="view" id="view-calendario">
+        <!-- Legend -->
+        <div class="cal-legend">
+          <span class="cal-leg-item st-proceso">● En proceso</span>
+          <span class="cal-leg-item st-embarcado">● Embarcado</span>
+          <span class="cal-leg-item st-cancelado">● Cancelado</span>
+          <span class="cal-leg-item st-aplazado">● Aplazado</span>
+          <span class="cal-leg-item st-noiniciado">● No iniciado</span>
+        </div>
+        <div class="cal-nav">
+          <button class="cal-btn" onclick="calP()">‹</button>
+          <div class="cal-m" id="cal-m"></div>
+          <button class="cal-btn" onclick="calN()">›</button>
+          <button class="cal-btn" onclick="calH()" style="margin-left:auto">Hoy</button>
+        </div>
+        <div class="cal-grid" style="margin-bottom:4px">
+          <div class="cal-dh">Lun</div><div class="cal-dh">Mar</div><div class="cal-dh">Mié</div>
+          <div class="cal-dh">Jue</div><div class="cal-dh">Vie</div><div class="cal-dh">Sáb</div><div class="cal-dh">Dom</div>
+        </div>
+        <div class="cal-grid" id="cal-body"></div>
+      </div>
+      <div class="view" id="view-timeline"><div id="tl-wrap"></div></div>
+      <div class="view" id="view-alertas"><div id="alertas-list"></div></div>
+      <div class="view" id="view-almacen">
+        <div class="ac-grid">
+          <div class="ac-card" onclick="openModal('entrada-almacen')"><div class="ac-icon">📥</div><div class="ac-lbl">Registrar entrada</div><div class="ac-desc">Confirmar llegada y fotos</div></div>
+          <div class="ac-card" onclick="nav('kanban',null)"><div class="ac-icon">🎛</div><div class="ac-lbl">Panel control</div><div class="ac-desc">Vista kanban estados</div></div>
+          <div class="ac-card" onclick="openModal('carga-camion')"><div class="ac-icon">🚛</div><div class="ac-lbl">Carga camión</div><div class="ac-desc">Bultos autorizados</div></div>
+          <div class="ac-card" onclick="openModal('nueva-incidencia')"><div class="ac-icon">⚠️</div><div class="ac-lbl">Crear incidencia</div><div class="ac-desc">Embalaje, faltas...</div></div>
+          <div class="ac-card" onclick="openModal('fotos-buque')"><div class="ac-icon">📸</div><div class="ac-lbl">Fotos embarque</div><div class="ac-desc">Carga · embarque · landed</div></div>
+          <div class="ac-card" onclick="openModal('embarque-buque')"><div class="ac-icon">🚢</div><div class="ac-lbl">Marcar embarcado</div><div class="ac-desc">Foto + confirmar embarque</div></div>
+        </div>
+        <div class="ph"><div class="pt">⌛ Pendientes de confirmación</div></div>
+        <div class="tc" id="alm-pend"></div>
+        <div class="ph" style="margin-top:16px"><div class="pt">🚨 En almacén — revisar</div></div>
+        <div class="tc" id="alm-rev"></div>
+        <div class="ph" style="margin-top:16px"><div class="pt">✅ Autorizados — listos para cargar</div></div>
+        <div class="tc" id="alm-lis"></div>
+      </div>
+      <div class="view" id="view-ubicaciones"><div class="ug" id="ubic-grid"></div></div>
+      <div class="view" id="view-listos"><div id="listos-list" class="buque-list"></div></div>
+      <div class="view" id="view-incidencias">
+        <div class="tc"><table class="tbl"><thead><tr><th>Tipo</th><th>Expedición</th><th>Descripción</th><th>Estado</th><th>Responsable</th><th>Fecha</th></tr></thead><tbody id="inc-tbody"></tbody></table></div>
+      </div>
+      <div class="view" id="view-empresas">
+        <div class="ph"><div class="pt">Empresas</div><button class="btn btn-p" onclick="openModal('nueva-empresa')">+ Nueva empresa</button></div>
+        <div class="tc"><table class="tbl"><thead><tr><th>Empresa</th><th>Rol</th><th>Contacto</th><th>Email confronta</th><th>Teléfono</th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
+      </div>
+      <div class="view" id="view-usuarios">
+        <div class="ph"><div class="pt">Gestión de usuarios</div><button class="btn btn-p" onclick="openModal('nuevo-usuario')">+ Nuevo usuario</button></div>
+        <div id="users-list"></div>
+      </div>
+      <div class="view" id="view-log">
+        <div class="ph"><div class="pt">Log de actividad</div></div>
+        <div class="tc"><table class="tbl"><thead><tr><th>Acción</th><th>Registro</th><th>Tabla</th><th>Campo</th><th>Valor anterior</th><th>Valor nuevo</th><th>Usuario</th><th>Fecha y hora</th></tr></thead><tbody id="log-tbody"></tbody></table></div>
+      </div>
+      <div class="view" id="view-estadisticas">
+        <div class="kpi-grid" id="st-kpis"></div>
+        <div class="cg" id="st-charts"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mob-ov" id="mob-ov" onclick="toggleSB()"></div>
+<div class="mo" id="mo" onclick="closeModalOut(event)">
+  <div class="modal" id="mbox">
+    <div class="mh"><div class="mt" id="m-title"></div><button class="mc" onclick="closeModal()">×</button></div>
+    <div class="mb" id="m-body"></div>
+    <div class="mf" id="m-foot"></div>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script type="text/als" id="als-js">
+// ── Load Supabase SDK then boot app ──
+(function(){
+  var s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+  s.onload=function(){ 
+    // SDK listo — inicializar cliente Supabase
+    try{
+      sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
+    }catch(e){ console.warn('SDK createClient:',e); }
+    // Ping silencioso para verificar conexión
+    fetch(SB_URL+'/rest/v1/usuarios?select=email&limit=1',{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}})
+      .then(function(r){ console.log(r.ok?'✅ Supabase OK':'⚠️ Supabase status '+r.status); })
+      .catch(function(e){ console.warn('Ping:',e); });
+  };
+  s.onerror=function(){
+    var e=document.getElementById('li-err');
+    if(e){e.style.color='red';e.textContent='⚠️ Error cargando SDK. Verifica tu conexión.';}
+  };
+  document.head.appendChild(s);
+})();
+
+// ── ALS App Code (global scope) ──
+
+const UBICACIONES=['Pendiente recibir','Almacén-Sin Ubicar','Almacén-1ª Planta','Almacén-2ª Planta','Almacén-Zona A','Almacén-Zona B','Almacén-Zona C','Puerto','Muelle','A bordo','Aeropuerto-Málaga AGP','Aeropuerto-Sevilla SVQ','Aeropuerto-Madrid MAD'];
+const ROLES_LABELS={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
+
+// ── Estado operación → clase CSS ──
+function estOpCls(op){
+  const m={'Sin comenzar':'noiniciado','En proceso':'proceso','Embarcado':'embarcado','Cancelado':'cancelado','Aplazado':'aplazado','Finalizado':'embarcado','':'noiniciado'};
+  return 'st-'+(m[op]||'noiniciado');
+}
+
+function optsUbic(sinPendiente=false,selected=''){
+  return UBICACIONES.filter(u=>sinPendiente?u!=='Pendiente recibir':true)
+    .map(u=>`<option ${u===selected?'selected':''}>${u}</option>`).join('');
+}
+
+function gristLink(exp){
+  if(!exp||!exp.nº_expedicion)return null;
+  if(!/AWB/i.test(exp.nº_expedicion))return null;
+  const p=new URLSearchParams({AWB:exp.nº_expedicion,Consignatario:exp.consignatario_texto||exp.empresas?.nombre||'',Buque:exp.buques?.nombre||exp.nombre_buque||'',Bultos:String(exp.bultos||0),Kilos_Tasables:String(exp.kilos||0),Status:exp.status_aduanero||''});
+  return'https://docs.getgrist.com/forms/n3kZP7Bo9ic2Fo6ppMxQKr/78?'+p.toString();
+}
+
+async function alertarOperativa(expId,expRef,buqueNombre){
+  try{
+    await sb.from('activity_log').insert({tabla:'expediciones',registro_id:expId,registro_nombre:expRef,accion:'alerta_llegada',campo_modificado:'ubicacion',valor_anterior:'Pendiente recibir',valor_nuevo:'Almacén — requiere atención operativa',usuario_id:CU?.id,usuario_nombre:CU?.nombre});
+    mostrarBanner('✅ Llegada confirmada. Operativa ha sido alertada.','green');
+  }catch(e){console.warn('alertarOperativa:',e);}
+}
+
+function mostrarBanner(msg,tipo='green'){
+  const b=document.createElement('div');
+  const col=tipo==='green'?'var(--gr600)':tipo==='amber'?'var(--am600)':'var(--rd600)';
+  const bg=tipo==='green'?'var(--gr50)':tipo==='amber'?'var(--am50)':'var(--rd50)';
+  b.style.cssText=`position:fixed;bottom:20px;right:20px;z-index:9999;background:${bg};color:${col};border:1px solid currentColor;border-radius:var(--r);padding:12px 18px;font-size:13px;font-weight:600;box-shadow:var(--shl);max-width:340px`;
+  b.textContent=msg;document.body.appendChild(b);setTimeout(()=>b.remove(),4000);
+}
+
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent='✓ '+msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+let lastAlertCheck=new Date().toISOString();
+async function checkAlertas(){
+  if(!CU||MOD!=='operativa')return;
+  try{
+    const {data}=await sb.from('activity_log').select('*').eq('accion','alerta_llegada').gt('created_at',lastAlertCheck).order('created_at');
+    if(data&&data.length>0){
+      lastAlertCheck=data[data.length-1].created_at;
+      data.forEach(a=>{mostrarBanner('🔔 Llegada al almacén: '+a.registro_nombre+' — requiere atención','amber');});
+      const badge=document.getElementById('badge-al');
+      if(badge){const cur=parseInt(badge.textContent||'0');badge.textContent=cur+data.length;badge.style.display='';}
+    }
+  }catch(e){}
+}
+setInterval(checkAlertas,30000);
+
+const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
+const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
+
+// ── Cliente Supabase (SDK) ─────────────────────────────────
+let sb;
+try{
+  sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
+}catch(e){
+  console.warn('SDK createClient failed:',e);
+  sb=null;
+}
+
+// ── REST helper directo (no depende del SDK) ───────────────
+async function sbREST(table,params='',method='GET',body=null){
+  const url=SB_URL+'/rest/v1/'+table+(params?'?'+params:'');
+  const opts={method,headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=representation'}};
+  if(body)opts.body=JSON.stringify(body);
+  const r=await fetch(url,opts);
+  const text=await r.text();
+  let data=null;try{data=JSON.parse(text);}catch(e){data=text;}
+  if(!r.ok)return{data:null,error:{message:text,status:r.status}};
+  return{data,error:null};
+}
+
+// ── Wrapper sbQ: usa SDK si disponible, REST si no ─────────
+function sbQ(){
+  if(sb)return sb;
+  // Minimal shim so existing code works
+  return{from:(t)=>({
+    select:(cols,opts)=>({
+      eq:(k,v)=>({eq:(k2,v2)=>sbREST(t,k+'=eq.'+encodeURIComponent(v)+'&'+k2+'=eq.'+encodeURIComponent(v2)),
+        neq:(k2,v2)=>sbREST(t,k+'=eq.'+encodeURIComponent(v)+'&'+k2+'=neq.'+encodeURIComponent(v2)),
+        maybeSingle:()=>sbREST(t,k+'=eq.'+encodeURIComponent(v)+'&limit=1','GET').then(r=>({data:Array.isArray(r.data)?r.data[0]||null:r.data,error:r.error})),
+        single:()=>sbREST(t,k+'=eq.'+encodeURIComponent(v)+'&limit=1','GET').then(r=>({data:Array.isArray(r.data)?r.data[0]||null:r.data,error:r.error})),
+        order:()=>sbREST(t,k+'=eq.'+encodeURIComponent(v)),
+      }),
+      neq:(k,v)=>({select:()=>({}),neq:()=>({}),order:()=>sbREST(t,k+'=neq.'+encodeURIComponent(v))}),
+      order:(k,o)=>sbREST(t,'order='+k+(o?.ascending===false?'.desc':'.asc')),
+      not:(k,op,v)=>({select:()=>({}),neq:()=>({})}),
+      limit:(n)=>({single:()=>sbREST(t,'limit='+n)}),
+    }),
+    insert:(row)=>({select:()=>({single:()=>sbREST(t,'','POST',row)}),then:(fn)=>sbREST(t,'','POST',row).then(fn)}),
+    update:(row)=>({eq:(k,v)=>({eq:()=>({}),select:()=>({single:()=>sbREST(t,k+'=eq.'+encodeURIComponent(v),'PATCH',row)}),then:()=>sbREST(t,k+'=eq.'+encodeURIComponent(v),'PATCH',row)})}),
+    delete:()=>({eq:(k,v)=>sbREST(t,k+'=eq.'+encodeURIComponent(v),'DELETE')}),
+  })};
+}
+
+let CU=null,MOD=null;
+
+// ── Test de conexión al cargar ──
+(async()=>{
+  const errEl=document.getElementById('li-err');
+  try{
+    const r=await fetch(SB_URL+'/rest/v1/usuarios?select=count&limit=1',{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}});
+    if(!r.ok){
+      const txt=await r.text();
+      if(errEl){errEl.style.color='var(--rd600)';errEl.textContent='⚠️ Error BD ('+r.status+'): '+txt.slice(0,120);}
+      console.error('Ping failed:',r.status,txt);
+    } else {
+      console.log('✅ Supabase conectado OK');
+    }
+  }catch(e){
+    if(errEl){errEl.style.color='var(--rd600)';errEl.textContent='⚠️ Sin conexión: '+e.message;}
+    console.error('Ping exception:',e);
+  }
+})();
+
+async function testConexion(){
+  const errEl=document.getElementById('li-err');
+  if(errEl){errEl.style.color='var(--g600)';errEl.textContent='Probando conexión…';}
+  try{
+    const t0=Date.now();
+    const r=await fetch(SB_URL+'/rest/v1/usuarios?select=email&limit=1',{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}});
+    const ms=Date.now()-t0;
+    if(r.ok){
+      if(errEl){errEl.style.color='var(--gr600)';errEl.textContent='✅ Conexión OK ('+ms+'ms)';}
+      setTimeout(()=>{if(errEl){errEl.textContent='';errEl.style.color='';}},4000);
+    } else {
+      const txt=await r.text();
+      if(errEl){errEl.style.color='var(--rd600)';errEl.textContent='❌ Error '+r.status+': '+txt.slice(0,100);}
+    }
+  }catch(e){
+    if(errEl){errEl.style.color='var(--rd600)';errEl.textContent='❌ Sin red o CORS: '+e.message;}
+  }
+}
+
+async function doLogin(){
+  const email=document.getElementById('li-email').value.trim();
+  const pass=document.getElementById('li-pass').value;
+  const errEl=document.getElementById('li-err');
+  const btn=document.querySelector('#screen-login .btn-p');
+  if(errEl){errEl.style.color='var(--rd600)';errEl.textContent='';}
+  if(!email||!pass){if(errEl)errEl.textContent='Introduce email y contraseña';return;}
+  if(btn){btn.textContent='Conectando…';btn.disabled=true;}
+  try{
+    const params='email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=1';
+    const r=await fetch(SB_URL+'/rest/v1/usuarios?'+params,{
+      headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,Accept:'application/json'}
+    });
+    if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
+    if(!r.ok){
+      const txt=await r.text();
+      console.error('Login REST error:',r.status,txt);
+      if(errEl)errEl.textContent='Error de conexión ('+r.status+'): '+txt.slice(0,120);
+      return;
+    }
+    const rows=await r.json();
+    if(!rows||rows.length===0){if(errEl)errEl.textContent='Email o contraseña incorrectos';return;}
+    CU=rows[0];
+    // Init SDK (best effort)
+    if(!sb){try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});}catch(e3){console.warn('SDK init:',e3);}}
+    // Update last access
+    fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,{method:'PATCH',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({ultimo_acceso:new Date().toISOString()})}).catch(()=>{});
+    showHome();
+  }catch(e){
+    if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
+    console.error('Login exception:',e);
+    if(errEl)errEl.textContent='Error inesperado: '+e.message;
+  }
+}
+
+function showHome(){
+  document.getElementById('screen-login').style.display='none';
+  document.getElementById('screen-home').style.display='flex';
+  const init=(CU.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('hm-av').textContent=init;
+  document.getElementById('hm-name').textContent=CU.nombre||CU.email;
+  const c=document.getElementById('hm-cards');c.innerHTML='';
+  if(['admin','oficina','aduanas'].includes(CU.rol))c.innerHTML+=`<div class="hm-card" onclick="enterMod('operativa')"><div class="hm-icon blue">🏢</div><div class="hm-ctitle">Operativa</div><div class="hm-cdesc">Gestión completa de buques, expediciones, documentación aduanera y seguimiento operativo.</div><div class="hm-feat">Dashboard y KPIs en tiempo real</div><div class="hm-feat">Buques, expediciones y flota</div><div class="hm-feat">Kanban, calendario y timeline</div><div class="hm-feat">Alertas, estadísticas y log</div></div>`;
+  c.innerHTML+=`<div class="hm-card" onclick="enterMod('almacen')"><div class="hm-icon teal">📦</div><div class="hm-ctitle">Almacén &amp; Embarque</div><div class="hm-cdesc">Operaciones de almacén, confirmación de llegadas, gestión de ubicaciones y control de embarques.</div><div class="hm-feat">Confirmar llegadas y fotos</div><div class="hm-feat">Carga camión y albaranes</div><div class="hm-feat">Control de ubicaciones</div><div class="hm-feat">Buques listos para embarcar</div></div>`;
+}
+
+function enterMod(mod){
+  MOD=mod;
+  document.getElementById('screen-home').style.display='none';
+  document.getElementById('app').style.display='flex';
+  const init=(CU.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('sb-av').textContent=init;
+  document.getElementById('sb-name').textContent=CU.nombre||'—';
+  document.getElementById('sb-role').textContent={admin:'Administrador',oficina:'Oficina',almacen:'Almacén'}[CU.rol]||CU.rol;
+  const puedeOperativa=['admin','oficina','aduanas'];
+  if(mod==='operativa'&&!puedeOperativa.includes(CU.rol)){alert('Tu rol no tiene acceso a Operativa');return;}
+  if(mod==='operativa'){
+    document.getElementById('nav-op').style.display='block';
+    document.getElementById('nav-alm').style.display='none';
+    document.getElementById('btn-nb').style.display='';
+    document.getElementById('btn-ne').style.display='';
+    if(CU.rol==='admin')document.getElementById('nav-adm').style.display='block';
+    document.getElementById('bc-mod').textContent='Operativa';
+    nav('dashboard',document.querySelector('#nav-op .nav-item'));
+  }else{
+    document.getElementById('nav-op').style.display='none';
+    document.getElementById('nav-alm').style.display='block';
+    document.getElementById('btn-nb').style.display='none';
+    document.getElementById('btn-ne').style.display='none';
+    document.getElementById('bc-mod').textContent='Almacén & Embarque';
+    nav('almacen',document.querySelector('#nav-alm .nav-item'));
+  }
+}
+
+function volverHome(){document.getElementById('app').style.display='none';showHome();}
+function doLogout(){CU=null;MOD=null;document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
+
+const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas'};
+let CV='dashboard';
+function nav(view,el){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const ve=document.getElementById('view-'+view);if(ve)ve.classList.add('active');
+  if(el)el.classList.add('active');
+  document.getElementById('bc-page').textContent=PG[view]||view;
+  CV=view;
+  if(window.innerWidth<=768){document.getElementById('sidebar').classList.remove('open');document.getElementById('mob-ov').classList.remove('show');}
+  loadView(view);
+}
+function toggleSB(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('mob-ov').classList.toggle('show');}
+
+// ── HELPERS ──
+function bdg(s){const m={'✅ AUTORIZADO':'bg','🚛 CARGADO CAMIÓN':'bg','🚢 EMBARCADO':'bg','⏳ EN TRÁNSITO':'bb','⌛ ESPERANDO ALMACÉN':'bb','📦 UBICADA':'bt','🚨 EN ALMACÉN - REVISAR':'br'};return`<span class="badge ${m[s]||'bgr'}">${s||'—'}</span>`;}
+function fd(d){if(!d)return'—';return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit'});}
+function fdl(d){if(!d)return'—';return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});}
+function fdt(d){if(!d)return'—';return new Date(d).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function pb(n,t){const p=t>0?Math.round(n/t*100):0;const c=p===100?'prog-g':p>50?'prog-a':'prog-r';return`<div style="display:flex;align-items:center;gap:8px"><div class="prog"><div class="prog-f ${c}" style="width:${p}%"></div></div><span style="font-size:12px;color:var(--g500);font-weight:500">${n}/${t}</span></div>`;}
+// Solo VesselFinder y MarineTraffic
+function imoL(imo,nom){if(!imo)return'<span style="font-size:12px;color:var(--g400)">Sin IMO</span>';return`<a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic</a>`;}
+function apbaL(n){if(!n||n==='Sin Escala')return'<span class="badge ba">Sin escala</span>';return`<a class="ext-link" href="https://www.apba.es/escalabuques" target="_blank">✅ ${n}</a>`;}
+function gv(id){const e=document.getElementById(id);return e?e.value:'';}
+function gc(id){const e=document.getElementById(id);return e?e.checked:false;}
+
+async function logAct(tabla,rid,rnom,accion,campo,vant,vnew){
+  try{await sb.from('activity_log').insert({tabla,registro_id:rid||null,registro_nombre:rnom||null,accion,campo_modificado:campo||null,valor_anterior:String(vant||''),valor_nuevo:String(vnew||''),usuario_id:CU?.id,usuario_nombre:CU?.nombre});}catch(e){console.warn('log err',e);}
+}
+
+async function compFoto(f,mw=1200,q=0.75){
+  return new Promise(r=>{
+    const img=new Image(),u=URL.createObjectURL(f);
+    img.onload=()=>{let w=img.width,h=img.height;if(w>mw){h=Math.round(h*mw/w);w=mw;}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);c.toBlob(b=>{URL.revokeObjectURL(u);r(new File([b],f.name,{type:'image/jpeg'}));},'image/jpeg',q);};img.src=u;
+  });
+}
+async function procesarFotos(files,stId){
+  const el=document.getElementById(stId);if(el)el.textContent='Comprimiendo...';
+  const out=[];for(const f of files){const c=await compFoto(f);out.push(c);}
+  if(el){const orig=files.reduce((a,f)=>a+f.size,0),fin=out.reduce((a,f)=>a+f.size,0);el.textContent=`✅ ${out.length} fotos · ${(fin/1024/1024).toFixed(1)} MB · ahorro ${Math.round((1-fin/orig)*100)}%`;}
+  return out;
+}
+function setupFotos(inpId,prevId,stId){
+  const inp=document.getElementById(inpId),prev=document.getElementById(prevId);
+  if(!inp||!prev)return;
+  inp.addEventListener('change',async()=>{
+    const files=Array.from(inp.files);if(!files.length)return;
+    prev.innerHTML='<div class="loading" style="padding:10px"><div class="spinner"></div></div>';
+    await procesarFotos(files,stId);
+    prev.innerHTML=files.map(f=>`<div class="foto-thumb"><img src="${URL.createObjectURL(f)}"></div>`).join('');
+  });
+}
+
+async function loadView(view){
+  switch(view){
+    case 'dashboard':await loadDash();break;
+    case 'flota':await loadFlota();break;
+    case 'buques':await loadBuques();break;
+    case 'expediciones':await loadExp();break;
+    case 'kanban':await loadKanban();break;
+    case 'calendario':await renderCal();break;
+    case 'timeline':await loadTL();break;
+    case 'alertas':await loadAlertas();break;
+    case 'almacen':await loadAlmacen();break;
+    case 'ubicaciones':await loadUbic();break;
+    case 'listos':await loadListos();break;
+    case 'incidencias':await loadInc();break;
+    case 'empresas':await loadEmpresas();break;
+    case 'usuarios':await loadUsuarios();break;
+    case 'log':await loadLog();break;
+    case 'estadisticas':await loadStats();break;
+  }
+}
+
+function buqueCard(b,listo){
+  const ec=b.ec?.nombre||b.en?.nombre||'—';
+  const stCls=estOpCls(b.estado_operacion||b.estado||'');
+  return`<div class="buque-card" draggable="true" data-bid="${b.id}" style="border-left:3px solid var(--st-${stCls.replace('st-','')}-bar,var(--g300));cursor:grab" ondragstart="calDragId='${b.id}';event.dataTransfer.effectAllowed='move'" onclick="openBuque('${b.id}')">
+    <div class="buque-icon" style="background:var(--st-${stCls.replace('st-','')}-bg,var(--b50))">🚢</div>
+    <div class="buque-info">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+        <div class="buque-name">${b.nombre}</div>
+        <span class="badge ${stCls}" style="font-size:10px;padding:2px 7px">${b.estado_operacion||'—'}</span>
+      </div>
+      <div class="buque-meta">IMO ${b.imo||'—'} · ETA ${fd(b.eta_buque)} · ${b.puerto_terminal||b.place||'—'}</div>
+      ${b.created_by_nombre?`<div class="buque-meta">Creado por <strong>${b.created_by_nombre}</strong>${b.updated_at?` · Actualizado: ${fdt(b.updated_at)}`:''}</div>`:''}
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
+        ${listo?'<span class="badge bg">✅ Listo para embarcar</span>':''}
+        ${b.alarma_visual_trans?'<span class="badge ba">⚠️ Sin Ref. VT</span>':''}
+        <span class="badge bgr">${ec}</span>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px" onclick="event.stopPropagation()">${imoL(b.imo,b.nombre)}</div>
+    </div>
+    <div style="flex-shrink:0">${pb(b.total_autorizadas,b.total_expediciones)}</div>
+  </div>`;
+}
+
+async function loadDash(){
+  const [bR,eR,iR]=await Promise.all([
+    sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').not('estado_operacion','in','("Embarcado","Finalizado")'),
+    sb.from('expediciones').select('*,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO'),
+    sb.from('incidencias').select('id').eq('estado','Abierta')
+  ]);
+  const B=bR.data||[],E=eR.data||[],I=iR.data||[];
+  const auth=E.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
+  const pct=E.length?Math.round(auth/E.length*100):0;
+  const alc=E.filter(e=>!e.nº_mrn&&e.ubicacion!=='Pendiente recibir').length;
+  if(alc>0){document.getElementById('badge-al').textContent=alc;document.getElementById('badge-al').style.display='';}
+  document.getElementById('kpi-grid').innerHTML=`
+    <div class="kpi bl"><div class="kpi-lbl">Buques activos</div><div class="kpi-val">${B.length}</div></div>
+    <div class="kpi gr"><div class="kpi-lbl">Expediciones abiertas</div><div class="kpi-val">${E.length}</div></div>
+    <div class="kpi gr"><div class="kpi-lbl">Autorizadas ✅</div><div class="kpi-val">${auth}</div><div class="kpi-sub ${pct>70?'ks-g':'ks-a'}">${pct}% del total</div></div>
+    <div class="kpi rd"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>`;
+  const lis=B.filter(b=>b.total_expediciones>0&&b.total_expediciones===b.total_autorizadas);
+  document.getElementById('listos-dash').innerHTML=lis.length?lis.map(b=>buqueCard(b,true)).join(''):'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques listos para embarcar</div></div>';
+  document.getElementById('buques-dash').innerHTML=B.filter(b=>!lis.includes(b)).slice(0,5).map(b=>buqueCard(b,false)).join('')||'<div class="empty"><div class="empty-txt">Sin buques activos</div></div>';setTimeout(attachBuqueCardDrag,50);
+  const rows=E.slice(0,8).map(e=>`<tr onclick="openExpD('${e.id}')"><td><div class="fw">${e.nº_expedicion}</div><div class="sm">${e.buques?.nombre||'—'}</div></td><td>${e.bultos}b·${e.kilos}kg</td><td>${bdg(e.estado_semaforo)}</td><td><span class="badge bgr">${e.tramite_aduanero||'—'}</span></td><td class="sm">${e.ubicacion||'—'}</td></tr>`).join('');
+  document.getElementById('exp-dash').innerHTML=`<table class="tbl"><thead><tr><th>Expedición</th><th>Carga</th><th>Estado</th><th>Aduanas</th><th>Ubicación</th></tr></thead><tbody>${rows||'<tr><td colspan="5"><div class="empty"><div class="empty-txt">Sin expediciones</div></div></td></tr>'}</tbody></table>`;
+}
+
+async function loadFlota(){
+  const {data}=await sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').not('estado_operacion','in','("Embarcado","Finalizado")');
+  const _flotaData=data||[];document.getElementById('flota-grid').innerHTML=_flotaData.map(b=>{
+    const stCls=estOpCls(b.estado_operacion||b.estado||'');
+    return`<div class="fc" onclick="openBuque('${b.id}')">
+      <div class="fc-top"><span style="font-size:22px">🚢</span><div style="flex:1"><div style="font-weight:700;font-size:14px">${b.nombre}</div><div style="font-size:11px;color:var(--g500)">IMO ${b.imo||'Sin IMO'}</div></div><span class="badge ${stCls}">${b.estado_operacion||'—'}</span></div>
+      <div class="fc-body">
+        <div class="fc-row"><span class="fc-rl">Escala APBA</span>${apbaL(b.nº_escala)}</div>
+        <div class="fc-row"><span class="fc-rl">ETA</span><span class="fc-rv">${fdl(b.eta_buque)}</span></div>
+        <div class="fc-row"><span class="fc-rl">Puerto / Terminal</span><span class="fc-rv">${b.puerto_terminal||'—'}</span></div>
+        <div class="fc-row"><span class="fc-rl">Cliente</span><span class="fc-rv">${b.ec?.nombre||'—'}</span></div>
+        <div class="fc-row"><span class="fc-rl">Ref. Visual Trans</span><span class="fc-rv">${b.ref_visual_trans||'⚠️ Sin ref.'}</span></div>
+        <div class="fc-row"><span class="fc-rl">Progreso</span>${pb(b.total_autorizadas,b.total_expediciones)}</div>
+      </div>
+      <div class="fc-links" onclick="event.stopPropagation()">${imoL(b.imo,b.nombre)}</div>
+    </div>`;
+  }).join('')||'<div class="empty"><div class="empty-icon">🛳</div><div class="empty-txt">Sin buques activos</div></div>';setTimeout(attachBuqueCardDrag,50);
+}
+
+let allB=[];
+async function loadBuques(){const {data}=await sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').order('eta_buque');allB=data||[];renderB(allB);}
+function renderB(list){document.getElementById('buques-list').innerHTML=list.map(b=>buqueCard(b,false)).join('')||'<div class="empty"><div class="empty-txt">Sin resultados</div></div>';setTimeout(attachBuqueCardDrag,50);}
+function filtrarB(q){const s=q.toLowerCase();renderB(allB.filter(b=>(b.nombre||'').toLowerCase().includes(s)||(b.imo||'').includes(s)||(b.nº_escala||'').toLowerCase().includes(s)));}
+
+let allE=[];
+async function loadExp(){const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas(nombre)').order('created_at',{ascending:false});allE=data||[];renderE(allE);}
+function renderE(list){document.getElementById('exp-tbody').innerHTML=list.map(e=>`<tr onclick="openExpD('${e.id}')"><td><div class="fw">${e.nº_expedicion}</div></td><td>${e.buques?.nombre||'—'}</td><td>${e.empresas?.nombre||'—'}</td><td>${e.bultos}b·${e.kilos}kg</td><td>${bdg(e.estado_semaforo)}</td><td><span class="badge bgr">${e.tramite_aduanero||'—'}</span></td><td class="sm">${e.ubicacion||'—'}</td></tr>`).join('')||'<tr><td colspan="7"><div class="empty"><div class="empty-txt">Sin expediciones</div></div></td></tr>';}
+function filtrarE(q){const s=q.toLowerCase();renderE(allE.filter(e=>(e.nº_expedicion||'').toLowerCase().includes(s)||(e.buques?.nombre||'').toLowerCase().includes(s)));}
+function filtrarEst(v){renderE(v?allE.filter(e=>e.estado_semaforo===v):allE);}
+
+const KCOLS=[{key:'⏳ EN TRÁNSITO',lbl:'En tránsito',cls:'bb'},{key:'⌛ ESPERANDO ALMACÉN',lbl:'Esp. almacén',cls:'bb'},{key:'📦 UBICADA',lbl:'Ubicada',cls:'bt'},{key:'🚨 EN ALMACÉN - REVISAR',lbl:'Revisar',cls:'br'},{key:'✅ AUTORIZADO',lbl:'Autorizado',cls:'bg'},{key:'🚛 CARGADO CAMIÓN',lbl:'Cargado',cls:'bg'}];
+async function loadKanban(){
+  const {data}=await sb.from('expediciones').select('*,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO');
+  const items=data||[];
+  document.getElementById('kb-board').innerHTML=KCOLS.map(col=>{
+    const ci=items.filter(e=>e.estado_semaforo===col.key);
+    return`<div class="kb-col"><div class="kb-head"><span>${col.lbl}</span><span class="badge ${col.cls}">${ci.length}</span></div><div class="kb-body">${ci.map(e=>`<div class="kb-item" onclick="openExpD('${e.id}')"><div style="font-weight:600;font-size:12px">${e.nº_expedicion}</div><div style="font-size:11px;color:var(--g500)">${e.buques?.nombre||'—'} · ${e.bultos}b·${e.kilos}kg</div>${e.nº_mrn?`<div style="font-family:var(--mono);font-size:10px;color:var(--g400);margin-top:2px">${e.nº_mrn}</div>`:''}</div>`).join('')||'<div class="empty" style="padding:16px"><div class="empty-txt" style="font-size:12px">Vacío</div></div>'}</div></div>`;
+  }).join('');
+}
+
+// ── CALENDARIO CON DRAG & DROP + COLORES ESTADO ──────────────
+let calY,calM;
+window.calDragId=null; // id del buque siendo arrastrado
+
+async function renderCal(){
+  const now=new Date();if(!calY){calY=now.getFullYear();calM=now.getMonth();}
+  const {data:bqs}=await sb.from('buques').select('id,nombre,eta_buque,ref_visual_trans,puerto_terminal,place,estado_operacion').not('eta_buque','is',null);
+  const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  document.getElementById('cal-m').textContent=meses[calM]+' '+calY;
+  const first=new Date(calY,calM,1);let dow=first.getDay();dow=dow===0?6:dow-1;
+  const days=new Date(calY,calM+1,0).getDate();
+  const body=document.getElementById('cal-body');
+  body.innerHTML='';
+  for(let i=0;i<dow;i++){const d=document.createElement('div');d.className='cal-day om';body.appendChild(d);}
+  for(let d=1;d<=days;d++){
+    const ds=`${calY}-${String(calM+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isT=d===now.getDate()&&calM===now.getMonth()&&calY===now.getFullYear();
+    const cell=document.createElement('div');
+    cell.className='cal-day'+(isT?' today':'');
+    cell.dataset.date=ds;
+    const dn=document.createElement('div');
+    dn.className='cal-dn';
+    if(isT){const s=document.createElement('span');s.className='cal-dn-today';s.textContent=d;dn.appendChild(s);}
+    else dn.textContent=d;
+    cell.appendChild(dn);
+    const bq=(bqs||[]).filter(b=>b.eta_buque&&b.eta_buque.startsWith(ds));
+    bq.forEach(b=>{
+      const stCls=estOpCls(b.estado_operacion||'');
+      const ev=document.createElement('div');
+      ev.className='cal-ev '+stCls;
+      ev.draggable=true;
+      ev.dataset.bid=b.id;
+      ev.innerHTML=`🚢 <strong>${b.nombre}</strong>${b.ref_visual_trans?` · VT ${b.ref_visual_trans}`:''}${(b.puerto_terminal||b.place)?`<br><span style="opacity:.75">${b.puerto_terminal||b.place}</span>`:''}`;
+      ev.addEventListener('click',e=>{e.stopPropagation();openBuque(b.id);});
+      ev.addEventListener('dragstart',e=>{calDragId=b.id;ev.style.opacity='0.5';e.dataTransfer.effectAllowed='move';});
+      ev.addEventListener('dragend',()=>{ev.style.opacity='1';});
+      cell.appendChild(ev);
+    });
+    // Drag & drop target
+    cell.addEventListener('dragover',e=>{e.preventDefault();cell.classList.add('drag-over');});
+    cell.addEventListener('dragleave',()=>cell.classList.remove('drag-over'));
+    cell.addEventListener('drop',async e=>{
+      e.preventDefault();cell.classList.remove('drag-over');
+      if(!calDragId)return;
+      const newDate=cell.dataset.date;
+      // Update in Supabase - set eta_buque to the new date (keep time as noon)
+      const {error}=await sb.from('buques').update({eta_buque:newDate+'T12:00:00'}).eq('id',calDragId);
+      if(!error){
+        showToast('ETA actualizado → '+newDate);
+        // Sync with timeline if same month is shown
+        if(window.tlYear===calY&&window.tlMonth===calM&&document.getElementById('tl-wrap')?.children.length){
+          loadTL();
+        }
+        await renderCal();
+      }
+      else{mostrarBanner('Error al actualizar fecha','red');}
+      calDragId=null;
+    });
+    body.appendChild(cell);
+  }
+}
+function calP(){calM--;if(calM<0){calM=11;calY--;}renderCal();}
+function calN(){calM++;if(calM>11){calM=0;calY++;}renderCal();}
+function calH(){calY=null;calM=null;renderCal();}
+
+// ── Global drag: allow dragging buque cards from any view to change ETA ──
+// Attach after any buque list renders
+function attachBuqueCardDrag(){
+  document.querySelectorAll('.buque-card[draggable]').forEach(card=>{
+    card.addEventListener('dragstart',function(e){
+      calDragId=this.dataset.bid;
+      e.dataTransfer.effectAllowed='move';
+      // Show floating drop zone
+      let dz=document.getElementById('global-drop-zone');
+      if(!dz){
+        dz=document.createElement('div');
+        dz.id='global-drop-zone';
+        dz.innerHTML='<div style="font-size:14px;font-weight:600;margin-bottom:8px">📅 Arrastra aquí para cambiar ETA</div><input type="date" id="gdz-date" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px"><button onclick="applyGlobalDrop()" style="margin-top:8px;padding:6px 14px;background:#1565c0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;width:100%">✅ Cambiar fecha</button>';
+        dz.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#fff;border:2px dashed #1565c0;border-radius:12px;padding:16px 20px;z-index:8000;box-shadow:0 4px 24px rgba(0,0,0,.18);min-width:260px;text-align:center;display:none';
+        document.body.appendChild(dz);
+      }
+      dz.style.display='block';
+      // Pre-fill with today
+      const today=new Date().toISOString().split('T')[0];
+      document.getElementById('gdz-date').value=today;
+    });
+    card.addEventListener('dragend',function(){
+      const dz=document.getElementById('global-drop-zone');
+      if(dz)dz.style.display='none';
+    });
+  });
+}
+
+async function applyGlobalDrop(){
+  const newDate=document.getElementById('gdz-date').value;
+  if(!newDate||!calDragId)return;
+  const {error}=await sb.from('buques').update({eta_buque:newDate+'T12:00:00'}).eq('id',calDragId);
+  if(!error){
+    showToast('ETA actualizado → '+newDate);
+    const dz=document.getElementById('global-drop-zone');if(dz)dz.style.display='none';
+    calDragId=null;
+    loadView(CV);
+    // Also refresh calendar if visible
+    if(CV==='calendario')renderCal();
+  } else {
+    mostrarBanner('Error al actualizar fecha','red');
+  }
+}
+
+// ── TIMELINE: calendar top + 24h lateral + draggable ──────
+window.tlYear=null;window.tlMonth=null;window.tlDragId=null;
+
+async function loadTL(){
+  const now=new Date();
+  if(!window.tlYear){window.tlYear=now.getFullYear();window.tlMonth=now.getMonth();}
+  const {data}=await sb.from('buques').select('id,nombre,eta_buque,estado_operacion').not('eta_buque','is',null).order('eta_buque');
+  const wrap=document.getElementById('tl-wrap');
+  if(!data){wrap.innerHTML='<div class="empty"><div class="empty-icon">📊</div><div class="empty-txt">Sin buques con ETA</div></div>';return;}
+
+  const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const daysInMonth=new Date(window.tlYear,window.tlMonth+1,0).getDate();
+  const CELL_W=56;
+  const HOUR_H=30;
+  const LABEL_W=52;
+
+  const BG={proceso:'#e3f2fd',embarcado:'#e8f5e9',cancelado:'#ffebee',aplazado:'#fff3e0',noiniciado:'#f5f5f5'};
+  const CLR={proceso:'#0d47a1',embarcado:'#1b5e20',cancelado:'#b71c1c',aplazado:'#e65100',noiniciado:'#424242'};
+  const BAR={proceso:'#1565c0',embarcado:'#2e7d32',cancelado:'#c62828',aplazado:'#ef6c00',noiniciado:'#9e9e9e'};
+
+  let dateHeaders=`<div style="width:${LABEL_W}px;flex-shrink:0;border-right:1px solid var(--g300)"></div>`;
+  for(let d=1;d<=daysInMonth;d++){
+    const ds=new Date(window.tlYear,window.tlMonth,d);
+    const isToday=d===now.getDate()&&window.tlMonth===now.getMonth()&&window.tlYear===now.getFullYear();
+    const dow=['Do','Lu','Ma','Mi','Ju','Vi','Sá'][ds.getDay()];
+    dateHeaders+=`<div style="width:${CELL_W}px;flex-shrink:0;text-align:center;font-size:11px;font-weight:${isToday?700:500};color:${isToday?'#1565c0':'var(--g600)'};border-left:1px solid var(--g200);padding:5px 0 4px;background:${isToday?'#e8f0fe':'var(--g50)'}">${dow}<br><strong>${d}</strong></div>`;
+  }
+
+  let hourRows='';
+  for(let h=0;h<24;h++){
+    const hh=h<10?'0'+h:h;
+    let cells=`<div style="width:${LABEL_W}px;flex-shrink:0;font-size:11px;font-weight:600;color:var(--g500);text-align:right;padding-right:8px;height:${HOUR_H}px;line-height:${HOUR_H}px;border-right:1px solid var(--g300);background:var(--g50)">${hh}:00</div>`;
+    for(let d=1;d<=daysInMonth;d++){
+      const ds=`${window.tlYear}-${String(window.tlMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const isToday=d===now.getDate()&&window.tlMonth===now.getMonth()&&window.tlYear===now.getFullYear();
+      const buquesHere=(data||[]).filter(b=>{
+        if(!b.eta_buque)return false;
+        const dt=new Date(b.eta_buque);
+        return dt.getFullYear()===window.tlYear&&dt.getMonth()===window.tlMonth&&dt.getDate()===d&&dt.getHours()===h;
+      });
+      const bgNorm=isToday?'#f0f4ff':(h%2===0?'#fff':'#fafafa');
+      let chips='';
+      buquesHere.forEach(b=>{
+        const key=estOpCls(b.estado_operacion||'').replace('st-','');
+        chips+=`<div data-bid="${b.id}" draggable="true"
+          style="background:${BG[key]};color:${CLR[key]};border-left:3px solid ${BAR[key]};border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W-10}px;cursor:grab;margin-bottom:1px;user-select:none"
+          onclick="openBuque('${b.id}')"
+          ondragstart="window.tlDragId='${b.id}';event.dataTransfer.setData('text','${b.id}');event.dataTransfer.effectAllowed='move'"
+          ondragend="this.style.opacity='1'"
+        >${b.nombre}</div>`;
+      });
+      cells+=`<div data-date="${ds}" data-hour="${h}" data-bgnorm="${bgNorm}"
+        style="width:${CELL_W}px;flex-shrink:0;height:${HOUR_H}px;border-left:1px solid var(--g200);border-bottom:1px solid var(--g100);background:${bgNorm};padding:1px 2px;overflow:visible"
+        ondragover="event.preventDefault();event.stopPropagation();this.style.background='#bbdefb';this.style.outline='2px dashed #1565c0'"
+        ondragleave="this.style.background=this.dataset.bgnorm;this.style.outline=''"
+        ondrop="window.tlDropHandler(this)"
+      >${chips}</div>`;
+    }
+    hourRows+=`<div style="display:flex">${cells}</div>`;
+  }
+
+  const totalW=LABEL_W+daysInMonth*CELL_W;
+  wrap.innerHTML=`
+    <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;box-shadow:var(--sh0)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--g200);background:var(--g50)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="cal-btn" onclick="tlPrev()">‹</button>
+          <span style="font-size:15px;font-weight:700;min-width:160px;text-align:center">${MESES[window.tlMonth]} ${window.tlYear}</span>
+          <button class="cal-btn" onclick="tlNext()">›</button>
+          <button class="cal-btn" onclick="tlToday()" style="margin-left:4px">Hoy</button>
+        </div>
+        <span style="font-size:12px;color:var(--g500)">${(data||[]).length} buques · arrastra para cambiar ETA</span>
+      </div>
+      <div style="overflow:auto;max-height:calc(100vh - 180px)">
+        <div style="min-width:${totalW}px">
+          <div style="display:flex;position:sticky;top:0;z-index:10;background:var(--w);border-bottom:2px solid var(--g300)">${dateHeaders}</div>
+          ${hourRows}
+        </div>
+      </div>
+    </div>`;
+}
+
+// Global drop handler — must be on window so inline ondrop can find it
+window.tlDropHandler=async function(cell){
+  cell.style.background=cell.dataset.bgnorm||'';
+  cell.style.outline='';
+  const bid=window.tlDragId;
+  if(!bid)return;
+  const date=cell.dataset.date;
+  const hour=parseInt(cell.dataset.hour);
+  const newDt=date+'T'+(hour<10?'0'+hour:hour)+':00:00';
+  window.tlDragId=null;
+  const {error}=await sb.from('buques').update({eta_buque:newDt}).eq('id',bid);
+  if(!error){
+    showToast('ETA → '+date+' '+('0'+hour).slice(-2)+':00');
+    // Sync: if calendar is already loaded and same month, refresh it too
+    if(typeof calY!=='undefined'&&calY===window.tlYear&&calM===window.tlMonth){
+      await renderCal();
+    }
+    await loadTL();
+  } else {
+    mostrarBanner('Error al mover','red');
+  }
+};
+
+function tlPrev(){window.tlMonth--;if(window.tlMonth<0){window.tlMonth=11;window.tlYear--;}loadTL();}
+function tlNext(){window.tlMonth++;if(window.tlMonth>11){window.tlMonth=0;window.tlYear++;}loadTL();}
+function tlToday(){window.tlYear=null;window.tlMonth=null;loadTL();}
+
+async function loadAlertas(){
+  const [{data:al},{data:inc}]=await Promise.all([sb.from('v_alertas').select('*'),sb.from('incidencias').select('*,expediciones(nº_expedicion)').neq('estado','Cerrada')]);
+  let html='';
+  (al||[]).forEach(a=>{const crit=a.tipo_alerta?.includes('VENC');html+=`<div class="a-item ${crit?'crit':'wrn'}"><div class="a-icon">${crit?'🔴':'🟡'}</div><div class="a-info"><div class="a-title">${a.nº_expedicion} — ${a.buque_nombre||'—'}</div><div class="a-detail">${a.tipo_alerta||'Requiere atención'} · Despacho máx: ${fd(a.fecha_max_despacho)}</div></div><span class="badge ${crit?'br':'ba'}">${a.tipo_alerta||'Alerta'}</span></div>`;});
+  (inc||[]).forEach(i=>{html+=`<div class="a-item wrn"><div class="a-icon">⚠️</div><div class="a-info"><div class="a-title">Incidencia ${i.tipo} — ${i.expediciones?.nº_expedicion||'—'}</div><div class="a-detail">${i.descripcion||'Sin descripción'} · ${fd(i.fecha)}</div></div><span class="badge br">${i.estado}</span></div>`;});
+  document.getElementById('alertas-list').innerHTML=html||'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay alertas activas</div></div>';
+}
+
+async function loadAlmacen(){
+  const {data}=await sb.from('expediciones').select('*,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO');
+  const pend=(data||[]).filter(e=>e.estado_semaforo==='⏳ EN TRÁNSITO'||e.estado_semaforo==='⌛ ESPERANDO ALMACÉN');
+  const rev=(data||[]).filter(e=>e.estado_semaforo==='🚨 EN ALMACÉN - REVISAR');
+  const lis=(data||[]).filter(e=>e.estado_carga==='✅ AUTORIZADO');
+  const rP=e=>`<div class="ll-row" onclick="openExpD('${e.id}')"><span style="font-size:18px">📦</span><div class="ll-info"><div class="ll-ref">${e.nº_expedicion}</div><div class="ll-sub">${e.buques?.nombre||'—'} · ${e.bultos} btos · ${bdg(e.estado_semaforo)}</div></div><div class="ll-acts"><div class="ib" title="Confirmar llegada" onclick="event.stopPropagation();confirmLlegada('${e.id}')">✅</div><div class="ib" title="Con fotos" onclick="event.stopPropagation();modalFotos('${e.id}','${e.nº_expedicion}')">📸</div></div></div>`;
+  const rR=e=>`<div class="ll-row" onclick="openExpD('${e.id}')"><span style="font-size:18px">🚨</span><div class="ll-info"><div class="ll-ref">${e.nº_expedicion}</div><div class="ll-sub">${e.buques?.nombre||'—'} · ${e.ubicacion||'—'} · ${e.bultos} btos</div></div><div class="ll-acts"><div class="ib" onclick="event.stopPropagation();openExpD('${e.id}')">📋</div></div></div>`;
+  const rL=e=>`<div class="ll-row" onclick="openExpD('${e.id}')"><span style="font-size:18px">🟢</span><div class="ll-info"><div class="ll-ref">${e.nº_expedicion}</div><div class="ll-sub">${e.buques?.nombre||'—'} · MRN: ${e.nº_mrn||'—'} · ${e.bultos} btos · 📍${e.ubicacion||'—'}</div></div><div class="ll-acts"><div class="ib" title="Marcar cargado" onclick="event.stopPropagation();marcarCarg('${e.id}')">🚛</div><div class="ib" title="Albarán" onclick="event.stopPropagation();impExpAlb('${e.id}')">🖨️</div></div></div>`;
+  document.getElementById('alm-pend').innerHTML=pend.length?pend.map(rP).join(''):'<div class="empty"><div class="empty-txt">Sin pendientes</div></div>';
+  document.getElementById('alm-rev').innerHTML=rev.length?rev.map(rR).join(''):'<div class="empty"><div class="empty-txt">Sin expediciones a revisar</div></div>';
+  document.getElementById('alm-lis').innerHTML=lis.length?lis.map(rL).join(''):'<div class="empty"><div class="empty-txt">No hay autorizadas</div></div>';
+}
+
+async function confirmLlegada(id){
+  const {data:e}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',id).single();
+  await sb.from('expediciones').update({ubicacion:'Almacén-Sin Ubicar',notif_llegada_sent:true}).eq('id',id);
+  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir','Almacén-Sin Ubicar');
+  await alertarOperativa(id,e?.nº_expedicion||'',e?.buques?.nombre||'');
+  await loadAlmacen();
+}
+async function marcarCarg(id){if(!confirm('¿Confirmar carga en camión?'))return;await sb.from('expediciones').update({hora_de_carga:new Date().toISOString()}).eq('id',id);await logAct('expediciones',id,'','editar','hora_de_carga',null,new Date().toISOString());await loadAlmacen();}
+
+function modalFotos(id,ref){
+  document.getElementById('m-title').textContent='📸 Fotos llegada — '+ref;
+  document.getElementById('m-body').innerHTML=`<div class="fg2"><label class="fl2">Ubicación</label><select id="fl-u" class="fi fs">${optsUbic(true,'Almacén-Sin Ubicar')}</select></div>
+  <div class="fg2"><label class="fl2">Fotos <span style="color:var(--gr600);font-size:11px">— compresión automática 75%</span></label><div class="foto-area" onclick="document.getElementById('fl-i').click()"><input type="file" id="fl-i" accept="image/*" multiple><div style="font-size:28px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Toca para seleccionar fotos</div></div><div id="fl-st" class="foto-st"></div><div class="foto-prev" id="fl-p"></div></div>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-p" onclick="guardarFL('${id}')">✅ Confirmar entrada</button>`;
+  document.getElementById('mo').classList.add('open');
+  setTimeout(()=>setupFotos('fl-i','fl-p','fl-st'),100);
+}
+async function guardarFL(id){
+  const ubic=gv('fl-u');
+  const {data:e}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',id).single();
+  await sb.from('expediciones').update({ubicacion:ubic,notif_llegada_sent:true}).eq('id',id);
+  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir',ubic);
+  await alertarOperativa(id,e?.nº_expedicion||'',e?.buques?.nombre||'');
+  closeModal();await loadAlmacen();
+}
+
+async function loadUbic(){
+  const {data}=await sb.from('expediciones').select('ubicacion,nº_expedicion,bultos,kilos,buques(nombre)').not('ubicacion','eq','Pendiente recibir').neq('estado_semaforo','🚢 EMBARCADO');
+  const g={};(data||[]).forEach(e=>{if(!g[e.ubicacion])g[e.ubicacion]={exps:[],b:0,k:0};g[e.ubicacion].exps.push(e);g[e.ubicacion].b+=e.bultos||0;g[e.ubicacion].k+=e.kilos||0;});
+  document.getElementById('ubic-grid').innerHTML=Object.entries(g).map(([z,d])=>`<div class="uc"><div class="uz">📍 ${z}</div><div class="ucv">${d.exps.length} <span style="font-size:14px;font-weight:400;color:var(--g500)">exp.</span></div><div class="us">${d.b} bultos · ${d.k} kg</div><div class="ui-list">${d.exps.slice(0,3).map(e=>`<div class="ui-item">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</div>`).join('')}${d.exps.length>3?`<div class="ui-item" style="color:var(--g400)">+${d.exps.length-3} más</div>`:''}</div></div>`).join('')||'<div class="empty"><div class="empty-icon">📍</div><div class="empty-txt">No hay mercancía en almacén</div></div>';
+}
+
+async function loadListos(){
+  const {data}=await sb.from('buques').select('*,ec:cliente_id(nombre)').not('estado_operacion','in','("Embarcado","Finalizado")');
+  const lis=(data||[]).filter(b=>b.total_expediciones>0&&b.total_expediciones===b.total_autorizadas);
+  document.getElementById('listos-list').innerHTML=lis.length?lis.map(b=>`<div class="buque-card" style="border-color:#bbf7d0;border-left:3px solid var(--gr500)" onclick="openBuque('${b.id}')"><div class="buque-icon" style="background:var(--gr50)">🚢</div><div class="buque-info"><div class="buque-name">${b.nombre}</div><div class="buque-meta">ETA ${fdl(b.eta_buque)} · ${b.puerto_terminal||b.place||'—'}</div><div style="margin-top:6px"><span class="badge bg">✅ ${b.total_expediciones} expediciones listas</span></div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px" onclick="event.stopPropagation()">${imoL(b.imo,b.nombre)}</div></div><button class="btn btn-s btn-sm" onclick="event.stopPropagation();impAlb('${b.id}')">🖨️ Albarán</button></div>`).join(''):'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques listos para embarcar</div></div>';
+}
+
+async function loadInc(){
+  const {data}=await sb.from('incidencias').select('*,expediciones(nº_expedicion,buques(nombre)),u:responsable_id(nombre)').order('created_at',{ascending:false});
+  const bc={'Abierta':'br','En gestión':'ba','Cerrada':'bg'};
+  document.getElementById('inc-tbody').innerHTML=(data||[]).map(i=>`<tr onclick="openIncD('${i.id}')"><td><span class="badge ba">${i.tipo}</span></td><td><div class="fw">${i.expediciones?.nº_expedicion||'—'}</div><div class="sm">${i.expediciones?.buques?.nombre||'—'}</div></td><td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.descripcion||'—'}</td><td><span class="badge ${bc[i.estado]||'bgr'}">${i.estado}</span></td><td class="sm">${i.u?.nombre||'—'}</td><td class="sm">${fd(i.fecha)}</td></tr>`).join('')||'<tr><td colspan="6"><div class="empty"><div class="empty-txt">Sin incidencias</div></div></td></tr>';
+}
+
+async function openIncD(id){
+  const {data:i}=await sb.from('incidencias').select('*,expediciones(nº_expedicion)').eq('id',id).single();
+  const {data:usu}=await sb.from('usuarios').select('id,nombre');if(!i)return;
+  document.getElementById('m-title').textContent='⚠️ Incidencia: '+i.tipo;
+  document.getElementById('m-body').innerHTML=`<div class="fg2"><label class="fl2">Descripción</label><textarea id="ic-d" class="fi">${i.descripcion||''}</textarea></div><div class="fr2"><div class="fg2"><label class="fl2">Estado</label><select id="ic-e" class="fi fs">${['Abierta','En gestión','Cerrada'].map(s=>`<option ${i.estado===s?'selected':''}>${s}</option>`).join('')}</select></div><div class="fg2"><label class="fl2">Responsable</label><select id="ic-r" class="fi fs"><option value="">Sin asignar</option>${(usu||[]).map(u=>`<option value="${u.id}" ${i.responsable_id===u.id?'selected':''}>${u.nombre}</option>`).join('')}</select></div></div><div class="fg2"><label class="fl2">Resolución</label><textarea id="ic-res" class="fi">${i.resolucion||''}</textarea></div>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-p" onclick="saveInc('${i.id}')">💾 Guardar</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+async function saveInc(id){const obj={descripcion:gv('ic-d'),estado:gv('ic-e'),responsable_id:gv('ic-r')||null,resolucion:gv('ic-res')};if(gv('ic-e')==='Cerrada')obj.fecha_cierre=new Date().toISOString();await sb.from('incidencias').update(obj).eq('id',id);await logAct('incidencias',id,'','editar','estado',null,gv('ic-e'));showToast('Incidencia guardada');closeModal();loadView(CV);}
+
+async function loadEmpresas(){
+  const {data}=await sb.from('empresas').select('*').order('nombre');
+  document.getElementById('emp-tbody').innerHTML=(data||[]).map(e=>`<tr onclick="openEmpD('${e.id}')"><td><div class="fw">${e.nombre}</div></td><td>${(e.rol||[]).map(r=>`<span class="badge bb" style="margin-right:3px">${r}</span>`).join('')}</td><td>${e.persona_contacto||'—'}</td><td><a href="mailto:${e.email_confronta||''}" onclick="event.stopPropagation()" style="color:var(--b600);text-decoration:none">${e.email_confronta||'—'}</a></td><td>${e.telefono||'—'}</td></tr>`).join('')||'<tr><td colspan="5"><div class="empty"><div class="empty-txt">Sin empresas</div></div></td></tr>';
+}
+async function openEmpD(id){
+  const {data:e}=await sb.from('empresas').select('*').eq('id',id).single();if(!e)return;
+  document.getElementById('m-title').textContent='🏢 '+e.nombre;
+  document.getElementById('m-body').innerHTML=`<div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="ep-n" class="fi" value="${e.nombre||''}"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="ep-p" class="fi" value="${e.persona_contacto||''}"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="ep-e" class="fi" value="${e.email_confronta||''}"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="ep-t" class="fi" value="${e.telefono||''}"></div></div><div class="fg2"><label class="fl2">Otros emails</label><input id="ep-o" class="fi" value="${(e.otros_emails||[]).join(', ')}"></div><div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="ep-r-${r}" ${(e.rol||[]).includes(r)?'checked':''} style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-d btn-sm" onclick="delEmp('${e.id}')">Eliminar</button><button class="btn btn-p" onclick="saveEmp('${e.id}')">💾 Guardar</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+async function saveEmp(id){const roles=['Cliente','Consignatario','Transportista'].filter(r=>document.getElementById('ep-r-'+r)?.checked);const otros=gv('ep-o').split(',').map(s=>s.trim()).filter(Boolean);await sb.from('empresas').update({nombre:gv('ep-n'),persona_contacto:gv('ep-p')||null,email_confronta:gv('ep-e')||null,telefono:gv('ep-t')||null,otros_emails:otros,rol:roles}).eq('id',id);await logAct('empresas',id,gv('ep-n'),'editar','datos',null,'actualizado');showToast('Empresa guardada');closeModal();loadView(CV);}
+async function delEmp(id){if(!confirm('¿Eliminar empresa?'))return;await sb.from('empresas').delete().eq('id',id);closeModal();loadView(CV);}
+
+async function loadUsuarios(){
+  const {data}=await sb.from('usuarios').select('*').order('rol');
+  const rC={admin:'br',oficina:'bb',almacen:'ba',aduanas:'bt',transportista:'bgr'};const rL={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
+  document.getElementById('users-list').innerHTML=`<div class="tc">${(data||[]).map(u=>`<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--g100)"><div style="width:36px;height:36px;border-radius:50%;background:${u.rol==='admin'?'var(--rd500)':u.rol==='oficina'?'var(--b600)':'var(--am500)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">${(u.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div><div style="flex:1"><div style="font-weight:600;font-size:13px">${u.nombre}</div><div style="font-size:12px;color:var(--g500)">${u.email}${u.ultimo_acceso?` · Último acceso: ${fdt(u.ultimo_acceso)}`:''}</div></div><span class="badge ${rC[u.rol]||'bgr'}">${rL[u.rol]||u.rol}</span>${u.id!==CU?.id?`<button class="btn btn-s btn-sm" onclick="editUser('${u.id}')">Editar</button>`:'<span class="badge bg">Tú</span>'}</div>`).join('')}</div>`;
+}
+async function editUser(id){
+  const {data:u}=await sb.from('usuarios').select('*').eq('id',id).single();if(!u)return;
+  document.getElementById('m-title').textContent='👤 Editar usuario';
+  document.getElementById('m-body').innerHTML=`<div class="fr2"><div class="fg2"><label class="fl2">Nombre</label><input id="eu-n" class="fi" value="${u.nombre||''}"></div><div class="fg2"><label class="fl2">Email</label><input id="eu-e" class="fi" value="${u.email||''}"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Rol</label><select id="eu-r" class="fi fs"><option value="almacen" ${u.rol==='almacen'?'selected':''}>Almacén</option><option value="oficina" ${u.rol==='oficina'?'selected':''}>Oficina</option><option value="aduanas" ${u.rol==='aduanas'?'selected':''}>Aduanas</option><option value="transportista" ${u.rol==='transportista'?'selected':''}>Transportista</option><option value="admin" ${u.rol==='admin'?'selected':''}>Administrador</option></select></div><div class="fg2"><label class="fl2">Nueva contraseña</label><input id="eu-p" class="fi" type="password" placeholder="Dejar vacío = no cambiar"></div></div><div class="warn-box">Almacén: APP Almacén · Oficina: operativa completa · Admin: acceso total</div>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-d btn-sm" onclick="delUser('${u.id}')">Eliminar</button><button class="btn btn-p" onclick="saveUser('${u.id}')">💾 Guardar</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+async function saveUser(id){const obj={nombre:gv('eu-n'),email:gv('eu-e'),rol:gv('eu-r')};const p=gv('eu-p');if(p)obj.password_hash=p;await sb.from('usuarios').update(obj).eq('id',id);showToast('Usuario guardado');closeModal();loadView(CV);}
+async function delUser(id){if(id===CU?.id){alert('No puedes eliminar tu propio usuario');return;}if(!confirm('¿Eliminar usuario?'))return;await sb.from('usuarios').delete().eq('id',id);closeModal();loadView(CV);}
+
+async function loadLog(){
+  const {data}=await sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(300);
+  const logBadge=a=>{const m={'crear':'bg','eliminar':'br','email_aduanas':'ba','email_cliente':'ba','email_confronta':'ba'};return`<span class="badge ${m[a]||'bb'}">${a||'—'}</span>`;};
+  document.getElementById('log-tbody').innerHTML=(data||[]).map(l=>`<tr><td>${logBadge(l.accion)}</td><td><div class="fw">${l.registro_nombre||'—'}</div></td><td class="sm">${l.tabla||'—'}</td><td class="sm">${l.campo_modificado||'—'}</td><td class="sm" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.valor_anterior||'—'}</td><td class="sm" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.valor_nuevo||'—'}</td><td class="sm">${l.usuario_nombre||'—'}</td><td class="sm" style="white-space:nowrap">${fdt(l.created_at)}</td></tr>`).join('')||'<tr><td colspan="8"><div class="empty"><div class="empty-txt">Sin actividad registrada</div></div></td></tr>';
+}
+
+async function loadStats(){
+  const [bR,eR]=await Promise.all([sb.from('buques').select('*'),sb.from('expediciones').select('*,empresas(nombre)')]);
+  const B=bR.data||[],E=eR.data||[];
+  const kg=E.reduce((a,e)=>a+(e.kilos||0),0),bt=E.reduce((a,e)=>a+(e.bultos||0),0);
+  document.getElementById('st-kpis').innerHTML=`<div class="kpi bl"><div class="kpi-lbl">Total buques</div><div class="kpi-val">${B.length}</div></div><div class="kpi gr"><div class="kpi-lbl">Total expediciones</div><div class="kpi-val">${E.length}</div></div><div class="kpi am"><div class="kpi-lbl">Bultos gestionados</div><div class="kpi-val">${bt}</div></div><div class="kpi bl"><div class="kpi-lbl">Kilos totales</div><div class="kpi-val">${kg.toLocaleString('es-ES')}</div></div>`;
+  const byE={},byS={};
+  E.forEach(e=>{const n=e.empresas?.nombre||'Sin asignar';byE[n]=(byE[n]||0)+1;});
+  E.forEach(e=>{const s=e.estado_semaforo||'—';byS[s]=(byS[s]||0)+1;});
+  const mE=Math.max(...Object.values(byE),1),mS=Math.max(...Object.values(byS),1);
+  const sC={'✅ AUTORIZADO':'var(--gr500)','🚛 CARGADO CAMIÓN':'var(--gr500)','🚨 EN ALMACÉN - REVISAR':'var(--rd500)','⏳ EN TRÁNSITO':'var(--b500)','⌛ ESPERANDO ALMACÉN':'var(--b500)','📦 UBICADA':'var(--tl500)'};
+  document.getElementById('st-charts').innerHTML=`<div class="cc"><div class="ct">Expediciones por empresa</div>${Object.entries(byE).sort((a,b)=>b[1]-a[1]).map(([n,v])=>`<div class="bar-row"><div class="bar-lbl">${n}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/mE*100)}%;background:var(--b500)"></div></div><div class="bar-val">${v}</div></div>`).join('')}</div><div class="cc"><div class="ct">Expediciones por estado</div>${Object.entries(byS).sort((a,b)=>b[1]-a[1]).map(([s,v])=>`<div class="bar-row"><div class="bar-lbl">${s}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/mS*100)}%;background:${sC[s]||'var(--g400)'}"></div></div><div class="bar-val">${v}</div></div>`).join('')}</div>`;
+}
+
+// ── MODALES ──────────────────────────────────────────────────
+const MODALS={
+'nuevo-buque':{t:'🚢 Nuevo buque',btn:'🚢 Crear buque',
+  body:async()=>{
+    const {data:emps}=await sb.from('empresas').select('id,nombre').order('nombre');
+    const opts=(emps||[]).map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('');
+    return`
+    <div class="info-box" style="margin-bottom:14px">Rellena el nombre y la Ref. Visual Trans para desbloquear el resto de campos.</div>
+    <div class="fr2">
+      <div class="fg2"><label class="fl2">Nombre del buque *</label><input id="nb-n" class="fi" placeholder="Ej: Tanger Express" oninput="checkNbUnlock()"></div>
+      <div class="fg2"><label class="fl2">Ref. Visual Trans *</label><input id="nb-vt" class="fi" placeholder="Nº expediente (obligatorio)" oninput="checkNbUnlock()"></div>
+    </div>
+    <div id="nb-rest" style="opacity:.35;pointer-events:none;transition:opacity .2s">
+      <div class="fg2"><label class="fl2">IMO — <a href="#" onclick="buscarIMOporNombre();return false;" style="color:var(--b600);font-size:11px;font-weight:600">🔍 Buscar IMO</a></label><input id="nb-imo" class="fi" placeholder="Ej: 9246695" oninput="prevIMO(this.value)"><div id="imo-prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div><div id="nombre-search"></div></div>
+      <div class="fg2"><label class="fl2">Nº Escala APBA — <a href="https://www.apba.es/escalabuques" target="_blank" style="color:var(--b600);font-size:11px">🔎 APBA</a></label><input id="nb-esc" class="fi" placeholder="ESALG…"></div>
+      <div class="fr2"><div class="fg2"><label class="fl2">ETA buque</label><input id="nb-eta" class="fi" type="datetime-local"></div><div class="fg2"><label class="fl2">Puerto / Terminal</label><input id="nb-pto" class="fi" placeholder="Algeciras / T. Ro-Ro"></div></div>
+      <div class="fr2"><div class="fg2"><label class="fl2">Place</label><input id="nb-plc" class="fi" placeholder="Gibraltar / Algeciras"></div><div class="fg2"><label class="fl2">Estado operación</label><select id="nb-est" class="fi fs"><option>Sin comenzar</option><option selected>En proceso</option><option>Embarcado</option><option>Cancelado</option><option>Aplazado</option></select></div></div>
+      <div class="fr2"><div class="fg2"><label class="fl2">Cliente</label><select id="nb-cli" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div><div class="fg2"><label class="fl2">Consignatario</label><select id="nb-con" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div></div>
+      <div style="font-size:12px;color:var(--g400);text-align:center">¿Empresa no existe? <span style="color:var(--b600);cursor:pointer" onclick="closeModal();openModal('nueva-empresa')">Crear empresa →</span></div>
+    </div>`;
+  },
+  action:async()=>{
+    const obj={nombre:gv('nb-n'),imo:gv('nb-imo')||null,ref_visual_trans:gv('nb-vt')||null,nº_escala:gv('nb-esc')||null,eta_buque:gv('nb-eta')||null,puerto_terminal:gv('nb-pto')||null,place:gv('nb-plc')||null,estado_operacion:gv('nb-est'),cliente_id:gv('nb-cli')||null,consignatario_id:gv('nb-con')||null,created_by:CU?.id,created_by_nombre:CU?.nombre};
+    if(!obj.nombre){alert('El nombre es obligatorio');return;}
+    const {data,error}=await sb.from('buques').insert(obj).select().single();
+    if(error){alert('Error: '+error.message);return;}
+    await logAct('buques',data?.id,obj.nombre,'crear',null,null,obj.nombre);
+    showToast('Buque creado');closeModal();loadView(CV);
+  }
+},
+'nueva-expedicion':{t:'📦 Nueva expedición',btn:'📦 Crear expedición',
+  body:async()=>{
+    const [{data:bqs},{data:emps}]=await Promise.all([sb.from('buques').select('id,nombre').not('estado_operacion','in','("Embarcado","Finalizado")').order('nombre'),sb.from('empresas').select('id,nombre').order('nombre')]);
+    const bO=(bqs||[]).map(b=>`<option value="${b.id}">${b.nombre}</option>`).join('');
+    const eO=(emps||[]).map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('');
+    return`<div class="fr2"><div class="fg2"><label class="fl2">Nº Expedición / Referencia *</label><input id="ne-ref" class="fi" placeholder="AWB, DHL, SEUR, TNT…"></div><div class="fg2"><label class="fl2">Buque</label><select id="ne-bq" class="fi fs"><option value="">— Seleccionar —</option>${bO}</select></div></div>
+    <div class="fr2"><div class="fg2"><label class="fl2">Empresa</label><select id="ne-emp" class="fi fs"><option value="">— Seleccionar —</option>${eO}</select></div><div class="fg2"><label class="fl2">Status aduanero</label><select id="ne-sta" class="fi fs"><option>T1</option><option>DAE</option><option>Comunitario</option><option>ATA</option><option>Otro</option></select></div></div>
+    <div class="fr2"><div class="fg2"><label class="fl2">Bultos</label><input id="ne-bul" class="fi" type="number" min="0" value="1"></div><div class="fg2"><label class="fl2">Kilos</label><input id="ne-kg" class="fi" type="number" min="0" step="0.01" value="0"></div></div>
+    <div class="fr2"><div class="fg2"><label class="fl2">Nº MRN</label><input id="ne-mrn" class="fi" placeholder="26ES…"></div><div class="fg2"><label class="fl2">Trámite aduanero</label><select id="ne-tra" class="fi fs"><option>Pendiente despachar</option><option>Despachado</option></select></div></div>
+    <div class="fr2"><div class="fg2"><label class="fl2">Fecha máx. despacho</label><input id="ne-fmax" class="fi" type="date"></div><div class="fg2"><label class="fl2">Ubicación inicial</label><select id="ne-ubic" class="fi fs">${optsUbic()}</select></div></div>
+    <div class="fr2"><div class="fg2"><label class="fl2">Docs. Puerto</label><select id="ne-docs" class="fi fs"><option value="No requiere">No requiere</option><option value="Pendiente">Pendiente</option><option value="En progreso">En progreso</option><option value="Sellada">Sellada</option></select></div><div class="fg2"><label class="fl2">Tarifa Grist (€)</label><input id="ne-tar" class="fi" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
+    <div style="display:flex;gap:20px;margin-bottom:16px"><label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="ne-na" style="accent-color:var(--b600)"> 🏢 Notificar Aduanas</label><label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="ne-nc" style="accent-color:var(--b600)"> 📧 Notificar Cliente</label></div>
+    <div class="fg2"><label class="fl2">Fotos llegada <span style="color:var(--gr600);font-size:11px">— compresión automática 75%</span></label><div class="foto-area" onclick="document.getElementById('ne-fi').click()"><input type="file" id="ne-fi" accept="image/*" multiple><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Seleccionar fotos de llegada</div></div><div id="ne-fst" class="foto-st"></div><div class="foto-prev" id="ne-fpv"></div></div>`;
+  },
+  action:async()=>{
+    const obj={nº_expedicion:gv('ne-ref'),buque_id:gv('ne-bq')||null,empresa_id:gv('ne-emp')||null,status_aduanero:gv('ne-sta'),tramite_aduanero:gv('ne-tra'),bultos:parseInt(gv('ne-bul'))||0,kilos:parseFloat(gv('ne-kg'))||0,nº_mrn:gv('ne-mrn')||null,fecha_max_despacho:gv('ne-fmax')||null,ubicacion:gv('ne-ubic'),tarifa_calculada:parseFloat(gv('ne-tar'))||null,notif_aduanas_sent:gc('ne-na'),notif_cliente_sent:gc('ne-nc'),fecha_aviso_aduanas:gc('ne-na')?new Date().toISOString():null,fecha_aviso_cliente:gc('ne-nc')?new Date().toISOString():null,created_by:CU?.id,created_by_nombre:CU?.nombre};
+    if(!obj.nº_expedicion){alert('La referencia es obligatoria');return;}
+    const {data,error}=await sb.from('expediciones').insert(obj).select().single();
+    if(error){alert('Error: '+error.message);return;}
+    await logAct('expediciones',data?.id,obj.nº_expedicion,'crear',null,null,obj.nº_expedicion);
+    showToast('Expedición creada');closeModal();loadView(CV);
+  },
+  after:()=>setTimeout(()=>setupFotos('ne-fi','ne-fpv','ne-fst'),100)
+},
+'nueva-incidencia':{t:'⚠️ Nueva incidencia',btn:'⚠️ Crear',
+  body:async(expId)=>{
+    const showExpSel=!expId;
+    const expOpts=showExpSel?(await sb.from('expediciones').select('id,nº_expedicion').neq('estado_semaforo','🚢 EMBARCADO').order('nº_expedicion')).data||[]:[];
+    return(showExpSel?`<div class="fr2"><div class="fg2"><label class="fl2">Expedición *</label><select id="ni-exp" class="fi fs"><option value="">— Seleccionar —</option>${expOpts.map(e=>`<option value="${e.id}">${e.nº_expedicion}</option>`).join('')}</select></div><div class="fg2"><label class="fl2">Tipo</label><select id="ni-tip" class="fi fs"><option>Embalaje</option><option>Faltas</option><option>Humedad</option><option>Roto</option><option>Precinto</option><option>Otro</option></select></div></div>`:`<input type="hidden" id="ni-exp" value="${expId}"><div class="fg2"><label class="fl2">Tipo</label><select id="ni-tip" class="fi fs"><option>Embalaje</option><option>Faltas</option><option>Humedad</option><option>Roto</option><option>Precinto</option><option>Otro</option></select></div>`)+`<div class="fg2"><label class="fl2">Descripción *</label><textarea id="ni-des" class="fi" placeholder="Describe la incidencia con detalle…"></textarea></div>`;
+  },
+  action:async()=>{const expId=gv('ni-exp');if(!expId){alert('Selecciona una expedición');return;}const {data}=await sb.from('incidencias').insert({expedicion_id:expId,tipo:gv('ni-tip'),descripcion:gv('ni-des'),nombre:gv('ni-tip')}).select().single();await logAct('incidencias',data?.id,gv('ni-tip'),'crear',null,null,gv('ni-tip'));showToast('Incidencia creada');closeModal();loadView(CV);}
+},
+'entrada-almacen':{t:'📥 Registrar entrada',btn:'✅ Confirmar',
+  body:async()=>{const {data}=await sb.from('expediciones').select('id,nº_expedicion,buques(nombre)').eq('ubicacion','Pendiente recibir').order('nº_expedicion');const opts=(data||[]).map(e=>`<option value="${e.id}">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</option>`).join('');return`<div class="fg2"><label class="fl2">Expedición *</label><select id="ea-exp" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div><div class="fg2"><label class="fl2">Ubicación</label><select id="ea-u" class="fi fs">${optsUbic(true,'Almacén-Sin Ubicar')}</select></div><div class="fg2"><label class="fl2">Fotos llegada</label><div class="foto-area" onclick="document.getElementById('ea-fi').click()"><input type="file" id="ea-fi" accept="image/*" multiple><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Toca para seleccionar fotos</div></div><div id="ea-fst" class="foto-st"></div><div class="foto-prev" id="ea-fpv"></div></div>`;},
+  action:async()=>{const id=gv('ea-exp');if(!id){alert('Selecciona una expedición');return;}await sb.from('expediciones').update({ubicacion:gv('ea-u'),notif_llegada_sent:true}).eq('id',id);await logAct('expediciones',id,'','editar','ubicacion','Pendiente recibir',gv('ea-u'));showToast('Entrada registrada');closeModal();loadView(CV);},
+  after:()=>setTimeout(()=>setupFotos('ea-fi','ea-fpv','ea-fst'),100)
+},
+'carga-camion':{t:'🚛 Carga camión',btn:'📸 Hacer foto primero',
+  body:async()=>{const {data}=await sb.from('expediciones').select('id,nº_expedicion,buques(nombre,id)').eq('estado_carga','✅ AUTORIZADO');const opts=(data||[]).map(e=>`<option value="${e.id}" data-bqid="${e.buques?.id||''}">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</option>`).join('');return`<div class="fg2"><label class="fl2">Expedición autorizada *</label><select id="cc-exp" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div>
+<div class="fg2"><label class="fl2">Foto camión cargado <span style="color:var(--rd600);font-size:10px">— requerida antes de confirmar</span></label><div class="foto-area" onclick="document.getElementById('cc-fi').click()"><input type="file" id="cc-fi" accept="image/*" multiple onchange="onCCFoto()"><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Toca para hacer foto del camión cargado</div></div><div id="cc-fst" class="foto-st"></div><div class="foto-prev" id="cc-fpv"></div></div>
+<button id="cc-confirm-btn" class="btn btn-g btn-full" style="display:none;margin-top:8px" onclick="confirmarCarga()">✅ Confirmar carga</button>
+<div class="fg2" style="margin-top:12px"><label class="fl2">— o — Finalizar carga de TODAS las expediciones de un buque</label><select id="cc-bq-all" class="fi fs"><option value="">— Seleccionar buque —</option>${((await sb.from('buques').select('id,nombre').not('estado_operacion','in','("Embarcado","Finalizado")').order('nombre')).data||[]).map(b=>`<option value="${b.id}">${b.nombre}</option>`).join('')}</select><button class="btn btn-w btn-sm" style="margin-top:8px;width:100%" onclick="finalizarTodas()">🚛 Marcar TODAS cargadas (este buque)</button></div>`;},
+  action:async()=>{showToast('Usa el botón verde para confirmar la carga');},
+  after:()=>setTimeout(()=>setupFotos('cc-fi','cc-fpv','cc-fst'),100)
+},
+'embarque-buque':{t:'🚢 Marcar embarcado',btn:'📸 Hacer foto primero',
+  body:async()=>{const {data}=await sb.from('buques').select('id,nombre').not('estado_operacion','in','("Embarcado","Finalizado")').order('nombre');const opts=(data||[]).map(b=>`<option value="${b.id}">${b.nombre}</option>`).join('');return`<div class="fg2"><label class="fl2">Buque *</label><select id="emb-bq" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div>
+<div class="fg2"><label class="fl2">Foto embarque <span style="color:var(--rd600);font-size:10px">— requerida antes de confirmar</span></label><div class="foto-area" onclick="document.getElementById('emb-fi').click()"><input type="file" id="emb-fi" accept="image/*" multiple onchange="onEmbFoto()"><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Foto del buque embarcado</div></div><div id="emb-fst" class="foto-st"></div><div class="foto-prev" id="emb-fpv"></div></div>
+<button id="emb-confirm-btn" class="btn btn-g btn-full" style="display:none;margin-top:8px" onclick="confirmarEmbarque()">✅ Confirmar embarque — cambiar estado a EMBARCADO</button>`;},
+  action:async()=>{showToast('Usa el botón verde para confirmar el embarque');},
+  after:()=>setTimeout(()=>setupFotos('emb-fi','emb-fpv','emb-fst'),100)
+},
+'fotos-buque':{t:'📸 Fotos embarque / buque',btn:'💾 Guardar fotos',
+  body:async()=>{const {data}=await sb.from('buques').select('id,nombre').not('estado_operacion','in','("Embarcado","Finalizado")').order('nombre');const opts=(data||[]).map(b=>`<option value="${b.id}">${b.nombre}</option>`).join('');return`<div class="fr2"><div class="fg2"><label class="fl2">Buque *</label><select id="fb-bq" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div><div class="fg2"><label class="fl2">Tipo de foto</label><select id="fb-tp" class="fi fs"><option>Carga camión</option><option>Embarque</option><option>Landed</option></select></div></div><div class="fg2"><label class="fl2">Fotos</label><div class="foto-area" onclick="document.getElementById('fb-fi').click()"><input type="file" id="fb-fi" accept="image/*" multiple><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Seleccionar fotos</div></div><div id="fb-fst" class="foto-st"></div><div class="foto-prev" id="fb-fpv"></div></div>`;},
+  action:async()=>{const bqId=gv('fb-bq');if(!bqId){alert('Selecciona un buque');return;}await logAct('buques',bqId,'','editar','fotos_'+gv('fb-tp').toLowerCase(),null,'Fotos registradas');showToast('Fotos guardadas');closeModal();},
+  after:()=>setTimeout(()=>setupFotos('fb-fi','fb-fpv','fb-fst'),100)
+},
+'gestionar-landed':{t:'⚓ Gestión Landed',btn:'⚓ Registrar landed',
+  body:async()=>{const {data}=await sb.from('expediciones').select('id,nº_expedicion,buques(nombre)').order('nº_expedicion');const opts=(data||[]).map(e=>`<option value="${e.id}">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</option>`).join('');return`<p style="font-size:13px;color:var(--g500);margin-bottom:14px;line-height:1.6">Bultos que deben descargarse del barco y recogerse en el muelle.</p><div class="fg2"><label class="fl2">Expedición vinculada</label><select id="gl-exp" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div><div class="fg2"><label class="fl2">Notas</label><textarea id="gl-not" class="fi" placeholder="Descripción de la mercancía landed…"></textarea></div><div class="fg2"><label class="fl2">Fotos recepción</label><div class="foto-area" onclick="document.getElementById('gl-fi').click()"><input type="file" id="gl-fi" accept="image/*" multiple><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Foto de la mercancía</div></div><div id="gl-fst" class="foto-st"></div><div class="foto-prev" id="gl-fpv"></div></div>`;},
+  action:async()=>{await logAct('expediciones',gv('gl-exp')||null,'','editar','landed',null,'Landed registrado');showToast('Landed registrado');closeModal();},
+  after:()=>setTimeout(()=>setupFotos('gl-fi','gl-fpv','gl-fst'),100)
+},
+'nuevo-usuario':{t:'👤 Nuevo usuario',btn:'👤 Crear usuario',
+  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre y apellidos"></div><div class="fg2"><label class="fl2">Email *</label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="oficina">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
+  action:async()=>{const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');if(!n||!e||!p){alert('Nombre, email y contraseña son obligatorios');return;}const {error}=await sb.from('usuarios').insert({nombre:n,email:e,rol:r,password_hash:p});if(error){alert('Error: '+error.message);return;}showToast('Usuario creado');closeModal();loadView(CV);}
+},
+'nueva-empresa':{t:'🏢 Nueva empresa',btn:'🏢 Crear empresa',
+  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="nmp-n" class="fi" placeholder="Nombre empresa"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="nmp-p" class="fi" placeholder="Nombre y apellidos"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="nmp-e" class="fi" type="email" placeholder="email@empresa.com"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="nmp-t" class="fi" placeholder="+34 956…"></div></div><div class="fg2"><label class="fl2">Otros emails <span style="color:var(--g400);font-weight:400">(separados por coma)</span></label><input id="nmp-o" class="fi" placeholder="email2@, email3@…"></div><div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="nmp-r-${r}" style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>`,
+  action:async()=>{const nombre=gv('nmp-n');if(!nombre){alert('El nombre es obligatorio');return;}const roles=['Cliente','Consignatario','Transportista'].filter(r=>document.getElementById('nmp-r-'+r)?.checked);const otros=gv('nmp-o').split(',').map(s=>s.trim()).filter(Boolean);const {error}=await sb.from('empresas').insert({nombre,persona_contacto:gv('nmp-p')||null,email_confronta:gv('nmp-e')||null,telefono:gv('nmp-t')||null,otros_emails:otros,rol:roles});if(error){alert('Error: '+error.message);return;}showToast('Empresa creada');closeModal();loadView(CV);}
+}};
+
+async function openModal(key,extraParam){
+  const m=MODALS[key];if(!m)return;
+  document.getElementById('m-title').textContent=m.t;
+  document.getElementById('m-body').innerHTML='<div class="loading"><div class="spinner"></div>Cargando...</div>';
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-p" id="mab">${m.btn}</button>`;
+  document.getElementById('mo').classList.add('open');
+  document.getElementById('m-body').innerHTML=await m.body(extraParam);
+  document.getElementById('mab').onclick=m.action;
+  if(m.after)m.after();
+}
+function closeModal(){document.getElementById('mo').classList.remove('open');}
+function closeModalOut(e){if(e.target.id==='mo')closeModal();}
+
+// ── BUSCAR IMO ── Solo VesselFinder y MarineTraffic
+function buscarIMOporNombre(){
+  const nom=document.getElementById('nb-n')?.value||'';
+  if(!nom||nom.length<2){alert('Escribe primero el nombre del buque');return;}
+  const enc=encodeURIComponent(nom);
+  window.open('https://www.marinetraffic.com/en/ais/index/ships/all/shipname:'+enc,'_blank');
+  window.open('https://www.vesselfinder.com/?name='+enc,'_blank');
+}
+function prevIMO(imo){
+  const d=document.getElementById('imo-prev');if(!d)return;
+  if(!imo||imo.length<5){d.innerHTML='';return;}
+  const nom=document.getElementById('nb-n')?.value||'';
+  const encNom=encodeURIComponent(nom);
+  d.innerHTML=`<a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic</a>`;
+  const nsDiv=document.getElementById('nombre-search');
+  if(nsDiv&&nom.length>2){nsDiv.innerHTML=`<div style="margin-top:6px;font-size:11px;color:var(--g500)">Buscar por nombre: <a class="ext-link" href="https://www.marinetraffic.com/en/ais/index/ships/all/shipname:${encNom}" target="_blank">🌍 MT por nombre</a> <a class="ext-link" href="https://www.vesselfinder.com/?name=${encNom}" target="_blank">🎯 VF por nombre</a></div>`;}
+}
+
+// ── DETALLE BUQUE ──────────────────────────────────────────
+async function openBuque(id){
+  const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre,email_confronta,otros_emails),en:consignatario_id(nombre,email_confronta)').eq('id',id).single();
+  if(!b)return;
+  const {data:exps}=await sb.from('expediciones').select('*').eq('buque_id',id).order('nº_expedicion');
+  const stCls=estOpCls(b.estado_operacion||b.estado||'');
+  document.getElementById('m-title').textContent='🚢 '+b.nombre;
+  document.getElementById('m-body').innerHTML=`
+    <div class="dg">
+      <div class="df"><div class="dl">IMO</div><div class="dv">${b.imo||'—'}</div></div>
+      <div class="df"><div class="dl">Nº Escala APBA</div>${apbaL(b.nº_escala)}</div>
+      <div class="df"><div class="dl">Ref. Visual Trans</div><div class="dv">${b.ref_visual_trans||'⚠️ Sin ref.'}</div></div>
+      <div class="df"><div class="dl">ETA</div><div class="dv">${fdl(b.eta_buque)}</div></div>
+      <div class="df"><div class="dl">Puerto / Terminal</div><div class="dv">${b.puerto_terminal||'—'}</div></div>
+      <div class="df"><div class="dl">Place</div><div class="dv">${b.place||'—'}</div></div>
+      <div class="df"><div class="dl">Cliente</div><div class="dv">${b.ec?.nombre||'—'}</div></div>
+      <div class="df"><div class="dl">Consignatario</div><div class="dv">${b.en?.nombre||'—'}</div></div>
+    </div>
+    ${b.created_by_nombre?`<div style="font-size:12px;color:var(--g400);margin-bottom:10px">Creado por <strong>${b.created_by_nombre}</strong>${b.updated_at?` · Actualizado: ${fdt(b.updated_at)}`:''}</div>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><span class="badge ${stCls}">${b.estado_operacion||'—'}</span>${pb(b.total_autorizadas,b.total_expediciones)}</div>
+    <div class="fg2">
+      <label class="fl2">Estado operación</label>
+      <select id="bq-est-${id}" class="fi fs" onchange="saveBuqueEst('${id}',this.value)">
+        ${['Sin comenzar','En proceso','Embarcado','Cancelado','Aplazado'].map(s=>`<option ${(b.estado_operacion||'En proceso')===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+    </div>
+    <div class="dl" style="margin-bottom:6px">Links externos</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${imoL(b.imo,b.nombre)}</div>
+    <hr class="fdiv">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:var(--g900)">Expediciones (${(exps||[]).length})</div>
+      <button class="btn btn-p btn-sm" onclick="abrirExpEnBuque('${b.id}','${b.nombre}')">+ Nueva expedición</button>
+    </div>
+    ${(exps||[]).map(e=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid var(--g200);border-radius:var(--r);margin-bottom:5px;cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--g50)'" onmouseleave="this.style.background=''" onclick="closeModal();setTimeout(()=>openExpD('${e.id}'),60)">
+      <div><div style="font-weight:600;font-size:13px">${e.nº_expedicion}</div><div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div></div>
+      ${bdg(e.estado_semaforo)}
+    </div>`).join('')||'<div class="empty" style="padding:20px"><div class="empty-txt">Sin expediciones</div></div>'}`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Email Confronta</button><button class="btn btn-g btn-sm" onclick="closeModal();setTimeout(()=>openModal('embarque-buque'),60)">🚢 Embarcar</button><button class="btn btn-p btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+async function saveBuqueEst(id,val){
+  await sb.from('buques').update({estado_operacion:val}).eq('id',id);
+  await logAct('buques',id,'','editar','estado_operacion',null,val);
+  const stCls=estOpCls(val);
+  const key=stCls.replace('st-','');
+  // Color map (CSS var fallbacks as hex for direct style application)
+  const BG={proceso:'#e3f2fd',embarcado:'#e8f5e9',cancelado:'#ffebee',aplazado:'#fff3e0',noiniciado:'#f5f5f5'};
+  const CLR={proceso:'#0d47a1',embarcado:'#1b5e20',cancelado:'#b71c1c',aplazado:'#e65100',noiniciado:'#424242'};
+  const BD={proceso:'#90caf9',embarcado:'#a5d6a7',cancelado:'#ef9a9a',aplazado:'#ffcc80',noiniciado:'#bdbdbd'};
+  const BAR={proceso:'#1565c0',embarcado:'#2e7d32',cancelado:'#c62828',aplazado:'#ef6c00',noiniciado:'#9e9e9e'};
+  // Update ALL cards with this buque id
+  document.querySelectorAll('[data-bid="'+id+'"]').forEach(el=>{
+    el.style.borderLeftColor=BAR[key]||'#ccc';
+    const icon=el.querySelector('.buque-icon');
+    if(icon)icon.style.background=BG[key]||'#f5f5f5';
+    // Update every state badge inside the card
+    el.querySelectorAll('.badge').forEach(b=>{
+      if(['Sin comenzar','En proceso','Embarcado','Cancelado','Aplazado','Finalizado'].includes(b.textContent.trim())){
+        b.className='badge '+stCls;
+        b.style.background=BG[key];
+        b.style.color=CLR[key];
+        b.style.border='1px solid '+BD[key];
+        b.textContent=val;
+      }
+    });
+  });
+  // Update badge in open modal (header status badge)
+  document.querySelectorAll('.mh ~ .mb .badge, .mb .badge').forEach(b=>{
+    if(['Sin comenzar','En proceso','Embarcado','Cancelado','Aplazado','Finalizado'].includes(b.textContent.trim())){
+      b.className='badge '+stCls;
+      b.style.background=BG[key];
+      b.style.color=CLR[key];
+      b.style.border='1px solid '+BD[key];
+      b.textContent=val;
+    }
+  });
+  // Update calendar tags with this bid
+  document.querySelectorAll('.cal-ev[data-bid="'+id+'"], .tl-chip[data-bid="'+id+'"]').forEach(ev=>{
+    ev.className=(ev.classList.contains('cal-ev')?'cal-ev ':'tl-chip ')+stCls;
+    ev.style.background=BG[key];
+    ev.style.color=CLR[key];
+    ev.style.borderLeftColor=BAR[key];
+  });
+  showToast('Estado → '+val);
+}
+
+// ── DETALLE EXPEDICIÓN ─────────────────────────────────────
+async function openExpD(id){
+  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas(nombre,email_confronta)').eq('id',id).single();
+  const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
+  if(!e)return;
+  const emailCli=e.empresas?.email_confronta||'';
+  document.getElementById('m-title').textContent='📦 '+e.nº_expedicion;
+  document.getElementById('m-body').innerHTML=`
+    <div class="dg">
+      <div class="df"><div class="dl">Buque</div><div class="dv" style="cursor:pointer;color:var(--b600)" onclick="closeModal();setTimeout(()=>openBuque('${e.buques?.id}'),60)">${e.buques?.nombre||'—'} ↗</div></div>
+      <div class="df"><div class="dl">Empresa</div><div class="dv">${e.empresas?.nombre||'—'}</div></div>
+      <div class="df"><div class="dl">Bultos</div><div class="dv">${e.bultos}</div></div>
+      <div class="df"><div class="dl">Kilos</div><div class="dv">${e.kilos} kg</div></div>
+      <div class="df"><div class="dl">Status aduanero</div><div class="dv">${e.status_aduanero||'—'}</div></div>
+      <div class="df"><div class="dl">Fecha máx. despacho</div><div class="dv">${fdl(e.fecha_max_despacho)}</div></div>
+    </div>
+    <div class="df"><div class="dl">Nº MRN</div><div style="font-family:var(--mono);font-size:13px;font-weight:500;color:${e.nº_mrn?'var(--g900)':'var(--am600)'}">${e.nº_mrn||'⚠️ Sin MRN — requerido para autorizar'}</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">${bdg(e.estado_semaforo)}<span class="badge ${e.estado_carga==='✅ AUTORIZADO'?'bg':'br'}">${e.estado_carga}</span></div>
+    ${e.created_by_nombre?`<div style="font-size:11px;color:var(--g400);margin-bottom:12px">Creado por <strong>${e.created_by_nombre}</strong>${e.updated_at?` · Última edición: ${fdt(e.updated_at)}`:''}</div>`:''}
+    <hr class="fdiv">
+    <div class="fg2"><label class="fl2">Actualizar MRN</label><div style="display:flex;gap:8px"><input id="mrn-inp" class="fi" value="${e.nº_mrn||''}" placeholder="26ES…" style="flex:1"><button class="btn btn-p btn-sm" onclick="saveMRN('${e.id}')">💾 Guardar</button></div></div>
+    <div class="fr2">
+      <div class="fg2"><label class="fl2">Trámite aduanero</label><select id="tra-sel" class="fi fs" onchange="saveTra('${e.id}',this.value)"><option ${e.tramite_aduanero==='Pendiente despachar'?'selected':''}>Pendiente despachar</option><option ${e.tramite_aduanero==='Despachado'?'selected':''}>Despachado</option></select></div>
+      <div class="fg2"><label class="fl2">Docs. Puerto</label><select id="docs-sel" class="fi fs" onchange="saveDocs('${e.id}',this.value)"><option ${(e.docs_puerto||'No requiere')==='No requiere'?'selected':''}>No requiere</option><option ${e.docs_puerto==='Pendiente'?'selected':''}>Pendiente</option><option ${e.docs_puerto==='En progreso'?'selected':''}>En progreso</option><option ${e.docs_puerto==='Sellada'?'selected':''}>Sellada</option></select></div>
+    </div>
+    <div class="fr2">
+      <div class="fg2"><label class="fl2">Ubicación</label><select id="ubic-sel" class="fi fs" onchange="saveUbic('${e.id}',this.value)">${UBICACIONES.map(u=>`<option ${e.ubicacion===u?'selected':''}>${u}</option>`).join('')}</select></div>
+      <div class="fg2"><label class="fl2">Carga camión</label><div style="font-size:13px;font-weight:500;padding:8px 0;color:${e.hora_de_carga?'var(--gr600)':'var(--g400)'}">${e.hora_de_carga?'🚛 Cargado: '+fdt(e.hora_de_carga):'Sin registrar'}</div></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <button class="btn btn-w btn-sm" onclick="notifAduana('${e.id}','${e.nº_expedicion}')">🏢 Notif. Aduanas${e.notif_aduanas_sent?' ✓':''}</button>
+      ${emailCli?`<button class="btn btn-s btn-sm" onclick="notifCliente('${e.id}','${emailCli}','${e.nº_expedicion}')">📧 Notif. Cliente${e.notif_cliente_sent?' ✓':''}</button>`:''}
+      <button class="btn btn-s btn-sm" onclick="openModal('nueva-incidencia','${e.id}')">⚠️ Incidencia</button>
+    </div>
+    ${(e.fecha_aviso_aduanas||e.fecha_aviso_cliente)?`<div style="font-size:11px;color:var(--g500);margin-bottom:10px;background:var(--g50);border-radius:var(--r);padding:6px 10px">
+      ${e.fecha_aviso_aduanas?`📬 Email aduanas enviado: <strong>${fdt(e.fecha_aviso_aduanas)}</strong><br>`:''}
+      ${e.fecha_aviso_cliente?`📬 Email cliente enviado: <strong>${fdt(e.fecha_aviso_cliente)}</strong>`:''}
+    </div>`:''}
+    <div id="grist-link-container" style="margin-bottom:14px"></div>
+    ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button><button class="btn btn-p btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button>`;
+  document.getElementById('mo').classList.add('open');
+  const gLink=gristLink(Object.assign({},e,{buques:e.buques,empresas:e.empresas}));
+  const gc2=document.getElementById('grist-link-container');
+  if(gc2){gc2.innerHTML=gLink?`<a href="${gLink}" target="_blank" class="btn btn-s btn-sm" style="width:100%;justify-content:center;text-decoration:none">📝 Registrar en Grist (AWB detectado)</a>`:'<a href="https://docs.getgrist.com" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">↗ Abrir Grist</a>';}
+}
+
+function checkNbUnlock(){
+  const n=(document.getElementById('nb-n')?.value||'').trim();
+  const vt=(document.getElementById('nb-vt')?.value||'').trim();
+  const rest=document.getElementById('nb-rest');
+  if(!rest)return;
+  if(n&&vt){rest.style.opacity='1';rest.style.pointerEvents='auto';}
+  else{rest.style.opacity='.35';rest.style.pointerEvents='none';}
+}
+
+async function saveDocs(id,val){await sb.from('expediciones').update({docs_puerto:val}).eq('id',id);await logAct('expediciones',id,'','editar','docs_puerto',null,val);showToast('Docs. Puerto → '+val);}
+
+function onCCFoto(){
+  const files=document.getElementById('cc-fi')?.files;
+  if(files&&files.length>0){
+    document.getElementById('cc-confirm-btn').style.display='';
+    const fst=document.getElementById('cc-fst');if(fst)fst.textContent='✅ '+files.length+' foto(s) lista(s)';
+  }
+}
+async function confirmarCarga(){
+  const id=gv('cc-exp');if(!id){alert('Selecciona una expedición');return;}
+  await sb.from('expediciones').update({hora_de_carga:new Date().toISOString()}).eq('id',id);
+  await logAct('expediciones',id,'','editar','hora_de_carga',null,'Carga confirmada por '+CU?.nombre+' — '+new Date().toLocaleString('es-ES'));
+  showToast('Carga registrada ✅');closeModal();loadView(CV);
+}
+async function finalizarTodas(){
+  const bqId=gv('cc-bq-all');if(!bqId){alert('Selecciona un buque');return;}
+  if(!confirm('¿Marcar como cargadas TODAS las expediciones autorizadas de este buque?'))return;
+  const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bqId).eq('estado_carga','✅ AUTORIZADO');
+  if(!data||!data.length){alert('No hay expediciones autorizadas para este buque');return;}
+  const ts=new Date().toISOString();
+  for(const e of data){
+    await sb.from('expediciones').update({hora_de_carga:ts}).eq('id',e.id);
+    await logAct('expediciones',e.id,e.nº_expedicion,'editar','hora_de_carga',null,'Carga masiva por '+CU?.nombre+' — '+new Date().toLocaleString('es-ES'));
+  }
+  showToast('Todas cargadas ('+data.length+' expediciones)');closeModal();loadView(CV);
+}
+function onEmbFoto(){
+  const files=document.getElementById('emb-fi')?.files;
+  if(files&&files.length>0){
+    document.getElementById('emb-confirm-btn').style.display='';
+    const fst=document.getElementById('emb-fst');if(fst)fst.textContent='✅ '+files.length+' foto(s) lista(s)';
+  }
+}
+async function confirmarEmbarque(){
+  const bqId=gv('emb-bq');if(!bqId){alert('Selecciona un buque');return;}
+  if(!confirm('¿Marcar el buque como EMBARCADO? Esto cambiará el estado de la operación y el color de la etiqueta.'))return;
+  await sb.from('buques').update({estado_operacion:'Embarcado'}).eq('id',bqId);
+  const {data:exps}=await sb.from('expediciones').select('id').eq('buque_id',bqId);
+  for(const e of exps||[]){
+    await sb.from('expediciones').update({estado_semaforo:'🚢 EMBARCADO'}).eq('id',e.id);
+  }
+  await logAct('buques',bqId,'','editar','estado_operacion','En proceso','Embarcado por '+CU?.nombre+' — '+new Date().toLocaleString('es-ES'));
+  showToast('¡Embarcado! Estado actualizado ✅');closeModal();loadView(CV);
+}
+async function saveMRN(id){const mrn=document.getElementById('mrn-inp').value;await sb.from('expediciones').update({nº_mrn:mrn||null}).eq('id',id);await logAct('expediciones',id,'','editar','nº_mrn',null,mrn);showToast('MRN guardado');closeModal();loadView(CV);}
+async function saveTra(id,val){await sb.from('expediciones').update({tramite_aduanero:val}).eq('id',id);await logAct('expediciones',id,'','editar','tramite_aduanero',null,val);showToast('Trámite actualizado');}
+async function saveUbic(id,val){await sb.from('expediciones').update({ubicacion:val}).eq('id',id);await logAct('expediciones',id,'','editar','ubicacion',null,val);showToast('Ubicación actualizada');}
+
+async function notifAduana(id,ref){
+  const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans,puerto_terminal,place),empresas(nombre,email_confronta,otros_emails)').eq('id',id).single();
+  const {data:incs}=await sb.from('incidencias').select('nombre,descripcion').eq('expedicion_id',id).neq('estado','Cerrada');
+  if(!e)return;
+  const vNombreB=e.buques?.nombre||'Sin Buque',vRefB=e.buques?.ref_visual_trans||'Sin Ref.',vTerminal=e.buques?.puerto_terminal||e.buques?.place||'No especificada',vExp=e.nº_expedicion||'-',vBultos=e.bultos||0,vKilos=e.kilos||0,vUbi=e.ubicacion||'No definida',vStatus=e.status_aduanero||'Pendiente';
+  const listaInc=(incs||[]).map(i=>'❌ '+i.nombre+': '+i.descripcion).join('\n');
+  const bloqueAviso=listaInc?'🚨 --- ADVERTENCIA IMPORTANTE: INCIDENCIAS ---\n'+listaInc:'ℹ️ ESTADO: Mercancía recibida / Pendiente de revisar.';
+  const destinatario=e.empresas?.email_confronta||'marcosvalenciamancilla@gmail.com';
+  const otrosEmails=(e.empresas?.otros_emails||[]).filter(Boolean);
+  const todosDestinatarios=[destinatario,...otrosEmails].join(',');
+  const cc=encodeURIComponent('marcosvalenciamancilla@gmail.com');
+  const asunto=encodeURIComponent('Nueva Expedición Buque '+vNombreB+' // Expediente '+vRefB);
+  const cuerpo=encodeURIComponent('Hola,\n\nuna expedición para el buque '+vNombreB+' requiere de vuestra atención.\n\n📍 Terminal: '+vTerminal+'\n🏢 Ubicación actual: '+vUbi+'\n\n🆔 Nº Expedición: '+vExp+'\n📦 Bultos: '+vBultos+'\n⚖️ Kilos: '+vKilos+' kg\n🚦 Status: '+vStatus+'\n\n'+bloqueAviso+'\n\nAtentamente,\nDepartamento de Operaciones');
+  await sb.from('expediciones').update({notif_aduanas_sent:true,fecha_aviso_aduanas:new Date().toISOString()}).eq('id',id);
+  await logAct('expediciones',id,ref,'email_aduanas','notif_aduanas_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
+  window.location.href='mailto:'+todosDestinatarios+'?cc='+cc+'&subject='+asunto+'&body='+cuerpo;
+  closeModal();loadView(CV);
+}
+async function notifCliente(id,emailDest,ref){
+  const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans),empresas(nombre,email_confronta,otros_emails)').eq('id',id).single();
+  const {data:incs}=await sb.from('incidencias').select('nombre,descripcion').eq('expedicion_id',id).neq('estado','Cerrada');
+  if(!e)return;
+  const listaInc=(incs||[]).map(i=>'❌ '+i.nombre+': '+i.descripcion).join('\n');
+  const bloqueAviso=listaInc?'🚨 INCIDENCIAS:\n'+listaInc:'ℹ️ Mercancía recibida correctamente.';
+  const todosEmails=[emailDest,...(e.empresas?.otros_emails||[])].filter(Boolean).join(',');
+  const asunto=encodeURIComponent('Recepción: '+e.buques?.nombre+' // Exp: '+e.nº_expedicion);
+  const cuerpo=encodeURIComponent('Estimado cliente,\n\nLe informamos que su mercancía ha sido recibida.\n\n🚢 Buque: '+e.buques?.nombre+'\n🆔 Expedición: '+e.nº_expedicion+'\n📦 Bultos: '+e.bultos+'\n⚖️ Kilos: '+e.kilos+' kg\n📍 Ubicación: '+e.ubicacion+'\n🚦 Status: '+e.status_aduanero+'\n\n'+bloqueAviso+'\n\nAtentamente,\nDepartamento de Operaciones');
+  const cc=encodeURIComponent('marcosvalenciamancilla@gmail.com');
+  await sb.from('expediciones').update({notif_cliente_sent:true,fecha_aviso_cliente:new Date().toISOString()}).eq('id',id);
+  await logAct('expediciones',id,e.nº_expedicion,'email_cliente','notif_cliente_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
+  window.location.href=`mailto:${todosEmails}?cc=${cc}&subject=${asunto}&body=${cuerpo}`;
+  closeModal();loadView(CV);
+}
+async function sendConfronta(buqueId){
+  const {data:b}=await sb.from('buques').select('*,en:consignatario_id(nombre,email_confronta)').eq('id',buqueId).single();
+  const {data:exps}=await sb.from('expediciones').select('bultos,kilos,nº_mrn').eq('buque_id',buqueId);
+  if(!b)return;
+  const totalBultos=(exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
+  const totalPeso=(exps||[]).reduce((a,e)=>a+(e.kilos||0),0);
+  const mrns=(exps||[]).map(e=>e.nº_mrn).filter(Boolean);
+  const destinatario='ca-pif-algeciras-confronta@guardiacivil.org';
+  const emailCC=b.en?.email_confronta||'';
+  const emailBCC='als@alsalgeciras.com,aduanas@alsalgeciras.com';
+  const asunto=encodeURIComponent('Avituallamiento: '+b.nombre+' // ETA: '+(b.eta_buque?fdl(b.eta_buque):'Sin Fecha'));
+  const cuerpo=encodeURIComponent('Buenos días,\n\nAdjuntamos documentación para el suministro a bordo del buque:\n\n🚢 Buque: '+b.nombre+'\n🆔 Escala: '+(b.nº_escala||'Sin Escala')+'\n🏢 Consignatario: '+(b.en?.nombre||'Sin especificar')+'\n📍 Terminal: '+(b.puerto_terminal||b.place||'No especificada')+'\n📅 ETA: '+(b.eta_buque?fdl(b.eta_buque):'Sin Fecha')+'\n\n📦 Total Bultos: '+totalBultos+'\n⚖️ Peso Total: '+totalPeso+' kg\n\n--- MRNs ---\n'+(mrns.length?mrns.join('\n'):'Ninguno')+'\n\nAtentamente,\n\nDepartamento de Operaciones\nAlgeciras Logistic Solutions\nOPERATIONS 24/7 +34 956 58 13 16\nBOARDINGS 24/7 +34 664 07 49 40');
+  let mailto=`mailto:${destinatario}?subject=${asunto}&body=${cuerpo}`;
+  if(emailCC)mailto+=`&cc=${encodeURIComponent(emailCC)}`;
+  if(emailBCC)mailto+=`&bcc=${encodeURIComponent(emailBCC)}`;
+  window.location.href=mailto;
+}
+
+function abrirExpEnBuque(buqueId,buqueNombre){
+  closeModal();
+  setTimeout(async()=>{
+    const m=MODALS['nueva-expedicion'];
+    document.getElementById('m-title').textContent='📦 Nueva expedición — '+buqueNombre;
+    document.getElementById('m-body').innerHTML='<div class="loading"><div class="spinner"></div>Cargando...</div>';
+    document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-p" id="mab">${m.btn}</button>`;
+    document.getElementById('mo').classList.add('open');
+    document.getElementById('m-body').innerHTML=await m.body();
+    const sel=document.getElementById('ne-bq');if(sel){sel.value=buqueId;sel.disabled=true;}
+    document.getElementById('mab').onclick=m.action;
+    if(m.after)m.after();
+  },80);
+}
+
+// ── ALBARÁN ─────────────────────────────────────────────────
+function abrirAlbaran(contenido){
+  const ov=document.createElement('div');
+  ov.id='alb-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;flex-direction:column;align-items:center;padding:20px;gap:10px';
+  const toolbar=document.createElement('div');
+  toolbar.style.cssText='display:flex;gap:10px;align-items:center;width:100%;max-width:820px';
+  toolbar.innerHTML=`<button onclick="document.getElementById('alb-overlay').remove()" style="padding:7px 16px;background:#fff;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:13px">✕ Cerrar</button><button onclick="document.getElementById('alb-frame').contentWindow.print()" style="padding:7px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">🖨️ Imprimir / Guardar PDF</button>`;
+  const iframe=document.createElement('iframe');
+  iframe.id='alb-frame';
+  iframe.style.cssText='width:100%;max-width:820px;flex:1;border:none;border-radius:8px;background:#fff';
+  ov.appendChild(toolbar);ov.appendChild(iframe);document.body.appendChild(ov);
+  iframe.contentDocument.open();iframe.contentDocument.write(contenido);iframe.contentDocument.close();
+}
+
+function htmlAlb(b,exps){
+  const tb=exps.reduce((a,e)=>a+e.bultos,0),tk=exps.reduce((a,e)=>a+e.kilos,0);
+  return`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Albarán — ${b.nombre||''}</title>
+  <style>
+  body{font-family:Arial,sans-serif;font-size:12px;padding:30px;max-width:780px;margin:0 auto;color:#000}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid #000}
+  .logo{font-size:26px;font-weight:900;letter-spacing:-1px;color:#1565c0}
+  .logo-sub{font-size:13px;color:#333;margin-top:2px}
+  .contact{font-size:10px;color:#555;margin-top:6px;line-height:1.7}
+  .cert{background:#cc0000;color:#fff;font-size:9px;padding:4px 8px;border-radius:4px;font-weight:700;line-height:1.4;text-align:center;display:inline-block}
+  .dt{font-size:14px;font-weight:700;text-align:right}.dd{font-size:11px;color:#666;text-align:right;margin-top:3px}
+  h3{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#666;margin:16px 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px}
+  .f label{font-size:9px;color:#666;text-transform:uppercase;display:block;margin-bottom:2px}.f span{font-weight:600;font-size:12px}
+  table{width:100%;border-collapse:collapse}th{background:#222;color:#fff;padding:7px 10px;font-size:10px;text-align:left;text-transform:uppercase}
+  td{padding:7px 10px;border-bottom:1px solid #e5e5e5;font-size:11px}tr:nth-child(even)td{background:#fafafa}.tot td{font-weight:700;background:#efefef}
+  .sign{margin-top:36px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}.sb{border-top:1px solid #000;padding-top:8px;font-size:10px;color:#555}
+  @media print{.np{display:none}}
+  </style></head><body>
+  <div class="hd">
+    <div>
+      <div class="logo">ALS · LS | Logistic Solutions</div>
+      <div class="logo-sub">Algeciras Logistic Solutions (ALS)</div>
+      <div class="contact">
+        📞 +34 956 58 13 16 &nbsp;|&nbsp; 📠 +34 956 676591<br>
+        ✉️ als@alsalgeciras.com &nbsp;|&nbsp; 📍 GPS: 36.183099, -5.433061
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div class="cert">ISO 9001 · ISO 14001<br>BUREAU VERITAS<br>Certification</div>
+      <div class="dt" style="margin-top:8px">ALBARÁN DE CARGA</div>
+      <div class="dd">${new Date().toLocaleDateString('es-ES')}</div>
+    </div>
+  </div>
+  <div class="np" style="margin-bottom:14px"><button onclick="window.print()" style="padding:7px 18px;background:#000;color:#fff;border:none;border-radius:5px;cursor:pointer">🖨️ Imprimir / PDF</button></div>
+  <h3>Datos del buque</h3>
+  <div class="g2"><div><div class="f"><label>Buque</label><span>${b.nombre||'—'}</span></div><div class="f"><label>IMO</label><span>${b.imo||'—'}</span></div><div class="f"><label>Nº Escala</label><span>${b.nº_escala||'—'}</span></div><div class="f"><label>Puerto / Terminal</label><span>${b.puerto_terminal||b.place||'—'}</span></div></div><div><div class="f"><label>ETA</label><span>${b.eta_buque?new Date(b.eta_buque).toLocaleDateString('es-ES'):'—'}</span></div><div class="f"><label>Estado</label><span>${b.estado_operacion||'—'}</span></div><div class="f"><label>Cliente</label><span>${b.ec?.nombre||b.cliente||'—'}</span></div><div class="f"><label>Consignatario</label><span>${b.en?.nombre||b.consignatario||'—'}</span></div></div></div>
+  <h3>Expediciones autorizadas — ${exps.length} registros</h3>
+  <table><thead><tr><th>#</th><th>Referencia</th><th>Bultos</th><th>Kilos</th><th>MRN</th><th>Status</th><th>Ubicación</th></tr></thead>
+  <tbody>${exps.map((e,i)=>`<tr><td>${i+1}</td><td><strong>${e.nº_expedicion}</strong></td><td>${e.bultos}</td><td>${e.kilos}</td><td style="font-family:monospace;font-size:9px">${e.nº_mrn||'—'}</td><td>${e.status_aduanero||'—'}</td><td>${e.ubicacion||'—'}</td></tr>`).join('')}
+  <tr class="tot"><td colspan="2">TOTAL</td><td>${tb}</td><td>${tk}</td><td colspan="3"></td></tr></tbody></table>
+  <div class="sign">
+    <div><div class="sb">Conformidad conductor<br><br><br>Firma y DNI: _______________________<br><br>Fecha: _______________</div></div>
+    <div><div class="sb">Recepción buque<br><br><br>Firma y DNI: _______________________<br><br>Fecha: _______________</div></div>
+    <div style="text-align:center;padding-top:8px"><div style="font-size:9px;color:#999;margin-bottom:4px">Verificar expedición:</div><img src="https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=ALS-${b.nombre||'buque'}" style="width:60px;height:60px"></div>
+  </div>
+  <p style="margin-top:18px;font-size:9px;color:#aaa;text-align:center">Generado el ${new Date().toLocaleString('es-ES')} · ALS Portal Operativo · Algeciras Logistic Solutions</p>
+  </body></html>`;
+}
+
+async function impAlb(buqueId){
+  const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').eq('id',buqueId).single();
+  const {data:exps}=await sb.from('expediciones').select('*').eq('buque_id',buqueId).eq('estado_carga','✅ AUTORIZADO');
+  if(!b)return;
+  abrirAlbaran(htmlAlb(b,exps||[]));
+}
+async function impExpAlb(expId){
+  const {data:e}=await sb.from('expediciones').select('*,buques(*,ec:cliente_id(nombre),en:consignatario_id(nombre))').eq('id',expId).single();
+  if(!e)return;
+  abrirAlbaran(htmlAlb(e.buques||{},[e]));
+}
+
+
+
+
+// ── Exponer todas las funciones al ámbito global (window) ──
+// Esto es necesario porque los onclick del HTML las buscan en window
+
+</script>
+<script>
+(function(){var code=document.getElementById("als-js").textContent;try{(0,eval)(code);}catch(err){var e=document.getElementById("li-err");if(e){e.style.color="red";e.textContent="Error JS: "+err.message;}console.error("ALS init error:",err);}})()
+</script>
+</body>
+</html>
