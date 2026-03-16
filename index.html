@@ -2523,7 +2523,13 @@ const MODALS={
     const {data,error}=await sb.from('expediciones').insert(obj).select().single();
     if(error){alert('Error: '+error.message);return;}
     await logAct('expediciones',data?.id,obj.nº_expedicion,'crear',null,null,obj.nº_expedicion);
-    showToast('Expedición creada');closeModal();loadView(CV);
+    showToast('Expedición creada');
+    closeModal();
+    loadView(CV);
+    // Si la ubicación es de aeropuerto → crear entrada en airport_cargo y ofrecer completarla
+    if((obj.ubicacion||'').includes('Aeropuerto')){
+      await crearAirportCargoDesdeExpedicion(data, obj);
+    }
   },
   after:()=>setTimeout(()=>setupFotos('ne-fi','ne-fpv','ne-fst'),100)
 },
@@ -2932,6 +2938,73 @@ function abrirExpEnBuque(buqueId,buqueNombre){
 }
 
 // ── ALBARÁN ─────────────────────────────────────────────────
+// ── AIRPORT CARGO: crear entrada automática desde expedición ──
+async function crearAirportCargoDesdeExpedicion(expData, obj){
+  // Determinar código aeropuerto desde la ubicación
+  const ubicMap={'Aeropuerto-Málaga AGP':'AGP','Aeropuerto-Sevilla SVQ':'SVQ','Aeropuerto-Madrid MAD':'MAD'};
+  const apto=ubicMap[obj.ubicacion]||'AGP';
+
+  // Obtener nombre del buque si hay buque_id
+  let nombreBuque='';
+  if(obj.buque_id){
+    const {data:b}=await sb.from('buques').select('nombre').eq('id',obj.buque_id).single();
+    if(b) nombreBuque=b.nombre;
+  }
+
+  // Obtener nombre del consignatario/empresa si hay empresa_id
+  let nombreEmp='';
+  if(obj.empresa_id){
+    const {data:emp}=await sb.from('empresas').select('nombre').eq('id',obj.empresa_id).single();
+    if(emp) nombreEmp=emp.nombre;
+  }
+
+  // Crear entrada básica en airport_cargo vinculada a esta expedición
+  const acObj={
+    awb:obj.nº_expedicion,
+    kilos_tasables:obj.kilos||0,
+    bultos:obj.bultos||null,
+    consignatario:nombreEmp||null,
+    buque:nombreBuque||null,
+    status:obj.status_aduanero||'T1',
+    aeropuerto:apto,
+    expedicion_id:expData?.id||null,
+    fecha_llegada:new Date().toISOString().slice(0,10) // fecha de hoy como llegada provisional
+  };
+  const {data:acData,error:acError}=await sb.from('airport_cargo').insert(acObj).select().single();
+  if(acError){
+    console.warn('Airport cargo insert error:',acError);
+  }
+
+  // Mostrar modal con opción de ir a completar la entrada
+  setTimeout(()=>{
+    document.getElementById('m-title').textContent='✈️ Expedición de aeropuerto detectada';
+    document.getElementById('m-body').innerHTML=`
+      <div class="info-box" style="margin-bottom:16px">
+        La expedición <strong>${obj.nº_expedicion}</strong> tiene ubicación <strong>${obj.ubicacion}</strong>.<br>
+        Se ha creado automáticamente una entrada en <strong>Airport Cargo</strong> con los datos básicos.
+      </div>
+      <div style="background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:14px;margin-bottom:16px">
+        <div style="font-size:12px;color:var(--g500);margin-bottom:8px">Datos transferidos:</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
+          <div><span style="color:var(--g500)">AWB:</span> <strong>${obj.nº_expedicion}</strong></div>
+          <div><span style="color:var(--g500)">Aeropuerto:</span> <strong>${apto}</strong></div>
+          <div><span style="color:var(--g500)">Kg tasables:</span> <strong>${obj.kilos||0}</strong></div>
+          <div><span style="color:var(--g500)">Bultos:</span> <strong>${obj.bultos||'—'}</strong></div>
+          <div><span style="color:var(--g500)">Consignatario:</span> <strong>${nombreEmp||'—'}</strong></div>
+          <div><span style="color:var(--g500)">Buque:</span> <strong>${nombreBuque||'—'}</strong></div>
+        </div>
+      </div>
+      <div style="font-size:13px;color:var(--am600);background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px">
+        ⚠️ Faltan por completar: <strong>Fecha de retirada, Handler, y cargos adicionales</strong>.<br>
+        Ábrelo en Airport Cargo para calcular el coste de handling.
+      </div>`;
+    document.getElementById('m-foot').innerHTML=`
+      <button class="btn btn-s" onclick="closeModal()">Más tarde</button>
+      <button class="btn btn-p" onclick="closeModal();window.open('airport_cargo.html','_blank')">✈️ Abrir Airport Cargo</button>`;
+    document.getElementById('mo').classList.add('open');
+  },400);
+}
+
 function abrirAlbaran(contenido){
   const ov=document.createElement('div');
   ov.id='alb-overlay';
