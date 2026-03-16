@@ -2070,12 +2070,16 @@ async function loadAlmFotos(tab){
   if(!cont)return;
   cont.innerHTML='<div class="loading"><div class="spinner"></div>Cargando...</div>';
   if(currentFotosTab==='llegadas'){
-    // Expediciones pendientes: ubicacion = Pendiente recibir O contiene "Aeropuerto"
-    const {data:exps}=await sb.from('expediciones')
+    // Cargar todas las expediciones activas y filtrar en JS (evita problemas con .or() en PostgREST)
+    const {data:todas}=await sb.from('expediciones')
       .select('*,buques(id,nombre,eta_buque)')
-      .neq('estado_semaforo','🚢 EMBARCADO')
-      .or('ubicacion.eq.Pendiente recibir,ubicacion.ilike.%Aeropuerto%');
-    if(!exps||!exps.length){
+      .neq('estado_semaforo','🚢 EMBARCADO');
+    // Filtrar: ubicacion === 'Pendiente recibir' O contiene 'Aeropuerto'
+    const exps=(todas||[]).filter(e=>{
+      const u=e.ubicacion||'';
+      return u==='Pendiente recibir' || u.includes('Aeropuerto');
+    });
+    if(!exps.length){
       cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">✅</div><div class="empty-txt">No hay expediciones pendientes de llegada</div></div>';
       return;
     }
