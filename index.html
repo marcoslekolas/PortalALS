@@ -474,13 +474,70 @@ textarea.fi{resize:vertical;min-height:72px}
     </nav>
     <div id="content">
       <div class="view" id="view-dashboard">
+        <!-- Filtros del dashboard -->
+        <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px 20px;margin-bottom:20px;box-shadow:var(--sh0)">
+          <div style="font-size:12px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">🔍 Filtros del dashboard</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+            <div>
+              <label class="fl2">Año</label>
+              <select id="df-año" class="fi fs" onchange="loadDash()">
+                <option value="">Todos</option>
+              </select>
+            </div>
+            <div>
+              <label class="fl2">Mes</label>
+              <select id="df-mes" class="fi fs" onchange="loadDash()">
+                <option value="">Todos</option>
+                <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+                <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+                <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+                <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+              </select>
+            </div>
+            <div>
+              <label class="fl2">Cliente</label>
+              <select id="df-cli" class="fi fs" onchange="loadDash()"><option value="">Todos</option></select>
+            </div>
+            <div>
+              <label class="fl2">Consignatario</label>
+              <select id="df-con" class="fi fs" onchange="loadDash()"><option value="">Todos</option></select>
+            </div>
+            <div>
+              <label class="fl2">Estado buque</label>
+              <select id="df-est" class="fi fs" onchange="loadDash()">
+                <option value="">Todos</option>
+                <option>Sin comenzar</option><option>En proceso</option><option>Embarcado</option><option>Cancelado</option><option>Aplazado</option>
+              </select>
+            </div>
+            <div>
+              <label class="fl2">Status aduanero</label>
+              <select id="df-sta" class="fi fs" onchange="loadDash()">
+                <option value="">Todos</option>
+                <option>Comunitario</option><option>DAE</option><option>T1</option><option>Terceros</option><option>X</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-s btn-sm" onclick="resetDashFilters()">↺ Limpiar filtros</button>
+            <span id="df-info" style="font-size:12px;color:var(--g500);align-self:center"></span>
+          </div>
+        </div>
+        <!-- KPIs -->
         <div class="kpi-grid" id="kpi-grid"></div>
-        <div class="ph"><div class="pt">Listos para embarcar ✅</div></div>
-        <div id="listos-dash" class="buque-list"></div>
-        <div class="ph" style="margin-top:20px"><div class="pt">Buques en operación</div></div>
-        <div id="buques-dash" class="buque-list"></div>
-        <div class="ph" style="margin-top:20px"><div class="pt">Últimas expediciones</div></div>
-        <div class="tc" id="exp-dash"></div>
+        <!-- Secciones operativas -->
+        <div id="dash-listos-sec">
+          <div class="ph"><div class="pt">✅ Listos para embarcar</div></div>
+          <div id="listos-dash" class="buque-list"></div>
+        </div>
+        <div id="dash-proceso-sec" style="margin-top:20px">
+          <div class="ph"><div class="pt">🚢 Buques en operación</div><span id="dash-proceso-count" class="badge bb"></span></div>
+          <div id="buques-dash" class="buque-list"></div>
+        </div>
+        <!-- Gráficas resumen -->
+        <div style="margin-top:24px">
+          <div class="ph"><div class="pt">📊 Resumen estadístico</div></div>
+          <div class="cg" id="dash-charts"></div>
+        </div>
       </div>
       <div class="view" id="view-flota"><div class="fg" id="flota-grid"></div></div>
       <div class="view" id="view-buques">
@@ -489,15 +546,19 @@ textarea.fi{resize:vertical;min-height:72px}
       </div>
       <div class="view" id="view-expediciones">
         <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-          <div class="sbar" style="flex:1;min-width:200px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" placeholder="Buscar referencia, buque..." oninput="filtrarE(this.value)"></div>
-          <select class="fi fs" style="width:auto" onchange="filtrarEst(this.value)">
+          <div class="sbar" style="flex:1;min-width:200px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" placeholder="Buscar referencia, buque, empresa..." oninput="filtrarE(this.value)"></div>
+          <select class="fi fs" style="width:auto" onchange="filtrarEst(this.value)" id="fil-est">
             <option value="">Todos los estados</option>
             <option>⏳ EN TRÁNSITO</option><option>⌛ ESPERANDO ALMACÉN</option>
             <option>📦 UBICADA</option><option>🚨 EN ALMACÉN - REVISAR</option>
             <option>✅ AUTORIZADO</option><option>🚛 CARGADO CAMIÓN</option>
           </select>
+          <select class="fi fs" style="width:auto" onchange="filtrarStatus(this.value)" id="fil-sta">
+            <option value="">Todos los status</option>
+            <option>Comunitario</option><option>DAE</option><option>T1</option><option>Terceros</option><option>X</option>
+          </select>
         </div>
-        <div class="tc"><table class="tbl"><thead><tr><th>Referencia</th><th>Buque</th><th>Empresa</th><th>Carga</th><th>Estado</th><th>Aduanas</th><th>Ubicación</th></tr></thead><tbody id="exp-tbody"></tbody></table></div>
+        <div class="tc"><table class="tbl"><thead><tr><th>Referencia</th><th>Buque</th><th>Empresa</th><th>Carga</th><th>Estado</th><th>Status Adua.</th><th>Trámite</th><th>Ubic.</th><th>F. Máx. Desp.</th></tr></thead><tbody id="exp-tbody"></tbody></table></div>
       </div>
       <div class="view" id="view-kanban"><div class="kb-board" id="kb-board"></div></div>
       <div class="view" id="view-calendario">
@@ -616,7 +677,7 @@ textarea.fi{resize:vertical;min-height:72px}
 
 // ── ALS App Code (global scope) ──
 
-const UBICACIONES=['Pendiente recibir','Almacén-Sin Ubicar','Almacén-1ª Planta','Almacén-2ª Planta','Almacén-Zona A','Almacén-Zona B','Almacén-Zona C','Puerto','Muelle','A bordo','Camión cargado','Desembarcado','Aeropuerto-Málaga AGP','Aeropuerto-Sevilla SVQ','Aeropuerto-Madrid MAD'];
+const UBICACIONES=['Pendiente recibir','Almacén-Sin Ubicar','Almacén-1ª Planta','Almacén-Planta Baja','Almacén-ADT','Almacén-LAME','A bordo','Camión cargado','Desembarcado','Puerto','Aeropuerto-Málaga AGP','Aeropuerto-Sevilla SVQ','Aeropuerto-Madrid MAD'];
 const ROLES_LABELS={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
 
 // ── Estado operación → clase CSS ──
@@ -982,28 +1043,153 @@ function buqueCard(b,listo){
   </div>`;
 }
 
-async function loadDash(){
-  const [bR,eR,iR]=await Promise.all([
-    sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').not('estado_operacion','in','("Embarcado","Finalizado","Cancelado")'),
-    sb.from('expediciones').select('*,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO'),
-    sb.from('incidencias').select('id').eq('estado','Abierta')
+let _dashInited=false;
+async function initDashFilters(){
+  if(_dashInited)return;_dashInited=true;
+  const [{data:emps},{data:buques}]=await Promise.all([
+    sb.from('empresas').select('id,nombre,rol').order('nombre'),
+    sb.from('buques').select('eta_buque').not('eta_buque','is',null)
   ]);
-  const B=bR.data||[],E=eR.data||[],I=iR.data||[];
+  // Populate años
+  const años=[...new Set((buques||[]).map(b=>new Date(b.eta_buque).getFullYear()))].sort((a,b)=>b-a);
+  const selA=document.getElementById('df-año');
+  años.forEach(a=>{const o=document.createElement('option');o.value=a;o.textContent=a;selA.appendChild(o);});
+  // Set current year as default
+  const now=new Date();
+  for(let o of selA.options){if(o.value==now.getFullYear()){o.selected=true;break;}}
+  // Clientes y consignatarios
+  const clientes=(emps||[]).filter(e=>(e.rol||[]).includes('Cliente'));
+  const consig=(emps||[]).filter(e=>(e.rol||[]).includes('Consignatario'));
+  const selC=document.getElementById('df-cli'),selCo=document.getElementById('df-con');
+  clientes.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.nombre;selC.appendChild(o);});
+  consig.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.nombre;selCo.appendChild(o);});
+}
+
+function resetDashFilters(){
+  const now=new Date();
+  const selA=document.getElementById('df-año');
+  for(let o of selA.options){o.selected=o.value==now.getFullYear();}
+  ['df-mes','df-cli','df-con','df-est','df-sta'].forEach(id=>{const s=document.getElementById(id);if(s)s.value='';});
+  loadDash();
+}
+
+async function loadDash(){
+  await initDashFilters();
+  const año=document.getElementById('df-año')?.value||'';
+  const mes=document.getElementById('df-mes')?.value||'';
+  const cliId=document.getElementById('df-cli')?.value||'';
+  const conId=document.getElementById('df-con')?.value||'';
+  const est=document.getElementById('df-est')?.value||'';
+  const sta=document.getElementById('df-sta')?.value||'';
+
+  // Build buques query — load ALL non-embarcado/finalizado
+  let bQ=sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)');
+  if(est) bQ=bQ.eq('estado_operacion',est);
+  else bQ=bQ.not('estado_operacion','in','("Embarcado","Finalizado")');
+  if(cliId) bQ=bQ.eq('cliente_id',cliId);
+  if(conId) bQ=bQ.eq('consignatario_id',conId);
+  if(año){
+    bQ=bQ.gte('eta_buque',`${año}-01-01`).lte('eta_buque',`${año}-12-31`);
+  }
+  if(mes&&año){
+    const m=mes.padStart(2,'0');
+    const lastDay=new Date(parseInt(año),parseInt(mes),0).getDate();
+    bQ=bQ.gte('eta_buque',`${año}-${m}-01`).lte('eta_buque',`${año}-${m}-${lastDay}`);
+  }
+  bQ=bQ.order('eta_buque',{ascending:true,nullsFirst:false});
+
+  // Expediciones query
+  let eQ=sb.from('expediciones').select('*,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)');
+  if(sta) eQ=eQ.eq('status_aduanero',sta);
+  eQ=eQ.neq('estado_semaforo','🚢 EMBARCADO');
+
+  const [bR,eR,iR]=await Promise.all([bQ,eQ,sb.from('incidencias').select('id').eq('estado','Abierta')]);
+  let B=bR.data||[];
+  let E=eR.data||[];
+
+  // Post-filter expediciones by buque filters if needed
+  if(cliId) E=E.filter(e=>e.buques?.cliente_id===cliId);
+  if(conId) E=E.filter(e=>e.buques?.consignatario_id===conId);
+  if(año) E=E.filter(e=>{if(!e.buques?.eta_buque)return true;return new Date(e.buques.eta_buque).getFullYear()==parseInt(año);});
+  if(mes&&año) E=E.filter(e=>{if(!e.buques?.eta_buque)return true;const d=new Date(e.buques.eta_buque);return d.getMonth()+1==parseInt(mes)&&d.getFullYear()==parseInt(año);});
+
+  const I=iR.data||[];
   const auth=E.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
   const pct=E.length?Math.round(auth/E.length*100):0;
   const alc=E.filter(e=>!e.nº_mrn&&e.ubicacion!=='Pendiente recibir').length;
+  const totalBultos=E.reduce((a,e)=>a+(e.bultos||0),0);
+  const totalKilos=E.reduce((a,e)=>a+(e.kilos||0),0);
   if(alc>0){document.getElementById('badge-al').textContent=alc;document.getElementById('badge-al').style.display='';}
-  const enProceso=B.filter(b=>b.estado_operacion==='En proceso');
+
+  // Filter info
+  const filtros=[];
+  if(año)filtros.push(año);if(mes)filtros.push(['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(mes)]);
+  const selC=document.getElementById('df-cli');const selCo=document.getElementById('df-con');
+  if(cliId&&selC)filtros.push(selC.options[selC.selectedIndex]?.text);
+  if(conId&&selCo)filtros.push(selCo.options[selCo.selectedIndex]?.text);
+  if(est)filtros.push(est);if(sta)filtros.push(sta);
+  const dfInfo=document.getElementById('df-info');
+  if(dfInfo)dfInfo.textContent=filtros.length?'Mostrando: '+filtros.join(' · '):'Mostrando todo el historial';
+
+  // KPIs
+  const enProceso=B.filter(b=>b.estado_operacion==='En proceso'||!b.estado_operacion);
   document.getElementById('kpi-grid').innerHTML=`
-    <div class="kpi bl"><div class="kpi-lbl">Buques activos</div><div class="kpi-val">${B.length}</div><div class="kpi-sub" style="color:var(--b600)">${enProceso.length} en proceso</div></div>
-    <div class="kpi gr"><div class="kpi-lbl">Expediciones abiertas</div><div class="kpi-val">${E.length}</div></div>
-    <div class="kpi gr"><div class="kpi-lbl">Autorizadas ✅</div><div class="kpi-val">${auth}</div><div class="kpi-sub ${pct>70?'ks-g':'ks-a'}">${pct}% del total</div></div>
-    <div class="kpi rd"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>`;
-  const lis=B.filter(b=>b.total_expediciones>0&&b.total_expediciones===b.total_autorizadas);
-  document.getElementById('listos-dash').innerHTML=lis.length?lis.map(b=>buqueCard(b,true)).join(''):'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques listos para embarcar</div></div>';
-  document.getElementById('buques-dash').innerHTML=enProceso.filter(b=>!lis.includes(b)).map(b=>buqueCard(b,false)).join('')||'<div class="empty"><div class="empty-txt">Sin buques en proceso</div></div>';setTimeout(attachBuqueCardDrag,50);
-  // Remove últimas expediciones section - hide it
-  const expDash=document.getElementById('exp-dash');if(expDash)expDash.closest('.ph')?.style && (expDash.closest('.ph').style.display='none'), expDash.style.display='none';
+    <div class="kpi bl"><div class="kpi-lbl">Buques</div><div class="kpi-val">${B.length}</div><div class="kpi-sub" style="color:var(--b600)">${enProceso.length} en proceso</div></div>
+    <div class="kpi gr"><div class="kpi-lbl">Expediciones</div><div class="kpi-val">${E.length}</div><div class="kpi-sub ${pct>70?'ks-g':'ks-a'}">${auth} autorizadas (${pct}%)</div></div>
+    <div class="kpi am"><div class="kpi-lbl">Bultos totales</div><div class="kpi-val">${totalBultos.toLocaleString('es-ES')}</div></div>
+    <div class="kpi bl"><div class="kpi-lbl">Kilos totales</div><div class="kpi-val">${Math.round(totalKilos/1000).toLocaleString('es-ES')}t</div><div class="kpi-sub" style="color:var(--b600)">${totalKilos.toLocaleString('es-ES')} kg</div></div>
+    <div class="kpi rd"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>
+    <div class="kpi am"><div class="kpi-lbl">Sin MRN en almacén</div><div class="kpi-val">${alc}</div><div class="kpi-sub ks-a">${alc>0?'⚠️ requieren acción':''}</div></div>`;
+
+  // Listos para embarcar — buques donde todas las expediciones están autorizadas
+  // Use allExpsByBuque to check against B
+  const expsByBuque={};
+  E.forEach(e=>{if(!e.buque_id)return;if(!expsByBuque[e.buque_id])expsByBuque[e.buque_id]={total:0,auth:0};expsByBuque[e.buque_id].total++;if(e.estado_carga==='✅ AUTORIZADO')expsByBuque[e.buque_id].auth++;});
+
+  const lis=B.filter(b=>{
+    const be=expsByBuque[b.id];
+    return be&&be.total>0&&be.total===be.auth;
+  });
+  const enProcesoSinLis=enProceso.filter(b=>!lis.find(l=>l.id===b.id));
+
+  document.getElementById('listos-dash').innerHTML=lis.length
+    ?lis.map(b=>{b.total_expediciones=expsByBuque[b.id]?.total||0;b.total_autorizadas=expsByBuque[b.id]?.auth||0;return buqueCard(b,true);}).join('')
+    :'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques listos para embarcar'+(filtros.length?' (con los filtros aplicados)':'')+'</div></div>';
+
+  const cntEl=document.getElementById('dash-proceso-count');
+  if(cntEl)cntEl.textContent=enProcesoSinLis.length||'';
+
+  document.getElementById('buques-dash').innerHTML=enProcesoSinLis.length
+    ?enProcesoSinLis.map(b=>{b.total_expediciones=expsByBuque[b.id]?.total||0;b.total_autorizadas=expsByBuque[b.id]?.auth||0;return buqueCard(b,false);}).join('')
+    :'<div class="empty"><div class="empty-txt">Sin buques en operación'+(filtros.length?' (con los filtros aplicados)':'')+'</div></div>';
+
+  setTimeout(attachBuqueCardDrag,50);
+
+  // Gráficas
+  const byEmp={},byStatus={},byMes={};
+  E.forEach(e=>{
+    const n=e.empresas?.nombre||'Sin asignar';byEmp[n]=(byEmp[n]||0)+1;
+    const s=e.status_aduanero||'Sin status';byStatus[s]=(byStatus[s]||0)+1;
+    const eb=e.buques?.eta_buque;
+    if(eb){const m=new Date(eb).getMonth();const ml=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][m];byMes[ml]=(byMes[ml]||0)+1;}
+  });
+  const mE=Math.max(...Object.values(byEmp),1);
+  const mS=Math.max(...Object.values(byStatus),1);
+  const mM=Math.max(...Object.values(byMes),1);
+  const sC={'Comunitario':'var(--gr500)','DAE':'var(--b500)','T1':'var(--am500)','Terceros':'var(--tl500)','X':'var(--rd500)'};
+  const MESES_ORD=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  document.getElementById('dash-charts').innerHTML=`
+    <div class="cc"><div class="ct">Expediciones por empresa</div>${Object.entries(byEmp).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([n,v])=>`<div class="bar-row"><div class="bar-lbl" title="${n}">${n}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/mE*100)}%;background:var(--b500)"></div></div><div class="bar-val">${v}</div></div>`).join('')||'<div class="empty-txt" style="font-size:12px">Sin datos</div>'}</div>
+    <div class="cc"><div class="ct">Expediciones por status aduanero</div>${Object.entries(byStatus).sort((a,b)=>b[1]-a[1]).map(([s,v])=>`<div class="bar-row"><div class="bar-lbl">${s}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/mS*100)}%;background:${sC[s]||'var(--g400)'}"></div></div><div class="bar-val">${v}</div></div>`).join('')||'<div class="empty-txt" style="font-size:12px">Sin datos</div>'}</div>
+    <div class="cc"><div class="ct">Expediciones por mes (ETA buque)</div>${MESES_ORD.filter(m=>byMes[m]).map(m=>`<div class="bar-row"><div class="bar-lbl">${m}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round((byMes[m]||0)/mM*100)}%;background:var(--tl500)"></div></div><div class="bar-val">${byMes[m]||0}</div></div>`).join('')||'<div class="empty-txt" style="font-size:12px">Sin datos</div>'}</div>
+    <div class="cc"><div class="ct">Resumen de carga</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div style="text-align:center;padding:12px;background:var(--b50);border-radius:var(--r)"><div style="font-size:10px;color:var(--b600);font-weight:600;text-transform:uppercase">Bultos totales</div><div style="font-size:26px;font-weight:700;color:var(--b700)">${totalBultos.toLocaleString('es-ES')}</div></div>
+        <div style="text-align:center;padding:12px;background:var(--gr50);border-radius:var(--r)"><div style="font-size:10px;color:var(--gr600);font-weight:600;text-transform:uppercase">Kilos totales</div><div style="font-size:26px;font-weight:700;color:var(--gr700)">${totalKilos.toLocaleString('es-ES')}</div></div>
+      </div>
+      <div class="ct">Estado expediciones</div>
+      ${[{k:'✅ AUTORIZADO',c:'var(--gr500)'},{k:'🚛 CARGADO CAMIÓN',c:'var(--gr500)'},{k:'📦 UBICADA',c:'var(--tl500)'},{k:'🚨 EN ALMACÉN - REVISAR',c:'var(--rd500)'},{k:'⏳ EN TRÁNSITO',c:'var(--b500)'},{k:'⌛ ESPERANDO ALMACÉN',c:'var(--b500)'}].map(s=>{const v=E.filter(e=>e.estado_semaforo===s.k).length;if(!v)return'';return`<div class="bar-row"><div class="bar-lbl">${s.k}</div><div class="bar-track"><div class="bar-fill" style="width:${E.length?Math.round(v/E.length*100):0}%;background:${s.c}"></div></div><div class="bar-val">${v}</div></div>`;}).join('')}
+    </div>`;
 }
 
 async function loadFlota(){
@@ -1116,9 +1302,51 @@ function filtrarB(q){const s=q.toLowerCase();renderB(allB.filter(b=>(b.nombre||'
 
 let allE=[];
 async function loadExp(){const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas(nombre)').order('created_at',{ascending:false});allE=data||[];renderE(allE);}
-function renderE(list){document.getElementById('exp-tbody').innerHTML=list.map(e=>`<tr onclick="openExpD('${e.id}')"><td><div class="fw">${e.nº_expedicion}</div></td><td>${e.buques?.nombre||'—'}</td><td>${e.empresas?.nombre||'—'}</td><td>${e.bultos}b·${e.kilos}kg</td><td>${bdg(e.estado_semaforo)}</td><td><span class="badge bgr">${e.tramite_aduanero||'—'}</span></td><td class="sm">${e.ubicacion||'—'}</td></tr>`).join('')||'<tr><td colspan="7"><div class="empty"><div class="empty-txt">Sin expediciones</div></div></td></tr>';}
-function filtrarE(q){const s=q.toLowerCase();renderE(allE.filter(e=>(e.nº_expedicion||'').toLowerCase().includes(s)||(e.buques?.nombre||'').toLowerCase().includes(s)));}
-function filtrarEst(v){renderE(v?allE.filter(e=>e.estado_semaforo===v):allE);}
+function renderE(list){
+  const hoy=new Date();
+  document.getElementById('exp-tbody').innerHTML=list.map(e=>{
+    const fmax=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null;
+    const fmaxStr=fmax?fd(e.fecha_max_despacho):'—';
+    const fmaxAlerta=fmax&&fmax<hoy&&e.tramite_aduanero!=='Despachado';
+    return`<tr onclick="openExpD('${e.id}')">
+      <td><div class="fw">${e.nº_expedicion}</div></td>
+      <td class="sm">${e.buques?.nombre||'—'}</td>
+      <td class="sm">${e.empresas?.nombre||'—'}</td>
+      <td class="sm">${e.bultos}b·${e.kilos}kg</td>
+      <td>${bdg(e.estado_semaforo)}</td>
+      <td><span class="badge bgr" style="font-size:10px">${e.status_aduanero||'—'}</span></td>
+      <td class="sm">${e.tramite_aduanero||'—'}</td>
+      <td class="sm">${e.ubicacion||'—'}</td>
+      <td class="sm" style="${fmaxAlerta?'color:var(--rd600);font-weight:700':''}">${fmaxAlerta?'⚠️ ':''} ${fmaxStr}</td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="9"><div class="empty"><div class="empty-txt">Sin expediciones</div></div></td></tr>';
+}
+function filtrarE(q){
+  const s=q.toLowerCase();
+  const est=document.getElementById('fil-est')?.value||'';
+  const sta=document.getElementById('fil-sta')?.value||'';
+  renderE(allE.filter(e=>
+    ((e.nº_expedicion||'').toLowerCase().includes(s)||(e.buques?.nombre||'').toLowerCase().includes(s)||(e.empresas?.nombre||'').toLowerCase().includes(s))
+    &&(!est||e.estado_semaforo===est)
+    &&(!sta||e.status_aduanero===sta)
+  ));
+}
+function filtrarEst(v){
+  const q=document.querySelector('#view-expediciones .sbar input')?.value||'';
+  const sta=document.getElementById('fil-sta')?.value||'';
+  renderE(allE.filter(e=>
+    (!q||(e.nº_expedicion||'').toLowerCase().includes(q.toLowerCase())||(e.buques?.nombre||'').toLowerCase().includes(q.toLowerCase()))
+    &&(!v||e.estado_semaforo===v)&&(!sta||e.status_aduanero===sta)
+  ));
+}
+function filtrarStatus(v){
+  const q=document.querySelector('#view-expediciones .sbar input')?.value||'';
+  const est=document.getElementById('fil-est')?.value||'';
+  renderE(allE.filter(e=>
+    (!q||(e.nº_expedicion||'').toLowerCase().includes(q.toLowerCase())||(e.buques?.nombre||'').toLowerCase().includes(q.toLowerCase()))
+    &&(!est||e.estado_semaforo===est)&&(!v||e.status_aduanero===v)
+  ));
+}
 
 async function loadKanban(){
   const [{data:buques},{data:exps}]=await Promise.all([
@@ -1787,7 +2015,7 @@ const MODALS={
     const bO=(bqs||[]).map(b=>`<option value="${b.id}">${b.nombre}</option>`).join('');
     const eO=(emps||[]).map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('');
     return`<div class="fr2"><div class="fg2"><label class="fl2">Nº Expedición / Referencia *</label><input id="ne-ref" class="fi" placeholder="AWB, DHL, SEUR, TNT…"></div><div class="fg2"><label class="fl2">Buque</label><select id="ne-bq" class="fi fs"><option value="">— Seleccionar —</option>${bO}</select></div></div>
-    <div class="fr2"><div class="fg2"><label class="fl2">Empresa</label><select id="ne-emp" class="fi fs"><option value="">— Seleccionar —</option>${eO}</select></div><div class="fg2"><label class="fl2">Status aduanero</label><select id="ne-sta" class="fi fs"><option>T1</option><option>DAE</option><option>Comunitario</option><option>ATA</option><option>Otro</option></select></div></div>
+    <div class="fr2"><div class="fg2"><label class="fl2">Empresa</label><select id="ne-emp" class="fi fs"><option value="">— Seleccionar —</option>${eO}</select></div><div class="fg2"><label class="fl2">Status aduanero</label><select id="ne-sta" class="fi fs"><option>Comunitario</option><option>DAE</option><option>T1</option><option>Terceros</option><option>X</option></select></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Bultos</label><input id="ne-bul" class="fi" type="number" min="0" value="1"></div><div class="fg2"><label class="fl2">Kilos</label><input id="ne-kg" class="fi" type="number" min="0" step="0.01" value="0"></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Nº MRN</label><input id="ne-mrn" class="fi" placeholder="26ES…"></div><div class="fg2"><label class="fl2">Trámite aduanero</label><select id="ne-tra" class="fi fs"><option>Pendiente despachar</option><option>Despachado</option></select></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Fecha máx. despacho</label><input id="ne-fmax" class="fi" type="date"></div><div class="fg2"><label class="fl2">Ubicación inicial</label><select id="ne-ubic" class="fi fs">${optsUbic()}</select></div></div>
@@ -2034,8 +2262,10 @@ async function openExpD(id){
       <div class="df"><div class="dl">Empresa</div><div class="dv">${e.empresas?.nombre||'—'}</div></div>
       <div class="df"><div class="dl">Bultos</div><div class="dv">${e.bultos}</div></div>
       <div class="df"><div class="dl">Kilos</div><div class="dv">${e.kilos} kg</div></div>
-      <div class="df"><div class="dl">Status aduanero</div><div class="dv">${e.status_aduanero||'—'}</div></div>
-      <div class="df"><div class="dl">Fecha máx. despacho</div><div class="dv">${fdl(e.fecha_max_despacho)}</div></div>
+    </div>
+    <div class="fr2">
+      <div class="fg2"><label class="fl2">Status aduanero</label><select id="sta-sel" class="fi fs" onchange="saveStatus('${e.id}',this.value)"><option value="" ${!e.status_aduanero?'selected':''}>— Seleccionar —</option>${['Comunitario','DAE','T1','Terceros','X'].map(s=>`<option ${e.status_aduanero===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="fg2"><label class="fl2">Fecha máx. despacho</label><input id="fmax-inp" class="fi" type="date" value="${e.fecha_max_despacho?e.fecha_max_despacho.slice(0,10):''}" onchange="saveFmax('${e.id}',this.value)"></div>
     </div>
     <div class="df"><div class="dl">Nº MRN</div><div style="font-family:var(--mono);font-size:13px;font-weight:500;color:${e.nº_mrn?'var(--g900)':'var(--am600)'}">${e.nº_mrn||'⚠️ Sin MRN — requerido para autorizar'}</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">${bdg(e.estado_semaforo)}<span class="badge ${e.estado_carga==='✅ AUTORIZADO'?'bg':'br'}">${e.estado_carga}</span></div>
@@ -2061,10 +2291,11 @@ async function openExpD(id){
     </div>`:''}
     <div id="grist-link-container" style="margin-bottom:14px"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"'")}'))">🗑️ Eliminar</button>`:''}<button class="btn btn-p btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-p btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button>`;
   document.getElementById('mo').classList.add('open');
   const gLink=gristLink(Object.assign({},e,{buques:e.buques,empresas:e.empresas}));
   const gc2=document.getElementById('grist-link-container');
+
   if(gc2){gc2.innerHTML=gLink?`<a href="${gLink}" target="_blank" class="btn btn-s btn-sm" style="width:100%;justify-content:center;text-decoration:none">📝 Registrar en Grist (AWB detectado)</a>`:'<a href="https://docs.getgrist.com" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">↗ Abrir Grist</a>';}
 }
 
@@ -2078,6 +2309,8 @@ function checkNbUnlock(){
 }
 
 async function saveDocs(id,val){await sb.from('expediciones').update({docs_puerto:val}).eq('id',id);await logAct('expediciones',id,'','editar','docs_puerto',null,val);showToast('Docs. Puerto → '+val);}
+async function saveStatus(id,val){await sb.from('expediciones').update({status_aduanero:val||null}).eq('id',id);await logAct('expediciones',id,'','editar','status_aduanero',null,val);showToast('Status → '+val);}
+async function saveFmax(id,val){await sb.from('expediciones').update({fecha_max_despacho:val||null}).eq('id',id);await logAct('expediciones',id,'','editar','fecha_max_despacho',null,val);showToast('Fecha máx. despacho actualizada');}
 
 function onCCFoto(){
   const files=document.getElementById('cc-fi')?.files;
