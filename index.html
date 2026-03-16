@@ -448,9 +448,9 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="nav-item" onclick="nav('incidencias',this)"><span class="ni">⚠️</span>Incidencias</div>
         <div class="nav-item" onclick="nav('empresas',this)"><span class="ni">🏢</span>Empresas</div>
         <div class="nav-item" onclick="nav('estadisticas',this)"><span class="ni">📈</span>Estadísticas</div>
-        <div class="sb-sec">Configuración</div>
-        <div class="nav-item" onclick="nav('log',this)"><span class="ni">📋</span>Log actividad</div>
         <div id="nav-adm" style="display:none">
+          <div class="sb-sec">Configuración</div>
+          <div class="nav-item" onclick="nav('log',this)"><span class="ni">📋</span>Log actividad</div>
           <div class="nav-item" onclick="nav('usuarios',this)"><span class="ni">👥</span>Usuarios</div>
           <div class="nav-item" onclick="openModal('cambiar-password')"><span class="ni">🔑</span>Cambiar contraseña</div>
         </div>
@@ -918,25 +918,34 @@ function showHome(){
   document.getElementById('hm-name').textContent=CU.nombre||CU.email;
   const c=document.getElementById('hm-cards');c.innerHTML='';
   if(['admin','oficina','aduanas'].includes(CU.rol))c.innerHTML+=`<div class="hm-card" onclick="enterMod('operativa')"><div class="hm-icon blue">🏢</div><div class="hm-ctitle">Operativa</div><div class="hm-cdesc">Gestión completa de buques, expediciones, documentación aduanera y seguimiento operativo.</div><div class="hm-feat">Dashboard y KPIs en tiempo real</div><div class="hm-feat">Buques, expediciones y flota</div><div class="hm-feat">Kanban, calendario y timeline</div><div class="hm-feat">Alertas, estadísticas y log</div></div>`;
-  c.innerHTML+=`<div class="hm-card" onclick="enterMod('almacen')"><div class="hm-icon teal">📦</div><div class="hm-ctitle">Almacén &amp; Embarque</div><div class="hm-cdesc">Operaciones de almacén, confirmación de llegadas, gestión de ubicaciones y control de embarques.</div><div class="hm-feat">Confirmar llegadas y fotos</div><div class="hm-feat">Carga camión y albaranes</div><div class="hm-feat">Control de ubicaciones</div><div class="hm-feat">Buques listos para embarcar</div></div>`;
+  if(['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol))c.innerHTML+=`<div class="hm-card" onclick="enterMod('almacen')"><div class="hm-icon teal">📦</div><div class="hm-ctitle">Almacén &amp; Embarque</div><div class="hm-cdesc">Operaciones de almacén, confirmación de llegadas, gestión de ubicaciones y control de embarques.</div><div class="hm-feat">Confirmar llegadas y fotos</div><div class="hm-feat">Carga camión y albaranes</div><div class="hm-feat">Control de ubicaciones</div><div class="hm-feat">Buques listos para embarcar</div></div>`;
 }
 
 function enterMod(mod){
+  // Role-based access enforcement
+  const puedeOperativa=['admin','oficina','aduanas'];
+  const soloAlmacen=['almacen','transportista'];
+  if(mod==='operativa'&&!puedeOperativa.includes(CU.rol)){
+    // Redirect to almacen silently
+    mod='almacen';
+  }
   MOD=mod;
   document.getElementById('screen-home').style.display='none';
   document.getElementById('app').style.display='flex';
   const init=(CU.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   document.getElementById('sb-av').textContent=init;
   document.getElementById('sb-name').textContent=CU.nombre||'—';
-  document.getElementById('sb-role').textContent={admin:'Administrador',oficina:'Oficina',almacen:'Almacén'}[CU.rol]||CU.rol;
-  const puedeOperativa=['admin','oficina','aduanas'];
-  if(mod==='operativa'&&!puedeOperativa.includes(CU.rol)){alert('Tu rol no tiene acceso a Operativa');return;}
+  const rolLabels={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
+  document.getElementById('sb-role').textContent=rolLabels[CU.rol]||CU.rol;
+
   if(mod==='operativa'){
     document.getElementById('nav-op').style.display='block';
     document.getElementById('nav-alm').style.display='none';
     document.getElementById('btn-nb').style.display='';
     document.getElementById('btn-ne').style.display='';
-    if(CU.rol==='admin')document.getElementById('nav-adm').style.display='block';
+    // Configuración section: admin only
+    const navAdm=document.getElementById('nav-adm');
+    if(navAdm) navAdm.style.display=CU.rol==='admin'?'block':'none';
     document.getElementById('bc-mod').textContent='Operativa';
     nav('dashboard',document.querySelector('#nav-op .nav-item'));
   }else{
@@ -1053,131 +1062,154 @@ function buqueCard(b,listo){
 
 let _dashInited=false;
 async function initDashFilters(){
-  if(_dashInited)return;_dashInited=true;
+  if(_dashInited)return; _dashInited=true;
   const [{data:emps},{data:buques}]=await Promise.all([
     sb.from('empresas').select('id,nombre,rol').order('nombre'),
     sb.from('buques').select('eta_buque').not('eta_buque','is',null)
   ]);
-  // Populate años
+  // Populate años from real data
   const años=[...new Set((buques||[]).map(b=>new Date(b.eta_buque).getFullYear()))].sort((a,b)=>b-a);
   const selA=document.getElementById('df-año');
-  años.forEach(a=>{const o=document.createElement('option');o.value=a;o.textContent=a;selA.appendChild(o);});
-  // Set current year as default
-  const now=new Date();
-  for(let o of selA.options){if(o.value==now.getFullYear()){o.selected=true;break;}}
+  if(selA){
+    años.forEach(a=>{const o=document.createElement('option');o.value=a;o.textContent=a;selA.appendChild(o);});
+    // Default: no year filter (show everything active)
+  }
   // Clientes y consignatarios
   const clientes=(emps||[]).filter(e=>(e.rol||[]).includes('Cliente'));
   const consig=(emps||[]).filter(e=>(e.rol||[]).includes('Consignatario'));
   const selC=document.getElementById('df-cli'),selCo=document.getElementById('df-con');
-  clientes.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.nombre;selC.appendChild(o);});
-  consig.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.nombre;selCo.appendChild(o);});
+  clientes.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.nombre;selC?.appendChild(o);});
+  consig.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.nombre;selCo?.appendChild(o);});
 }
 
 function resetDashFilters(){
-  const now=new Date();
-  const selA=document.getElementById('df-año');
-  for(let o of selA.options){o.selected=o.value==now.getFullYear();}
-  ['df-mes','df-cli','df-con','df-est','df-sta'].forEach(id=>{const s=document.getElementById(id);if(s)s.value='';});
+  ['df-año','df-mes','df-cli','df-con','df-est','df-sta'].forEach(id=>{const s=document.getElementById(id);if(s)s.value='';});
   loadDash();
 }
 
 async function loadDash(){
   await initDashFilters();
-  const año=document.getElementById('df-año')?.value||'';
-  const mes=document.getElementById('df-mes')?.value||'';
-  const cliId=document.getElementById('df-cli')?.value||'';
-  const conId=document.getElementById('df-con')?.value||'';
-  const est=document.getElementById('df-est')?.value||'';
-  const sta=document.getElementById('df-sta')?.value||'';
+  const año  = document.getElementById('df-año')?.value||'';
+  const mes  = document.getElementById('df-mes')?.value||'';
+  const cliId= document.getElementById('df-cli')?.value||'';
+  const conId= document.getElementById('df-con')?.value||'';
+  const est  = document.getElementById('df-est')?.value||'';
+  const sta  = document.getElementById('df-sta')?.value||'';
 
-  // Build buques query — load ALL non-embarcado/finalizado
-  let bQ=sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)');
-  if(est) bQ=bQ.eq('estado_operacion',est);
-  else bQ=bQ.not('estado_operacion','in','("Embarcado","Finalizado")');
-  if(cliId) bQ=bQ.eq('cliente_id',cliId);
-  if(conId) bQ=bQ.eq('consignatario_id',conId);
-  if(año){
-    bQ=bQ.gte('eta_buque',`${año}-01-01`).lte('eta_buque',`${año}-12-31`);
+  // ── Buques query ──────────────────────────────────────────
+  let bQ = sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)');
+  // Estado: if filtering by specific estado show those; otherwise hide Embarcado/Finalizado
+  if(est){
+    bQ = bQ.eq('estado_operacion', est);
+  } else {
+    bQ = bQ.not('estado_operacion','in','("Embarcado","Finalizado")');
   }
-  if(mes&&año){
-    const m=mes.padStart(2,'0');
-    const lastDay=new Date(parseInt(año),parseInt(mes),0).getDate();
-    bQ=bQ.gte('eta_buque',`${año}-${m}-01`).lte('eta_buque',`${año}-${m}-${lastDay}`);
+  if(cliId) bQ = bQ.eq('cliente_id', cliId);
+  if(conId) bQ = bQ.eq('consignatario_id', conId);
+  // Date filter — apply only once, most specific wins (mes overrides año)
+  if(año && mes){
+    const m = mes.padStart(2,'0');
+    const lastDay = new Date(parseInt(año), parseInt(mes), 0).getDate();
+    bQ = bQ.gte('eta_buque', `${año}-${m}-01`).lte('eta_buque', `${año}-${m}-${lastDay}`);
+  } else if(año){
+    bQ = bQ.gte('eta_buque', `${año}-01-01`).lte('eta_buque', `${año}-12-31`);
   }
-  bQ=bQ.order('eta_buque',{ascending:true,nullsFirst:false});
+  bQ = bQ.order('eta_buque', {ascending:true, nullsFirst:false});
 
-  // Expediciones query
-  let eQ=sb.from('expediciones').select('*,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)');
-  if(sta) eQ=eQ.eq('status_aduanero',sta);
-  eQ=eQ.neq('estado_semaforo','🚢 EMBARCADO');
+  // ── Expediciones query ────────────────────────────────────
+  let eQ = sb.from('expediciones').select('*,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)');
+  // Only exclude fully-embarcado expeditions when no estado filter
+  if(!est || est !== 'Embarcado'){
+    eQ = eQ.neq('estado_semaforo','🚢 EMBARCADO');
+  }
+  if(sta) eQ = eQ.eq('status_aduanero', sta);
 
-  const [bR,eR,iR]=await Promise.all([bQ,eQ,sb.from('incidencias').select('id').eq('estado','Abierta')]);
-  let B=bR.data||[];
-  let E=eR.data||[];
+  const [bR, eR, iR] = await Promise.all([bQ, eQ, sb.from('incidencias').select('id').eq('estado','Abierta')]);
+  let B = bR.data || [];
+  let E = eR.data || [];
 
-  // Post-filter expediciones by buque filters if needed
-  if(cliId) E=E.filter(e=>e.buques?.cliente_id===cliId);
-  if(conId) E=E.filter(e=>e.buques?.consignatario_id===conId);
-  if(año) E=E.filter(e=>{if(!e.buques?.eta_buque)return true;return new Date(e.buques.eta_buque).getFullYear()==parseInt(año);});
-  if(mes&&año) E=E.filter(e=>{if(!e.buques?.eta_buque)return true;const d=new Date(e.buques.eta_buque);return d.getMonth()+1==parseInt(mes)&&d.getFullYear()==parseInt(año);});
+  // Post-filter expediciones to match buque filters
+  if(cliId) E = E.filter(e => e.buques?.cliente_id === cliId);
+  if(conId) E = E.filter(e => e.buques?.consignatario_id === conId);
+  if(año && mes){
+    const yr=parseInt(año), mo=parseInt(mes);
+    E = E.filter(e => { if(!e.buques?.eta_buque)return true; const d=new Date(e.buques.eta_buque); return d.getFullYear()===yr && d.getMonth()+1===mo; });
+  } else if(año){
+    const yr=parseInt(año);
+    E = E.filter(e => { if(!e.buques?.eta_buque)return true; return new Date(e.buques.eta_buque).getFullYear()===yr; });
+  }
 
-  const I=iR.data||[];
-  const auth=E.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
-  const pct=E.length?Math.round(auth/E.length*100):0;
-  const alc=E.filter(e=>!e.nº_mrn&&e.ubicacion!=='Pendiente recibir').length;
-  const totalBultos=E.reduce((a,e)=>a+(e.bultos||0),0);
-  const totalKilos=E.reduce((a,e)=>a+(e.kilos||0),0);
+  const I = iR.data || [];
+  const auth = E.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
+  const pct  = E.length ? Math.round(auth/E.length*100) : 0;
+  const alc  = E.filter(e=>!e.nº_mrn && e.ubicacion!=='Pendiente recibir').length;
+  const totalBultos = E.reduce((a,e)=>a+(e.bultos||0),0);
+  const totalKilos  = E.reduce((a,e)=>a+(e.kilos||0),0);
   if(alc>0){document.getElementById('badge-al').textContent=alc;document.getElementById('badge-al').style.display='';}
 
-  // Filter info
+  // Build filter description
   const filtros=[];
-  if(año)filtros.push(año);if(mes)filtros.push(['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(mes)]);
-  const selC=document.getElementById('df-cli');const selCo=document.getElementById('df-con');
+  if(año)filtros.push(año);
+  if(mes)filtros.push(['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(mes)]);
+  const selC=document.getElementById('df-cli'), selCo=document.getElementById('df-con');
   if(cliId&&selC)filtros.push(selC.options[selC.selectedIndex]?.text);
   if(conId&&selCo)filtros.push(selCo.options[selCo.selectedIndex]?.text);
-  if(est)filtros.push(est);if(sta)filtros.push(sta);
+  if(est)filtros.push(est);
+  if(sta)filtros.push(sta);
   const dfInfo=document.getElementById('df-info');
-  if(dfInfo)dfInfo.textContent=filtros.length?'Mostrando: '+filtros.join(' · '):'Mostrando todo el historial';
+  if(dfInfo)dfInfo.textContent=filtros.length?'Mostrando: '+filtros.join(' · '):'Todos los buques activos';
 
   // KPIs
-  const enProceso=B.filter(b=>b.estado_operacion==='En proceso'||!b.estado_operacion);
+  const enProceso = B.filter(b=>b.estado_operacion==='En proceso'||!b.estado_operacion);
   document.getElementById('kpi-grid').innerHTML=`
     <div class="kpi bl"><div class="kpi-lbl">Buques</div><div class="kpi-val">${B.length}</div><div class="kpi-sub" style="color:var(--b600)">${enProceso.length} en proceso</div></div>
     <div class="kpi gr"><div class="kpi-lbl">Expediciones</div><div class="kpi-val">${E.length}</div><div class="kpi-sub ${pct>70?'ks-g':'ks-a'}">${auth} autorizadas (${pct}%)</div></div>
     <div class="kpi am"><div class="kpi-lbl">Bultos totales</div><div class="kpi-val">${totalBultos.toLocaleString('es-ES')}</div></div>
     <div class="kpi bl"><div class="kpi-lbl">Kilos totales</div><div class="kpi-val">${Math.round(totalKilos/1000).toLocaleString('es-ES')}t</div><div class="kpi-sub" style="color:var(--b600)">${totalKilos.toLocaleString('es-ES')} kg</div></div>
     <div class="kpi rd"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>
-    <div class="kpi am"><div class="kpi-lbl">Sin MRN en almacén</div><div class="kpi-val">${alc}</div><div class="kpi-sub ks-a">${alc>0?'⚠️ requieren acción':''}</div></div>`;
+    <div class="kpi am"><div class="kpi-lbl">Sin MRN en almacén</div><div class="kpi-val">${alc}</div>${alc>0?'<div class="kpi-sub ks-a">⚠️ requieren acción</div>':''}</div>`;
 
-  // Listos para embarcar — buques donde todas las expediciones están autorizadas
-  // Use allExpsByBuque to check against B
+  // Calculate listos: count autorizado exps per buque, match against total
   const expsByBuque={};
-  E.forEach(e=>{if(!e.buque_id)return;if(!expsByBuque[e.buque_id])expsByBuque[e.buque_id]={total:0,auth:0};expsByBuque[e.buque_id].total++;if(e.estado_carga==='✅ AUTORIZADO')expsByBuque[e.buque_id].auth++;});
-
-  const lis=B.filter(b=>{
-    const be=expsByBuque[b.id];
-    return be&&be.total>0&&be.total===be.auth;
+  E.forEach(e=>{
+    if(!e.buque_id)return;
+    if(!expsByBuque[e.buque_id])expsByBuque[e.buque_id]={total:0,auth:0};
+    expsByBuque[e.buque_id].total++;
+    if(e.estado_carga==='✅ AUTORIZADO')expsByBuque[e.buque_id].auth++;
   });
-  const enProcesoSinLis=enProceso.filter(b=>!lis.find(l=>l.id===b.id));
 
-  document.getElementById('listos-dash').innerHTML=lis.length
-    ?lis.map(b=>{b.total_expediciones=expsByBuque[b.id]?.total||0;b.total_autorizadas=expsByBuque[b.id]?.auth||0;return buqueCard(b,true);}).join('')
-    :'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques listos para embarcar'+(filtros.length?' (con los filtros aplicados)':'')+'</div></div>';
+  // A buque is "listo" if it has expediciones AND all are authorized
+  const lis = B.filter(b=>{
+    const be=expsByBuque[b.id];
+    return be && be.total>0 && be.total===be.auth;
+  });
+  const enProcesoSinLis = enProceso.filter(b=>!lis.find(l=>l.id===b.id));
+
+  // Enrich buques with computed totals for progress bar
+  B.forEach(b=>{
+    const be=expsByBuque[b.id]||{total:0,auth:0};
+    b.total_expediciones=be.total;
+    b.total_autorizadas=be.auth;
+  });
 
   const cntEl=document.getElementById('dash-proceso-count');
-  if(cntEl)cntEl.textContent=enProcesoSinLis.length||'';
+  if(cntEl) cntEl.textContent=enProcesoSinLis.length||'';
 
-  document.getElementById('buques-dash').innerHTML=enProcesoSinLis.length
-    ?enProcesoSinLis.map(b=>{b.total_expediciones=expsByBuque[b.id]?.total||0;b.total_autorizadas=expsByBuque[b.id]?.auth||0;return buqueCard(b,false);}).join('')
-    :'<div class="empty"><div class="empty-txt">Sin buques en operación'+(filtros.length?' (con los filtros aplicados)':'')+'</div></div>';
+  document.getElementById('listos-dash').innerHTML = lis.length
+    ? lis.map(b=>buqueCard(b,true)).join('')
+    : `<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques listos para embarcar${filtros.length?' (con los filtros aplicados)':''}</div></div>`;
 
-  setTimeout(attachBuqueCardDrag,50);
+  document.getElementById('buques-dash').innerHTML = enProcesoSinLis.length
+    ? enProcesoSinLis.map(b=>buqueCard(b,false)).join('')
+    : `<div class="empty"><div class="empty-txt">Sin buques en proceso activo${filtros.length?' (con los filtros aplicados)':''}</div></div>`;
 
-  // Gráficas
-  const byEmp={},byStatus={},byMes={};
+  setTimeout(attachBuqueCardDrag, 50);
+
+  // Charts
+  const byEmp={}, byStatus={}, byMes={};
   E.forEach(e=>{
-    const n=e.empresas?.nombre||'Sin asignar';byEmp[n]=(byEmp[n]||0)+1;
-    const s=e.status_aduanero||'Sin status';byStatus[s]=(byStatus[s]||0)+1;
+    const n=e.empresas?.nombre||'Sin asignar'; byEmp[n]=(byEmp[n]||0)+1;
+    const s=e.status_aduanero||'Sin status';  byStatus[s]=(byStatus[s]||0)+1;
     const eb=e.buques?.eta_buque;
     if(eb){const m=new Date(eb).getMonth();const ml=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][m];byMes[ml]=(byMes[ml]||0)+1;}
   });
@@ -1187,16 +1219,16 @@ async function loadDash(){
   const sC={'Comunitario':'var(--gr500)','DAE':'var(--b500)','T1':'var(--am500)','Terceros':'var(--tl500)','X':'var(--rd500)'};
   const MESES_ORD=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   document.getElementById('dash-charts').innerHTML=`
-    <div class="cc"><div class="ct">Expediciones por empresa</div>${Object.entries(byEmp).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([n,v])=>`<div class="bar-row"><div class="bar-lbl" title="${n}">${n}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/mE*100)}%;background:var(--b500)"></div></div><div class="bar-val">${v}</div></div>`).join('')||'<div class="empty-txt" style="font-size:12px">Sin datos</div>'}</div>
-    <div class="cc"><div class="ct">Expediciones por status aduanero</div>${Object.entries(byStatus).sort((a,b)=>b[1]-a[1]).map(([s,v])=>`<div class="bar-row"><div class="bar-lbl">${s}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/mS*100)}%;background:${sC[s]||'var(--g400)'}"></div></div><div class="bar-val">${v}</div></div>`).join('')||'<div class="empty-txt" style="font-size:12px">Sin datos</div>'}</div>
-    <div class="cc"><div class="ct">Expediciones por mes (ETA buque)</div>${MESES_ORD.filter(m=>byMes[m]).map(m=>`<div class="bar-row"><div class="bar-lbl">${m}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round((byMes[m]||0)/mM*100)}%;background:var(--tl500)"></div></div><div class="bar-val">${byMes[m]||0}</div></div>`).join('')||'<div class="empty-txt" style="font-size:12px">Sin datos</div>'}</div>
+    <div class="cc"><div class="ct">Expediciones por empresa</div>${Object.entries(byEmp).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([n,v])=>`<div class="bar-row"><div class="bar-lbl" title="${n}">${n}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/mE*100)}%;background:var(--b500)"></div></div><div class="bar-val">${v}</div></div>`).join('')||'<div class="empty-txt" style="font-size:12px;padding:16px">Sin datos</div>'}</div>
+    <div class="cc"><div class="ct">Expediciones por status aduanero</div>${Object.entries(byStatus).sort((a,b)=>b[1]-a[1]).map(([s,v])=>`<div class="bar-row"><div class="bar-lbl">${s}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/mS*100)}%;background:${sC[s]||'var(--g400)'}"></div></div><div class="bar-val">${v}</div></div>`).join('')||'<div class="empty-txt" style="font-size:12px;padding:16px">Sin datos</div>'}</div>
+    <div class="cc"><div class="ct">Expediciones por mes (ETA)</div>${MESES_ORD.filter(m=>byMes[m]).map(m=>`<div class="bar-row"><div class="bar-lbl">${m}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round((byMes[m]||0)/mM*100)}%;background:var(--tl500)"></div></div><div class="bar-val">${byMes[m]||0}</div></div>`).join('')||'<div class="empty-txt" style="font-size:12px;padding:16px">Sin datos</div>'}</div>
     <div class="cc"><div class="ct">Resumen de carga</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-        <div style="text-align:center;padding:12px;background:var(--b50);border-radius:var(--r)"><div style="font-size:10px;color:var(--b600);font-weight:600;text-transform:uppercase">Bultos totales</div><div style="font-size:26px;font-weight:700;color:var(--b700)">${totalBultos.toLocaleString('es-ES')}</div></div>
-        <div style="text-align:center;padding:12px;background:var(--gr50);border-radius:var(--r)"><div style="font-size:10px;color:var(--gr600);font-weight:600;text-transform:uppercase">Kilos totales</div><div style="font-size:26px;font-weight:700;color:var(--gr700)">${totalKilos.toLocaleString('es-ES')}</div></div>
+        <div style="text-align:center;padding:12px;background:var(--b50);border-radius:var(--r)"><div style="font-size:10px;color:var(--b600);font-weight:600;text-transform:uppercase">Bultos</div><div style="font-size:26px;font-weight:700;color:var(--b700)">${totalBultos.toLocaleString('es-ES')}</div></div>
+        <div style="text-align:center;padding:12px;background:var(--gr50);border-radius:var(--r)"><div style="font-size:10px;color:var(--gr600);font-weight:600;text-transform:uppercase">Kilos</div><div style="font-size:26px;font-weight:700;color:var(--gr700)">${totalKilos.toLocaleString('es-ES')}</div></div>
       </div>
       <div class="ct">Estado expediciones</div>
-      ${[{k:'✅ AUTORIZADO',c:'var(--gr500)'},{k:'🚛 CARGADO CAMIÓN',c:'var(--gr500)'},{k:'📦 UBICADA',c:'var(--tl500)'},{k:'🚨 EN ALMACÉN - REVISAR',c:'var(--rd500)'},{k:'⏳ EN TRÁNSITO',c:'var(--b500)'},{k:'⌛ ESPERANDO ALMACÉN',c:'var(--b500)'}].map(s=>{const v=E.filter(e=>e.estado_semaforo===s.k).length;if(!v)return'';return`<div class="bar-row"><div class="bar-lbl">${s.k}</div><div class="bar-track"><div class="bar-fill" style="width:${E.length?Math.round(v/E.length*100):0}%;background:${s.c}"></div></div><div class="bar-val">${v}</div></div>`;}).join('')}
+      ${[{k:'✅ AUTORIZADO',c:'var(--gr500)'},{k:'🚛 CARGADO CAMIÓN',c:'var(--gr500)'},{k:'📦 UBICADA',c:'var(--tl500)'},{k:'🚨 EN ALMACÉN - REVISAR',c:'var(--rd500)'},{k:'⏳ EN TRÁNSITO',c:'var(--b500)'},{k:'⌛ ESPERANDO ALMACÉN',c:'var(--b500)'}].map(s=>{const v=E.filter(e=>e.estado_semaforo===s.k).length;if(!v)return'';return`<div class="bar-row"><div class="bar-lbl">${s.k}</div><div class="bar-track"><div class="bar-fill" style="width:${E.length?Math.round(v/E.length*100):0}%;background:${s.c}"></div></div><div class="bar-val">${v}</div></div>`;}).join('')||'<div class="empty-txt" style="font-size:12px;padding:8px">Sin expediciones</div>'}
     </div>`;
 }
 
