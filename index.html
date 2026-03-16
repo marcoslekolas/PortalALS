@@ -2,48 +2,95 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
 <meta name="theme-color" content="#2563eb">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ALS Portal">
+<meta name="application-name" content="ALS Portal">
+<meta name="msapplication-TileColor" content="#2563eb">
 <title>ALS · Portal Operativo</title>
 <link rel="manifest" id="pwa-manifest">
 <script>
-// Inject PWA manifest dynamically
-const manifest={name:"ALS Portal Operativo",short_name:"ALS Portal",description:"Algeciras Logistic Solutions — Portal Operativo",start_url:window.location.href,display:"standalone",background_color:"#ffffff",theme_color:"#2563eb",orientation:"portrait-primary",icons:[{src:"data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="28" fill="#2563eb"/><text x="96" y="128" text-anchor="middle" font-family="Arial Black,sans-serif" font-size="80" font-weight="900" fill="white">ALS</text></svg>'),sizes:"192x192",type:"image/svg+xml"},{src:"data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="72" fill="#2563eb"/><text x="256" y="340" text-anchor="middle" font-family="Arial Black,sans-serif" font-size="210" font-weight="900" fill="white">ALS</text></svg>'),sizes:"512x512",type:"image/svg+xml"}]};
-const blob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
-document.getElementById('pwa-manifest').href=URL.createObjectURL(blob);
-// Register Service Worker for offline + install
+// PWA Manifest — injected as blob so it works from any URL (GitHub Pages, etc.)
+(function(){
+  const ico192='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="32" fill="#2563eb"/><text x="96" y="136" text-anchor="middle" font-family="Arial Black,Impact,sans-serif" font-size="88" font-weight="900" fill="white">ALS</text></svg>');
+  const ico512='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="80" fill="#2563eb"/><text x="256" y="360" text-anchor="middle" font-family="Arial Black,Impact,sans-serif" font-size="230" font-weight="900" fill="white">ALS</text></svg>');
+  const manifest={
+    name:'ALS Portal Operativo',short_name:'ALS Portal',
+    description:'Algeciras Logistic Solutions — Gestión logística portuaria',
+    start_url:'./',display:'standalone',
+    background_color:'#ffffff',theme_color:'#2563eb',
+    orientation:'any',
+    categories:['business','productivity'],
+    icons:[
+      {src:ico192,sizes:'192x192',type:'image/svg+xml',purpose:'any maskable'},
+      {src:ico512,sizes:'512x512',type:'image/svg+xml',purpose:'any maskable'}
+    ]
+  };
+  const blob=new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'});
+  document.getElementById('pwa-manifest').href=URL.createObjectURL(blob);
+  document.getElementById('pwa-manifest').crossOrigin='use-credentials';
+})();
+
+// Service Worker registration
 if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>{
+  window.addEventListener('load',function(){
+    // SW code as blob — works from any origin
     const swCode=`
-const CACHE='als-v1';
-const ASSETS=[self.location.href||'/'];
-self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
-self.addEventListener('fetch',e=>{
+const CACHE_NAME='als-portal-v2';
+self.addEventListener('install',function(e){
+  self.skipWaiting();
+  e.waitUntil(
+    caches.open(CACHE_NAME).then(function(cache){
+      return cache.addAll([self.registration.scope]).catch(function(){});
+    })
+  );
+});
+self.addEventListener('activate',function(e){
+  self.clients.claim();
+  e.waitUntil(
+    caches.keys().then(function(keys){
+      return Promise.all(keys.filter(function(k){return k!==CACHE_NAME;}).map(function(k){return caches.delete(k);}));
+    })
+  );
+});
+self.addEventListener('fetch',function(e){
+  var url=e.request.url;
   if(e.request.method!=='GET')return;
-  if(e.request.url.includes('supabase'))return; // always network for API
-  e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{if(res.ok){const c=res.clone();caches.open(CACHE).then(ca=>ca.put(e.request,c));}return res;}).catch(()=>caches.match('/'))));
-});`;
-    const swBlob=new Blob([swCode],{type:'text/javascript'});
-    const swUrl=URL.createObjectURL(swBlob);
-    navigator.serviceWorker.register(swUrl,{scope:'./'}).then(r=>{
-      // Install prompt
-      window.addEventListener('beforeinstallprompt',e=>{
-        e.preventDefault();
-        window._pwaPrompt=e;
-        // Show install button if not already installed
-        setTimeout(()=>{
-          if(!window.matchMedia('(display-mode: standalone)').matches){
-            const btn=document.getElementById('pwa-install-btn');
-            if(btn)btn.style.display='flex';
-          }
-        },2000);
+  if(url.indexOf('supabase.co')>-1)return; // never cache API
+  if(url.indexOf('googleapis.com')>-1)return;
+  e.respondWith(
+    caches.match(e.request).then(function(cached){
+      var networkFetch=fetch(e.request).then(function(response){
+        if(response&&response.ok&&response.type==='basic'){
+          var clone=response.clone();
+          caches.open(CACHE_NAME).then(function(cache){cache.put(e.request,clone);});
+        }
+        return response;
       });
-    }).catch(()=>{});
+      return cached||networkFetch;
+    })
+  );
+});`;
+    try{
+      var swBlob=new Blob([swCode],{type:'text/javascript'});
+      var swUrl=URL.createObjectURL(swBlob);
+      navigator.serviceWorker.register(swUrl,{scope:'./'}).then(function(){
+        // Install prompt (Chrome/Edge Android)
+        window.addEventListener('beforeinstallprompt',function(e){
+          e.preventDefault();
+          window._pwaPrompt=e;
+          setTimeout(function(){
+            if(!window.matchMedia('(display-mode: standalone)').matches&&!window.navigator.standalone){
+              var btn=document.getElementById('pwa-install-btn');
+              if(btn)btn.style.display='flex';
+            }
+          },1500);
+        });
+      }).catch(function(){});
+    }catch(err){}
   });
 }
 </script>
@@ -70,7 +117,9 @@ self.addEventListener('fetch',e=>{
   --sh0:0 1px 3px rgba(0,0,0,.08);--sh:0 2px 8px rgba(0,0,0,.10);--shl:0 8px 24px rgba(0,0,0,.12);
   --sw:240px;--hh:56px;
 }
-html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px;overflow:hidden}
+html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
+/* App screens use overflow:hidden individually, but body must allow scroll for home */
+#screen-login,#app{overflow:hidden}
 
 /* ── STATUS BADGES ── */
 .st-proceso{background:var(--st-proceso-bg);color:var(--st-proceso-c);border:1px solid var(--st-proceso-bd)}
@@ -92,8 +141,8 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .li-err{color:var(--rd600);font-size:12px;margin-top:10px;min-height:16px;font-weight:500}
 
 /* ── HOME ── */
-#screen-home{position:fixed;inset:0;background:var(--g50);display:none;flex-direction:column;z-index:998}
-.hm-hdr{background:var(--w);border-bottom:1px solid var(--g200);padding:0 24px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;min-height:var(--hh)}
+#screen-home{position:fixed;inset:0;background:var(--g50);display:none;flex-direction:column;z-index:998;overflow-y:auto}
+.hm-hdr{background:var(--w);border-bottom:1px solid var(--g200);padding:0 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;min-height:var(--hh);position:sticky;top:0;z-index:10;flex-wrap:wrap;gap:8px}
 .hm-logo{display:flex;align-items:center;gap:12px}
 .hm-lmark{width:32px;height:32px;background:var(--b600);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--w)}
 .hm-contact{display:flex;gap:16px;font-size:11px;color:var(--g500)}
@@ -101,8 +150,8 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .hm-cert{background:#cc0000;color:#fff;font-size:9px;font-weight:600;padding:3px 7px;border-radius:4px;line-height:1.4;text-align:center}
 .hm-user{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--g600)}
 .hm-av{width:30px;height:30px;border-radius:50%;background:var(--b600);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--w)}
-.hm-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
-.hm-title{font-size:26px;font-weight:700;text-align:center;margin-bottom:6px}
+.hm-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:32px 16px 48px}
+.hm-title{font-size:26px;font-weight:700;text-align:center;margin-bottom:6px;margin-top:24px}
 .hm-sub{font-size:15px;color:var(--g500);text-align:center;margin-bottom:36px}
 .hm-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;width:100%;max-width:720px}
 .hm-card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:32px;cursor:pointer;transition:all .2s;box-shadow:var(--sh0)}
@@ -371,10 +420,9 @@ textarea.fi{resize:vertical;min-height:72px}
   .hm-cards{grid-template-columns:1fr}
   .kb-board{flex-direction:column}.kb-col{min-width:unset;max-width:unset}
   .hm-contact{display:none}
-  /* Better mobile touch targets */
   .btn{padding:9px 14px;font-size:14px}
   .btn-sm{padding:7px 12px;font-size:13px}
-  .fi{padding:10px 12px;font-size:16px} /* prevent iOS zoom */
+  .fi{padding:10px 12px;font-size:16px}
   .fs{font-size:16px}
   .nav-item{padding:11px 12px}
   .tbl td,.tbl th{padding:10px 10px}
@@ -391,11 +439,29 @@ textarea.fi{resize:vertical;min-height:72px}
   .ac-card{padding:20px 12px}
   .ac-icon{font-size:32px}
   .fotos-tab{padding:12px 14px}
+  /* Header: compact buttons, no text overlap */
+  .hdr-top{padding:0 8px;gap:6px}
+  #btn-nb,#btn-ne{font-size:0 !important} /* hide text, show icon only */
+  #btn-nb::before{content:'＋🚢';font-size:13px}
+  #btn-ne::before{content:'＋📦';font-size:13px}
+  .bc{font-size:11px;gap:4px}
+  .app-mark{width:26px;height:26px;font-size:10px}
+  .app-ltxt{display:none}
 }
 @media(max-width:480px){
   .kpi-grid{grid-template-columns:repeat(2,1fr)}
-  .h-right .grist-btn,.h-right .hdr-cert{display:none}
+  .h-right .grist-btn{display:none}
   .buque-card{flex-direction:column}
+  .hm-card{padding:22px 18px}
+  /* Home screen full-width cards on tiny screens */
+  .hm-cards{grid-template-columns:1fr !important;max-width:100%}
+}
+/* PWA safe area support (iPhone notch/home bar) */
+@supports(padding:max(0px)){
+  .hm-hdr,#app-hdr{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));}
+  .hm-body{padding-bottom:max(48px,calc(env(safe-area-inset-bottom)+24px));}
+  #sidebar{padding-bottom:env(safe-area-inset-bottom);}
+  .mf{padding-bottom:max(14px,env(safe-area-inset-bottom));}
 }
 </style>
 </head>
@@ -1903,23 +1969,43 @@ async function marcarCarg(id){if(!confirm('¿Confirmar carga en camión?'))retur
 
 // ── DASHBOARD ALMACÉN ──────────────────────────────────────
 async function loadAlmDash(){
-  const [{data:buques},{data:exps}]=await Promise.all([
-    sb.from('buques').select('*,ec:cliente_id(nombre)').not('estado_operacion','in','("Embarcado","Finalizado")').order('eta_buque',{ascending:true,nullsFirst:false}),
+  const [{data:BALL},{data:exps}]=await Promise.all([
+    sb.from('buques').select('*,ec:cliente_id(nombre)').order('eta_buque',{ascending:true,nullsFirst:false}),
     sb.from('expediciones').select('*,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO')
   ]);
-  const B=buques||[],E=exps||[];
+  // Filtrar buques activos en JS (evita bug NULL de Supabase)
+  const B=(BALL||[]).filter(b=>b.estado_operacion!=='Embarcado'&&b.estado_operacion!=='Finalizado');
+  const E=exps||[];
+
+  // Calcular totales reales por buque desde expediciones
+  const expMap={};
+  E.forEach(e=>{
+    if(!e.buque_id)return;
+    if(!expMap[e.buque_id])expMap[e.buque_id]={total:0,auth:0};
+    expMap[e.buque_id].total++;
+    if(e.estado_carga==='✅ AUTORIZADO'||e.estado_semaforo==='🚛 CARGADO CAMIÓN')expMap[e.buque_id].auth++;
+  });
+  B.forEach(b=>{
+    const em=expMap[b.id]||{total:0,auth:0};
+    b.total_expediciones=em.total;
+    b.total_autorizadas=em.auth;
+  });
+
   const pend=E.filter(e=>e.estado_semaforo==='⏳ EN TRÁNSITO'||e.estado_semaforo==='⌛ ESPERANDO ALMACÉN').length;
   const rev=E.filter(e=>e.estado_semaforo==='🚨 EN ALMACÉN - REVISAR').length;
   const aut=E.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
   const lis=B.filter(b=>b.total_expediciones>0&&b.total_expediciones===b.total_autorizadas);
+
   document.getElementById('alm-kpi-grid').innerHTML=`
-    <div class="kpi bl"><div class="kpi-lbl">Buques activos</div><div class="kpi-val">${B.length}</div></div>
+    <div class="kpi bl"><div class="kpi-lbl">Buques activos</div><div class="kpi-val">${B.length}</div><div class="kpi-sub" style="color:var(--b600)">${B.filter(b=>b.estado_operacion==='En proceso'||!b.estado_operacion).length} en proceso</div></div>
     <div class="kpi am"><div class="kpi-lbl">Pendientes llegada</div><div class="kpi-val">${pend}</div></div>
-    <div class="kpi rd"><div class="kpi-lbl">En almacén revisar</div><div class="kpi-val">${rev}</div></div>
+    <div class="kpi rd"><div class="kpi-lbl">En almacén — revisar</div><div class="kpi-val">${rev}</div></div>
     <div class="kpi gr"><div class="kpi-lbl">Autorizados embarcar</div><div class="kpi-val">${aut}</div></div>`;
-  document.getElementById('alm-listos-dash').innerHTML=lis.length?lis.map(b=>buqueCard(b,true)).join(''):'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques listos para embarcar</div></div>';
+  document.getElementById('alm-listos-dash').innerHTML=lis.length
+    ?lis.map(b=>buqueCard(b,true)).join('')
+    :'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques con todas las expediciones autorizadas</div></div>';
   const pendRows=E.filter(e=>e.estado_semaforo==='⏳ EN TRÁNSITO'||e.estado_semaforo==='⌛ ESPERANDO ALMACÉN').slice(0,10);
-  document.getElementById('alm-pend-dash').innerHTML=`<table class="tbl"><thead><tr><th>Expedición</th><th>Buque</th><th>Estado</th><th>Bultos</th><th>Acción</th></tr></thead><tbody>${pendRows.map(e=>`<tr><td class="fw">${e.nº_expedicion}</td><td>${e.buques?.nombre||'—'}</td><td>${bdg(e.estado_semaforo)}</td><td>${e.bultos}</td><td><button class="btn btn-g btn-sm" onclick="confirmLlegada('${e.id}')">✅ Confirmar llegada</button></td></tr>`).join('')||'<tr><td colspan="5"><div class="empty"><div class="empty-txt">Sin pendientes</div></div></td></tr>'}</tbody></table>`;
+  document.getElementById('alm-pend-dash').innerHTML=`<div class="tc"><table class="tbl"><thead><tr><th>Expedición</th><th>Buque</th><th>Estado</th><th>Bultos</th><th>Acción</th></tr></thead><tbody>${pendRows.map(e=>`<tr><td class="fw">${e.nº_expedicion}</td><td class="sm">${e.buques?.nombre||'—'}</td><td>${bdg(e.estado_semaforo)}</td><td class="sm">${e.bultos}</td><td><button class="btn btn-g btn-sm" onclick="confirmLlegada('${e.id}')">✅ Confirmar llegada</button></td></tr>`).join('')||'<tr><td colspan="5"><div class="empty"><div class="empty-txt">Sin pendientes</div></div></td></tr>'}</tbody></table></div>`;
 }
 
 // ── FOTOS & CONFIRMAR (4 pestañas) ────────────────────────
