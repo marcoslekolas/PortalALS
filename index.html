@@ -1096,118 +1096,115 @@ async function loadDash(){
   const est  = document.getElementById('df-est')?.value||'';
   const sta  = document.getElementById('df-sta')?.value||'';
 
-  // ── Buques query ──────────────────────────────────────────
-  let bQ = sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)');
-  // Estado: if filtering by specific estado show those; otherwise hide Embarcado/Finalizado
-  if(est){
-    bQ = bQ.eq('estado_operacion', est);
-  } else {
-    bQ = bQ.not('estado_operacion','in','("Embarcado","Finalizado")');
-  }
+  // 1. Siempre cargar TODOS los buques activos (sin filtro fecha) para secciones operativas
+  const {data:BALL} = await sb.from('buques')
+    .select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)')
+    .not('estado_operacion','eq','Embarcado')
+    .not('estado_operacion','eq','Finalizado')
+    .order('eta_buque',{ascending:true,nullsFirst:false});
+
+  // 2. Siempre cargar TODAS las expediciones activas para calcular listos
+  const {data:EALL} = await sb.from('expediciones')
+    .select('id,buque_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,bultos,kilos')
+    .neq('estado_semaforo','🚢 EMBARCADO');
+
+  const allBuques = BALL || [];
+  const allExps   = EALL || [];
+
+  // Mapa buqueId -> conteo real
+  const expMap = {};
+  allExps.forEach(e => {
+    if(!e.buque_id) return;
+    if(!expMap[e.buque_id]) expMap[e.buque_id] = {total:0, auth:0};
+    expMap[e.buque_id].total++;
+    if(e.estado_carga === '✅ AUTORIZADO') expMap[e.buque_id].auth++;
+  });
+  allBuques.forEach(b => {
+    const em = expMap[b.id] || {total:0, auth:0};
+    b.total_expediciones = em.total;
+    b.total_autorizadas  = em.auth;
+  });
+
+  const listos = allBuques.filter(b => b.total_expediciones > 0 && b.total_expediciones === b.total_autorizadas);
+  const listosIds = new Set(listos.map(b => b.id));
+  const enProceso = allBuques.filter(b => {
+    const op = b.estado_operacion;
+    const esActivo = !op || op === 'En proceso' || op === 'Sin comenzar' || op === 'Aplazado' || op === 'Cancelado';
+    return esActivo && !listosIds.has(b.id);
+  });
+
+  // 3. Query FILTRADA para estadísticas/KPIs
+  let bQ = sb.from('buques').select('id,eta_buque,estado_operacion,cliente_id,consignatario_id');
+  if(est) bQ = bQ.eq('estado_operacion', est);
+  else { bQ = bQ.not('estado_operacion','eq','Embarcado').not('estado_operacion','eq','Finalizado'); }
   if(cliId) bQ = bQ.eq('cliente_id', cliId);
   if(conId) bQ = bQ.eq('consignatario_id', conId);
-  // Date filter — apply only once, most specific wins (mes overrides año)
   if(año && mes){
     const m = mes.padStart(2,'0');
     const lastDay = new Date(parseInt(año), parseInt(mes), 0).getDate();
-    bQ = bQ.gte('eta_buque', `${año}-${m}-01`).lte('eta_buque', `${año}-${m}-${lastDay}`);
+    bQ = bQ.gte('eta_buque',`${año}-${m}-01`).lte('eta_buque',`${año}-${m}-${lastDay}`);
   } else if(año){
-    bQ = bQ.gte('eta_buque', `${año}-01-01`).lte('eta_buque', `${año}-12-31`);
+    bQ = bQ.gte('eta_buque',`${año}-01-01`).lte('eta_buque',`${año}-12-31`);
   }
-  bQ = bQ.order('eta_buque', {ascending:true, nullsFirst:false});
 
-  // ── Expediciones query ────────────────────────────────────
-  let eQ = sb.from('expediciones').select('*,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)');
-  // Only exclude fully-embarcado expeditions when no estado filter
-  if(!est || est !== 'Embarcado'){
-    eQ = eQ.neq('estado_semaforo','🚢 EMBARCADO');
-  }
+  let eQ = sb.from('expediciones').select('*,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)')
+    .neq('estado_semaforo','🚢 EMBARCADO');
   if(sta) eQ = eQ.eq('status_aduanero', sta);
 
   const [bR, eR, iR] = await Promise.all([bQ, eQ, sb.from('incidencias').select('id').eq('estado','Abierta')]);
-  let B = bR.data || [];
-  let E = eR.data || [];
+  const Bfilt = bR.data || [];
+  let   Efilt = eR.data || [];
 
-  // Post-filter expediciones to match buque filters
-  if(cliId) E = E.filter(e => e.buques?.cliente_id === cliId);
-  if(conId) E = E.filter(e => e.buques?.consignatario_id === conId);
-  if(año && mes){
-    const yr=parseInt(año), mo=parseInt(mes);
-    E = E.filter(e => { if(!e.buques?.eta_buque)return true; const d=new Date(e.buques.eta_buque); return d.getFullYear()===yr && d.getMonth()+1===mo; });
-  } else if(año){
-    const yr=parseInt(año);
-    E = E.filter(e => { if(!e.buques?.eta_buque)return true; return new Date(e.buques.eta_buque).getFullYear()===yr; });
+  // Post-filtrar expediciones para que correspondan a los buques filtrados
+  if(cliId || conId || año || mes){
+    const bFiltIds = new Set(Bfilt.map(b => b.id));
+    Efilt = Efilt.filter(e => !e.buque_id || bFiltIds.has(e.buque_id));
   }
 
   const I = iR.data || [];
-  const auth = E.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
-  const pct  = E.length ? Math.round(auth/E.length*100) : 0;
-  const alc  = E.filter(e=>!e.nº_mrn && e.ubicacion!=='Pendiente recibir').length;
-  const totalBultos = E.reduce((a,e)=>a+(e.bultos||0),0);
-  const totalKilos  = E.reduce((a,e)=>a+(e.kilos||0),0);
+  const authF       = Efilt.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
+  const pct         = Efilt.length ? Math.round(authF/Efilt.length*100) : 0;
+  const alc         = allExps.filter(e=>!e.nº_mrn && e.ubicacion && e.ubicacion!=='Pendiente recibir').length;
+  const totalBultos = Efilt.reduce((a,e)=>a+(e.bultos||0),0);
+  const totalKilos  = Efilt.reduce((a,e)=>a+(e.kilos||0),0);
   if(alc>0){document.getElementById('badge-al').textContent=alc;document.getElementById('badge-al').style.display='';}
 
-  // Build filter description
   const filtros=[];
   if(año)filtros.push(año);
   if(mes)filtros.push(['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(mes)]);
   const selC=document.getElementById('df-cli'), selCo=document.getElementById('df-con');
   if(cliId&&selC)filtros.push(selC.options[selC.selectedIndex]?.text);
   if(conId&&selCo)filtros.push(selCo.options[selCo.selectedIndex]?.text);
-  if(est)filtros.push(est);
-  if(sta)filtros.push(sta);
+  if(est)filtros.push(est); if(sta)filtros.push(sta);
   const dfInfo=document.getElementById('df-info');
-  if(dfInfo)dfInfo.textContent=filtros.length?'Mostrando: '+filtros.join(' · '):'Todos los buques activos';
+  if(dfInfo)dfInfo.textContent=filtros.length?'Estadísticas: '+filtros.join(' · '):'Todos los buques activos';
 
   // KPIs
-  const enProceso = B.filter(b=>b.estado_operacion==='En proceso'||!b.estado_operacion);
   document.getElementById('kpi-grid').innerHTML=`
-    <div class="kpi bl"><div class="kpi-lbl">Buques</div><div class="kpi-val">${B.length}</div><div class="kpi-sub" style="color:var(--b600)">${enProceso.length} en proceso</div></div>
-    <div class="kpi gr"><div class="kpi-lbl">Expediciones</div><div class="kpi-val">${E.length}</div><div class="kpi-sub ${pct>70?'ks-g':'ks-a'}">${auth} autorizadas (${pct}%)</div></div>
-    <div class="kpi am"><div class="kpi-lbl">Bultos totales</div><div class="kpi-val">${totalBultos.toLocaleString('es-ES')}</div></div>
-    <div class="kpi bl"><div class="kpi-lbl">Kilos totales</div><div class="kpi-val">${Math.round(totalKilos/1000).toLocaleString('es-ES')}t</div><div class="kpi-sub" style="color:var(--b600)">${totalKilos.toLocaleString('es-ES')} kg</div></div>
+    <div class="kpi bl"><div class="kpi-lbl">Buques activos</div><div class="kpi-val">${allBuques.length}</div><div class="kpi-sub" style="color:var(--b600)">${enProceso.length} en proceso · ${listos.length} listos</div></div>
+    <div class="kpi gr"><div class="kpi-lbl">Expediciones${filtros.length?' (filtradas)':''}</div><div class="kpi-val">${Efilt.length}</div><div class="kpi-sub ${pct>70?'ks-g':'ks-a'}">${authF} autorizadas (${pct}%)</div></div>
+    <div class="kpi am"><div class="kpi-lbl">Bultos${filtros.length?' (filtrados)':''}</div><div class="kpi-val">${totalBultos.toLocaleString('es-ES')}</div></div>
+    <div class="kpi bl"><div class="kpi-lbl">Kilos${filtros.length?' (filtrados)':''}</div><div class="kpi-val">${Math.round(totalKilos/1000).toLocaleString('es-ES')}t</div><div class="kpi-sub" style="color:var(--b600)">${totalKilos.toLocaleString('es-ES')} kg</div></div>
     <div class="kpi rd"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>
     <div class="kpi am"><div class="kpi-lbl">Sin MRN en almacén</div><div class="kpi-val">${alc}</div>${alc>0?'<div class="kpi-sub ks-a">⚠️ requieren acción</div>':''}</div>`;
 
-  // Calculate listos: count autorizado exps per buque, match against total
-  const expsByBuque={};
-  E.forEach(e=>{
-    if(!e.buque_id)return;
-    if(!expsByBuque[e.buque_id])expsByBuque[e.buque_id]={total:0,auth:0};
-    expsByBuque[e.buque_id].total++;
-    if(e.estado_carga==='✅ AUTORIZADO')expsByBuque[e.buque_id].auth++;
-  });
-
-  // A buque is "listo" if it has expediciones AND all are authorized
-  const lis = B.filter(b=>{
-    const be=expsByBuque[b.id];
-    return be && be.total>0 && be.total===be.auth;
-  });
-  const enProcesoSinLis = enProceso.filter(b=>!lis.find(l=>l.id===b.id));
-
-  // Enrich buques with computed totals for progress bar
-  B.forEach(b=>{
-    const be=expsByBuque[b.id]||{total:0,auth:0};
-    b.total_expediciones=be.total;
-    b.total_autorizadas=be.auth;
-  });
-
+  // Secciones operativas — SIEMPRE muestran la realidad sin filtros
   const cntEl=document.getElementById('dash-proceso-count');
-  if(cntEl) cntEl.textContent=enProcesoSinLis.length||'';
+  if(cntEl) cntEl.textContent = enProceso.length||'';
 
-  document.getElementById('listos-dash').innerHTML = lis.length
-    ? lis.map(b=>buqueCard(b,true)).join('')
-    : `<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques listos para embarcar${filtros.length?' (con los filtros aplicados)':''}</div></div>`;
+  document.getElementById('listos-dash').innerHTML = listos.length
+    ? listos.map(b=>buqueCard(b,true)).join('')
+    : '<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques con todas las expediciones autorizadas</div></div>';
 
-  document.getElementById('buques-dash').innerHTML = enProcesoSinLis.length
-    ? enProcesoSinLis.map(b=>buqueCard(b,false)).join('')
-    : `<div class="empty"><div class="empty-txt">Sin buques en proceso activo${filtros.length?' (con los filtros aplicados)':''}</div></div>`;
+  document.getElementById('buques-dash').innerHTML = enProceso.length
+    ? enProceso.map(b=>buqueCard(b,false)).join('')
+    : '<div class="empty"><div class="empty-txt">Sin buques en operación activa</div></div>';
 
   setTimeout(attachBuqueCardDrag, 50);
 
-  // Charts
+  // Gráficas
   const byEmp={}, byStatus={}, byMes={};
-  E.forEach(e=>{
+  Efilt.forEach(e=>{
     const n=e.empresas?.nombre||'Sin asignar'; byEmp[n]=(byEmp[n]||0)+1;
     const s=e.status_aduanero||'Sin status';  byStatus[s]=(byStatus[s]||0)+1;
     const eb=e.buques?.eta_buque;
@@ -1228,7 +1225,7 @@ async function loadDash(){
         <div style="text-align:center;padding:12px;background:var(--gr50);border-radius:var(--r)"><div style="font-size:10px;color:var(--gr600);font-weight:600;text-transform:uppercase">Kilos</div><div style="font-size:26px;font-weight:700;color:var(--gr700)">${totalKilos.toLocaleString('es-ES')}</div></div>
       </div>
       <div class="ct">Estado expediciones</div>
-      ${[{k:'✅ AUTORIZADO',c:'var(--gr500)'},{k:'🚛 CARGADO CAMIÓN',c:'var(--gr500)'},{k:'📦 UBICADA',c:'var(--tl500)'},{k:'🚨 EN ALMACÉN - REVISAR',c:'var(--rd500)'},{k:'⏳ EN TRÁNSITO',c:'var(--b500)'},{k:'⌛ ESPERANDO ALMACÉN',c:'var(--b500)'}].map(s=>{const v=E.filter(e=>e.estado_semaforo===s.k).length;if(!v)return'';return`<div class="bar-row"><div class="bar-lbl">${s.k}</div><div class="bar-track"><div class="bar-fill" style="width:${E.length?Math.round(v/E.length*100):0}%;background:${s.c}"></div></div><div class="bar-val">${v}</div></div>`;}).join('')||'<div class="empty-txt" style="font-size:12px;padding:8px">Sin expediciones</div>'}
+      ${[{k:'✅ AUTORIZADO',c:'var(--gr500)'},{k:'🚛 CARGADO CAMIÓN',c:'var(--gr500)'},{k:'📦 UBICADA',c:'var(--tl500)'},{k:'🚨 EN ALMACÉN - REVISAR',c:'var(--rd500)'},{k:'⏳ EN TRÁNSITO',c:'var(--b500)'},{k:'⌛ ESPERANDO ALMACÉN',c:'var(--b500)'}].map(s=>{const v=Efilt.filter(e=>e.estado_semaforo===s.k).length;if(!v)return'';return`<div class="bar-row"><div class="bar-lbl">${s.k}</div><div class="bar-track"><div class="bar-fill" style="width:${Efilt.length?Math.round(v/Efilt.length*100):0}%;background:${s.c}"></div></div><div class="bar-val">${v}</div></div>`;}).join('')||'<div class="empty-txt" style="font-size:12px;padding:8px">Sin expediciones</div>'}
     </div>`;
 }
 
