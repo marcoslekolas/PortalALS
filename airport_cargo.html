@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+<meta name="theme-color" content="#1565c0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ALS Airport">
+<title>ALS · Airport Cargo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --w:#fff;--g50:#f8f9fa;--g100:#f1f3f5;--g200:#e9ecef;--g300:#dee2e6;--g400:#ced4da;
+  --g500:#adb5bd;--g600:#6c757d;--g700:#495057;--g800:#343a40;--g900:#212529;
+  --b50:#e3f2fd;--b100:#bbdefb;--b500:#2196f3;--b600:#1565c0;--b700:#0d47a1;
+  --gr50:#f0fdf4;--gr500:#22c55e;--gr600:#16a34a;--gr700:#15803d;
+  --am50:#fffbeb;--am500:#f59e0b;--am600:#d97706;
+  --rd50:#fef2f2;--rd500:#ef4444;--rd600:#dc2626;
+  --tl500:#14b8a6;--tl600:#0d9488;
+  --pu50:#f5f3ff;--pu500:#8b5cf6;--pu600:#7c3aed;
+  --f:'Inter',sans-serif;--mono:'DM Mono',monospace;
+  --r:8px;--rl:12px;--rxl:16px;
+  --sh0:0 1px 3px rgba(0,0,0,.08);--sh:0 2px 8px rgba(0,0,0,.10);--shl:0 8px 24px rgba(0,0,0,.12);
+  --sw:260px;--hh:56px;
+}
+html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
+/* Layout */
+#app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+#hdr{background:var(--b600);color:#fff;display:flex;align-items:center;padding:0 20px;min-height:var(--hh);flex-shrink:0;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.hdr-logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;cursor:pointer}
+.hdr-mark{width:32px;height:32px;background:rgba(255,255,255,.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900}
+.hdr-sep{color:rgba(255,255,255,.4);font-size:18px;margin:0 4px}
+.hdr-title{font-size:14px;font-weight:600;opacity:.9}
+.hdr-spacer{flex:1}
+.hdr-btn{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:5px 12px;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--f);transition:background .15s}
+.hdr-btn:hover{background:rgba(255,255,255,.25)}
+/* Body */
+#body{flex:1;display:flex;overflow:hidden}
+#sidebar{width:var(--sw);background:var(--w);border-right:1px solid var(--g200);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;transition:transform .25s;z-index:50}
+#content{flex:1;overflow-y:auto;background:var(--g50)}
+/* Nav */
+.sb-sec{padding:14px 12px 4px;font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.8px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:var(--r);margin:1px 8px;cursor:pointer;color:var(--g600);font-size:13px;font-weight:500;transition:all .12s;user-select:none}
+.nav-item:hover{background:var(--b50);color:var(--b700)}
+.nav-item.active{background:var(--b50);color:var(--b700)}
+.nav-item .ni{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.sb-bot{margin-top:auto;padding:12px;border-top:1px solid var(--g200)}
+/* Views */
+.view{display:none;padding:24px;animation:fi .18s ease}
+.view.active{display:block}
+@keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap}
+.pt{font-size:18px;font-weight:700;color:var(--g900)}
+/* KPIs */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.kpi{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px 18px;box-shadow:var(--sh0)}
+.kpi.bl{border-left:3px solid var(--b500)}.kpi.gr{border-left:3px solid var(--gr500)}
+.kpi.am{border-left:3px solid var(--am500)}.kpi.pu{border-left:3px solid var(--pu500)}
+.kpi-lbl{font-size:11px;color:var(--g500);font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+.kpi-val{font-size:26px;font-weight:700;line-height:1}
+.kpi-sub{font-size:11px;margin-top:4px;color:var(--g500)}
+/* Table */
+.tc{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;box-shadow:var(--sh0)}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{padding:9px 14px;text-align:left;font-size:11px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--g200);background:var(--g50);white-space:nowrap}
+.tbl td{padding:11px 14px;border-bottom:1px solid var(--g100);font-size:13px;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr:hover td{background:var(--b50);cursor:pointer}
+.tbl tbody tr.warn td{background:#fff8e1}
+.fw{font-weight:600;color:var(--g900)}.sm{font-size:12px;color:var(--g500)}
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;border:1px solid transparent}
+.bg{background:var(--gr50);color:var(--gr700);border-color:#bbf7d0}
+.bb{background:var(--b50);color:var(--b700);border-color:var(--b100)}
+.ba{background:var(--am50);color:var(--am600);border-color:#fde68a}
+.br{background:var(--rd50);color:var(--rd600);border-color:#fecaca}
+.bpu{background:var(--pu50);color:var(--pu600);border-color:#ddd6fe}
+.bgr{background:var(--g100);color:var(--g600);border-color:var(--g200)}
+/* Forms */
+.fg{margin-bottom:14px}
+.fl{display:block;font-size:12px;font-weight:600;color:var(--g700);margin-bottom:4px}
+.fi{width:100%;padding:8px 12px;background:var(--w);border:1px solid var(--g300);border-radius:var(--r);color:var(--g900);font-family:var(--f);font-size:13px;outline:none;transition:border-color .15s;box-shadow:var(--sh0)}
+.fi:focus{border-color:var(--b500);box-shadow:0 0 0 3px var(--b50)}
+.fi::placeholder{color:var(--g400)}
+.fs{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236c757d' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:32px}
+.fr2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+/* Buttons */
+.btn{padding:7px 14px;border-radius:var(--r);border:1px solid transparent;cursor:pointer;font-family:var(--f);font-size:13px;font-weight:500;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn-p{background:var(--b600);color:var(--w);border-color:var(--b600)}.btn-p:hover{background:var(--b700)}
+.btn-s{background:var(--w);color:var(--g700);border-color:var(--g300)}.btn-s:hover{background:var(--g50)}
+.btn-g{background:var(--gr50);color:var(--gr700);border-color:#bbf7d0}
+.btn-d{background:var(--rd50);color:var(--rd600);border-color:#fecaca}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-full{width:100%;justify-content:center;padding:10px}
+/* Modal */
+.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(2px)}
+.mo.open{display:flex}
+.modal{background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);width:100%;max-width:620px;max-height:92vh;overflow-y:auto;box-shadow:var(--shl)}
+.mh{padding:16px 20px;border-bottom:1px solid var(--g200);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--w);z-index:1}
+.mt{font-size:15px;font-weight:700}
+.mc{background:none;border:none;color:var(--g400);font-size:22px;cursor:pointer;line-height:1}
+.mb{padding:20px}
+.mf{padding:12px 20px;border-top:1px solid var(--g200);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;background:var(--g50);border-radius:0 0 var(--rxl) var(--rxl)}
+/* Info/warn boxes */
+.info-box{background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--b700);margin-bottom:14px;line-height:1.5}
+.warn-box{background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--am600);font-weight:500;margin-bottom:14px}
+/* Cost breakdown */
+.cost-row{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:var(--r);margin-bottom:4px;font-size:13px}
+.cost-row.total{background:var(--b600);color:#fff;font-weight:700;font-size:14px;margin-top:8px}
+.cost-row:not(.total){background:var(--g50);border:1px solid var(--g200)}
+.cost-row .cost-lbl{font-weight:500}
+.cost-row .cost-val{font-family:var(--mono);font-weight:700}
+/* Checkbox toggle */
+.toggle-row{display:flex;align-items:center;gap:8px;padding:8px 0;cursor:pointer;user-select:none}
+.toggle-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--b600);cursor:pointer}
+/* Filters bar */
+.fbar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.fbar .fi{padding:6px 10px;font-size:12px}
+/* Summary cards */
+.sum-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px}
+.sum-card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px;box-shadow:var(--sh0)}
+.sum-card-title{font-size:11px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
+.sum-card-val{font-size:22px;font-weight:700}
+/* Tabs */
+.tabs{display:flex;border-bottom:2px solid var(--g200);margin-bottom:20px;overflow-x:auto;gap:0}
+.tab-btn{padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;font-family:var(--f);font-size:13px;font-weight:600;color:var(--g500);cursor:pointer;white-space:nowrap;margin-bottom:-2px;transition:all .15s}
+.tab-btn.active{border-bottom-color:var(--b600);color:var(--b600)}
+/* Loading / empty */
+.loading{display:flex;align-items:center;justify-content:center;padding:48px;color:var(--g400);gap:10px;font-size:13px}
+.spinner{width:18px;height:18px;border:2px solid var(--g200);border-top-color:var(--b500);border-radius:50%;animation:spin .65s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:48px}
+.empty-icon{font-size:32px;margin-bottom:10px;opacity:.35}
+.empty-txt{font-size:14px;color:var(--g400);font-weight:500}
+/* Toast */
+.toast{position:fixed;bottom:20px;right:20px;background:#1b5e20;color:#fff;padding:10px 16px;border-radius:var(--r);font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;box-shadow:var(--shl)}
+.toast.show{opacity:1}
+/* Hamburger */
+.hamburger{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:18px;cursor:pointer;padding:5px 9px;border-radius:var(--r);flex-shrink:0}
+.mob-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:49}
+.mob-ov.show{display:block}
+/* Divider */
+.fdiv{border:none;border-top:1px solid var(--g200);margin:16px 0}
+/* Scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--g300);border-radius:3px}
+@media(max-width:768px){
+  #sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);box-shadow:var(--shl)}
+  #sidebar.open{transform:translateX(0)}
+  .hamburger{display:block}
+  .mob-ov.show{display:block}
+  .fr2,.fr3{grid-template-columns:1fr}
+  .view{padding:16px}
+  .fi{font-size:16px}
+  .modal{max-width:100%;margin:0;border-radius:var(--rl) var(--rl) 0 0}
+  .mo{align-items:flex-end;padding:0}
+  .mf{padding-bottom:max(12px,env(safe-area-inset-bottom))}
+}
+@supports(padding:max(0px)){
+  #hdr{padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right))}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- HEADER -->
+  <header id="hdr">
+    <button class="hamburger" onclick="toggleSB()">☰</button>
+    <div class="hdr-logo" onclick="goBack()">
+      <div class="hdr-mark">ALS</div>
+    </div>
+    <span class="hdr-sep">/</span>
+    <span class="hdr-title">✈️ Airport Cargo</span>
+    <div class="hdr-spacer"></div>
+    <button class="hdr-btn" onclick="openModal('nueva-entrada')">+ Nueva entrada</button>
+    <button class="hdr-btn" style="margin-left:4px" onclick="goBack()">← Portal</button>
+  </header>
+
+  <div id="body">
+    <!-- SIDEBAR -->
+    <nav id="sidebar">
+      <div class="sb-sec">Airport Cargo</div>
+      <div class="nav-item active" onclick="nav('dashboard',this)"><span class="ni">🏠</span>Dashboard</div>
+      <div class="nav-item" onclick="nav('entradas',this)"><span class="ni">📋</span>Entradas</div>
+      <div class="nav-item" onclick="nav('resumen',this)"><span class="ni">📊</span>Resumen mensual</div>
+      <div class="nav-item" onclick="nav('tarifas',this)"><span class="ni">💰</span>Tarifas Handling</div>
+      <div class="sb-sec">Acciones</div>
+      <div class="nav-item" onclick="openModal('nueva-entrada')"><span class="ni">➕</span>Nueva entrada</div>
+      <div class="sb-bot">
+        <div style="font-size:11px;color:var(--g400);padding:8px">Algeciras Logistic Solutions</div>
+      </div>
+    </nav>
+
+    <!-- CONTENT -->
+    <div id="content">
+
+      <!-- DASHBOARD -->
+      <div class="view active" id="view-dashboard">
+        <div class="ph">
+          <div class="pt">✈️ Dashboard Airport Cargo</div>
+          <select id="dash-year" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadDashboard()">
+            <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
+          </select>
+        </div>
+        <div class="kpi-grid" id="dash-kpis"></div>
+        <div class="ph"><div class="pt">📦 Entradas recientes</div></div>
+        <div class="tc" id="dash-recent"></div>
+      </div>
+
+      <!-- ENTRADAS -->
+      <div class="view" id="view-entradas">
+        <div class="ph">
+          <div class="pt">📋 Entradas Aeropuerto</div>
+          <button class="btn btn-p" onclick="openModal('nueva-entrada')">+ Nueva entrada</button>
+        </div>
+        <div class="fbar">
+          <input class="fi" style="max-width:220px" placeholder="Buscar AWB, consignatario…" oninput="filtrarEntradas(this.value)" id="search-ent">
+          <select class="fi fs" style="width:auto" onchange="filtrarEntradas()" id="fil-handler">
+            <option value="">Todos los handlers</option>
+            <option>Swissport</option><option>Groundforce</option>
+          </select>
+          <select class="fi fs" style="width:auto" onchange="filtrarEntradas()" id="fil-year-ent">
+            <option value="">Todos los años</option>
+            <option value="2026">2026</option><option value="2025">2025</option>
+          </select>
+          <select class="fi fs" style="width:auto" onchange="filtrarEntradas()" id="fil-mes-ent">
+            <option value="">Todos los meses</option>
+            <option value="01-Ene">Enero</option><option value="02-Feb">Febrero</option>
+            <option value="03-Mar">Marzo</option><option value="04-Abr">Abril</option>
+            <option value="05-May">Mayo</option><option value="06-Jun">Junio</option>
+            <option value="07-Jul">Julio</option><option value="08-Ago">Agosto</option>
+            <option value="09-Sep">Septiembre</option><option value="10-Oct">Octubre</option>
+            <option value="11-Nov">Noviembre</option><option value="12-Dic">Diciembre</option>
+          </select>
+        </div>
+        <div class="tc"><table class="tbl" id="tbl-entradas">
+          <thead><tr>
+            <th>AWB</th><th>Consignatario</th><th>Buque</th>
+            <th>Handler</th><th>Aeropuerto</th><th>Llegada</th><th>Retirada</th>
+            <th>Días</th><th>Kg</th><th>Status</th>
+            <th>Almacenaje</th><th>Gestión Doc.</th><th>Tasa Recinto</th>
+            <th>Finde/Fest.</th><th>Express</th><th>Carga Camión</th><th>Apertura</th>
+            <th style="background:#e3f2fd">TOTAL €</th>
+            <th>Acciones</th>
+          </tr></thead>
+          <tbody id="tbody-entradas"></tbody>
+        </table></div>
+      </div>
+
+      <!-- RESUMEN MENSUAL -->
+      <div class="view" id="view-resumen">
+        <div class="ph">
+          <div class="pt">📊 Resumen mensual</div>
+          <select id="res-year" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadResumen()">
+            <option value="2026">2026</option><option value="2025">2025</option>
+          </select>
+        </div>
+        <div id="resumen-content"></div>
+      </div>
+
+      <!-- TARIFAS -->
+      <div class="view" id="view-tarifas">
+        <div class="ph">
+          <div class="pt">💰 Tarifas Handling</div>
+          <span class="badge bb">Año 2026</span>
+        </div>
+        <div class="tabs">
+          <button class="tab-btn active" onclick="showTarifas('Swissport',this)">✈️ Swissport</button>
+          <button class="tab-btn" onclick="showTarifas('Groundforce',this)">✈️ Groundforce</button>
+        </div>
+        <div id="tarifas-content"></div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /body -->
+</div><!-- /app -->
+
+<!-- OVERLAY -->
+<div class="mob-ov" id="mob-ov" onclick="toggleSB()"></div>
+
+<!-- MODAL -->
+<div class="mo" id="mo" onclick="closeModalOut(event)">
+  <div class="modal" id="mbox">
+    <div class="mh"><div class="mt" id="m-title"></div><button class="mc" onclick="closeModal()">×</button></div>
+    <div class="mb" id="m-body"></div>
+    <div class="mf" id="m-foot"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+// ── SUPABASE ──────────────────────────────────────────────
+const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
+const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
+let sb;
+(function(){
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+  s.onload=function(){
+    sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
+    init();
+  };
+  s.onerror=function(){document.body.innerHTML='<div style="padding:40px;text-align:center;color:#c62828">Error cargando SDK. Verifica tu conexión.</div>';};
+  document.head.appendChild(s);
+})();
+
+// ── TARIFAS EMBEBIDAS (de Airport_Cargo.grist) ────────────
+const TARIFAS_DB=[
+  {proveedor:'Groundforce',concepto:'Almacenaje General (Tramo 1)',dias_libres:3,minimo:47.47,unitario:11.21,base:'100Kg/Día',year:2026,fijo_awb:0},
+  {proveedor:'Groundforce',concepto:'Almacenaje General (Tramo 2)',dias_libres:0,minimo:48.84,unitario:26.59,base:'100Kg/Día',year:2026,fijo_awb:0},
+  {proveedor:'Groundforce',concepto:'Apertura Fuera Horario',dias_libres:0,minimo:383.33,unitario:1.72,base:'Servicio Fijo',year:2026,fijo_awb:80.74},
+  {proveedor:'Groundforce',concepto:'Carga Camión',dias_libres:0,minimo:108.94,unitario:1.15,base:'kg',year:2026,fijo_awb:0},
+  {proveedor:'Groundforce',concepto:'Entrega Fin de Semana / Festivos',dias_libres:0,minimo:138.9,unitario:138.9,base:'AWB',year:2026,fijo_awb:0},
+  {proveedor:'Groundforce',concepto:'Gestión Documental (Mismo Día)',dias_libres:0,minimo:44.57,unitario:44.57,base:'AWB',year:2026,fijo_awb:0},
+  {proveedor:'Groundforce',concepto:'Handling Express',dias_libres:0,minimo:70.01,unitario:0.23,base:'Kg',year:2026,fijo_awb:0},
+  {proveedor:'Groundforce',concepto:'Tasa Mantenimiento de Servicio',dias_libres:0,minimo:0,unitario:28.73,base:'AWB',year:2026,fijo_awb:0},
+  {proveedor:'Groundforce',concepto:'Tasa Utilización Recinto',dias_libres:0,minimo:0.43,unitario:1.9,base:'Kg',year:2026,fijo_awb:0},
+  {proveedor:'Swissport',concepto:'Acceso y Uso de Recinto (Carga Camión)',dias_libres:0,minimo:71.9,unitario:0.11,base:'Kg',year:2026,fijo_awb:0},
+  {proveedor:'Swissport',concepto:'Almacenaje General (Tramo 1)',dias_libres:2,minimo:51.31,unitario:12.12,base:'100Kg/Día',year:2026,fijo_awb:0},
+  {proveedor:'Swissport',concepto:'Almacenaje General (Tramo 2)',dias_libres:0,minimo:51.31,unitario:28.32,base:'100Kg/Día',year:2026,fijo_awb:0},
+  {proveedor:'Swissport',concepto:'Apertura Fuera Horario',dias_libres:0,minimo:0,unitario:150,base:'Servicio Fijo',year:2026,fijo_awb:0},
+  {proveedor:'Swissport',concepto:'Carga Camión',dias_libres:0,minimo:71.9,unitario:0.11,base:'Kg',year:2026,fijo_awb:0},
+  {proveedor:'Swissport',concepto:'Entrega Fin de Semana / Festivos',dias_libres:0,minimo:0,unitario:148.63,base:'AWB',year:2026,fijo_awb:0},
+  {proveedor:'Swissport',concepto:'Gestión Documental (Mismo Día)',dias_libres:0,minimo:47.69,unitario:24.18,base:'AWB',year:2026,fijo_awb:0},
+  {proveedor:'Swissport',concepto:'Handling Express',dias_libres:0,minimo:74.91,unitario:0.25,base:'Kg',year:2026,fijo_awb:0},
+  {proveedor:'Swissport',concepto:'Tasa Mantenimiento de Servicio',dias_libres:0,minimo:0,unitario:38.07,base:'AWB',year:2026,fijo_awb:0},
+  {proveedor:'Swissport',concepto:'Tasa Utilización Recinto',dias_libres:0,minimo:20.3,unitario:0.46,base:'Kg',year:2026,fijo_awb:0}
+];
+
+function getTarifa(proveedor, concepto, year){
+  return TARIFAS_DB.find(t=>t.proveedor===proveedor && t.concepto===concepto && t.year===year) || null;
+}
+
+// ── CÁLCULOS (traducción exacta de las fórmulas Grist/Python) ──
+
+function calcEstanciaDias(llegada, retirada){
+  if(!llegada||!retirada) return 0;
+  const l=new Date(llegada), r=new Date(retirada);
+  return Math.round((r-l)/(86400000))+1;
+}
+
+function calcDiasFacturables(llegada, retirada, handling){
+  if(!llegada||!retirada||!handling) return 0;
+  const l=new Date(llegada), r=new Date(retirada);
+  const dias_desde_siguiente = Math.round((r-l)/86400000);
+  const dias_naturales = dias_desde_siguiente + 1;
+  if(handling==='Swissport'){
+    const dow=l.getDay(); // 0=Dom, 6=Sáb
+    const franquicia = (dow===0||dow===6) ? 3 : 2;
+    return dias_naturales<=franquicia ? 0 : dias_desde_siguiente;
+  } else if(handling==='Groundforce'){
+    const franquicia=3;
+    return dias_naturales<=franquicia ? 0 : dias_naturales;
+  }
+  // Fallback
+  const t=getTarifa(handling,'Almacenaje General (Tramo 1)',2026);
+  const f=t?t.dias_libres:0;
+  return dias_naturales<=f ? 0 : dias_naturales;
+}
+
+function calcAlmacenaje(kilos, dias, handling, retirada){
+  if(!dias||dias===0) return 0;
+  if(!handling||!retirada) return 0;
+  const year=new Date(retirada).getFullYear();
+  const t=getTarifa(handling,'Almacenaje General (Tramo 1)',year);
+  if(!t) return null; // tarifa no encontrada
+  const fracciones=Math.ceil(kilos/100);
+  const coste=fracciones * t.unitario * dias;
+  return Math.max(coste, t.minimo);
+}
+
+function calcFinde(aplica, handling, retirada){
+  if(!aplica||!handling||!retirada) return 0;
+  const year=new Date(retirada).getFullYear();
+  const t=getTarifa(handling,'Entrega Fin de Semana / Festivos',year);
+  if(!t) return null;
+  return Math.max(t.unitario||0, t.minimo||0);
+}
+
+function calcExpress(aplica, kilos, handling, retirada){
+  if(!aplica||!handling||!retirada) return 0;
+  const year=new Date(retirada).getFullYear();
+  const t=getTarifa(handling,'Handling Express',year);
+  if(!t) return null;
+  const coste=kilos * t.unitario;
+  return Math.max(coste, t.minimo);
+}
+
+function calcGestionDoc(handling, retirada){
+  if(!handling||!retirada) return 0;
+  const year=new Date(retirada).getFullYear();
+  const t=getTarifa(handling,'Gestión Documental (Mismo Día)',year);
+  if(!t) return null;
+  return Math.max(t.minimo||0, t.unitario||0);
+}
+
+function calcTasaRecinto(kilos, handling, retirada){
+  if(!handling||!retirada) return 0;
+  const year=new Date(retirada).getFullYear();
+  const t=getTarifa(handling,'Tasa Utilización Recinto',year);
+  if(!t) return null;
+  const coste=kilos * t.unitario;
+  return Math.max(coste, t.minimo);
+}
+
+function calcCargaCamion(aplica, kilos, handling, retirada){
+  if(!aplica||!handling||!retirada) return 0;
+  const year=new Date(retirada).getFullYear();
+  // Swissport usa "Acceso y Uso de Recinto (Carga Camión)" o "Carga Camión"
+  let t=getTarifa(handling,'Carga Camión',year);
+  if(!t&&handling==='Swissport') t=getTarifa(handling,'Acceso y Uso de Recinto (Carga Camión)',year);
+  if(!t) return null;
+  const coste=kilos * t.unitario;
+  return Math.max(coste, t.minimo);
+}
+
+function calcApertura(aplica, kilos, handling, retirada){
+  if(!aplica||!handling||!retirada) return 0;
+  const year=new Date(retirada).getFullYear();
+  const t=getTarifa(handling,'Apertura Fuera Horario',year);
+  if(!t) return null;
+  const fijo=t.fijo_awb||0;
+  const variable=t.unitario||0;
+  const minimo=t.minimo||0;
+  const coste=fijo+(kilos*variable);
+  return Math.max(coste, minimo);
+}
+
+function calcTotal(e){
+  // Si no es Swissport ni Groundforce, usar coste_manual
+  const auto=['Swissport','Groundforce'];
+  if(e.handling && !auto.includes(e.handling)){
+    return e.coste_manual||0;
+  }
+  const dias=calcDiasFacturables(e.fecha_llegada, e.fecha_retirada, e.handling);
+  const kilos=parseFloat(e.kilos_tasables)||0;
+  const almacenaje=calcAlmacenaje(kilos, dias, e.handling, e.fecha_retirada)||0;
+  const finde=calcFinde(e.aplica_finde, e.handling, e.fecha_retirada)||0;
+  const express=calcExpress(e.aplica_express, kilos, e.handling, e.fecha_retirada)||0;
+  const gestDoc=calcGestionDoc(e.handling, e.fecha_retirada)||0;
+  const tasaRecinto=calcTasaRecinto(kilos, e.handling, e.fecha_retirada)||0;
+  const cargaCamion=calcCargaCamion(e.aplica_carga_camion, kilos, e.handling, e.fecha_retirada)||0;
+  const apertura=calcApertura(e.aplica_apertura, kilos, e.handling, e.fecha_retirada)||0;
+  return almacenaje+finde+express+gestDoc+tasaRecinto+cargaCamion+apertura;
+}
+
+function calcMesOperacion(retirada){
+  if(!retirada) return '';
+  const d=new Date(retirada);
+  const meses=['01-Ene','02-Feb','03-Mar','04-Abr','05-May','06-Jun','07-Jul','08-Ago','09-Sep','10-Oct','11-Nov','12-Dic'];
+  return `${d.getFullYear()} | ${meses[d.getMonth()]}`;
+}
+
+// ── HELPERS ──────────────────────────────────────────────
+function fd(d){if(!d)return'—';const dt=new Date(d);return dt.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit'});}
+function fc(n){if(n===null||n===undefined)return'—';if(typeof n==='string')return n;return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n)+' €';}
+function fcShort(n){if(!n||n===0)return'—';return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n);}
+function gv(id){const e=document.getElementById(id);return e?e.value:'';}
+function gc(id){const e=document.getElementById(id);return e?e.checked:false;}
+function showToast(msg){const t=document.getElementById('toast');t.textContent='✓ '+msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+function goBack(){window.location.href='index.html';}
+
+// ── NAV ──────────────────────────────────────────────────
+let CV='dashboard';
+function nav(view, el){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const ve=document.getElementById('view-'+view);if(ve)ve.classList.add('active');
+  if(el)el.classList.add('active');
+  CV=view;
+  if(window.innerWidth<=768){document.getElementById('sidebar').classList.remove('open');document.getElementById('mob-ov').classList.remove('show');}
+  loadView(view);
+}
+function toggleSB(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('mob-ov').classList.toggle('show');}
+function loadView(v){
+  if(v==='dashboard') loadDashboard();
+  else if(v==='entradas') loadEntradas();
+  else if(v==='resumen') loadResumen();
+  else if(v==='tarifas') showTarifas('Swissport');
+}
+
+// ── MODAL ─────────────────────────────────────────────────
+function closeModal(){document.getElementById('mo').classList.remove('open');}
+function closeModalOut(e){if(e.target.id==='mo')closeModal();}
+
+// ── INIT ──────────────────────────────────────────────────
+async function init(){
+  loadDashboard();
+}
+
+// ── DASHBOARD ────────────────────────────────────────────
+let allEntradas=[];
+async function loadDashboard(){
+  const year=parseInt(document.getElementById('dash-year')?.value)||2026;
+  const {data}=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:false});
+  allEntradas=data||[];
+  const yearData=allEntradas.filter(e=>{
+    if(!e.fecha_retirada)return false;
+    return new Date(e.fecha_retirada).getFullYear()===year;
+  });
+  const totales=yearData.map(e=>calcTotal(e));
+  const sumTotal=totales.reduce((a,b)=>a+(b||0),0);
+  const sumKilos=yearData.reduce((a,e)=>a+(parseFloat(e.kilos_tasables)||0),0);
+  const handlers={};
+  yearData.forEach(e=>{if(e.handling)handlers[e.handling]=(handlers[e.handling]||0)+1;});
+  document.getElementById('dash-kpis').innerHTML=`
+    <div class="kpi bl"><div class="kpi-lbl">Entradas ${year}</div><div class="kpi-val">${yearData.length}</div></div>
+    <div class="kpi pu"><div class="kpi-lbl">Total facturado</div><div class="kpi-val" style="font-size:20px">${fc(sumTotal)}</div></div>
+    <div class="kpi am"><div class="kpi-lbl">Kilos totales</div><div class="kpi-val">${sumKilos.toLocaleString('es-ES')}</div><div class="kpi-sub">kg tasables</div></div>
+    <div class="kpi gr"><div class="kpi-lbl">Handlers</div><div class="kpi-val" style="font-size:16px;margin-top:4px">${Object.entries(handlers).map(([h,n])=>`<span class="badge bb" style="margin-right:4px">${h}: ${n}</span>`).join('')}</div></div>`;
+  // Recent table
+  const recent=allEntradas.slice(0,10);
+  document.getElementById('dash-recent').innerHTML=renderEntradaTable(recent);
+}
+
+// ── ENTRADAS ─────────────────────────────────────────────
+async function loadEntradas(){
+  const {data}=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:false});
+  allEntradas=data||[];
+  renderEntradas(allEntradas);
+}
+
+function filtrarEntradas(q){
+  const s=(q||document.getElementById('search-ent')?.value||'').toLowerCase();
+  const handler=document.getElementById('fil-handler')?.value||'';
+  const year=document.getElementById('fil-year-ent')?.value||'';
+  const mes=document.getElementById('fil-mes-ent')?.value||'';
+  const filtered=allEntradas.filter(e=>{
+    const txt=(e.awb||'')+(e.consignatario||'')+(e.buque||'');
+    if(s&&!txt.toLowerCase().includes(s))return false;
+    if(handler&&e.handling!==handler)return false;
+    if(year||mes){
+      const mo=calcMesOperacion(e.fecha_retirada);
+      if(year&&!mo.startsWith(year))return false;
+      if(mes&&!mo.includes(mes))return false;
+    }
+    return true;
+  });
+  renderEntradas(filtered);
+}
+
+function renderEntradas(list){
+  const tbody=document.getElementById('tbody-entradas');
+  if(!list.length){tbody.innerHTML='<tr><td colspan="19"><div class="empty"><div class="empty-txt">Sin entradas</div></div></td></tr>';return;}
+  tbody.innerHTML=list.map(e=>{
+    const dias=calcDiasFacturables(e.fecha_llegada,e.fecha_retirada,e.handling);
+    const kg=parseFloat(e.kilos_tasables)||0;
+    const alm=calcAlmacenaje(kg,dias,e.handling,e.fecha_retirada);
+    const gd=calcGestionDoc(e.handling,e.fecha_retirada);
+    const tr=calcTasaRecinto(kg,e.handling,e.fecha_retirada);
+    const fi=calcFinde(e.aplica_finde,e.handling,e.fecha_retirada);
+    const ex=calcExpress(e.aplica_express,kg,e.handling,e.fecha_retirada);
+    const cc=calcCargaCamion(e.aplica_carga_camion,kg,e.handling,e.fecha_retirada);
+    const ap=calcApertura(e.aplica_apertura,kg,e.handling,e.fecha_retirada);
+    const total=calcTotal(e);
+    const needsManual=e.handling&&!['Swissport','Groundforce'].includes(e.handling)&&!e.coste_manual;
+    return`<tr class="${needsManual?'warn':''}" onclick="openDetalle('${e.id}')">
+      <td class="fw" style="font-family:var(--mono);font-size:12px">${e.awb||'—'}</td>
+      <td>${e.consignatario||'—'}</td>
+      <td class="sm">${e.buque||'—'}</td>
+      <td><span class="badge bb">${e.handling||'—'}</span></td>
+      <td class="sm">${e.aeropuerto||'—'}</td>
+      <td class="sm">${fd(e.fecha_llegada)}</td>
+      <td class="sm">${fd(e.fecha_retirada)}</td>
+      <td style="text-align:center">${dias}</td>
+      <td style="text-align:right">${kg}</td>
+      <td><span class="badge ${e.status==='T1'?'ba':e.status==='Comunitario'?'bg':'bgr'}">${e.status||'—'}</span></td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px">${fcShort(alm)}</td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px">${fcShort(gd)}</td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px">${fcShort(tr)}</td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px">${fi?fcShort(fi):'—'}</td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px">${ex?fcShort(ex):'—'}</td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px">${cc?fcShort(cc):'—'}</td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px">${ap?fcShort(ap):'—'}</td>
+      <td style="text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);background:var(--b50)">${fc(total)}</td>
+      <td onclick="event.stopPropagation()">
+        <button class="btn btn-sm btn-s" onclick="editEntrada('${e.id}')">✏️</button>
+        <button class="btn btn-sm btn-d" onclick="delEntrada('${e.id}')">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderEntradaTable(list){
+  if(!list.length)return'<div class="empty"><div class="empty-txt">Sin entradas</div></div>';
+  return`<table class="tbl"><thead><tr><th>AWB</th><th>Consignatario</th><th>Buque</th><th>Handler</th><th>Llegada</th><th>Retirada</th><th>Total €</th></tr></thead><tbody>
+  ${list.map(e=>`<tr onclick="nav('entradas',null)"><td class="fw" style="font-family:var(--mono)">${e.awb||'—'}</td><td>${e.consignatario||'—'}</td><td class="sm">${e.buque||'—'}</td><td><span class="badge bb">${e.handling||'—'}</span></td><td class="sm">${fd(e.fecha_llegada)}</td><td class="sm">${fd(e.fecha_retirada)}</td><td style="font-weight:700;color:var(--b700)">${fc(calcTotal(e))}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+// ── RESUMEN MENSUAL ───────────────────────────────────────
+async function loadResumen(){
+  const year=parseInt(document.getElementById('res-year')?.value)||2026;
+  if(!allEntradas.length){const {data}=await sb.from('airport_cargo').select('*');allEntradas=data||[];}
+  const yearData=allEntradas.filter(e=>e.fecha_retirada&&new Date(e.fecha_retirada).getFullYear()===year);
+  // Group by mes_operacion
+  const byMes={};
+  yearData.forEach(e=>{
+    const mo=calcMesOperacion(e.fecha_retirada);
+    if(!byMes[mo])byMes[mo]={entradas:0,kilos:0,total:0,handlers:{}};
+    byMes[mo].entradas++;
+    byMes[mo].kilos+=parseFloat(e.kilos_tasables)||0;
+    byMes[mo].total+=calcTotal(e)||0;
+    if(e.handling)byMes[mo].handlers[e.handling]=(byMes[mo].handlers[e.handling]||0)+1;
+  });
+  const sorted=Object.entries(byMes).sort((a,b)=>a[0].localeCompare(b[0]));
+  const grandTotal=sorted.reduce((a,[,d])=>a+d.total,0);
+  document.getElementById('resumen-content').innerHTML=`
+    <div class="sum-grid">
+      <div class="sum-card"><div class="sum-card-title">Total anual</div><div class="sum-card-val">${fc(grandTotal)}</div></div>
+      <div class="sum-card"><div class="sum-card-title">Entradas en ${year}</div><div class="sum-card-val">${yearData.length}</div></div>
+    </div>
+    <div class="tc"><table class="tbl"><thead><tr><th>Mes</th><th>Entradas</th><th>Kilos</th><th>Swissport</th><th>Groundforce</th><th>Total €</th></tr></thead><tbody>
+    ${sorted.map(([mes,d])=>`<tr>
+      <td class="fw">${mes}</td>
+      <td>${d.entradas}</td>
+      <td>${d.kilos.toLocaleString('es-ES')} kg</td>
+      <td>${d.handlers['Swissport']||0}</td>
+      <td>${d.handlers['Groundforce']||0}</td>
+      <td style="font-weight:700;color:var(--b700);font-family:var(--mono)">${fc(d.total)}</td>
+    </tr>`).join('')}
+    <tr style="background:var(--b50);font-weight:700">
+      <td>TOTAL ${year}</td><td>${yearData.length}</td><td>—</td><td>—</td><td>—</td>
+      <td style="color:var(--b700);font-family:var(--mono)">${fc(grandTotal)}</td>
+    </tr>
+    </tbody></table></div>`;
+}
+
+// ── TARIFAS ───────────────────────────────────────────────
+function showTarifas(proveedor, el){
+  if(el){document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
+  const tarifas=TARIFAS_DB.filter(t=>t.proveedor===proveedor);
+  document.getElementById('tarifas-content').innerHTML=`
+    <div class="tc"><table class="tbl"><thead><tr>
+      <th>Concepto</th><th>Días libres</th><th>Mínimo €</th><th>Unitario €</th><th>Base cálculo</th><th>Fijo AWB €</th>
+    </tr></thead><tbody>
+    ${tarifas.map(t=>`<tr>
+      <td class="fw">${t.concepto}</td>
+      <td style="text-align:center">${t.dias_libres||'—'}</td>
+      <td style="font-family:var(--mono);text-align:right">${t.minimo?fc(t.minimo):'—'}</td>
+      <td style="font-family:var(--mono);text-align:right">${fc(t.unitario)}</td>
+      <td><span class="badge bgr">${t.base}</span></td>
+      <td style="font-family:var(--mono);text-align:right">${t.fijo_awb?fc(t.fijo_awb):'—'}</td>
+    </tr>`).join('')}
+    </tbody></table></div>
+    <div class="info-box" style="margin-top:16px">⚠️ Tarifas 2026. Para actualizar tarifas de años futuros, contacta al administrador del sistema.</div>`;
+}
+
+// ── DETALLE ENTRADA ───────────────────────────────────────
+async function openDetalle(id){
+  const e=allEntradas.find(x=>x.id==id);
+  if(!e)return;
+  const dias=calcDiasFacturables(e.fecha_llegada,e.fecha_retirada,e.handling);
+  const estancia=calcEstanciaDias(e.fecha_llegada,e.fecha_retirada);
+  const kg=parseFloat(e.kilos_tasables)||0;
+  const esAuto=['Swissport','Groundforce'].includes(e.handling);
+  const alm=calcAlmacenaje(kg,dias,e.handling,e.fecha_retirada)||0;
+  const gd=calcGestionDoc(e.handling,e.fecha_retirada)||0;
+  const tr=calcTasaRecinto(kg,e.handling,e.fecha_retirada)||0;
+  const fi=calcFinde(e.aplica_finde,e.handling,e.fecha_retirada)||0;
+  const ex=calcExpress(e.aplica_express,kg,e.handling,e.fecha_retirada)||0;
+  const cc=calcCargaCamion(e.aplica_carga_camion,kg,e.handling,e.fecha_retirada)||0;
+  const ap=calcApertura(e.aplica_apertura,kg,e.handling,e.fecha_retirada)||0;
+  const total=calcTotal(e);
+  document.getElementById('m-title').textContent='✈️ '+e.awb;
+  document.getElementById('m-body').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+      <div><div class="sm">Consignatario</div><div class="fw">${e.consignatario||'—'}</div></div>
+      <div><div class="sm">Buque</div><div class="fw">${e.buque||'—'}</div></div>
+      <div><div class="sm">Handler</div><span class="badge bb">${e.handling||'—'}</span></div>
+      <div><div class="sm">Aeropuerto</div><div class="fw">${e.aeropuerto||'—'}</div></div>
+      <div><div class="sm">Llegada</div><div class="fw">${fd(e.fecha_llegada)}</div></div>
+      <div><div class="sm">Retirada</div><div class="fw">${fd(e.fecha_retirada)}</div></div>
+      <div><div class="sm">Estancia</div><div class="fw">${estancia} días naturales</div></div>
+      <div><div class="sm">Días facturables</div><div class="fw" style="color:var(--b600)">${dias} días</div></div>
+      <div><div class="sm">Kg tasables</div><div class="fw">${kg} kg</div></div>
+      <div><div class="sm">Bultos</div><div class="fw">${e.bultos||'—'}</div></div>
+      <div><div class="sm">Status</div><span class="badge ${e.status==='T1'?'ba':'bg'}">${e.status||'—'}</span></div>
+      <div><div class="sm">Mes operación</div><div class="fw">${calcMesOperacion(e.fecha_retirada)}</div></div>
+    </div>
+    <div class="fdiv"></div>
+    <div style="font-size:12px;font-weight:700;color:var(--g500);text-transform:uppercase;margin-bottom:10px">Desglose de costes</div>
+    ${esAuto?`
+      <div class="cost-row"><span class="cost-lbl">Almacenaje (${dias}d × ${Math.ceil(kg/100)} fracc.)</span><span class="cost-val">${fc(alm)}</span></div>
+      <div class="cost-row"><span class="cost-lbl">Gestión documental</span><span class="cost-val">${fc(gd)}</span></div>
+      <div class="cost-row"><span class="cost-lbl">Tasa utilización recinto</span><span class="cost-val">${fc(tr)}</span></div>
+      ${e.aplica_finde?`<div class="cost-row"><span class="cost-lbl">Fin de semana / festivos</span><span class="cost-val">${fc(fi)}</span></div>`:''}
+      ${e.aplica_express?`<div class="cost-row"><span class="cost-lbl">Handling Express</span><span class="cost-val">${fc(ex)}</span></div>`:''}
+      ${e.aplica_carga_camion?`<div class="cost-row"><span class="cost-lbl">Carga camión</span><span class="cost-val">${fc(cc)}</span></div>`:''}
+      ${e.aplica_apertura?`<div class="cost-row"><span class="cost-lbl">Apertura fuera horario</span><span class="cost-val">${fc(ap)}</span></div>`:''}
+      <div class="cost-row total"><span class="cost-lbl">TOTAL HANDLING</span><span class="cost-val">${fc(total)}</span></div>`
+    :`<div class="warn-box">Handler no estándar — coste introducido manualmente: ${fc(e.coste_manual)}</div>
+      <div class="cost-row total"><span class="cost-lbl">TOTAL HANDLING</span><span class="cost-val">${fc(total)}</span></div>`}
+    ${e.observaciones?`<div style="margin-top:12px;padding:10px;background:var(--g50);border-radius:var(--r);font-size:12px;color:var(--g600)">${e.observaciones}</div>`:''}`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cerrar</button><button class="btn btn-s" onclick="editEntrada('${id}');closeModal()">✏️ Editar</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+// ── NUEVA / EDITAR ENTRADA ────────────────────────────────
+function openModal(key, data){
+  if(key==='nueva-entrada') showFormEntrada(null);
+}
+async function editEntrada(id){
+  const e=allEntradas.find(x=>x.id==id);
+  if(e) showFormEntrada(e);
+}
+function showFormEntrada(e){
+  const isEdit=!!e;
+  document.getElementById('m-title').textContent=isEdit?'✏️ Editar entrada AWB '+e.awb:'✈️ Nueva entrada Airport Cargo';
+  document.getElementById('m-body').innerHTML=`
+    <div class="fr2">
+      <div class="fg"><label class="fl">AWB *</label><input id="f-awb" class="fi" value="${e?.awb||''}" placeholder="123-12345678" style="font-family:var(--mono)"></div>
+      <div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="${e?.consignatario||''}" placeholder="Nombre empresa"></div>
+    </div>
+    <div class="fr2">
+      <div class="fg"><label class="fl">Buque</label><input id="f-buque" class="fi" value="${e?.buque||''}" placeholder="Nombre del buque"></div>
+      <div class="fg"><label class="fl">Aeropuerto</label>
+        <select id="f-apto" class="fi fs">
+          <option ${e?.aeropuerto==='AGP'||!e?'selected':''}>AGP</option>
+          <option ${e?.aeropuerto==='SVQ'?'selected':''}>SVQ</option>
+          <option ${e?.aeropuerto==='MAD'?'selected':''}>MAD</option>
+        </select>
+      </div>
+    </div>
+    <div class="fr2">
+      <div class="fg"><label class="fl">Handler *</label>
+        <select id="f-handler" class="fi fs" onchange="onHandlerChange()">
+          <option value="" ${!e?.handling?'selected':''}>— Seleccionar —</option>
+          <option ${e?.handling==='Swissport'?'selected':''}>Swissport</option>
+          <option ${e?.handling==='Groundforce'?'selected':''}>Groundforce</option>
+          <option value="Otro" ${e?.handling&&!['Swissport','Groundforce'].includes(e.handling)?'selected':''}>Otro</option>
+        </select>
+      </div>
+      <div class="fg"><label class="fl">Status aduanero</label>
+        <select id="f-status" class="fi fs">
+          <option ${e?.status==='T1'||!e?'selected':''}>T1</option>
+          <option ${e?.status==='DAE'?'selected':''}>DAE</option>
+          <option ${e?.status==='Comunitario'?'selected':''}>Comunitario</option>
+        </select>
+      </div>
+    </div>
+    <div class="fr3">
+      <div class="fg"><label class="fl">Fecha llegada *</label><input id="f-llegada" class="fi" type="date" value="${e?.fecha_llegada||''}"></div>
+      <div class="fg"><label class="fl">Fecha retirada *</label><input id="f-retirada" class="fi" type="date" value="${e?.fecha_retirada||''}" onchange="previewCalculo()"></div>
+      <div class="fg"><label class="fl">Kg tasables *</label><input id="f-kg" class="fi" type="number" min="0" step="0.01" value="${e?.kilos_tasables||''}" onchange="previewCalculo()"></div>
+    </div>
+    <div class="fg"><label class="fl">Bultos</label><input id="f-bultos" class="fi" type="number" min="0" value="${e?.bultos||''}"></div>
+    <div id="extras-section">
+      <div style="font-size:12px;font-weight:700;color:var(--g500);text-transform:uppercase;margin:12px 0 8px">Cargos adicionales</div>
+      <label class="toggle-row"><input type="checkbox" id="f-finde" ${e?.aplica_finde?'checked':''} onchange="previewCalculo()"> Fin de semana / festivos</label>
+      <label class="toggle-row"><input type="checkbox" id="f-express" ${e?.aplica_express?'checked':''} onchange="previewCalculo()"> Handling Express</label>
+      <label class="toggle-row"><input type="checkbox" id="f-camion" ${e?.aplica_carga_camion?'checked':''} onchange="previewCalculo()"> Carga camión</label>
+      <label class="toggle-row"><input type="checkbox" id="f-apertura" ${e?.aplica_apertura?'checked':''} onchange="previewCalculo()"> Apertura fuera de horario</label>
+    </div>
+    <div id="manual-section" style="display:none">
+      <div class="fg" style="margin-top:12px"><label class="fl">Coste manual €</label>
+        <input id="f-manual" class="fi" type="number" min="0" step="0.01" value="${e?.coste_manual||''}">
+        <div style="font-size:11px;color:var(--am600);margin-top:3px">⚠️ Este handler no tiene tarifas automáticas — introduce el importe manualmente</div>
+      </div>
+    </div>
+    <div class="fg"><label class="fl">Observaciones</label><textarea id="f-obs" class="fi" style="min-height:56px">${e?.observaciones||''}</textarea></div>
+    <div id="preview-calculo" style="margin-top:12px"></div>`;
+  document.getElementById('m-foot').innerHTML=`
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="${isEdit?`saveEntrada('${e.id}')`:'createEntrada()'}">💾 ${isEdit?'Guardar cambios':'Crear entrada'}</button>`;
+  document.getElementById('mo').classList.add('open');
+  onHandlerChange();
+  if(e) setTimeout(previewCalculo,100);
+}
+
+function onHandlerChange(){
+  const h=gv('f-handler');
+  const isAuto=['Swissport','Groundforce'].includes(h);
+  const extras=document.getElementById('extras-section');
+  const manual=document.getElementById('manual-section');
+  if(extras) extras.style.display=isAuto?'':'none';
+  if(manual) manual.style.display=isAuto?'none':'';
+  previewCalculo();
+}
+
+function previewCalculo(){
+  const h=gv('f-handler');
+  const ret=gv('f-retirada');
+  const lle=gv('f-llegada');
+  const kg=parseFloat(gv('f-kg'))||0;
+  const prev=document.getElementById('preview-calculo');
+  if(!prev)return;
+  if(!h||!ret||!lle||!kg){prev.innerHTML='';return;}
+  const isAuto=['Swissport','Groundforce'].includes(h);
+  if(!isAuto){prev.innerHTML='';return;}
+  const tmpE={handling:h,fecha_llegada:lle,fecha_retirada:ret,kilos_tasables:kg,
+    aplica_finde:gc('f-finde'),aplica_express:gc('f-express'),
+    aplica_carga_camion:gc('f-camion'),aplica_apertura:gc('f-apertura')};
+  const dias=calcDiasFacturables(lle,ret,h);
+  const total=calcTotal(tmpE);
+  prev.innerHTML=`<div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:12px">
+    <div style="font-size:11px;font-weight:700;color:var(--b600);text-transform:uppercase;margin-bottom:8px">Vista previa del cálculo</div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--g700)"><span>Días facturables:</span><strong>${dias}</strong></div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--b700);margin-top:6px;border-top:1px solid var(--b100);padding-top:6px"><span>Total estimado:</span><strong>${fc(total)}</strong></div>
+  </div>`;
+}
+
+function buildEntradaObj(){
+  return{
+    awb:gv('f-awb').trim(),
+    consignatario:gv('f-cons').trim(),
+    buque:gv('f-buque').trim()||null,
+    aeropuerto:gv('f-apto'),
+    handling:gv('f-handler')||null,
+    status:gv('f-status'),
+    fecha_llegada:gv('f-llegada')||null,
+    fecha_retirada:gv('f-retirada')||null,
+    kilos_tasables:parseFloat(gv('f-kg'))||0,
+    bultos:parseInt(gv('f-bultos'))||null,
+    aplica_finde:gc('f-finde'),
+    aplica_express:gc('f-express'),
+    aplica_carga_camion:gc('f-camion'),
+    aplica_apertura:gc('f-apertura'),
+    coste_manual:parseFloat(gv('f-manual'))||null,
+    observaciones:gv('f-obs').trim()||null
+  };
+}
+
+async function createEntrada(){
+  const obj=buildEntradaObj();
+  if(!obj.awb){alert('El AWB es obligatorio');return;}
+  if(!obj.consignatario){alert('El consignatario es obligatorio');return;}
+  if(!obj.fecha_llegada||!obj.fecha_retirada){alert('Las fechas de llegada y retirada son obligatorias');return;}
+  if(!obj.kilos_tasables){alert('Los kilos tasables son obligatorios');return;}
+  const {error}=await sb.from('airport_cargo').insert(obj);
+  if(error){alert('Error: '+error.message);return;}
+  showToast('Entrada creada ✅');
+  closeModal();
+  const {data}=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:false});
+  allEntradas=data||[];
+  loadView(CV);
+}
+
+async function saveEntrada(id){
+  const obj=buildEntradaObj();
+  if(!obj.awb){alert('El AWB es obligatorio');return;}
+  const {error}=await sb.from('airport_cargo').update(obj).eq('id',id);
+  if(error){alert('Error: '+error.message);return;}
+  showToast('Entrada actualizada ✅');
+  closeModal();
+  const {data}=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:false});
+  allEntradas=data||[];
+  loadView(CV);
+}
+
+async function delEntrada(id){
+  if(!confirm('¿Eliminar esta entrada?'))return;
+  await sb.from('airport_cargo').delete().eq('id',id);
+  showToast('Entrada eliminada');
+  allEntradas=allEntradas.filter(e=>e.id!=id);
+  loadView(CV);
+}
+</script>
+</body>
+</html>

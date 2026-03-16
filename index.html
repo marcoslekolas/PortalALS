@@ -1030,6 +1030,7 @@ function showHome(){
   const c=document.getElementById('hm-cards');c.innerHTML='';
   if(['admin','oficina','aduanas'].includes(CU.rol))c.innerHTML+=`<div class="hm-card" onclick="enterMod('operativa')"><div class="hm-icon blue">🏢</div><div class="hm-ctitle">Operativa</div><div class="hm-cdesc">Gestión completa de buques, expediciones, documentación aduanera y seguimiento operativo.</div><div class="hm-feat">Dashboard y KPIs en tiempo real</div><div class="hm-feat">Buques, expediciones y flota</div><div class="hm-feat">Kanban, calendario y timeline</div><div class="hm-feat">Alertas, estadísticas y log</div></div>`;
   if(['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol))c.innerHTML+=`<div class="hm-card" onclick="enterMod('almacen')"><div class="hm-icon teal">📦</div><div class="hm-ctitle">Almacén &amp; Embarque</div><div class="hm-cdesc">Operaciones de almacén, confirmación de llegadas, gestión de ubicaciones y control de embarques.</div><div class="hm-feat">Confirmar llegadas y fotos</div><div class="hm-feat">Carga camión y albaranes</div><div class="hm-feat">Control de ubicaciones</div><div class="hm-feat">Buques listos para embarcar</div></div>`;
+  if(['admin','oficina','aduanas'].includes(CU.rol))c.innerHTML+=`<div class="hm-card" onclick="window.location.href='airport_cargo.html'" style="border-left:3px solid #1565c0"><div class="hm-icon" style="background:#e3f2fd">✈️</div><div class="hm-ctitle">Airport Cargo</div><div class="hm-cdesc">Gestión de entradas de aeropuerto con cálculo automático de handling (Swissport / Groundforce).</div><div class="hm-feat">Cálculo automático de tarifas</div><div class="hm-feat">Almacenaje, gestión documental, tasa recinto</div><div class="hm-feat">Resumen mensual y anual</div><div class="hm-feat">Réplica exacta del proyecto Grist</div></div>`;
 }
 
 function enterMod(mod){
@@ -2627,8 +2628,8 @@ function prevIMO(imo){
 
 // ── DETALLE BUQUE (totalmente editable) ────────────────────
 async function openBuque(id){
-  // Read-only in almacen mode
-  if(MOD==='almacen') return;
+  // Bloquear solo en vistas informativas del módulo almacén
+  if(MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
   const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre,email_confronta,otros_emails),en:consignatario_id(nombre,email_confronta)').eq('id',id).single();
   if(!b)return;
   const [{data:exps},{data:emps}]=await Promise.all([sb.from('expediciones').select('*').eq('buque_id',id).order('nº_expedicion'),sb.from('empresas').select('id,nombre').order('nombre')]);
@@ -2746,7 +2747,9 @@ async function saveBuqueEst(id,val){
 
 // ── DETALLE EXPEDICIÓN ─────────────────────────────────────
 async function openExpD(id){
-  if(MOD==='almacen') return; // read-only in almacen mode
+  // Bloquear solo en vistas informativas del módulo almacén (flota, timeline, exp-buque)
+  if(MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
+  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas(nombre,email_confronta)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
   const emailCli=e.empresas?.email_confronta||'';
