@@ -1007,17 +1007,19 @@ async function loadDash(){
 }
 
 async function loadFlota(){
-  // Fetch buques ordered by ETA + expediciones for stats
-  const {data:buques}=await sb.from('buques')
-    .select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)')
-    .not('estado_operacion','in','("Embarcado","Finalizado")')
-    .order('eta_buque',{ascending:true,nullsFirst:false});
-  const {data:expsAll}=await sb.from('expediciones')
-    .select('buque_id,bultos,kilos,estado_carga,estado_semaforo')
-    .neq('estado_semaforo','🚢 EMBARCADO');
+  const [{data:buques},{data:expsAll}]=await Promise.all([
+    sb.from('buques')
+      .select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)')
+      .order('eta_buque',{ascending:true,nullsFirst:false}),
+    sb.from('expediciones')
+      .select('buque_id,bultos,kilos,estado_carga,estado_semaforo')
+  ]);
 
   const grid=document.getElementById('flota-grid');
-  if(!buques||!buques.length){
+  // Filter out truly finished/embarcado
+  const lista=(buques||[]).filter(b=>b.estado_operacion!=='Embarcado'&&b.estado_operacion!=='Finalizado');
+
+  if(!lista.length){
     grid.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">🛳</div><div class="empty-txt">Sin buques activos</div></div>';
     return;
   }
@@ -1026,7 +1028,7 @@ async function loadFlota(){
   const BAR={proceso:'#1565c0',embarcado:'#2e7d32',cancelado:'#c62828',aplazado:'#ef6c00',noiniciado:'#9e9e9e'};
   const CLR={proceso:'#0d47a1',embarcado:'#1b5e20',cancelado:'#b71c1c',aplazado:'#e65100',noiniciado:'#424242'};
 
-  grid.innerHTML=buques.map(b=>{
+  grid.innerHTML=lista.map(b=>{
     const stCls=estOpCls(b.estado_operacion||'');
     const key=stCls.replace('st-','');
     const exps=(expsAll||[]).filter(e=>e.buque_id===b.id);
@@ -1035,51 +1037,48 @@ async function loadFlota(){
     const totalBultos=exps.reduce((a,e)=>a+(e.bultos||0),0);
     const totalKilos=exps.reduce((a,e)=>a+(e.kilos||0),0);
     const pctReady=totalExp>0?Math.round(readyExp/totalExp*100):0;
+    const listo=totalExp>0&&readyExp===totalExp;
     const consig=b.en?.nombre||b.ec?.nombre||'—';
     const now=new Date();
     const eta=b.eta_buque?new Date(b.eta_buque):null;
     const diffH=eta?Math.round((eta-now)/3600000):null;
     let etaBadge='';
     if(diffH!==null){
-      if(diffH<0) etaBadge=`<span class="badge br">Vencido ${Math.abs(diffH)}h</span>`;
+      if(diffH<0) etaBadge=`<span class="badge br">⚠️ ETA vencido</span>`;
       else if(diffH<24) etaBadge=`<span class="badge ba">⏱ ${diffH}h</span>`;
-      else etaBadge=`<span class="badge bb">${Math.ceil(diffH/24)} días</span>`;
+      else etaBadge=`<span class="badge bb">${Math.ceil(diffH/24)}d</span>`;
     }
 
     return`<div data-bid="${b.id}" draggable="true"
-      style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;cursor:pointer;transition:all .15s;box-shadow:var(--sh0);border-top:4px solid ${BAR[key]||'#ccc'}"
+      style="background:var(--w);border:1px solid ${listo?'#a5d6a7':'var(--g200)'};border-radius:var(--rl);overflow:hidden;cursor:pointer;transition:all .15s;box-shadow:var(--sh0);border-top:4px solid ${listo?'#2e7d32':BAR[key]||'#ccc'}"
       ondragstart="calDragId='${b.id}';event.dataTransfer.effectAllowed='move'"
       onclick="openBuque('${b.id}')"
       onmouseenter="this.style.boxShadow='var(--sh)';this.style.transform='translateY(-2px)'"
       onmouseleave="this.style.boxShadow='var(--sh0)';this.style.transform=''">
 
-      <!-- Header -->
-      <div style="padding:14px 16px 10px;background:${BG[key]||'#f5f5f5'}">
+      <div style="padding:14px 16px 10px;background:${listo?'#e8f5e9':BG[key]||'#f5f5f5'}">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
           <div>
             <div style="font-size:15px;font-weight:700;color:var(--g900)">${b.nombre}</div>
-            <div style="font-size:11px;color:${CLR[key]||'#424242'};margin-top:2px">IMO ${b.imo||'Sin IMO'} · ${b.puerto_terminal||b.place||'—'}</div>
+            <div style="font-size:11px;color:${listo?'#2e7d32':CLR[key]||'#424242'};margin-top:2px">IMO ${b.imo||'Sin IMO'} · ${b.puerto_terminal||b.place||'—'}</div>
           </div>
-          <span class="badge ${stCls}" style="flex-shrink:0">${b.estado_operacion||'—'}</span>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            ${listo?'<span class="badge bg">✅ Listo embarcar</span>':`<span class="badge ${stCls}">${b.estado_operacion||'Sin estado'}</span>`}
+            ${etaBadge}
+          </div>
         </div>
       </div>
 
-      <!-- Body -->
       <div style="padding:12px 16px">
-        <!-- ETA row -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div>
-            <div style="font-size:10px;font-weight:600;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">ETA</div>
-            <div style="font-size:14px;font-weight:700;color:var(--g900)">${fdl(b.eta_buque)||'Sin fecha'}</div>
-          </div>
-          ${etaBadge}
+        <div style="margin-bottom:10px">
+          <div style="font-size:10px;font-weight:600;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">ETA</div>
+          <div style="font-size:14px;font-weight:700;color:var(--g900)">${fdl(b.eta_buque)||'Sin fecha'}</div>
         </div>
 
-        <!-- Key fields grid -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
           <div style="background:var(--g50);border-radius:var(--r);padding:8px">
-            <div style="font-size:10px;color:var(--g400);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Ref. Visual Trans</div>
-            <div style="font-size:12px;font-weight:600;color:var(--g900);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.ref_visual_trans||'⚠️ Sin ref.'}</div>
+            <div style="font-size:10px;color:var(--g400);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Puerto / Terminal</div>
+            <div style="font-size:12px;font-weight:600;color:var(--g900);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.puerto_terminal||b.place||'—'}</div>
           </div>
           <div style="background:var(--g50);border-radius:var(--r);padding:8px">
             <div style="font-size:10px;color:var(--g400);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Consignatario</div>
@@ -1087,13 +1086,11 @@ async function loadFlota(){
           </div>
         </div>
 
-        <!-- Expediciones stats -->
         <div style="background:var(--g50);border-radius:var(--r);padding:10px;margin-bottom:10px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
             <span style="font-size:11px;font-weight:600;color:var(--g600)">Expediciones</span>
-            <span style="font-size:12px;font-weight:700;color:var(--g900)">${readyExp}/${totalExp} ready</span>
+            <span style="font-size:12px;font-weight:700;color:${listo?'var(--gr600)':'var(--g900)'}">${readyExp}/${totalExp} autorizadas</span>
           </div>
-          <!-- Progress bar -->
           <div style="height:6px;background:var(--g200);border-radius:3px;overflow:hidden;margin-bottom:8px">
             <div style="height:100%;width:${pctReady}%;background:${pctReady===100?'var(--gr500)':pctReady>50?'var(--am500)':'var(--rd500)'};border-radius:3px;transition:width .3s"></div>
           </div>
@@ -1103,7 +1100,6 @@ async function loadFlota(){
           </div>
         </div>
 
-        <!-- Links -->
         <div style="display:flex;gap:5px;flex-wrap:wrap" onclick="event.stopPropagation()">
           ${imoL(b.imo,b.nombre)}
         </div>
@@ -1125,33 +1121,94 @@ function filtrarE(q){const s=q.toLowerCase();renderE(allE.filter(e=>(e.nº_exped
 function filtrarEst(v){renderE(v?allE.filter(e=>e.estado_semaforo===v):allE);}
 
 async function loadKanban(){
-  const {data:buques}=await sb.from('buques').select('id,nombre,eta_buque').not('estado_operacion','in','("Embarcado","Finalizado")').order('eta_buque',{ascending:true,nullsFirst:false});
-  const {data}=await sb.from('expediciones').select('*,buques(nombre,eta_buque)').neq('estado_semaforo','🚢 EMBARCADO');
-  const items=data||[];
-  // Group by buque ordered by ETA
-  const bMap={};(buques||[]).forEach(b=>{bMap[b.id]={nombre:b.nombre,eta:b.eta_buque,exps:[]};});
-  items.forEach(e=>{if(e.buque_id&&bMap[e.buque_id])bMap[e.buque_id].exps.push(e);});
+  const [{data:buques},{data:exps}]=await Promise.all([
+    sb.from('buques')
+      .select('id,nombre,eta_buque,estado_operacion')
+      .order('eta_buque',{ascending:true,nullsFirst:false}),
+    sb.from('expediciones')
+      .select('*,buques(nombre)')
+      .neq('estado_semaforo','🚢 EMBARCADO')
+  ]);
+
   const kb=document.getElementById('kb-board');
-  kb.style.flexDirection='column';kb.style.overflowX='unset';
-  kb.innerHTML=Object.values(bMap).filter(b=>b.exps.length>0).map(b=>`
-    <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
-      <div style="background:var(--g50);border-bottom:1px solid var(--g200);padding:10px 16px;display:flex;align-items:center;justify-content:space-between">
-        <div style="font-weight:700;font-size:14px">🚢 ${b.nombre}</div>
-        <div style="font-size:12px;color:var(--g500)">ETA: ${b.eta?fd(b.eta):'—'} · ${b.exps.length} exp.</div>
-      </div>
-      <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Referencia</th><th>Bultos/Kg</th><th>Estado</th><th>MRN</th><th>Ubicación</th></tr></thead><tbody>
-      ${b.exps.map(e=>{
-        const sinUbicar=e.ubicacion==='Almacén-Sin Ubicar';
-        return`<tr onclick="openExpD('${e.id}')" style="${sinUbicar?'background:#fff3e0;':''}">
-          <td><div class="fw" style="${sinUbicar?'color:var(--am600);':''}">${sinUbicar?'⚠️ ':''} ${e.nº_expedicion}</div></td>
-          <td>${e.bultos}b·${e.kilos}kg</td>
-          <td>${bdg(e.estado_semaforo)}</td>
-          <td style="font-family:var(--mono);font-size:10px">${e.nº_mrn||'—'}</td>
-          <td class="sm" style="${sinUbicar?'color:var(--am600);font-weight:700;':''}">${e.ubicacion||'—'}</td>
-        </tr>`;
-      }).join('')}
-      </tbody></table></div>
-    </div>`).join('')||'<div class="empty"><div class="empty-icon">🎛</div><div class="empty-txt">Sin expediciones activas</div></div>';
+  kb.style.cssText='display:flex;flex-direction:column;gap:0;overflow-x:unset;padding-bottom:0';
+
+  const allBuques=(buques||[]).filter(b=>b.estado_operacion!=='Embarcado'&&b.estado_operacion!=='Finalizado');
+  const allExps=exps||[];
+
+  if(!allExps.length){
+    kb.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">🎛</div><div class="empty-txt">No hay expediciones activas</div></div>';
+    return;
+  }
+
+  // Build map buqueId → {buque info + expediciones}
+  const bMap={};
+  allBuques.forEach(b=>{bMap[b.id]={...b,exps:[]};});
+  allExps.forEach(e=>{
+    if(!e.buque_id) return;
+    if(!bMap[e.buque_id]) bMap[e.buque_id]={id:e.buque_id,nombre:e.buques?.nombre||'—',eta_buque:null,estado_operacion:null,exps:[]};
+    bMap[e.buque_id].exps.push(e);
+  });
+
+  const ESTADOS=[
+    {key:'⏳ EN TRÁNSITO',          lbl:'En tránsito',  icon:'⏳'},
+    {key:'⌛ ESPERANDO ALMACÉN',     lbl:'Esp. almacén', icon:'⌛'},
+    {key:'📦 UBICADA',              lbl:'Ubicada',       icon:'📦'},
+    {key:'🚨 EN ALMACÉN - REVISAR', lbl:'Revisar',      icon:'🚨'},
+    {key:'✅ AUTORIZADO',           lbl:'Autorizado',    icon:'✅'},
+    {key:'🚛 CARGADO CAMIÓN',       lbl:'Cargado',       icon:'🚛'},
+  ];
+
+  kb.innerHTML=Object.values(bMap)
+    .filter(b=>b.exps.length>0)
+    .map(b=>{
+      const totalExp=b.exps.length;
+      const autorizado=b.exps.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
+      const listo=totalExp>0&&autorizado===totalExp;
+      const sinUbicar=b.exps.filter(e=>e.ubicacion==='Almacén-Sin Ubicar').length;
+      const counts={};
+      b.exps.forEach(e=>{counts[e.estado_semaforo]=(counts[e.estado_semaforo]||0)+1;});
+
+      return`<div style="background:var(--w);border:1px solid ${listo?'#a5d6a7':'var(--g200)'};border-radius:var(--rl);margin-bottom:14px;overflow:hidden;box-shadow:var(--sh0)">
+        <div style="background:${listo?'#e8f5e9':'var(--g50)'};border-bottom:1px solid ${listo?'#a5d6a7':'var(--g200)'};padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;cursor:pointer" onclick="openBuque('${b.id}')">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">🚢</span>
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--g900)">${b.nombre}</div>
+              <div style="font-size:11px;color:var(--g500)">ETA: ${b.eta_buque?fdl(b.eta_buque):'Sin fecha'}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            ${listo?'<span class="badge bg">✅ LISTO EMBARCAR</span>':''}
+            ${sinUbicar>0?`<span class="badge ba">⚠️ ${sinUbicar} sin ubicar — requiere acción</span>`:''}
+            <span class="badge bgr">${autorizado}/${totalExp} autorizadas</span>
+          </div>
+        </div>
+        <div style="display:flex;border-bottom:1px solid var(--g100);overflow-x:auto">
+          ${ESTADOS.map(st=>{
+            const cnt=counts[st.key]||0;
+            return`<div style="flex:1;min-width:72px;padding:10px 6px;text-align:center;border-right:1px solid var(--g100);background:${cnt>0?'var(--w)':'var(--g50)'}">
+              <div style="font-size:18px;line-height:1">${st.icon}</div>
+              <div style="font-size:20px;font-weight:700;color:${cnt>0?'var(--g900)':'var(--g300)'};margin:2px 0">${cnt}</div>
+              <div style="font-size:9px;color:var(--g400);font-weight:600;text-transform:uppercase;letter-spacing:.3px;line-height:1.3">${st.lbl}</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div style="overflow-x:auto">
+          <table class="tbl"><thead><tr><th>Referencia</th><th>Estado</th><th>MRN</th><th>Ubicación</th><th>Bultos</th></tr></thead>
+          <tbody>${b.exps.map(e=>{
+            const sinU=e.ubicacion==='Almacén-Sin Ubicar';
+            return`<tr onclick="openExpD('${e.id}')" style="${sinU?'background:#fff8e1':''}">
+              <td class="fw">${e.nº_expedicion}</td>
+              <td>${bdg(e.estado_semaforo)}</td>
+              <td style="font-family:var(--mono);font-size:10px;color:var(--g500)">${e.nº_mrn||'—'}</td>
+              <td class="sm" style="${sinU?'color:var(--am600);font-weight:700':''}">${sinU?'⚠️ ':''} ${e.ubicacion||'—'}</td>
+              <td class="sm">${e.bultos}</td>
+            </tr>`;
+          }).join('')}</tbody></table>
+        </div>
+      </div>`;
+    }).join('')||'<div class="empty" style="padding:40px"><div class="empty-icon">🎛</div><div class="empty-txt">Sin expediciones activas</div></div>';
 }
 
 // ── CALENDARIO CON DRAG & DROP + COLORES ESTADO ──────────────
