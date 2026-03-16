@@ -1489,22 +1489,33 @@ window.calDragId = null;
 
 function calSetView(v){
   calView = v;
-  // Sync anchor with current month/year so navigation is consistent
-  if(!calAnchor) calAnchor = new Date();
+  // When switching to 15d or semana, always anchor to today
+  const now = new Date(); now.setHours(0,0,0,0);
+  if(v === '15d' || v === 'semana'){
+    calAnchor = now;
+  } else {
+    // mes: sync to current calY/calM
+    if(!calAnchor) calAnchor = new Date(calY || now.getFullYear(), calM ?? now.getMonth(), 1);
+  }
   document.querySelectorAll('.cal-vbtn').forEach(b => b.classList.remove('active-view'));
   const btn = document.getElementById('cal-v-'+v);
   if(btn) btn.classList.add('active-view');
-  // Header días semana: hidden in 15d/semana if we use custom layout
   renderCal();
 }
 
 async function renderCal(){
   const now = new Date();
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const DOW  = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 
   if(!calY){ calY = now.getFullYear(); calM = now.getMonth(); }
-  if(!calAnchor){ calAnchor = new Date(calY, calM, 1); }
+  // For 15d/semana: anchor defaults to today (not month start)
+  if(!calAnchor){
+    if(calView === '15d' || calView === 'semana'){
+      calAnchor = new Date(now); calAnchor.setHours(0,0,0,0);
+    } else {
+      calAnchor = new Date(calY, calM, 1);
+    }
+  }
 
   const {data:bqs} = await sb.from('buques')
     .select('id,nombre,eta_buque,ref_visual_trans,puerto_terminal,place,estado_operacion')
@@ -1651,9 +1662,9 @@ function calN(){
 }
 
 function calH(){
-  const now = new Date();
+  const now = new Date(); now.setHours(0,0,0,0);
   calY = now.getFullYear(); calM = now.getMonth();
-  calAnchor = new Date(now); calAnchor.setHours(0,0,0,0);
+  calAnchor = new Date(now);
   renderCal();
 }
 
