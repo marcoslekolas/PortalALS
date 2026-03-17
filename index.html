@@ -2921,14 +2921,14 @@ async function openExpD(id){
       <div class="df"><div class="dl">Kilos</div><div class="dv">${e.kilos} kg</div></div>
     </div>
     <div class="fr2">
-      <div class="fg2"><label class="fl2">Status aduanero</label><select id="sta-sel" class="fi fs" onchange="saveStatus('${e.id}',this.value)"><option value="" ${!e.status_aduanero?'selected':''}>— Seleccionar —</option>${['Comunitario','DAE','T1','Terceros','X'].map(s=>`<option ${e.status_aduanero===s?'selected':''}>${s}</option>`).join('')}</select></div>
-      <div class="fg2"><label class="fl2">Fecha máx. despacho</label><input id="fmax-inp" class="fi" type="date" value="${e.fecha_max_despacho?e.fecha_max_despacho.slice(0,10):''}" onchange="saveFmax('${e.id}',this.value)"></div>
+      <div class="fg2"><label class="fl2">Status aduanero</label><select id="sta-sel" class="fi fs" ><option value="" ${!e.status_aduanero?'selected':''}>— Seleccionar —</option>${['Comunitario','DAE','T1','Terceros','X'].map(s=>`<option ${e.status_aduanero===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="fg2"><label class="fl2">Fecha máx. despacho</label><input id="fmax-inp" class="fi" type="date" value="${e.fecha_max_despacho?e.fecha_max_despacho.slice(0,10):''}" ></div>
     </div>
     <div class="df"><div class="dl">Nº MRN</div><div style="font-family:var(--mono);font-size:13px;font-weight:500;color:${e.nº_mrn?'var(--g900)':'var(--am600)'}">${e.nº_mrn||'⚠️ Sin MRN — requerido para autorizar'}</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">${bdg(e.estado_semaforo)}<span class="badge ${e.estado_carga==='✅ AUTORIZADO'?'bg':'br'}">${e.estado_carga}</span></div>
     ${e.created_by_nombre?`<div style="font-size:11px;color:var(--g400);margin-bottom:12px">Creado por <strong>${e.created_by_nombre}</strong>${e.updated_at?` · Última edición: ${fdt(e.updated_at)}`:''}</div>`:''}
     <hr class="fdiv">
-    <div class="fg2"><label class="fl2">Actualizar MRN</label><div style="display:flex;gap:8px"><input id="mrn-inp" class="fi" value="${e.nº_mrn||''}" placeholder="26ES…" style="flex:1"><button class="btn btn-p btn-sm" onclick="saveMRN('${e.id}')">💾 Guardar</button></div></div>
+    <div class="fg2"><label class="fl2">Nº MRN</label><input id="mrn-inp" class="fi" value="${e.nº_mrn||''}" placeholder="26ES…"></div>
     <div class="fr2">
       <div class="fg2"><label class="fl2">Trámite aduanero</label><select id="tra-sel" class="fi fs" onchange="saveTra('${e.id}',this.value)"><option ${e.tramite_aduanero==='Pendiente despachar'?'selected':''}>Pendiente despachar</option><option ${e.tramite_aduanero==='Despachado'?'selected':''}>Despachado</option></select></div>
       <div class="fg2"><label class="fl2">Docs. Puerto</label><select id="docs-sel" class="fi fs" onchange="saveDocs('${e.id}',this.value)"><option ${(e.docs_puerto||'No requiere')==='No requiere'?'selected':''}>No requiere</option><option ${e.docs_puerto==='Pendiente'?'selected':''}>Pendiente</option><option ${e.docs_puerto==='En progreso'?'selected':''}>En progreso</option><option ${e.docs_puerto==='Sellada'?'selected':''}>Sellada</option></select></div>
@@ -2948,7 +2948,7 @@ async function openExpD(id){
     </div>`:''}
     <div id="grist-link-container" style="margin-bottom:14px"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-p btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   document.getElementById('mo').classList.add('open');
   const gLink=gristLink(Object.assign({},e,{buques:e.buques,empresas:e.empresas}));
   const gc2=document.getElementById('grist-link-container');
@@ -3023,6 +3023,33 @@ async function saveMRN(id){
 }
 async function saveTra(id,val){await sb.from('expediciones').update({tramite_aduanero:val}).eq('id',id);await logAct('expediciones',id,'','editar','tramite_aduanero',null,val);showToast('Trámite actualizado');}
 async function saveUbic(id,val){await sb.from('expediciones').update({ubicacion:val}).eq('id',id);await logAct('expediciones',id,'','editar','ubicacion',null,val);showToast('Ubicación actualizada');}
+
+// Guarda TODOS los campos editables de la ficha de expedición de una vez
+async function guardarExpedicion(id){
+  const mrn=(document.getElementById('mrn-inp')?.value||'').trim()||null;
+  const status=document.getElementById('sta-sel')?.value||null;
+  const fmax=document.getElementById('fmax-inp')?.value||null;
+  const tra=document.getElementById('tra-sel')?.value||null;
+  const docs=document.getElementById('docs-sel')?.value||null;
+  const ubic=document.getElementById('ubic-sel')?.value||null;
+  const obj={};
+  if(mrn!==undefined) obj['nº_mrn']=mrn;
+  if(status) obj.status_aduanero=status;
+  obj.fecha_max_despacho=fmax||null;
+  if(tra) obj.tramite_aduanero=tra;
+  if(docs) obj.docs_puerto=docs;
+  if(ubic) obj.ubicacion=ubic;
+  // Auto-lógica: MRN + Despachado → Autorizado (igual que saveMRN)
+  if(mrn && tra==='Despachado'){
+    obj.estado_carga='✅ AUTORIZADO';
+    obj.estado_semaforo='✅ AUTORIZADO';
+  }
+  const {error}=await sb.from('expediciones').update(obj).eq('id',id);
+  if(error){alert('Error al guardar: '+error.message);return;}
+  await logAct('expediciones',id,'','editar','múltiples','—','Guardado por '+CU?.nombre);
+  showToast('✅ Cambios guardados');
+  closeModal();loadView(CV);
+}
 
 async function notifAduana(id,ref){
   const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans,puerto_terminal,place),empresas(nombre,email_confronta,otros_emails)').eq('id',id).single();
@@ -3122,7 +3149,7 @@ async function crearAirportCargoDesdeExpedicion(expData, obj){
 
   const acObj={
     awb: obj.nº_expedicion,
-    kilos_tasables: parseFloat(obj.kilos)||0,
+    kilos_tasables: parseFloat(obj.kilos||obj.kilos_tasables)||0,
     bultos: parseInt(obj.bultos)||null,
     consignatario: nombreEmp||null,
     buque: nombreBuque||null,
