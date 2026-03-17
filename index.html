@@ -1247,8 +1247,27 @@ function setupFotos(inpId,prevId,stId){
     const files=Array.from(inp.files);if(!files.length)return;
     prev.innerHTML='<div class="loading" style="padding:10px"><div class="spinner"></div></div>';
     await procesarFotos(files,stId);
-    prev.innerHTML=files.map(f=>`<div class="foto-thumb"><img src="${URL.createObjectURL(f)}"></div>`).join('');
+    renderFotoPreview(prev,files);
   });
+}
+
+function renderFotoPreview(prev,files){
+  prev._files=[...files];
+  prev.innerHTML=files.map((f,i)=>`<div class="foto-thumb" style="position:relative;display:inline-block">
+    <img src="${URL.createObjectURL(f)}" style="display:block">
+    <button type="button" onclick="eliminarFoto(${i},this.parentElement.parentElement)" style="position:absolute;top:2px;right:2px;background:rgba(220,38,38,.85);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-weight:700">×</button>
+  </div>`).join('');
+}
+
+function eliminarFoto(idx,prevEl){
+  if(!prevEl||!prevEl._files)return;
+  prevEl._files.splice(idx,1);
+  renderFotoPreview(prevEl,prevEl._files);
+  if(prevEl._files.length===0){
+    // Habilitar/deshabilitar botones que dependen de tener foto
+    const cont=prevEl.closest('div[style*="padding:16px"]')||prevEl.parentElement;
+    if(cont){const btn=cont.querySelector('button[id^="cg-btn-"],button[id^="embt-btn-"],button[id^="lnd-btn-"]');if(btn)btn.style.display='none';}
+  }
 }
 
 async function loadView(view){
@@ -2021,6 +2040,7 @@ async function loadTL(){
       buquesHere.forEach(b=>{
         const key=estOpCls(b.estado_operacion||'').replace('st-','');
         chips+=`<div data-bid="${b.id}" draggable="true"
+          title="${b.nombre}"
           style="background:${BG[key]};color:${CLR[key]};border-left:3px solid ${BAR[key]};border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W-10}px;cursor:grab;margin-bottom:1px;user-select:none"
           onclick="openBuque('${b.id}')"
           ondragstart="window.tlDragId='${b.id}';event.dataTransfer.setData('text','${b.id}');event.dataTransfer.effectAllowed='move'"
@@ -2038,7 +2058,58 @@ async function loadTL(){
   }
 
   const totalW=LABEL_W+daysInMonth*CELL_W;
-  wrap.innerHTML=`
+
+  // Mobile: show buque list grouped by day instead of hour grid
+  const isMobile=window.innerWidth<=768;
+  if(isMobile){
+    const byDay={};
+    (data||[]).forEach(b=>{
+      if(!b.eta_buque)return;
+      const dt=new Date(b.eta_buque);
+      if(dt.getFullYear()!==window.tlYear||dt.getMonth()!==window.tlMonth)return;
+      const d=dt.getDate();
+      if(!byDay[d])byDay[d]=[];
+      byDay[d].push({...b,eta_hora:dt.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})});
+    });
+    const days=Object.keys(byDay).map(Number).sort((a,b)=>a-b);
+    const BG2={proceso:'#e3f2fd',embarcado:'#e8f5e9',cancelado:'#ffebee',aplazado:'#fff3e0',noiniciado:'#f5f5f5'};
+    const BAR2={proceso:'#1565c0',embarcado:'#2e7d32',cancelado:'#c62828',aplazado:'#ef6c00',noiniciado:'#9e9e9e'};
+    wrap.innerHTML=`
+      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;box-shadow:var(--sh0)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--g200);background:var(--g50)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="cal-btn" onclick="tlPrev()">‹</button>
+            <span style="font-size:14px;font-weight:700">${MESES[window.tlMonth]} ${window.tlYear}</span>
+            <button class="cal-btn" onclick="tlNext()">›</button>
+          </div>
+          <button class="cal-btn" onclick="tlToday()">Hoy</button>
+        </div>
+        ${days.length===0?'<div class="empty" style="padding:40px">Sin buques con ETA este mes</div>':
+        days.map(d=>{
+          const ds=new Date(window.tlYear,window.tlMonth,d);
+          const dow=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][ds.getDay()];
+          const isToday=d===now.getDate()&&window.tlMonth===now.getMonth()&&window.tlYear===now.getFullYear();
+          return`<div style="border-bottom:1px solid var(--g100)">
+            <div style="padding:8px 14px;background:${isToday?'#e8f0fe':'var(--g50)'};font-size:12px;font-weight:700;color:${isToday?'var(--b600)':'var(--g600)'}">
+              ${dow} ${d} ${MESES[window.tlMonth].slice(0,3)}${isToday?' · Hoy':''}
+            </div>
+            ${byDay[d].map(b=>{
+              const key=(estOpCls(b.estado_operacion||'')).replace('st-','');
+              return`<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-left:3px solid ${BAR2[key]||'#ccc'};background:${BG2[key]||'#fff'};cursor:pointer"
+                onclick="openBuque('${b.id}')">
+                <div style="font-size:12px;font-weight:700;color:var(--g500);min-width:36px">${b.eta_hora}</div>
+                <div style="flex:1">
+                  <div style="font-weight:700;font-size:14px">${b.nombre}</div>
+                  <div style="font-size:11px;color:var(--g500)">${b.estado_operacion||'Sin estado'}</div>
+                </div>
+                <span style="font-size:16px">›</span>
+              </div>`;
+            }).join('')}
+          </div>`;
+        }).join('')}
+      </div>`;
+    return;
+  }
     <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;box-shadow:var(--sh0)">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--g200);background:var(--g50)">
         <div style="display:flex;align-items:center;gap:8px">
