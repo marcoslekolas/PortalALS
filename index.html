@@ -786,6 +786,13 @@ textarea.fi{resize:vertical;min-height:72px}
     try{
       sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
     }catch(e){ console.warn('SDK createClient:',e); }
+    // Procesar destino pendiente (si venimos de airport_cargo)
+    if(typeof _pendingMod !== 'undefined' && _pendingMod){
+      var dest=_pendingMod; _pendingMod=null;
+      if(dest==='operativa') enterMod('operativa');
+      else if(dest==='almacen') enterMod('almacen');
+      else showHome();
+    }
     // Ping silencioso para verificar conexión
     fetch(SB_URL+'/rest/v1/usuarios?select=email&limit=1',{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}})
       .then(function(r){ console.log(r.ok?'✅ Supabase OK':'⚠️ Supabase status '+r.status); })
@@ -939,20 +946,20 @@ function clearSession(){
 
 // ── Restaurar sesión al cargar (viene de airport_cargo u otro módulo) ──
 // Se llama al final del script, después de que enterMod esté definido
+// Destino pendiente si checkSession corre antes de que el SDK esté listo
+var _pendingMod = null;
+
 function checkSession(){
   const params=new URLSearchParams(window.location.search);
   
-  // Try to restore session from URL param first (_s = base64 encoded session)
+  // Try to restore session from URL param (_s = base64 encoded session from airport_cargo)
   const sParam=params.get('_s');
   if(sParam){
     try{
       const decoded=decodeURIComponent(escape(atob(sParam)));
       const parsed=JSON.parse(decoded);
-      if(parsed&&parsed.id){
-        saveSession(parsed); // persist to storage
-        CU=parsed;
-      }
-    }catch(e){console.warn('Could not decode _s param:',e);}
+      if(parsed&&parsed.id){ saveSession(parsed); CU=parsed; }
+    }catch(e){console.warn('Could not decode _s:',e);}
   }
   
   // Fall back to storage
@@ -964,9 +971,16 @@ function checkSession(){
   
   const destMod=params.get('go')||'home';
   if(window.history&&window.history.replaceState) window.history.replaceState({},'',window.location.pathname);
-  if(destMod==='operativa') enterMod('operativa');
-  else if(destMod==='almacen') enterMod('almacen');
-  else showHome();
+  
+  // Si sb ya está listo, navegar ahora; si no, guardar destino para cuando cargue el SDK
+  if(sb){
+    if(destMod==='operativa') enterMod('operativa');
+    else if(destMod==='almacen') enterMod('almacen');
+    else showHome();
+  } else {
+    // SDK aún no cargado — guardar destino, el onload lo recogerá
+    _pendingMod = destMod;
+  }
   return true;
 }
 
