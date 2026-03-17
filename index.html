@@ -2514,8 +2514,7 @@ const MODALS={
     <div class="fr2"><div class="fg2"><label class="fl2">Nº MRN</label><input id="ne-mrn" class="fi" placeholder="26ES…"></div><div class="fg2"><label class="fl2">Trámite aduanero</label><select id="ne-tra" class="fi fs"><option>Pendiente despachar</option><option>Despachado</option></select></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Fecha máx. despacho</label><input id="ne-fmax" class="fi" type="date"></div><div class="fg2"><label class="fl2">Ubicación inicial</label><select id="ne-ubic" class="fi fs">${optsUbic()}</select></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Docs. Puerto</label><select id="ne-docs" class="fi fs"><option value="No requiere">No requiere</option><option value="Pendiente">Pendiente</option><option value="En progreso">En progreso</option><option value="Sellada">Sellada</option></select></div><div class="fg2"><label class="fl2">Tarifa Grist (€)</label><input id="ne-tar" class="fi" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
-    <div style="display:flex;gap:20px;margin-bottom:16px"><label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="ne-na" style="accent-color:var(--b600)"> 🏢 Notificar Aduanas</label><label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="ne-nc" style="accent-color:var(--b600)"> 📧 Notificar Cliente</label></div>
-    <div class="fg2"><label class="fl2">Fotos llegada <span style="color:var(--gr600);font-size:11px">— compresión automática 75%</span></label><div class="foto-area" onclick="document.getElementById('ne-fi').click()"><input type="file" id="ne-fi" accept="image/*" multiple><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Seleccionar fotos de llegada</div></div><div id="ne-fst" class="foto-st"></div><div class="foto-prev" id="ne-fpv"></div></div>`;
+    <div style="display:flex;gap:20px;margin-bottom:16px"><label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="ne-na" style="accent-color:var(--b600)"> 🏢 Notificar Aduanas</label><label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="ne-nc" style="accent-color:var(--b600)"> 📧 Notificar Cliente</label></div>`;
   },
   action:async()=>{
     const obj={nº_expedicion:gv('ne-ref'),buque_id:gv('ne-bq')||null,empresa_id:gv('ne-emp')||null,status_aduanero:gv('ne-sta'),tramite_aduanero:gv('ne-tra'),bultos:parseInt(gv('ne-bul'))||0,kilos:parseFloat(gv('ne-kg'))||0,nº_mrn:gv('ne-mrn')||null,fecha_max_despacho:gv('ne-fmax')||null,ubicacion:gv('ne-ubic'),tarifa_calculada:parseFloat(gv('ne-tar'))||null,notif_aduanas_sent:gc('ne-na'),notif_cliente_sent:gc('ne-nc'),fecha_aviso_aduanas:gc('ne-na')?new Date().toISOString():null,fecha_aviso_cliente:gc('ne-nc')?new Date().toISOString():null,created_by:CU?.id,created_by_nombre:CU?.nombre};
@@ -2531,7 +2530,7 @@ const MODALS={
       await crearAirportCargoDesdeExpedicion(data, obj);
     }
   },
-  after:()=>setTimeout(()=>setupFotos('ne-fi','ne-fpv','ne-fst'),100)
+  after:()=>{}
 },
 'nueva-incidencia':{t:'⚠️ Nueva incidencia',btn:'⚠️ Crear',
   body:async(expId)=>{
@@ -2886,7 +2885,10 @@ async function notifAduana(id,ref){
   const cuerpo=encodeURIComponent('Hola,\n\nuna expedición para el buque '+vNombreB+' requiere de vuestra atención.\n\n📍 Terminal: '+vTerminal+'\n🏢 Ubicación actual: '+vUbi+'\n\n🆔 Nº Expedición: '+vExp+'\n📦 Bultos: '+vBultos+'\n⚖️ Kilos: '+vKilos+' kg\n🚦 Status: '+vStatus+'\n\n'+bloqueAviso+'\n\nAtentamente,\nDepartamento de Operaciones');
   await sb.from('expediciones').update({notif_aduanas_sent:true,fecha_aviso_aduanas:new Date().toISOString()}).eq('id',id);
   await logAct('expediciones',id,ref,'email_aduanas','notif_aduanas_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
-  window.location.href='mailto:'+todosDestinatarios+'?cc='+cc+'&subject='+asunto+'&body='+cuerpo;
+  // Abrir cliente de correo en nueva pestaña para no cerrar la app
+  const mailtoUrl='mailto:'+todosDestinatarios+'?cc='+cc+'&subject='+asunto+'&body='+cuerpo;
+  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
+  showToast('📧 Abriendo cliente de correo...');
   closeModal();loadView(CV);
 }
 async function notifCliente(id,emailDest,ref){
@@ -2901,7 +2903,9 @@ async function notifCliente(id,emailDest,ref){
   const cc=encodeURIComponent('marcosvalenciamancilla@gmail.com');
   await sb.from('expediciones').update({notif_cliente_sent:true,fecha_aviso_cliente:new Date().toISOString()}).eq('id',id);
   await logAct('expediciones',id,e.nº_expedicion,'email_cliente','notif_cliente_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
-  window.location.href=`mailto:${todosEmails}?cc=${cc}&subject=${asunto}&body=${cuerpo}`;
+  const mailtoUrl=`mailto:${todosEmails}?cc=${cc}&subject=${asunto}&body=${cuerpo}`;
+  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
+  showToast('📧 Abriendo cliente de correo...');
   closeModal();loadView(CV);
 }
 async function sendConfronta(buqueId){
@@ -2919,7 +2923,8 @@ async function sendConfronta(buqueId){
   let mailto=`mailto:${destinatario}?subject=${asunto}&body=${cuerpo}`;
   if(emailCC)mailto+=`&cc=${encodeURIComponent(emailCC)}`;
   if(emailBCC)mailto+=`&bcc=${encodeURIComponent(emailBCC)}`;
-  window.location.href=mailto;
+  const a=document.createElement('a');a.href=mailto;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
+  showToast('📧 Abriendo cliente de correo...');
 }
 
 function abrirExpEnBuque(buqueId,buqueNombre){
@@ -2940,69 +2945,81 @@ function abrirExpEnBuque(buqueId,buqueNombre){
 // ── ALBARÁN ─────────────────────────────────────────────────
 // ── AIRPORT CARGO: crear entrada automática desde expedición ──
 async function crearAirportCargoDesdeExpedicion(expData, obj){
-  // Determinar código aeropuerto desde la ubicación
   const ubicMap={'Aeropuerto-Málaga AGP':'AGP','Aeropuerto-Sevilla SVQ':'SVQ','Aeropuerto-Madrid MAD':'MAD'};
   const apto=ubicMap[obj.ubicacion]||'AGP';
 
-  // Obtener nombre del buque si hay buque_id
+  // Obtener nombre del buque
   let nombreBuque='';
   if(obj.buque_id){
     const {data:b}=await sb.from('buques').select('nombre').eq('id',obj.buque_id).single();
     if(b) nombreBuque=b.nombre;
   }
 
-  // Obtener nombre del consignatario/empresa si hay empresa_id
+  // Obtener nombre consignatario/empresa
   let nombreEmp='';
   if(obj.empresa_id){
     const {data:emp}=await sb.from('empresas').select('nombre').eq('id',obj.empresa_id).single();
     if(emp) nombreEmp=emp.nombre;
   }
 
-  // Crear entrada básica en airport_cargo vinculada a esta expedición
+  // Construir objeto — expedicion_id puede ser UUID o bigint según la tabla
+  // Lo convertimos a string para seguridad
+  const expId = expData?.id ? String(expData.id) : null;
+
   const acObj={
-    awb:obj.nº_expedicion,
-    kilos_tasables:obj.kilos||0,
-    bultos:obj.bultos||null,
-    consignatario:nombreEmp||null,
-    buque:nombreBuque||null,
-    status:obj.status_aduanero||'T1',
-    aeropuerto:apto,
-    expedicion_id:expData?.id||null,
-    fecha_llegada:new Date().toISOString().slice(0,10) // fecha de hoy como llegada provisional
+    awb: obj.nº_expedicion,
+    kilos_tasables: parseFloat(obj.kilos)||0,
+    bultos: parseInt(obj.bultos)||null,
+    consignatario: nombreEmp||null,
+    buque: nombreBuque||null,
+    status: obj.status_aduanero||'T1',
+    aeropuerto: apto,
+    fecha_llegada: new Date().toISOString().slice(0,10)
   };
-  const {data:acData,error:acError}=await sb.from('airport_cargo').insert(acObj).select().single();
-  if(acError){
-    console.warn('Airport cargo insert error:',acError);
+
+  // Intentar vincular con la expedición si el campo existe
+  if(expId){
+    try{
+      acObj.expedicion_id=expId;
+    }catch(e){}
   }
 
-  // Mostrar modal con opción de ir a completar la entrada
-  setTimeout(()=>{
-    document.getElementById('m-title').textContent='✈️ Expedición de aeropuerto detectada';
-    document.getElementById('m-body').innerHTML=`
-      <div class="info-box" style="margin-bottom:16px">
-        La expedición <strong>${obj.nº_expedicion}</strong> tiene ubicación <strong>${obj.ubicacion}</strong>.<br>
-        Se ha creado automáticamente una entrada en <strong>Airport Cargo</strong> con los datos básicos.
+  const {data:acData, error:acError}=await sb.from('airport_cargo').insert(acObj).select().single();
+
+  if(acError){
+    // Si falla por expedicion_id, reintentar sin ese campo
+    if(acError.message&&acError.message.includes('expedicion_id')){
+      delete acObj.expedicion_id;
+      await sb.from('airport_cargo').insert(acObj);
+    } else {
+      console.warn('Airport cargo error:', acError.message);
+    }
+  }
+
+  // Modal de confirmación
+  document.getElementById('m-title').textContent='✈️ Expedición de aeropuerto registrada';
+  document.getElementById('m-body').innerHTML=`
+    <div class="info-box" style="margin-bottom:16px">
+      La expedición <strong>${obj.nº_expedicion}</strong> se ha registrado automáticamente en <strong>Airport Cargo</strong>.
+    </div>
+    <div style="background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:14px;margin-bottom:16px">
+      <div style="font-size:12px;color:var(--g500);margin-bottom:8px;font-weight:600;text-transform:uppercase">Datos transferidos</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
+        <div><span style="color:var(--g500)">AWB:</span> <strong>${obj.nº_expedicion}</strong></div>
+        <div><span style="color:var(--g500)">Aeropuerto:</span> <strong>${apto}</strong></div>
+        <div><span style="color:var(--g500)">Kg tasables:</span> <strong>${obj.kilos||0}</strong></div>
+        <div><span style="color:var(--g500)">Bultos:</span> <strong>${obj.bultos||'—'}</strong></div>
+        ${nombreEmp?`<div><span style="color:var(--g500)">Consignatario:</span> <strong>${nombreEmp}</strong></div>`:''}
+        ${nombreBuque?`<div><span style="color:var(--g500)">Buque:</span> <strong>${nombreBuque}</strong></div>`:''}
       </div>
-      <div style="background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:14px;margin-bottom:16px">
-        <div style="font-size:12px;color:var(--g500);margin-bottom:8px">Datos transferidos:</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
-          <div><span style="color:var(--g500)">AWB:</span> <strong>${obj.nº_expedicion}</strong></div>
-          <div><span style="color:var(--g500)">Aeropuerto:</span> <strong>${apto}</strong></div>
-          <div><span style="color:var(--g500)">Kg tasables:</span> <strong>${obj.kilos||0}</strong></div>
-          <div><span style="color:var(--g500)">Bultos:</span> <strong>${obj.bultos||'—'}</strong></div>
-          <div><span style="color:var(--g500)">Consignatario:</span> <strong>${nombreEmp||'—'}</strong></div>
-          <div><span style="color:var(--g500)">Buque:</span> <strong>${nombreBuque||'—'}</strong></div>
-        </div>
-      </div>
-      <div style="font-size:13px;color:var(--am600);background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px">
-        ⚠️ Faltan por completar: <strong>Fecha de retirada, Handler, y cargos adicionales</strong>.<br>
-        Ábrelo en Airport Cargo para calcular el coste de handling.
-      </div>`;
-    document.getElementById('m-foot').innerHTML=`
-      <button class="btn btn-s" onclick="closeModal()">Más tarde</button>
-      <button class="btn btn-p" onclick="closeModal();window.open('airport_cargo.html','_blank')">✈️ Abrir Airport Cargo</button>`;
-    document.getElementById('mo').classList.add('open');
-  },400);
+    </div>
+    <div style="font-size:13px;color:var(--am600);background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px">
+      ⚠️ Pendiente de completar en Airport Cargo: <strong>Fecha retirada, Handler y cargos adicionales</strong> para calcular el coste de handling.
+    </div>`;
+  document.getElementById('m-foot').innerHTML=`
+    <button class="btn btn-s" onclick="closeModal()">Más tarde</button>
+    <button class="btn btn-p" onclick="closeModal();window.open('airport_cargo.html','_blank')">✈️ Completar en Airport Cargo →</button>`;
+  document.getElementById('mo').classList.add('open');
 }
 
 function abrirAlbaran(contenido){
