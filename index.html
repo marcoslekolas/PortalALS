@@ -2188,7 +2188,7 @@ async function confirmLlegada(id){
   await alertarOperativa(id,e?.nº_expedicion||'',e?.buques?.nombre||'');
   await loadAlmacen();
 }
-async function marcarCarg(id){if(!confirm('¿Confirmar carga en camión?'))return;await sb.from('expediciones').update({hora_de_carga:new Date().toISOString()}).eq('id',id);await logAct('expediciones',id,'','editar','hora_de_carga',null,new Date().toISOString());await loadAlmacen();}
+async function marcarCarg(id){if(!confirm('¿Confirmar carga en camión?'))return;const ts=new Date().toISOString();await sb.from('expediciones').update({hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'}).eq('id',id);await logAct('expediciones',id,'','editar','hora_de_carga',null,ts);await loadAlmacen();}
 
 // ── DASHBOARD ALMACÉN ──────────────────────────────────────
 async function loadAlmDash(){
@@ -2482,7 +2482,7 @@ async function confirmarCargaBuque(bid){
   if(!data||!data.length){alert('No hay expediciones autorizadas');return;}
   const ts=new Date().toISOString();
   for(const e of data){
-    await sb.from('expediciones').update({hora_de_carga:ts,ubicacion:'Camión cargado'}).eq('id',e.id);
+    await sb.from('expediciones').update({hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'}).eq('id',e.id);
     await logAct('expediciones',e.id,e.nº_expedicion,'editar','ubicacion','—','Camión cargado — '+new Date().toLocaleString('es-ES'));
   }
   showToast('✅ Carga confirmada — '+data.length+' expediciones');
@@ -2490,10 +2490,14 @@ async function confirmarCargaBuque(bid){
 }
 function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);}}
 async function confirmarEmbarqueTab(bid){
-  if(!confirm('¿Marcar el buque como EMBARCADO? Esto cambiará el estado de todas sus expediciones.'))return;
+  if(!confirm('¿Marcar el buque como EMBARCADO? Las expediciones pasarán a "A bordo" (excepto las Landed).'))return;
   await sb.from('buques').update({estado_operacion:'Embarcado'}).eq('id',bid);
-  const {data:exps}=await sb.from('expediciones').select('id').eq('buque_id',bid);
-  for(const e of exps||[])await sb.from('expediciones').update({estado_semaforo:'🚢 EMBARCADO',ubicacion:'A bordo'}).eq('id',e.id);
+  // Solo cambiar a "A bordo" las expediciones que NO son Landed
+  const {data:exps}=await sb.from('expediciones').select('id,ubicacion').eq('buque_id',bid);
+  for(const e of exps||[]){
+    if(e.ubicacion==='Landed') continue; // mantener Landed
+    await sb.from('expediciones').update({estado_semaforo:'🚢 EMBARCADO',ubicacion:'A bordo'}).eq('id',e.id);
+  }
   await logAct('buques',bid,'','editar','estado_operacion','En proceso','Embarcado por '+CU?.nombre+' — '+new Date().toLocaleString('es-ES'));
   showToast('¡Embarcado! ✅');
   await loadAlmFotos('embarque');

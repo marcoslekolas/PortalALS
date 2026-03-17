@@ -432,11 +432,17 @@ async function abrirEmailConsignatario(){
   const cons=[...new Set(selEntradas.map(e=>e.consignatario).filter(Boolean))];
 
   // Buscar empresa que coincida con el consignatario
+  // Try to get empresa from joined data first
+  const empresaFromJoin=selEntradas.find(e=>e.empresa?.email_confronta)?.empresa||null;
   let matchEmp=null;
-  if(cons.length===1&&empresas.length){
+  if(empresaFromJoin){
+    matchEmp=empresas.find(e=>e.email_confronta===empresaFromJoin.email_confronta)||null;
+  }
+  if(!matchEmp&&cons.length===1&&empresas.length){
     const q=cons[0].toLowerCase();
     matchEmp=empresas.find(e=>(e.nombre||'').toLowerCase().includes(q)||q.includes((e.nombre||'').toLowerCase()));
   }
+  const preEmail=empresaFromJoin?.email_confronta||matchEmp?.email_confronta||'';
 
   const empOpts=empresas.map(e=>`<option value="${e.id}" data-email="${e.email_confronta||''}" data-otros="${(e.otros_emails||[]).join(',')}" ${matchEmp&&matchEmp.id===e.id?'selected':''}>${e.nombre}${e.email_confronta?' — '+e.email_confronta:' ⚠️ sin email'}</option>`).join('');
 
@@ -455,7 +461,7 @@ async function abrirEmailConsignatario(){
     </div>
     <div class="fg">
       <label class="fl">Email destinatario</label>
-      <input id="em-email" class="fi" type="email" placeholder="email@empresa.com" value="${matchEmp?.email_confronta||''}">
+      <input id="em-email" class="fi" type="email" placeholder="email@empresa.com" value="${preEmail}">
     </div>
     <div class="fg">
       <label class="fl">CC (opcional)</label>
