@@ -399,6 +399,9 @@ textarea.fi{resize:vertical;min-height:72px}
 .empty-txt{font-size:14px;color:var(--g400);font-weight:500}
 .info-box{background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--b700);margin-bottom:14px;line-height:1.5}
 .warn-box{background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--am600);font-weight:500}
+.nav-mod-btn{display:inline-flex;align-items:center;gap:4px}
+.nav-mod-btn .mod-btn-txt{font-size:12px}
+@media(max-width:768px){.nav-mod-btn .mod-btn-txt{display:none}}
 /* ── TOAST ── */
 .toast{position:fixed;bottom:20px;right:20px;background:#1b5e20;color:#fff;padding:10px 16px;border-radius:var(--r);font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;box-shadow:var(--shl)}
 .toast.show{opacity:1}
@@ -537,6 +540,9 @@ textarea.fi{resize:vertical;min-height:72px}
       <div class="h-right">
         <div class="hdr-cert">ISO 9001<br>ISO 14001</div>
         <a class="grist-btn" href="https://docs.getgrist.com" target="_blank">Grist ↗</a>
+        <button id="btn-to-almacen" class="btn btn-s btn-sm nav-mod-btn" onclick="irAAlmacen()" style="display:none" title="Ir a Almacén & Embarque"><span class="mod-btn-icon">📦</span><span class="mod-btn-txt">Almacén</span></button>
+        <button id="btn-to-airport" class="btn btn-s btn-sm nav-mod-btn" onclick="window.open('airport_cargo.html','_blank')" style="display:none" title="Ir a Airport Cargo"><span class="mod-btn-icon">✈️</span><span class="mod-btn-txt">Airport</span></button>
+        <button class="btn btn-s btn-sm nav-mod-btn" onclick="volverHome()" title="Menú principal"><span class="mod-btn-icon">🏠</span><span class="mod-btn-txt">Inicio</span></button>
         <button class="btn btn-p btn-sm" id="btn-nb" onclick="openModal('nuevo-buque')" style="display:none">+ Buque</button>
         <button class="btn btn-s btn-sm" id="btn-ne" onclick="openModal('nueva-expedicion')" style="display:none">+ Expedición</button>
       </div>
@@ -1007,17 +1013,31 @@ async function doChangePwd(){
   const err=document.getElementById('cp-err');
   if(!p1||p1.length<6){err.textContent='Mínimo 6 caracteres';return;}
   if(p1!==p2){err.textContent='Las contraseñas no coinciden';return;}
-  err.textContent='';
-  const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,{
+  err.textContent='Guardando…';
+  // Intentar PATCH con el id del usuario actual
+  const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(CU.id),{
     method:'PATCH',
-    headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
+    headers:{
+      apikey:SB_KEY,
+      Authorization:'Bearer '+SB_KEY,
+      'Content-Type':'application/json',
+      Prefer:'return=representation'
+    },
     body:JSON.stringify({password_hash:p1,must_change_password:false})
   });
-  if(!r.ok){err.textContent='Error al guardar. Inténtalo de nuevo.';return;}
+  if(!r.ok){
+    const txt=await r.text();
+    console.error('ChangePwd error:',r.status,txt);
+    // Fallback: si RLS bloquea el PATCH directo, usar el SDK
+    try{
+      const {error}=await sb.from('usuarios').update({password_hash:p1,must_change_password:false}).eq('id',CU.id);
+      if(error){err.textContent='Error al guardar: '+error.message;return;}
+    }catch(e2){err.textContent='Error al guardar. Verifica la política RLS en Supabase (usuarios: allow self-update).';return;}
+  }
   CU.must_change_password=false;
   CU.password_hash=p1;
   document.getElementById('screen-changepwd').style.display='none';
-  showToast('Contraseña actualizada correctamente');
+  showToast('✅ Contraseña actualizada correctamente');
   showHome();
 }
 
@@ -1034,13 +1054,9 @@ function showHome(){
 }
 
 function enterMod(mod){
-  // Role-based access enforcement
   const puedeOperativa=['admin','oficina','aduanas'];
   const soloAlmacen=['almacen','transportista'];
-  if(mod==='operativa'&&!puedeOperativa.includes(CU.rol)){
-    // Redirect to almacen silently
-    mod='almacen';
-  }
+  if(mod==='operativa'&&!puedeOperativa.includes(CU.rol)) mod='almacen';
   MOD=mod;
   document.getElementById('screen-home').style.display='none';
   document.getElementById('app').style.display='flex';
@@ -1050,24 +1066,42 @@ function enterMod(mod){
   const rolLabels={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
   document.getElementById('sb-role').textContent=rolLabels[CU.rol]||CU.rol;
 
+  // Botones de navegación entre módulos
+  const puedeAirport=['admin','oficina','aduanas'].includes(CU.rol);
+  const puedeAlmacen=['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol);
+  const esExclusivoAlmacen=['almacen','transportista'].includes(CU.rol);
+
+  const btnAlmacen=document.getElementById('btn-to-almacen');
+  const btnAirport=document.getElementById('btn-to-airport');
+
   if(mod==='operativa'){
     document.getElementById('nav-op').style.display='block';
     document.getElementById('nav-alm').style.display='none';
     document.getElementById('btn-nb').style.display='';
     document.getElementById('btn-ne').style.display='';
-    // Configuración section: admin only
     const navAdm=document.getElementById('nav-adm');
     if(navAdm) navAdm.style.display=CU.rol==='admin'?'block':'none';
     document.getElementById('bc-mod').textContent='Operativa';
+    // Desde Operativa: botón Almacén (todos) y botón Airport (admin/oficina/aduanas)
+    if(btnAlmacen) btnAlmacen.style.display=puedeAlmacen?'':'none';
+    if(btnAirport) btnAirport.style.display=puedeAirport?'':'none';
     nav('dashboard',document.querySelector('#nav-op .nav-item'));
-  }else{
+  } else {
     document.getElementById('nav-op').style.display='none';
     document.getElementById('nav-alm').style.display='block';
     document.getElementById('btn-nb').style.display='none';
     document.getElementById('btn-ne').style.display='none';
     document.getElementById('bc-mod').textContent='Almacén & Embarque';
+    // Desde Almacén: botón Airport solo para no-exclusivos; botón 🏠 ya existe
+    if(btnAlmacen) btnAlmacen.style.display='none'; // ya estamos en almacén
+    if(btnAirport) btnAirport.style.display=puedeAirport?'':'none';
     nav('alm-dashboard',document.querySelector('#nav-alm .nav-item'));
   }
+}
+
+function irAAlmacen(){
+  // Cambiar de módulo operativa → almacén sin volver al home
+  enterMod('almacen');
 }
 
 function volverHome(){document.getElementById('app').style.display='none';showHome();}
