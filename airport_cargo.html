@@ -420,7 +420,7 @@ async function loadDashboard(){
 function miniTable(list){
   if(!list.length)return'<div class="empty">Sin entradas</div>';
   var rows=list.map(function(e){
-    return'<tr onclick="openDetalle(\''+e.id+'\')"><td class="fw" style="font-family:var(--mono)">'+
+    return'<tr class="tbl-row" data-id="'+e.id+'" style="cursor:pointer"><td class="fw" style="font-family:var(--mono)">'+
       (e.awb||'—')+'</td><td>'+(e.consignatario||'—')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
       '<td><span class="badge bb">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+fd(e.fecha_llegada)+'</td><td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
@@ -465,19 +465,20 @@ function renderRows(list){
     var tot=calcTotal(e);
     var inc=!e.fecha_retirada||!e.handling;
     var bg=inc?' style="background:#fff8e1"':'';
-    return'<tr'+bg+'>'+
-      '<td style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600)" onchange="updateSel()"></td>'+
-      '<td class="fw" style="font-family:var(--mono);font-size:11px;cursor:pointer" onclick="openDetalle(\''+e.id+'\')">'+( e.awb||'—')+'</td>'+
-      '<td style="cursor:pointer" onclick="openDetalle(\''+e.id+'\')">'+( e.consignatario||'—')+'</td>'+
-      '<td class="sm" style="cursor:pointer" onclick="openDetalle(\''+e.id+'\')">'+( e.buque||'—')+'</td>'+
-      '<td onclick="openDetalle(\''+e.id+'\')"><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
-      '<td class="sm" onclick="openDetalle(\''+e.id+'\')">'+( e.aeropuerto||'—')+'</td>'+
-      '<td class="sm" onclick="openDetalle(\''+e.id+'\')">'+fd(e.fecha_llegada)+'</td>'+
-      '<td class="sm" onclick="openDetalle(\''+e.id+'\')">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
-      '<td style="text-align:center;font-size:12px" onclick="openDetalle(\''+e.id+'\')">'+(isAuto&&e.fecha_retirada?d:'—')+'</td>'+
-      '<td style="text-align:right;font-size:12px" onclick="openDetalle(\''+e.id+'\')">'+kg+'</td>'+
-      '<td style="text-align:right;font-size:12px" onclick="openDetalle(\''+e.id+'\')">'+(e.bultos||'—')+'</td>'+
-      '<td onclick="openDetalle(\''+e.id+'\')"><span class="badge '+(e.status==='T1'?'ba':e.status==='Comunitario'?'bg':'bgr')+'" style="font-size:10px">'+(e.status||'—')+'</span></td>'+
+    // Use data-id on tr — onclick delegated via JS, no inline quote nesting
+    return'<tr'+bg+' data-id="'+e.id+'" class="tbl-row">'+
+      '<td style="text-align:center"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600)" onchange="updateSel()"></td>'+
+      '<td class="fw" style="font-family:var(--mono);font-size:11px">'+( e.awb||'—')+'</td>'+
+      '<td style="cursor:pointer">'+( e.consignatario||'—')+'</td>'+
+      '<td class="sm" style="cursor:pointer">'+( e.buque||'—')+'</td>'+
+      '<td><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
+      '<td class="sm">'+( e.aeropuerto||'—')+'</td>'+
+      '<td class="sm">'+fd(e.fecha_llegada)+'</td>'+
+      '<td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
+      '<td style="text-align:center;font-size:12px">'+(isAuto&&e.fecha_retirada?d:'—')+'</td>'+
+      '<td style="text-align:right;font-size:12px">'+kg+'</td>'+
+      '<td style="text-align:right;font-size:12px">'+(e.bultos||'—')+'</td>'+
+      '<td><span class="badge '+(e.status==='T1'?'ba':e.status==='Comunitario'?'bg':'bgr')+'" style="font-size:10px">'+(e.status||'—')+'</span></td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(alm):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(gd):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(tr):'—')+'</td>'+
@@ -488,11 +489,27 @@ function renderRows(list){
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(ap?fn(ap):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);background:var(--b50)">'+fc(tot)+'</td>'+
       '<td onclick="event.stopPropagation()">'+
-        '<button class="btn btn-sm btn-s" onclick="editEntrada(\''+e.id+'\')">✏️</button> '+
-        '<button class="btn btn-sm btn-d" onclick="delEntrada(\''+e.id+'\')">🗑️</button>'+
+        '<button class="btn btn-sm btn-s" data-action="edit" data-id="'+e.id+'">✏️</button> '+
+        '<button class="btn btn-sm btn-d" data-action="del" data-id="'+e.id+'">🗑️</button>'+
       '</td></tr>';
   }).join('');
 }
+
+// Event delegation for table rows — avoids quote-nesting issues in onclick
+document.addEventListener('click', function(ev){
+  var tr = ev.target.closest('tr.tbl-row');
+  var btn = ev.target.closest('button[data-action]');
+  var chk = ev.target.closest('input[type=checkbox]');
+  if(chk) return; // let checkbox handle itself
+  if(btn){
+    ev.stopPropagation();
+    var id = btn.dataset.id;
+    if(btn.dataset.action==='edit') editEntrada(id);
+    else if(btn.dataset.action==='del') delEntrada(id);
+    return;
+  }
+  if(tr && tr.dataset.id) openDetalle(tr.dataset.id);
+});
 
 function toggleAll(el){document.querySelectorAll('.row-chk').forEach(function(c){c.checked=el.checked;});updateSel();}
 function updateSel(){var n=getSelected().length;var el=document.getElementById('sel-info');if(el)el.textContent=n?'✓ '+n+' entrada'+(n>1?'s':'')+' seleccionada'+(n>1?'s':'')+'. Pulsa 📧 Notificar para enviar.':'';}
@@ -718,7 +735,7 @@ function openDetalle(id){
     '</div>'+
     '<div class="fdiv"></div>'+costsHtml+
     (e.observaciones?'<div style="margin-top:10px;padding:9px;background:var(--g50);border-radius:var(--r);font-size:12px;color:var(--g600)">'+e.observaciones+'</div>':'');
-  document.getElementById('m-foot').innerHTML='<button class="btn btn-s" onclick="closeModal()">Cerrar</button><button class="btn btn-p" onclick="closeModal();setTimeout(function(){editEntrada(\''+id+'\');},80)">✏️ Editar</button>';
+  document.getElementById('m-foot').innerHTML='<button class="btn btn-s" onclick="closeModal()">Cerrar</button><button class="btn btn-p" onclick="closeModal();setTimeout(function(){editEntrada(''+id+'');},80)">✏️ Editar</button>';
   openModal();
 }
 
