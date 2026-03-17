@@ -459,7 +459,7 @@ function miniTable(list){
 }
 
 // ── ENTRADAS ─────────────────────────────────────────────
-async function loadEntradas(){if(!ALL.length)await loadAll();renderRows(ALL);}
+async function loadEntradas(){await loadAll();renderRows(ALL);}
 
 function filtrar(){
   var q=(document.getElementById('src').value||'').toLowerCase();
@@ -762,7 +762,10 @@ async function editEntrada(id){
   if(!e){var r=await sb.from('airport_cargo').select('*').eq('id',id).single();if(!r.data){alert('No encontrado');return;}e=r.data;ALL.push(e);}
   showForm(e);
 }
-function showForm(e){
+async function showForm(e){
+  // Cargar empresas para datalist
+  var empresas=[];
+  try{var er=await sb.from('empresas').select('id,nombre,email_confronta').order('nombre');empresas=er.data||[];}catch(ex){}
   var isEdit=!!e,h=e?e.handling||'':'',isAuto=hasH(h);
   document.getElementById('m-title').textContent=isEdit?'Editar — '+e.awb:'Nueva entrada Airport Cargo';
   var handlerOpts=['<option value="" '+((!h)?'selected':'')+'>— Seleccionar —</option>',
@@ -775,7 +778,10 @@ function showForm(e){
     (isEdit&&!e.fecha_retirada?'<div class="warn-box">⚠️ Sin fecha de retirada — rellénala para calcular los costes.</div>':'')+
     '<div class="fr2">'+
     '<div class="fg"><label class="fl">AWB *</label><input id="f-awb" class="fi" value="'+(e?e.awb||'':'')+'" placeholder="123-12345678" style="font-family:var(--mono)"></div>'+
-    '<div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="'+(e?e.consignatario||'':'')+'" placeholder="Nombre"></div>'+
+    '<div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="'+(e?e.consignatario||'':'')+'" placeholder="Escribe para filtrar..." list="cons-list" autocomplete="off" oninput="onConsInput()"></div>'+
+    '<datalist id="cons-list"></datalist>'+
+    '<div id="cons-hint" style="font-size:11px;color:var(--b600);margin-top:3px;display:none">'+'<span>¿No está en la lista?</span> '+
+    '<button type="button" class="btn btn-sm btn-s" style="padding:2px 8px;font-size:11px" id="btn-crear-emp">+ Crear empresa</button></div>'+
     '</div>'+
     '<div class="fr2">'+
     '<div class="fg"><label class="fl">Buque</label><input id="f-buque" class="fi" value="'+(e?e.buque||'':'')+'" placeholder="Nombre del buque"></div>'+
@@ -810,6 +816,13 @@ function showForm(e){
   openModal();
   onHC();
   if(isEdit)setTimeout(liveCalc,50);
+  // Populate datalist with empresas
+  _empresas_cache = empresas;
+  var dlEl=document.getElementById('cons-list');
+  if(dlEl) dlEl.innerHTML=empresas.map(function(emp){return '<option value="'+emp.nombre.replace(/"/g,'&quot;')+'">';}).join('');
+  // Show crear button listener
+  var btnCE=document.getElementById('btn-crear-emp');
+  if(btnCE) btnCE.onclick=crearEmpresaDesdeConsignatario;
 }
 
 function onHC(){
@@ -907,13 +920,16 @@ async function abrirEmail(){
     '<input id="em-email" class="fi" type="email" placeholder="email@empresa.com" value="'+(matchEmp?matchEmp.email_confronta||'':'')+'" ></div>'+
     '<div class="fg"><label class="fl">CC</label><input id="em-cc" class="fi" placeholder="als@alsalgeciras.com"></div>'+
     '<div class="fdiv"></div>'+
-    '<div class="sect">Vista previa</div>'+
-    '<div style="background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:12px;font-size:12px;line-height:1.7;max-height:280px;overflow-y:auto;white-space:pre-wrap;font-family:var(--mono)">'+cuerpo+'</div>';
+    '<div class="sect">Cuerpo del email <span style="font-size:10px;color:var(--g400);font-weight:400">(editable)</span></div>'+
+    '<textarea id="em-body" class="fi" style="min-height:220px;font-family:var(--mono);font-size:11px;line-height:1.6;resize:vertical">'+cuerpo+'</textarea>';
   document.getElementById('m-foot').innerHTML='<button class="btn btn-s" onclick="closeModal()">Cancelar</button>'+
     '<button class="btn btn-p" onclick="enviarEmail(\''+encodeURIComponent(cuerpo)+'\',\''+encodeURIComponent(cons)+'\')">📧 Abrir cliente correo</button>';
   openModal();
 }
 function enviarEmail(bodyCoded,consCoded){
+  // Read edited body from textarea if available
+  var textarea=document.getElementById('em-body');
+  if(textarea) bodyCoded=encodeURIComponent(textarea.value);
   var dest=document.getElementById('em-email').value.trim();
   if(!dest){alert('Introduce el email del destinatario');return;}
   var cc=document.getElementById('em-cc').value.trim()||'als@alsalgeciras.com';
@@ -924,6 +940,84 @@ function enviarEmail(bodyCoded,consCoded){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   closeModal();toast('📧 Abriendo cliente de correo...');
 }
+
+// ── CONSIGNATARIO AUTOCOMPLETE ────────────────────────────
+var _empresas_cache = [];
+function onConsInput(){
+  var val = (document.getElementById('f-cons')||{value:''}).value.trim().toLowerCase();
+  var hint = document.getElementById('cons-hint');
+  var dl = document.getElementById('cons-list');
+  if(!dl) return;
+  // Filter empresas
+  var matches = _empresas_cache.filter(function(e){
+    return (e.nombre||'').toLowerCase().includes(val);
+  });
+  dl.innerHTML = matches.map(function(e){
+    return '<option value="'+e.nombre.replace(/"/g,'&quot;')+'">';
+  }).join('');
+  // Show "crear empresa" hint if typed something not in list
+  if(hint){
+    var exact = _empresas_cache.some(function(e){
+      return (e.nombre||'').toLowerCase() === val;
+    });
+    hint.style.display = (val.length > 1 && !exact) ? '' : 'none';
+  }
+  // Link "crear empresa" button
+  var btn = document.getElementById('btn-crear-emp');
+  if(btn) btn.onclick = crearEmpresaDesdeConsignatario;
+}
+
+async function loadEmpresasCache(){
+  try{
+    var r = await sb.from('empresas').select('id,nombre,email_confronta,otros_emails').order('nombre');
+    _empresas_cache = r.data||[];
+  }catch(e){ _empresas_cache=[]; }
+}
+
+async function crearEmpresaDesdeConsignatario(){
+  var nombre = (document.getElementById('f-cons')||{value:''}).value.trim();
+  if(!nombre){ alert('Introduce el nombre del consignatario primero'); return; }
+  // Show mini form inside a sub-modal overlay
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:12px;padding:24px;max-width:440px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2)">' +
+    '<div style="font-size:15px;font-weight:700;margin-bottom:14px">+ Nueva empresa: '+nombre+'</div>' +
+    '<div style="margin-bottom:10px"><label style="font-size:12px;font-weight:600;color:#495057;display:block;margin-bottom:4px">Nombre *</label>' +
+    '<input id="ne-nombre" style="width:100%;padding:8px 12px;border:1px solid #dee2e6;border-radius:8px;font-size:13px" value="'+nombre+'"></div>' +
+    '<div style="margin-bottom:10px"><label style="font-size:12px;font-weight:600;color:#495057;display:block;margin-bottom:4px">Email confronta</label>' +
+    '<input id="ne-email" type="email" style="width:100%;padding:8px 12px;border:1px solid #dee2e6;border-radius:8px;font-size:13px" placeholder="email@empresa.com"></div>' +
+    '<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:#495057;display:block;margin-bottom:4px">Teléfono</label>' +
+    '<input id="ne-tel" style="width:100%;padding:8px 12px;border:1px solid #dee2e6;border-radius:8px;font-size:13px" placeholder="+34..."></div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+    '<button id="ne-cancel" style="padding:7px 14px;border:1px solid #dee2e6;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">Cancelar</button>' +
+    '<button id="ne-save" style="padding:7px 14px;border:none;border-radius:8px;background:#1565c0;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Crear empresa</button>' +
+    '</div></div>';
+  document.body.appendChild(overlay);
+  document.getElementById('ne-cancel').onclick = function(){ document.body.removeChild(overlay); };
+  document.getElementById('ne-save').onclick = async function(){
+    var nom = (document.getElementById('ne-nombre').value||'').trim();
+    var email = (document.getElementById('ne-email').value||'').trim();
+    var tel = (document.getElementById('ne-tel').value||'').trim();
+    if(!nom){ alert('El nombre es obligatorio'); return; }
+    var obj = {nombre:nom};
+    if(email) obj.email_confronta = email;
+    if(tel) obj.telefono = tel;
+    var r = await sb.from('empresas').insert(obj);
+    if(r.error){ alert('Error: '+r.error.message); return; }
+    document.body.removeChild(overlay);
+    // Update cache and set value
+    await loadEmpresasCache();
+    var inp = document.getElementById('f-cons');
+    if(inp) inp.value = nom;
+    var dl = document.getElementById('cons-list');
+    if(dl) dl.innerHTML = _empresas_cache.map(function(e){
+      return '<option value="'+e.nombre.replace(/"/g,'&quot;')+'">';
+    }).join('');
+    toast('Empresa creada ✅');
+  };
+}
+
 </script>
 </body>
 </html>
