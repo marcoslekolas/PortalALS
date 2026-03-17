@@ -119,7 +119,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
       <div class="nav-item active" onclick="nav('dashboard',this)"><span class="ni">🏠</span>Dashboard</div>
       <div class="nav-item" onclick="nav('entradas',this)"><span class="ni">📋</span>Entradas</div>
       <div class="nav-item" onclick="nav('resumen',this)"><span class="ni">📊</span>Resumen mensual</div>
-      <div class="nav-item" onclick="nav('tarifas',this)"><span class="ni">💰</span>Tarifas 2026</div>
+      <div class="nav-item" onclick="nav('tarifas',this)"><span class="ni">💰</span>Tarifas por año</div>
       <div class="sb-sec">Acciones</div>
       <div class="nav-item" onclick="openNueva()"><span class="ni">➕</span>Nueva entrada</div>
       <div class="nav-item" onclick="abrirEmailConsignatario()"><span class="ni">📧</span>Notificar consignatario</div>
@@ -175,8 +175,16 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div id="res-content"></div>
       </div>
       <div class="view" id="view-tarifas">
-        <div class="ph"><div class="pt">💰 Tarifas Handling 2026</div></div>
-        <div class="tabs">
+        <div class="ph">
+          <div class="pt">💰 Tarifas Handling</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="tar-year" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadTarifasView()">
+              <option value="2026">2026</option>
+            </select>
+            <button class="btn btn-p btn-sm" onclick="abrirNuevoAnioTarifas()">+ Nuevo año</button>
+          </div>
+        </div>
+        <div class="tabs" id="tar-tabs">
           <button class="tab-btn active" onclick="showTarifas('Swissport',this)">✈️ Swissport</button>
           <button class="tab-btn" onclick="showTarifas('Groundforce',this)">✈️ Groundforce</button>
         </div>
@@ -208,31 +216,100 @@ function exitApp(){
 }
 
 // ═══════════════════════════════════════════════
-// TARIFAS 2026 — verificadas contra Airport_Cargo.grist
-// Leyenda base: 100kg/dia=por 100kg/día | kg=por kg | fijo_awb=fijo por AWB | fijo+kg=fijo+variable
+// TARIFAS — estructura por año: TRF_BY_YEAR[year][handler]
+// Se cargan de Supabase al init; fallback a 2026 hardcoded
 // ═══════════════════════════════════════════════
-const TRF={
+const TRF_2026_DEFAULT={
   Swissport:{
-    alm:{dl:2,min:51.31,u:12.12},     // Almacenaje Tramo 1
-    gd: {min:47.69,u:24.18,base:'awb'},// Gestión Documental — max(min,u) = 47.69
-    tr: {min:20.3, u:0.46},            // Tasa Utilización Recinto — max(kg*u, min)
-    tm: {min:0,   u:38.07,base:'awb'}, // Tasa Mantenimiento — valor fijo AWB
-    fi: {min:0,   u:148.63,base:'awb'},// Fin semana — fijo AWB
-    ex: {min:74.91,u:0.25},            // Express — max(kg*u, min)
-    cc: {min:71.9, u:0.11},            // Carga Camión — max(kg*u, min)
-    ap: {min:0,   u:150, base:'awb'},  // Apertura — fijo AWB (Swissport no tiene fijo_awb ni variable)
+    alm:{dl:2,min:51.31,u:12.12},
+    gd: {min:47.69,u:24.18,base:'awb'},
+    tr: {min:20.3, u:0.46},
+    tm: {min:0,    u:38.07,base:'awb'},
+    fi: {min:0,    u:148.63,base:'awb'},
+    ex: {min:74.91,u:0.25},
+    cc: {min:71.9, u:0.11},
+    ap: {min:0,    u:150,   base:'awb'},
   },
   Groundforce:{
-    alm:{dl:3,min:47.47,u:11.21},
-    gd: {min:44.57,u:0,  base:'awb'}, // max(min,u) = 44.57
+    alm:{dl:3,   min:47.47,  u:11.21},
+    gd: {min:44.57,u:0,      base:'awb'},
     tr: {min:0.43, u:1.9},
-    tm: {min:0,    u:28.73,base:'awb'},
-    fi: {min:138.9,u:0,  base:'awb'},
+    tm: {min:0,    u:28.73,  base:'awb'},
+    fi: {min:138.9,u:0,      base:'awb'},
     ex: {min:70.01,u:0.23},
     cc: {min:108.94,u:1.15},
-    ap: {min:383.33,u:1.72,fijo:80.74},// fijo AWB + kg*u, min 383.33
+    ap: {min:383.33,u:1.72,  fijo:80.74},
   }
 };
+
+// Caché global de tarifas por año — cargadas de Supabase
+let TRF_BY_YEAR={2026:TRF_2026_DEFAULT};
+
+// Helper: obtener estructura de tarifas para un año concreto
+// Si no existe en caché, usa el año más cercano disponible
+function getTRF(year){
+  const y=parseInt(year)||new Date().getFullYear();
+  if(TRF_BY_YEAR[y]) return TRF_BY_YEAR[y];
+  // Fallback: año más cercano disponible
+  const years=Object.keys(TRF_BY_YEAR).map(Number).sort((a,b)=>Math.abs(a-y)-Math.abs(b-y));
+  return TRF_BY_YEAR[years[0]]||TRF_2026_DEFAULT;
+}
+
+// Para compatibilidad: TRF sin año = año actual (para preview en formulario)
+function getTRFh(h,year){
+  const trf=getTRF(year||new Date().getFullYear());
+  return trf[h]||null;
+}
+
+// Cargar tarifas de Supabase y convertir al formato TRF_BY_YEAR
+async function loadTarifasFromDB(){
+  try{
+    const {data}=await sb.from('tarifas_handling').select('*').order('year_validity,proveedor,concepto_es');
+    if(!data||!data.length) return; // usar defaults
+    const CONCEPT_MAP={
+      'Almacenaje General (Tramo 1)':'alm',
+      'Gestión Documental (Mismo Día)':'gd','Gestión Documental':'gd',
+      'Tasa Utilización Recinto':'tr',
+      'Tasa Mantenimiento de Servicio':'tm','Tasa Mantenimiento Servicio':'tm',
+      'Entrega Fin de Semana / Festivos':'fi','Entrega Fin de Semana':'fi',
+      'Handling Express':'ex',
+      'Carga Camión':'cc','Acceso y Uso de Recinto (Carga Camión)':'cc',
+      'Apertura Fuera Horario':'ap',
+    };
+    const years=[...new Set(data.map(r=>r.year_validity))];
+    years.forEach(yr=>{
+      const yData={};
+      ['Swissport','Groundforce'].forEach(prov=>{
+        const rows=data.filter(r=>r.year_validity===yr&&r.proveedor===prov);
+        if(!rows.length) return;
+        const obj={};
+        rows.forEach(r=>{
+          const key=CONCEPT_MAP[r.concepto_es];
+          if(!key) return;
+          const entry={min:parseFloat(r.minimo_eur)||0,u:parseFloat(r.valor_unitario)||0};
+          if(parseFloat(r.fijo_awb_eur)>0) entry.fijo=parseFloat(r.fijo_awb_eur);
+          if(r.base_calculo?.toLowerCase().includes('awb')) entry.base='awb';
+          if(key==='alm') entry.dl=parseInt(r.dias_libres)||0;
+          obj[key]=entry;
+        });
+        // Merge with defaults for any missing keys
+        const def=TRF_2026_DEFAULT[prov]||{};
+        yData[prov]={...def,...obj};
+      });
+      if(Object.keys(yData).length>0) TRF_BY_YEAR[yr]=yData;
+    });
+    // Populate year selector
+    const allYears=[...new Set([...Object.keys(TRF_BY_YEAR).map(Number),...years])].sort((a,b)=>b-a);
+    const sel=document.getElementById('tar-year');
+    if(sel){sel.innerHTML=allYears.map(y=>`<option value="${y}" ${y===new Date().getFullYear()?'selected':''}>${y}</option>`).join('');}
+    console.log('Tarifas cargadas para años:', Object.keys(TRF_BY_YEAR).join(', '));
+  }catch(err){
+    console.warn('No se pudieron cargar tarifas de BD, usando defaults 2026:', err.message);
+  }
+}
+
+// Alias TRF para compatibilidad con código legacy (usa año actual)
+const TRF=new Proxy({},{get:(_,h)=>{const t=getTRF(new Date().getFullYear());return t[h]||null;}});
 
 // ═══════════════════════════════════════════════
 // CÁLCULOS — réplica exacta de Grist Python
@@ -247,53 +324,55 @@ function diasFact(ll,rt,h){
   if(h==='Groundforce'){return dnat<=3?0:dnat;}
   return 0;
 }
-function calcAlm(kg,dias,h){
-  if(!dias||!h||!TRF[h])return 0;
-  const t=TRF[h].alm;
+function calcAlm(kg,dias,h,yr){
+  const trf=getTRFh(h,yr);if(!dias||!trf)return 0;
+  const t=trf.alm;if(!t)return 0;
   return Math.max(Math.ceil(kg/100)*t.u*dias, t.min);
 }
-function calcGD(h){
-  if(!h||!TRF[h])return 0;
-  const t=TRF[h].gd;return Math.max(t.u,t.min);
+function calcGD(h,yr){
+  const trf=getTRFh(h,yr);if(!trf)return 0;
+  const t=trf.gd;if(!t)return 0;return Math.max(t.u,t.min);
 }
-function calcTR(kg,h){
-  if(!h||!TRF[h])return 0;
-  const t=TRF[h].tr;return Math.max(kg*t.u,t.min);
+function calcTR(kg,h,yr){
+  const trf=getTRFh(h,yr);if(!trf)return 0;
+  const t=trf.tr;if(!t)return 0;return Math.max(kg*t.u,t.min);
 }
-function calcTM(h){
-  if(!h||!TRF[h])return 0;
-  const t=TRF[h].tm;return Math.max(t.u,t.min);
+function calcTM(h,yr){
+  const trf=getTRFh(h,yr);if(!trf)return 0;
+  const t=trf.tm;if(!t)return 0;return Math.max(t.u,t.min);
 }
-function calcFi(ap,h){
-  if(!ap||!h||!TRF[h])return 0;
-  const t=TRF[h].fi;return Math.max(t.u,t.min);
+function calcFi(ap,h,yr){
+  const trf=getTRFh(h,yr);if(!ap||!trf)return 0;
+  const t=trf.fi;if(!t)return 0;return Math.max(t.u,t.min);
 }
-function calcEx(ap,kg,h){
-  if(!ap||!h||!TRF[h])return 0;
-  const t=TRF[h].ex;return Math.max(kg*t.u,t.min);
+function calcEx(ap,kg,h,yr){
+  const trf=getTRFh(h,yr);if(!ap||!trf)return 0;
+  const t=trf.ex;if(!t)return 0;return Math.max(kg*t.u,t.min);
 }
-function calcCC(ap,kg,h){
-  if(!ap||!h||!TRF[h])return 0;
-  const t=TRF[h].cc;return Math.max(kg*t.u,t.min);
+function calcCC(ap,kg,h,yr){
+  const trf=getTRFh(h,yr);if(!ap||!trf)return 0;
+  const t=trf.cc;if(!t)return 0;return Math.max(kg*t.u,t.min);
 }
-function calcAp(ap,kg,h){
-  if(!ap||!h||!TRF[h])return 0;
-  const t=TRF[h].ap;
+function calcAp(ap,kg,h,yr){
+  const trf=getTRFh(h,yr);if(!ap||!trf)return 0;
+  const t=trf.ap;if(!t)return 0;
   const fijo=t.fijo||0;
   return Math.max(fijo+kg*t.u,t.min);
 }
 function calcTotal(e){
-  if(!e.handling||!TRF[e.handling])return parseFloat(e.coste_manual)||0;
+  if(!e.handling||!getTRFh(e.handling))return parseFloat(e.coste_manual)||0;
   if(!e.fecha_retirada)return 0;
+  const yr=new Date(e.fecha_retirada).getFullYear();
   const kg=parseFloat(e.kilos_tasables)||0;
   const d=diasFact(e.fecha_llegada,e.fecha_retirada,e.handling);
-  return calcAlm(kg,d,e.handling)+calcGD(e.handling)+calcTR(kg,e.handling)+calcTM(e.handling)+calcFi(e.aplica_finde,e.handling)+calcEx(e.aplica_express,kg,e.handling)+calcCC(e.aplica_carga_camion,kg,e.handling)+calcAp(e.aplica_apertura,kg,e.handling);
+  return calcAlm(kg,d,e.handling,yr)+calcGD(e.handling,yr)+calcTR(kg,e.handling,yr)+calcTM(e.handling,yr)+calcFi(e.aplica_finde,e.handling,yr)+calcEx(e.aplica_express,kg,e.handling,yr)+calcCC(e.aplica_carga_camion,kg,e.handling,yr)+calcAp(e.aplica_apertura,kg,e.handling,yr);
 }
 function desglose(e){
-  if(!e.handling||!TRF[e.handling])return null;
+  if(!e.handling||!getTRFh(e.handling))return null;
   const kg=parseFloat(e.kilos_tasables)||0,h=e.handling;
+  const yr=e.fecha_retirada?new Date(e.fecha_retirada).getFullYear():new Date().getFullYear();
   const d=diasFact(e.fecha_llegada,e.fecha_retirada,h);
-  return{dias:d,alm:calcAlm(kg,d,h),gd:calcGD(h),tr:calcTR(kg,h),tm:calcTM(h),fi:calcFi(e.aplica_finde,h),ex:calcEx(e.aplica_express,kg,h),cc:calcCC(e.aplica_carga_camion,kg,h),ap:calcAp(e.aplica_apertura,kg,h),total:calcTotal(e)};
+  return{dias:d,yr,alm:calcAlm(kg,d,h,yr),gd:calcGD(h,yr),tr:calcTR(kg,h,yr),tm:calcTM(h,yr),fi:calcFi(e.aplica_finde,h,yr),ex:calcEx(e.aplica_express,kg,h,yr),cc:calcCC(e.aplica_carga_camion,kg,h,yr),ap:calcAp(e.aplica_apertura,kg,h,yr),total:calcTotal(e)};
 }
 function calcMes(rt){if(!rt)return'';const d=new Date(rt);return d.getFullYear()+' | '+['01-Ene','02-Feb','03-Mar','04-Abr','05-May','06-Jun','07-Jul','08-Ago','09-Sep','10-Oct','11-Nov','12-Dic'][d.getMonth()];}
 
@@ -313,14 +392,14 @@ function nav(v,el){
   const ve=document.getElementById('view-'+v);if(ve)ve.classList.add('active');
   if(el)el.classList.add('active');CV=v;
   if(window.innerWidth<=768){document.getElementById('sidebar').classList.remove('open');document.getElementById('mob-ov').classList.remove('show');}
-  if(v==='dashboard')loadDashboard();else if(v==='entradas')loadEntradas();else if(v==='resumen')loadResumen();else if(v==='tarifas')showTarifas('Swissport');
+  if(v==='dashboard')loadDashboard();else if(v==='entradas')loadEntradas();else if(v==='resumen')loadResumen();else if(v==='tarifas')loadTarifasView();
 }
 function toggleSB(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('mob-ov').classList.toggle('show');}
 function closeModal(){document.getElementById('mo').classList.remove('open');}
 
 // ═══════════════════════════════════════════════ INIT
 let ALL=[];
-async function init(){await loadAll();loadDashboard();checkUrl();}
+async function init(){await loadTarifasFromDB();await loadAll();loadDashboard();checkUrl();}
 async function loadAll(){const {data}=await sb.from('airport_cargo').select('*,empresa:empresa_id(nombre,email_confronta,otros_emails)').order('fecha_llegada',{ascending:false});ALL=data||[];return ALL;}
 function checkUrl(){
   const p=new URLSearchParams(window.location.search);
@@ -569,30 +648,281 @@ async function loadResumen(){
 }
 
 // ═══════════════════════════════════════════════ TARIFAS
-function showTarifas(prov,el){
-  if(el){document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
-  const t=TRF[prov];if(!t)return;
-  const rows=[
-    {c:'Almacenaje General (Tramo 1)',ap:'Siempre',dl:t.alm.dl,min:t.alm.min,u:t.alm.u,base:'por 100kg/día',nota:'franquicia '+t.alm.dl+'d'},
-    {c:'Gestión Documental',ap:'Siempre',dl:0,min:t.gd.min,u:t.gd.u||0,base:'fijo AWB'},
-    {c:'Tasa Utilización Recinto',ap:'Siempre',dl:0,min:t.tr.min,u:t.tr.u,base:'por kg'},
-    {c:'Tasa Mantenimiento Servicio',ap:'Siempre',dl:0,min:t.tm.min,u:t.tm.u,base:'fijo AWB'},
-    {c:'Fin de Semana / Festivos',ap:'Opcional',dl:0,min:t.fi.min,u:t.fi.u||0,base:'fijo AWB'},
-    {c:'Handling Express',ap:'Opcional',dl:0,min:t.ex.min,u:t.ex.u,base:'por kg'},
-    {c:'Carga Camión',ap:'Opcional',dl:0,min:t.cc.min,u:t.cc.u,base:'por kg'},
-    {c:'Apertura Fuera Horario',ap:'Opcional',dl:0,min:t.ap.min,u:t.ap.u,base:(t.ap.fijo?'fijo AWB ('+fc(t.ap.fijo)+') + ':'')+'por kg'},
+// ─── Cargar vista tarifas (año seleccionado) ───────────────
+function loadTarifasView(){
+  const year=parseInt(document.getElementById('tar-year')?.value)||new Date().getFullYear();
+  // Reset tabs to Swissport
+  document.querySelectorAll('#tar-tabs .tab-btn').forEach((b,i)=>{b.classList.toggle('active',i===0);});
+  showTarifas('Swissport',null,year);
+}
+
+function showTarifas(prov,el,yearOverride){
+  if(el){document.querySelectorAll('#tar-tabs .tab-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
+  const year=yearOverride||parseInt(document.getElementById('tar-year')?.value)||new Date().getFullYear();
+  const trf=getTRF(year);
+  const t=trf[prov];
+  if(!t){
+    document.getElementById('tar-content').innerHTML=`<div class="warn-box">No hay tarifas para ${prov} en ${year}. Usa "+ Nuevo año" para crearlas.</div>`;
+    return;
+  }
+  const hasDB=Object.keys(TRF_BY_YEAR).includes(String(year))&&year!==2026;
+  const isSource=year===Math.min(...Object.keys(TRF_BY_YEAR).map(Number));
+
+  const CONCEPTOS=[
+    {key:'alm',label:'Almacenaje General (Tramo 1)',ap:'Siempre',base:'por 100 kg/día',hasDl:true,hasFijo:false},
+    {key:'gd', label:'Gestión Documental',           ap:'Siempre',base:'fijo AWB',      hasDl:false,hasFijo:false},
+    {key:'tr', label:'Tasa Utilización Recinto',     ap:'Siempre',base:'por kg',        hasDl:false,hasFijo:false},
+    {key:'tm', label:'Tasa Mantenimiento Servicio',  ap:'Siempre',base:'fijo AWB',      hasDl:false,hasFijo:false},
+    {key:'fi', label:'Fin de Semana / Festivos',     ap:'Opcional',base:'fijo AWB',     hasDl:false,hasFijo:false},
+    {key:'ex', label:'Handling Express',              ap:'Opcional',base:'por kg',       hasDl:false,hasFijo:false},
+    {key:'cc', label:'Carga Camión',                  ap:'Opcional',base:'por kg',       hasDl:false,hasFijo:false},
+    {key:'ap', label:'Apertura Fuera Horario',        ap:'Opcional',base:'fijo + kg',    hasDl:false,hasFijo:true},
   ];
+
   document.getElementById('tar-content').innerHTML=`
-    <div class="tc"><table class="tbl"><thead><tr><th>Concepto</th><th>Aplica</th><th>Días libres</th><th>Mínimo</th><th>Unitario</th><th>Base</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr>
-      <td class="fw">${r.c}</td>
-      <td><span class="badge ${r.ap==='Siempre'?'bg':'ba'}">${r.ap}</span></td>
-      <td style="text-align:center">${r.dl||'—'}</td>
-      <td style="font-family:var(--mono);text-align:right">${r.min?fc(r.min):'—'}</td>
-      <td style="font-family:var(--mono);text-align:right">${r.u?fc(r.u):'—'}</td>
-      <td class="sm">${r.base}</td>
-    </tr>`).join('')}</tbody></table></div>
-    <div class="info-box" style="margin-top:14px"><strong>Siempre</strong> = se aplica automáticamente a toda entrada de ${prov}. <strong>Opcional</strong> = solo si se activa la casilla correspondiente.</div>`;
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div>
+        <span style="font-size:15px;font-weight:700">${prov} — ${year}</span>
+        ${Object.keys(TRF_BY_YEAR).includes(String(year))
+          ?'<span class="badge bg" style="margin-left:8px">✓ En base de datos</span>'
+          :'<span class="badge ba" style="margin-left:8px">⚠️ Solo fallback local</span>'}
+      </div>
+      <button class="btn btn-p btn-sm" onclick="editarTarifasAnio(${year},'${prov}')">✏️ Editar tarifas ${year}</button>
+    </div>
+    <div class="tc"><table class="tbl"><thead><tr>
+      <th>Concepto</th><th>Aplica</th><th>Días libres</th><th>Mínimo €</th><th>Unitario €</th><th>Base</th><th>Fijo AWB €</th>
+    </tr></thead><tbody>
+    ${CONCEPTOS.map(row=>{
+      const v=t[row.key]||{};
+      return`<tr>
+        <td class="fw">${row.label}</td>
+        <td><span class="badge ${row.ap==='Siempre'?'bg':'ba'}">${row.ap}</span></td>
+        <td style="text-align:center">${row.hasDl?(v.dl||0):'—'}</td>
+        <td style="font-family:var(--mono);text-align:right">${v.min?fc(v.min):'—'}</td>
+        <td style="font-family:var(--mono);text-align:right">${v.u?fc(v.u):'—'}</td>
+        <td class="sm">${row.base}</td>
+        <td style="font-family:var(--mono);text-align:right">${v.fijo?fc(v.fijo):'—'}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div>
+    <div class="info-box" style="margin-top:14px">
+      Las expediciones con <strong>fecha de retirada en ${year}</strong> usarán automáticamente estas tarifas.
+      <strong>Siempre</strong> = cargo automático. <strong>Opcional</strong> = solo si se activa la casilla.
+    </div>`;
+}
+
+// ─── Editor de tarifas para un año/proveedor ──────────────
+function editarTarifasAnio(year,prov){
+  const trf=getTRF(year);
+  const t=trf[prov]||{};
+  const CONCEPTOS=[
+    {key:'alm',label:'Almacenaje (Tramo 1)',hasDl:true, hasFijo:false,baseLabel:'por 100 kg/día'},
+    {key:'gd', label:'Gestión Documental',  hasDl:false,hasFijo:false,baseLabel:'fijo AWB'},
+    {key:'tr', label:'Tasa Recinto',        hasDl:false,hasFijo:false,baseLabel:'por kg'},
+    {key:'tm', label:'Tasa Mantenimiento',  hasDl:false,hasFijo:false,baseLabel:'fijo AWB'},
+    {key:'fi', label:'Fin de Semana',       hasDl:false,hasFijo:false,baseLabel:'fijo AWB'},
+    {key:'ex', label:'Handling Express',    hasDl:false,hasFijo:false,baseLabel:'por kg'},
+    {key:'cc', label:'Carga Camión',        hasDl:false,hasFijo:false,baseLabel:'por kg'},
+    {key:'ap', label:'Apertura Fuer. Horario',hasDl:false,hasFijo:true,baseLabel:'fijo + por kg'},
+  ];
+  document.getElementById('m-title').textContent=`✏️ Tarifas ${prov} — ${year}`;
+  document.getElementById('m-body').innerHTML=`
+    <div class="info-box">Edita los valores para <strong>${prov} ${year}</strong>. Al guardar se escriben en Supabase y se aplican a todas las expediciones con fecha de retirada en ${year}.</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:var(--g50)">
+        <th style="padding:7px 10px;text-align:left;font-size:11px;color:var(--g500);text-transform:uppercase">Concepto</th>
+        <th style="padding:7px 6px;text-align:center;font-size:11px;color:var(--g500)">D.Libres</th>
+        <th style="padding:7px 6px;text-align:right;font-size:11px;color:var(--g500)">Mínimo €</th>
+        <th style="padding:7px 6px;text-align:right;font-size:11px;color:var(--g500)">Unitario €</th>
+        <th style="padding:7px 6px;text-align:right;font-size:11px;color:var(--g500)">Fijo AWB €</th>
+        <th style="padding:7px 6px;text-align:left;font-size:11px;color:var(--g500)">Base</th>
+      </tr></thead>
+      <tbody>
+      ${CONCEPTOS.map(row=>{
+        const v=t[row.key]||{};
+        return`<tr style="border-bottom:1px solid var(--g100)">
+          <td style="padding:8px 10px;font-weight:600">${row.label}</td>
+          <td style="padding:4px 6px;text-align:center">
+            ${row.hasDl?`<input type="number" id="te-${row.key}-dl" value="${v.dl||0}" min="0" style="width:52px;padding:4px 6px;border:1px solid var(--g300);border-radius:6px;font-family:var(--mono);text-align:center;font-size:12px">`:
+            '<span style="color:var(--g300)">—</span>'}
+          </td>
+          <td style="padding:4px 6px;text-align:right">
+            <input type="number" id="te-${row.key}-min" value="${v.min||0}" min="0" step="0.01" style="width:80px;padding:4px 6px;border:1px solid var(--g300);border-radius:6px;font-family:var(--mono);text-align:right;font-size:12px">
+          </td>
+          <td style="padding:4px 6px;text-align:right">
+            <input type="number" id="te-${row.key}-u" value="${v.u||0}" min="0" step="0.0001" style="width:80px;padding:4px 6px;border:1px solid var(--g300);border-radius:6px;font-family:var(--mono);text-align:right;font-size:12px">
+          </td>
+          <td style="padding:4px 6px;text-align:right">
+            ${row.hasFijo?`<input type="number" id="te-${row.key}-fijo" value="${v.fijo||0}" min="0" step="0.01" style="width:80px;padding:4px 6px;border:1px solid var(--g300);border-radius:6px;font-family:var(--mono);text-align:right;font-size:12px">`:
+            '<span style="color:var(--g300)">—</span>'}
+          </td>
+          <td style="padding:4px 10px;font-size:11px;color:var(--g500)">${row.baseLabel}</td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>`;
+  document.getElementById('m-foot').innerHTML=`
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="guardarTarifasAnio(${year},'${prov}')">💾 Guardar en Supabase</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+async function guardarTarifasAnio(year,prov){
+  const CONCEPTOS=[
+    {key:'alm',label:'Almacenaje General (Tramo 1)',dl:true, fijo:false,base:'100Kg/Día'},
+    {key:'gd', label:'Gestión Documental (Mismo Día)',dl:false,fijo:false,base:'AWB'},
+    {key:'tr', label:'Tasa Utilización Recinto',   dl:false,fijo:false,base:'Kg'},
+    {key:'tm', label:'Tasa Mantenimiento de Servicio',dl:false,fijo:false,base:'AWB'},
+    {key:'fi', label:'Entrega Fin de Semana / Festivos',dl:false,fijo:false,base:'AWB'},
+    {key:'ex', label:'Handling Express',           dl:false,fijo:false,base:'Kg'},
+    {key:'cc', label:'Carga Camión',               dl:false,fijo:false,base:'Kg'},
+    {key:'ap', label:'Apertura Fuera Horario',     dl:false,fijo:true, base:'Servicio Fijo'},
+  ];
+  const g=id=>parseFloat(document.getElementById(id)?.value)||0;
+  const rows=CONCEPTOS.map(row=>({
+    proveedor:prov,
+    concepto_es:row.label,
+    concepto_en:row.label,
+    year_validity:year,
+    dias_libres:row.dl?parseInt(document.getElementById(`te-${row.key}-dl`)?.value)||0:0,
+    minimo_eur:g(`te-${row.key}-min`),
+    valor_unitario:g(`te-${row.key}-u`),
+    fijo_awb_eur:row.fijo?g(`te-${row.key}-fijo`):0,
+    base_calculo:row.base,
+  }));
+
+  // Upsert: borrar las existentes del año+proveedor y reinsertar
+  const {error:delErr}=await sb.from('tarifas_handling').delete().eq('year_validity',year).eq('proveedor',prov);
+  if(delErr&&!delErr.message.includes('0 rows')){alert('Error borrando tarifas previas: '+delErr.message);return;}
+  const {error:insErr}=await sb.from('tarifas_handling').insert(rows);
+  if(insErr){alert('Error guardando: '+insErr.message);return;}
+
+  // Actualizar caché local
+  await loadTarifasFromDB();
+  toast('✅ Tarifas '+prov+' '+year+' guardadas');
+  closeModal();
+  loadTarifasView();
+}
+
+// ─── Crear nuevo año de tarifas copiando desde uno anterior ─
+async function abrirNuevoAnioTarifas(){
+  const years=Object.keys(TRF_BY_YEAR).map(Number).sort((a,b)=>b-a);
+  const nextYear=Math.max(...years)+1;
+  const srcYear=Math.max(...years);
+
+  document.getElementById('m-title').textContent='📅 Nuevo año de tarifas';
+  document.getElementById('m-body').innerHTML=`
+    <div class="info-box">
+      Se crearán las tarifas para un nuevo año copiando los valores del año origen. Después podrás editarlos concepto por concepto.
+    </div>
+    <div class="fr2">
+      <div class="fg">
+        <label class="fl">Año nuevo *</label>
+        <input id="ny-year" class="fi" type="number" min="2024" max="2040" value="${nextYear}" style="font-family:var(--mono);font-size:18px;font-weight:700">
+      </div>
+      <div class="fg">
+        <label class="fl">Copiar tarifas de</label>
+        <select id="ny-src" class="fi fs">
+          ${years.map(y=>`<option value="${y}" ${y===srcYear?'selected':''}>${y}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="fdiv"></div>
+    <div class="sect">Variación global (opcional)</div>
+    <div style="font-size:12px;color:var(--g600);margin-bottom:10px">Aplica un % de incremento/decremento a todos los valores del año origen antes de guardar. Deja 0 para copiar exactamente.</div>
+    <div class="fg">
+      <label class="fl">Incremento / Decremento (%)</label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input id="ny-pct" class="fi" type="number" step="0.1" value="0" style="max-width:120px;font-family:var(--mono)" oninput="previewNuevoAnio()">
+        <span style="font-size:12px;color:var(--g500)">Ej: 3 = +3%, -2 = -2%</span>
+      </div>
+    </div>
+    <div id="ny-preview" style="margin-top:8px"></div>`;
+  document.getElementById('m-foot').innerHTML=`
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="crearNuevoAnioTarifas()">📅 Crear tarifas del nuevo año</button>`;
+  document.getElementById('mo').classList.add('open');
+  previewNuevoAnio();
+}
+
+function previewNuevoAnio(){
+  const srcYear=parseInt(document.getElementById('ny-src')?.value)||2026;
+  const newYear=parseInt(document.getElementById('ny-year')?.value)||new Date().getFullYear()+1;
+  const pct=(parseFloat(document.getElementById('ny-pct')?.value)||0)/100;
+  const trf=getTRF(srcYear);
+  const mult=1+pct;
+  const apply=v=>pct===0?v:Math.round(v*mult*100)/100;
+  const prev=document.getElementById('ny-preview');
+  if(!prev)return;
+  if(newYear===srcYear){prev.innerHTML='<div class="warn-box">⚠️ El año nuevo debe ser diferente al origen.</div>';return;}
+  prev.innerHTML=`
+    <div style="background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:12px;font-size:12px">
+      <div style="font-weight:700;color:var(--g700);margin-bottom:8px">Vista previa: tarifas ${newYear} basadas en ${srcYear}${pct!==0?' con '+(pct>0?'+':'')+Math.round(pct*100)+'%':''}</div>
+      ${['Swissport','Groundforce'].map(p=>{
+        const t=trf[p]||{};
+        return`<div style="margin-bottom:8px">
+          <div style="font-weight:600;color:var(--b600);margin-bottom:4px">${p}</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px">
+            ${[['Almacenaje min',t.alm?.min],['Almacenaje u.',t.alm?.u],['Gest.Doc',t.gd?.min],['Tasa Recinto u.',t.tr?.u],['Mantenimiento',t.tm?.u],['Express min',t.ex?.min],['C.Camión min',t.cc?.min],['Apertura min',t.ap?.min]].map(([lbl,val])=>
+              `<div style="background:var(--w);border:1px solid var(--g200);border-radius:4px;padding:4px 6px">
+                <div style="font-size:10px;color:var(--g400)">${lbl}</div>
+                <div style="font-family:var(--mono);font-weight:600">${val!=null?fc(apply(val)):'—'}</div>
+              </div>`
+            ).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+async function crearNuevoAnioTarifas(){
+  const srcYear=parseInt(document.getElementById('ny-src')?.value)||2026;
+  const newYear=parseInt(document.getElementById('ny-year')?.value);
+  const pct=(parseFloat(document.getElementById('ny-pct')?.value)||0)/100;
+  if(!newYear||newYear<2024||newYear>2040){alert('Año inválido');return;}
+  if(newYear===srcYear){alert('El año nuevo debe ser diferente al de origen');return;}
+  const mult=1+pct;
+  const apply=v=>pct===0?v:Math.round(v*mult*100)/100;
+  const trf=getTRF(srcYear);
+  const CONCEPTOS=[
+    {key:'alm',label:'Almacenaje General (Tramo 1)', base:'100Kg/Día'},
+    {key:'gd', label:'Gestión Documental (Mismo Día)',base:'AWB'},
+    {key:'tr', label:'Tasa Utilización Recinto',      base:'Kg'},
+    {key:'tm', label:'Tasa Mantenimiento de Servicio',base:'AWB'},
+    {key:'fi', label:'Entrega Fin de Semana / Festivos',base:'AWB'},
+    {key:'ex', label:'Handling Express',              base:'Kg'},
+    {key:'cc', label:'Carga Camión',                  base:'Kg'},
+    {key:'ap', label:'Apertura Fuera Horario',        base:'Servicio Fijo'},
+  ];
+  const rows=[];
+  ['Swissport','Groundforce'].forEach(prov=>{
+    const t=trf[prov]||{};
+    CONCEPTOS.forEach(row=>{
+      const v=t[row.key]||{};
+      rows.push({
+        proveedor:prov,concepto_es:row.label,concepto_en:row.label,
+        year_validity:newYear,
+        dias_libres:v.dl||0,
+        minimo_eur:apply(v.min||0),
+        valor_unitario:apply(v.u||0),
+        fijo_awb_eur:apply(v.fijo||0),
+        base_calculo:row.base,
+      });
+    });
+  });
+  const {error}=await sb.from('tarifas_handling').insert(rows);
+  if(error){alert('Error al crear tarifas: '+error.message);return;}
+  await loadTarifasFromDB();
+  // Update year selector
+  const sel=document.getElementById('tar-year');
+  if(sel){
+    const exists=[...sel.options].some(o=>parseInt(o.value)===newYear);
+    if(!exists){const opt=document.createElement('option');opt.value=newYear;opt.textContent=newYear;sel.insertBefore(opt,sel.firstChild);}
+    sel.value=newYear;
+  }
+  toast(`✅ Tarifas ${newYear} creadas. Puedes editarlas concepto por concepto.`);
+  closeModal();
+  loadTarifasView();
 }
 
 // ═══════════════════════════════════════════════ DETALLE
@@ -604,7 +934,7 @@ function openDetalle(id){
   const kg=parseFloat(e.kilos_tasables)||0;
   document.getElementById('m-title').textContent='✈️ '+e.awb;
   const costsHtml=d?`
-    <div class="sect">Desglose de costes — ${e.handling}</div>
+    <div class="sect">Desglose de costes — ${e.handling} · tarifas ${d.yr}</div>
     <div class="cost-row always"><span class="lbl">📦 Almacenaje (${d.dias}d × ${Math.ceil(kg/100)} fracc.)</span><span class="val">${fc(d.alm)}</span></div>
     <div class="cost-row always"><span class="lbl">📄 Gestión Documental</span><span class="val">${fc(d.gd)}</span></div>
     <div class="cost-row always"><span class="lbl">🏛️ Tasa Utilización Recinto</span><span class="val">${fc(d.tr)}</span></div>
