@@ -122,6 +122,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
       <div class="nav-item" onclick="nav('tarifas',this)"><span class="ni">💰</span>Tarifas 2026</div>
       <div class="sb-sec">Acciones</div>
       <div class="nav-item" onclick="openNueva()"><span class="ni">➕</span>Nueva entrada</div>
+      <div class="nav-item" onclick="abrirEmailConsignatario()"><span class="ni">📧</span>Notificar consignatario</div>
       <div class="sb-bot"><div style="font-size:11px;color:var(--g400);padding:6px">Algeciras Logistic Solutions</div></div>
     </nav>
     <div id="content">
@@ -139,7 +140,10 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
       <div class="view" id="view-entradas">
         <div class="ph">
           <div class="pt">📋 Entradas Aeropuerto</div>
-          <button class="btn btn-p" onclick="openNueva()">+ Nueva entrada</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-s" onclick="abrirEmailConsignatario()" title="Notificar expediciones seleccionadas">📧 Notificar</button>
+            <button class="btn btn-p" onclick="openNueva()">+ Nueva entrada</button>
+          </div>
         </div>
         <div class="fbar">
           <input class="fi" style="max-width:200px;padding:6px 10px;font-size:12px" placeholder="Buscar AWB, buque, consignatario…" oninput="filtrar()" id="src">
@@ -150,10 +154,12 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
             <option value="01-Ene">Ene</option><option value="02-Feb">Feb</option><option value="03-Mar">Mar</option><option value="04-Abr">Abr</option><option value="05-May">May</option><option value="06-Jun">Jun</option><option value="07-Jul">Jul</option><option value="08-Ago">Ago</option><option value="09-Sep">Sep</option><option value="10-Oct">Oct</option><option value="11-Nov">Nov</option><option value="12-Dic">Dic</option>
           </select>
         </div>
+        <div style="font-size:12px;color:var(--b600);margin-bottom:8px" id="sel-count" style="display:none"></div>
         <div class="tc"><table class="tbl">
           <thead><tr>
+            <th style="width:32px;text-align:center"><input type="checkbox" id="chk-all" onchange="toggleAllChk(this)" style="accent-color:var(--b600)"></th>
             <th>AWB</th><th>Consignatario</th><th>Buque</th><th>Handler</th><th>Apto</th>
-            <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Status</th>
+            <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th>
             <th>Almacenaje</th><th>Gest.Doc.</th><th>T.Recinto</th><th>T.Mant.</th>
             <th>Finde</th><th>Express</th><th>C.Camión</th><th>Apertura</th>
             <th style="background:var(--b50);color:var(--b700)">TOTAL €</th><th></th>
@@ -315,7 +321,7 @@ function closeModal(){document.getElementById('mo').classList.remove('open');}
 // ═══════════════════════════════════════════════ INIT
 let ALL=[];
 async function init(){await loadAll();loadDashboard();checkUrl();}
-async function loadAll(){const {data}=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:false});ALL=data||[];return ALL;}
+async function loadAll(){const {data}=await sb.from('airport_cargo').select('*,empresa:empresa_id(nombre,email_confronta,otros_emails)').order('fecha_llegada',{ascending:false});ALL=data||[];return ALL;}
 function checkUrl(){
   const p=new URLSearchParams(window.location.search);
   const eid=p.get('edit'),isn=p.get('new');
@@ -363,9 +369,9 @@ function filtrar(){
 }
 function renderRows(list){
   const tbody=document.getElementById('tbody');
-  if(!list.length){tbody.innerHTML='<tr><td colspan="20"><div class="empty">Sin entradas</div></td></tr>';return;}
+  if(!list.length){tbody.innerHTML='<tr><td colspan="22"><div class="empty">Sin entradas</div></td></tr>';return;}
   tbody.innerHTML=list.map(e=>{
-    const isAuto=TRF[e.handling];
+    const isAuto=!!TRF[e.handling];
     const kg=parseFloat(e.kilos_tasables)||0;
     const d=isAuto?diasFact(e.fecha_llegada,e.fecha_retirada,e.handling):0;
     const alm=isAuto?calcAlm(kg,d,e.handling):0;
@@ -378,17 +384,21 @@ function renderRows(list){
     const ap=isAuto?calcAp(e.aplica_apertura,kg,e.handling):0;
     const tot=calcTotal(e);
     const inc=!e.fecha_retirada||!e.handling;
-    return`<tr ${inc?'style="background:#fff8e1"':''} onclick="openDetalle('${e.id}')">
-      <td class="fw" style="font-family:var(--mono);font-size:11px">${e.awb||'—'}</td>
-      <td style="font-size:12px">${e.consignatario||'—'}</td>
-      <td class="sm">${e.buque||'—'}</td>
-      <td><span class="badge bb" style="font-size:10px">${e.handling||'—'}</span></td>
-      <td class="sm">${e.aeropuerto||'—'}</td>
-      <td class="sm">${fd(e.fecha_llegada)}</td>
-      <td class="sm" ${!e.fecha_retirada?'style="color:var(--rd600);font-weight:600"':''}>${fd(e.fecha_retirada)||'⚠️'}</td>
-      <td style="text-align:center;font-size:12px">${isAuto&&e.fecha_retirada?d:'—'}</td>
-      <td style="text-align:right;font-size:12px">${kg}</td>
-      <td><span class="badge ${e.status==='T1'?'ba':e.status==='Comunitario'?'bg':'bgr'}" style="font-size:10px">${e.status||'—'}</span></td>
+    return`<tr ${inc?'style="background:#fff8e1"':''}>
+      <td style="text-align:center" onclick="event.stopPropagation()">
+        <input type="checkbox" class="row-chk" data-id="${e.id}" style="accent-color:var(--b600)" onchange="updateSelCount()">
+      </td>
+      <td class="fw" style="font-family:var(--mono);font-size:11px;cursor:pointer" onclick="openDetalle('${e.id}')">${e.awb||'—'}</td>
+      <td style="font-size:12px;cursor:pointer" onclick="openDetalle('${e.id}')">${e.consignatario||'—'}</td>
+      <td class="sm" style="cursor:pointer" onclick="openDetalle('${e.id}')">${e.buque||'—'}</td>
+      <td onclick="openDetalle('${e.id}')"><span class="badge bb" style="font-size:10px">${e.handling||'—'}</span></td>
+      <td class="sm" onclick="openDetalle('${e.id}')">${e.aeropuerto||'—'}</td>
+      <td class="sm" onclick="openDetalle('${e.id}')">${fd(e.fecha_llegada)}</td>
+      <td class="sm" onclick="openDetalle('${e.id}')" ${!e.fecha_retirada?'style="color:var(--rd600);font-weight:600"':''}>${fd(e.fecha_retirada)||'⚠️'}</td>
+      <td style="text-align:center;font-size:12px" onclick="openDetalle('${e.id}')">${isAuto&&e.fecha_retirada?d:'—'}</td>
+      <td style="text-align:right;font-size:12px" onclick="openDetalle('${e.id}')">${kg}</td>
+      <td style="text-align:right;font-size:12px" onclick="openDetalle('${e.id}')">${e.bultos||'—'}</td>
+      <td onclick="openDetalle('${e.id}')"><span class="badge ${e.status==='T1'?'ba':e.status==='Comunitario'?'bg':'bgr'}" style="font-size:10px">${e.status||'—'}</span></td>
       <td style="text-align:right;font-family:var(--mono);font-size:11px">${isAuto?fn(alm):'—'}</td>
       <td style="text-align:right;font-family:var(--mono);font-size:11px">${isAuto?fn(gd):'—'}</td>
       <td style="text-align:right;font-family:var(--mono);font-size:11px">${isAuto?fn(tr):'—'}</td>
@@ -403,6 +413,133 @@ function renderRows(list){
         <button class="btn btn-sm btn-d" onclick="del('${e.id}')">🗑️</button>
       </td></tr>`;
   }).join('');
+}
+function toggleAllChk(el){document.querySelectorAll('.row-chk').forEach(c=>c.checked=el.checked);updateSelCount();}
+function updateSelCount(){const sel=getSelected();const el=document.getElementById('sel-count');if(el)el.textContent=sel.length>0?`✓ ${sel.length} entrada${sel.length>1?'s':''} seleccionada${sel.length>1?'s':''}. Pulsa 📧 Notificar para enviar.`:'';}
+function getSelected(){return[...document.querySelectorAll('.row-chk:checked')].map(c=>c.dataset.id);}
+
+// ═══════════════════════════════════════════════ EMAIL CONSIGNATARIO
+async function abrirEmailConsignatario(){
+  const ids=getSelected();
+  const selEntradas=ids.length>0?ALL.filter(e=>ids.includes(String(e.id))):ALL;
+  if(!selEntradas.length){alert('No hay entradas para notificar. Selecciona una o varias en la tabla.');return;}
+
+  // Cargar empresas para selector de destinatario
+  let empresas=[];
+  try{const {data}=await sb.from('empresas').select('id,nombre,email_confronta,otros_emails').order('nombre');empresas=data||[];}catch(e){empresas=[];}
+
+  // Agrupar por consignatario para sugerir destinatario
+  const cons=[...new Set(selEntradas.map(e=>e.consignatario).filter(Boolean))];
+
+  // Buscar empresa que coincida con el consignatario
+  let matchEmp=null;
+  if(cons.length===1&&empresas.length){
+    const q=cons[0].toLowerCase();
+    matchEmp=empresas.find(e=>(e.nombre||'').toLowerCase().includes(q)||q.includes((e.nombre||'').toLowerCase()));
+  }
+
+  const empOpts=empresas.map(e=>`<option value="${e.id}" data-email="${e.email_confronta||''}" data-otros="${(e.otros_emails||[]).join(',')}" ${matchEmp&&matchEmp.id===e.id?'selected':''}>${e.nombre}${e.email_confronta?' — '+e.email_confronta:' ⚠️ sin email'}</option>`).join('');
+
+  document.getElementById('m-title').textContent='📧 Notificar expediciones a consignatario';
+  document.getElementById('m-body').innerHTML=`
+    <div class="info-box">
+      Se enviará un email con el estado de <strong>${selEntradas.length}</strong> expedición${selEntradas.length>1?'es':''} de aeropuerto.
+      ${ids.length===0?'<br><em>No hay selección — se incluyen todas las entradas visibles.</em>':''}
+    </div>
+    <div class="fg">
+      <label class="fl">Empresa destinataria *</label>
+      <select id="em-emp" class="fi fs" onchange="onEmpChange()">
+        <option value="">— Seleccionar empresa —</option>
+        ${empOpts}
+      </select>
+    </div>
+    <div class="fg">
+      <label class="fl">Email destinatario</label>
+      <input id="em-email" class="fi" type="email" placeholder="email@empresa.com" value="${matchEmp?.email_confronta||''}">
+    </div>
+    <div class="fg">
+      <label class="fl">CC (opcional)</label>
+      <input id="em-cc" class="fi" placeholder="als@alsalgeciras.com">
+    </div>
+    <div class="fdiv"></div>
+    <div class="sect">Vista previa del email</div>
+    <div id="em-preview" style="background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:14px;font-size:12px;line-height:1.7;max-height:320px;overflow-y:auto;white-space:pre-wrap">${buildEmailPreview(selEntradas)}</div>`;
+  document.getElementById('m-foot').innerHTML=`
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="enviarEmailConsignatario(${JSON.stringify(selEntradas.map(e=>e.id))})">📧 Abrir cliente de correo</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+function onEmpChange(){
+  const sel=document.getElementById('em-emp');
+  const opt=sel.options[sel.selectedIndex];
+  const email=opt?.dataset?.email||'';
+  const inp=document.getElementById('em-email');
+  if(inp&&email) inp.value=email;
+}
+
+function buildEmailPreview(entradas){
+  const hoy=new Date().toLocaleDateString('es-ES',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const cons=[...new Set(entradas.map(e=>e.consignatario).filter(Boolean))].join(' / ');
+  const apts=[...new Set(entradas.map(e=>e.aeropuerto).filter(Boolean))].join(', ');
+  const totalKg=entradas.reduce((a,e)=>a+(parseFloat(e.kilos_tasables)||0),0);
+  const totalBultos=entradas.reduce((a,e)=>a+(e.bultos||0),0);
+
+  // Tabla de expediciones
+  const filas=entradas.map(e=>`  AWB: ${e.awb||'—'} | ${e.bultos||'—'} btos | ${e.kilos_tasables||'—'} kg | Status: ${e.status||'—'} | Llegada: ${fd(e.fecha_llegada)||'—'} | ${e.buque?'Buque: '+e.buque:''}`).join('
+');
+
+  return `Estimados Sres. / Dear Sirs,
+
+Nos dirigimos a ustedes en nombre de Algeciras Logistic Solutions (ALS) para informarles de la situación actual de sus expediciones aéreas que se encuentran en tránsito hacia ${apts||'aeropuerto'}.
+
+── RESUMEN DE EXPEDICIONES ──────────────────────────────
+
+Consignatario: ${cons||'—'}
+Número de expediciones: ${entradas.length}
+Total bultos: ${totalBultos}
+Total kilos tasables: ${totalKg.toLocaleString('es-ES')} kg
+
+── DETALLE ──────────────────────────────────────────────
+
+${filas}
+
+── PRÓXIMOS PASOS ───────────────────────────────────────
+
+Las mercancías listadas se encuentran en proceso de gestión aduanera. 
+Una vez obtenida la autorización de despacho (DUA), procederemos a 
+coordinar la entrega conforme a las instrucciones de su agente aduanal.
+
+Para cualquier consulta o aclaración, no duden en contactar con nuestro 
+departamento operativo:
+
+📞 +34 956 58 13 16
+✉️ als@alsalgeciras.com
+📍 Algeciras (Cádiz) — Puerto de Algeciras
+
+Atentamente / Kind regards,
+
+Departamento de Operaciones
+ALGECIRAS LOGISTIC SOLUTIONS (ALS)
+ISO 9001 · ISO 14001 — Bureau Veritas Certification
+────────────────────────────────────────────────────────
+${hoy}`;
+}
+
+function enviarEmailConsignatario(ids){
+  const destinatario=document.getElementById('em-email')?.value?.trim();
+  if(!destinatario){alert('Introduce el email del destinatario');return;}
+  const cc=document.getElementById('em-cc')?.value?.trim()||'als@alsalgeciras.com';
+  const entradas=ALL.filter(e=>ids.includes(e.id)||ids.includes(String(e.id)));
+  const cuerpo=buildEmailPreview(entradas);
+  const cons=[...new Set(entradas.map(e=>e.consignatario).filter(Boolean))].join(' / ');
+  const asunto=encodeURIComponent(`Situación expediciones aeropuerto — ${cons||'ALS Airport Cargo'} · ${new Date().toLocaleDateString('es-ES')}`);
+  const body=encodeURIComponent(cuerpo);
+  const ccEnc=encodeURIComponent(cc);
+  const mailtoUrl=`mailto:${destinatario}?cc=${ccEnc}&subject=${asunto}&body=${body}`;
+  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
+  closeModal();
+  toast('📧 Abriendo cliente de correo...');
 }
 
 // ═══════════════════════════════════════════════ RESUMEN
@@ -500,14 +637,31 @@ async function editEntrada(id){
   if(!e){const {data}=await sb.from('airport_cargo').select('*').eq('id',id).single();if(!data){alert('No encontrado');return;}e=data;if(!ALL.find(x=>String(x.id)===String(id)))ALL.push(e);}
   showForm(e);
 }
-function showForm(e){
+async function showForm(e){
   const isEdit=!!e,h=e?.handling||'',isAuto=!!TRF[h];
+  // Load empresas for selector
+  let empresas=[];
+  try{const {data}=await sb.from('empresas').select('id,nombre,email_confronta').order('nombre');empresas=data||[];}catch(ex){empresas=[];}
+  const empOpts=empresas.map(emp=>`<option value="${emp.id}" ${e?.empresa_id===emp.id?'selected':''}>${emp.nombre}${emp.email_confronta?' — '+emp.email_confronta:''}</option>`).join('');
+  // If consignatario matches an empresa, try to pre-select
+  let preEmpId=e?.empresa_id||'';
+  if(!preEmpId&&e?.consignatario){
+    const q=(e.consignatario||'').toLowerCase();
+    const match=empresas.find(emp=>(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase()));
+    if(match) preEmpId=match.id;
+  }
   document.getElementById('m-title').textContent=isEdit?'✏️ Editar — '+e.awb:'✈️ Nueva entrada Airport Cargo';
   document.getElementById('m-body').innerHTML=`
     ${isEdit&&!e.fecha_retirada?'<div class="warn-box">⚠️ Sin fecha de retirada — rellénala para calcular los costes.</div>':''}
     <div class="fr2">
       <div class="fg"><label class="fl">AWB *</label><input id="f-awb" class="fi" value="${e?.awb||''}" placeholder="123-12345678" style="font-family:var(--mono)"></div>
-      <div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="${e?.consignatario||''}" placeholder="Nombre"></div>
+      <div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="${e?.consignatario||''}" placeholder="Nombre" oninput="syncEmpresa()"></div>
+    </div>
+    <div class="fg"><label class="fl">Empresa vinculada <span style="font-size:11px;color:var(--g400)">(para envío de email)</span></label>
+      <select id="f-emp" class="fi fs">
+        <option value="">— Sin vincular —</option>
+        ${empresas.map(emp=>`<option value="${emp.id}" ${(preEmpId===emp.id||preEmpId===String(emp.id))?'selected':''}>${emp.nombre}${emp.email_confronta?' — '+emp.email_confronta:' ⚠️ sin email'}</option>`).join('')}
+      </select>
     </div>
     <div class="fr2">
       <div class="fg"><label class="fl">Buque</label><input id="f-buque" class="fi" value="${e?.buque||''}" placeholder="Nombre del buque"></div>
@@ -585,10 +739,20 @@ function lc(){
     <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;color:var(--b700);border-top:1px solid var(--b200);padding-top:8px;margin-top:6px"><span>TOTAL:</span><strong>${fc(d.total)}</strong></div>
   </div>`;
 }
+function syncEmpresa(){
+  // Auto-suggest empresa based on consignatario name
+  const q=(document.getElementById('f-cons')?.value||'').toLowerCase();
+  const sel=document.getElementById('f-emp');
+  if(!sel||!q||sel.value)return; // don't override manual selection
+  for(const opt of sel.options){
+    if(opt.value&&opt.text.toLowerCase().includes(q)){sel.value=opt.value;break;}
+  }
+}
 function buildObj(){
   const h=gv('f-handler'),isAuto=!!TRF[h];
   const rt=gv('f-rt')||null;
-  return{awb:gv('f-awb').trim(),consignatario:gv('f-cons').trim(),buque:gv('f-buque').trim()||null,aeropuerto:gv('f-apto')||'AGP',handling:h||null,status:gv('f-status')||'T1',fecha_llegada:gv('f-ll')||null,fecha_retirada:rt,kilos_tasables:parseFloat(gv('f-kg'))||0,bultos:parseInt(gv('f-blt'))||null,aplica_finde:isAuto?gc('f-fi'):false,aplica_express:isAuto?gc('f-ex'):false,aplica_carga_camion:isAuto?gc('f-cc'):false,aplica_apertura:isAuto?gc('f-ap'):false,coste_manual:(!isAuto&&h)?parseFloat(gv('f-man'))||null:null,observaciones:gv('f-obs').trim()||null,mes_operacion:calcMes(rt),operation_year:rt?new Date(rt).getFullYear():null};
+  const empId=gv('f-emp')||null;
+  return{awb:gv('f-awb').trim(),consignatario:gv('f-cons').trim(),empresa_id:empId,buque:gv('f-buque').trim()||null,aeropuerto:gv('f-apto')||'AGP',handling:h||null,status:gv('f-status')||'T1',fecha_llegada:gv('f-ll')||null,fecha_retirada:rt,kilos_tasables:parseFloat(gv('f-kg'))||0,bultos:parseInt(gv('f-blt'))||null,aplica_finde:isAuto?gc('f-fi'):false,aplica_express:isAuto?gc('f-ex'):false,aplica_carga_camion:isAuto?gc('f-cc'):false,aplica_apertura:isAuto?gc('f-ap'):false,coste_manual:(!isAuto&&h)?parseFloat(gv('f-man'))||null:null,observaciones:gv('f-obs').trim()||null,mes_operacion:calcMes(rt),operation_year:rt?new Date(rt).getFullYear():null};
 }
 async function create(){
   const o=buildObj();if(!o.awb){alert('AWB obligatorio');return;}if(!o.consignatario){alert('Consignatario obligatorio');return;}if(!o.kilos_tasables){alert('Kilos tasables obligatorios');return;}
