@@ -244,8 +244,26 @@ let sb;
 
 // ── NAVEGACIÓN ───────────────────────────────────────────
 function goTo(mod){
-  // Navigate directly — index.html will handle session restore or show login
-  window.location.href='index.html'+(mod&&mod!=='home'?'?go='+mod:'');
+  // Read session from any available storage
+  var sess = null;
+  try{ sess = sessionStorage.getItem('als_cu'); }catch(e){}
+  if(!sess){ try{ sess = localStorage.getItem('als_cu'); }catch(e){} }
+  
+  // Build URL with destination
+  var url = 'index.html';
+  var params = [];
+  if(mod && mod !== 'home') params.push('go=' + mod);
+  
+  // Pass session in URL so index.html receives it regardless of storage state
+  if(sess){
+    try{
+      // Encode session as base64 to pass safely in URL
+      params.push('_s=' + btoa(unescape(encodeURIComponent(sess))));
+    }catch(e){}
+  }
+  
+  if(params.length) url += '?' + params.join('&');
+  window.location.href = url;
 }
 function exitApp(){
   try{sessionStorage.removeItem('als_cu');}catch(e){}

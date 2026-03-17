@@ -940,10 +940,28 @@ function clearSession(){
 // ── Restaurar sesión al cargar (viene de airport_cargo u otro módulo) ──
 // Se llama al final del script, después de que enterMod esté definido
 function checkSession(){
-  const saved=loadSession();
-  if(!saved) return false;
-  CU=saved;
   const params=new URLSearchParams(window.location.search);
+  
+  // Try to restore session from URL param first (_s = base64 encoded session)
+  const sParam=params.get('_s');
+  if(sParam){
+    try{
+      const decoded=decodeURIComponent(escape(atob(sParam)));
+      const parsed=JSON.parse(decoded);
+      if(parsed&&parsed.id){
+        saveSession(parsed); // persist to storage
+        CU=parsed;
+      }
+    }catch(e){console.warn('Could not decode _s param:',e);}
+  }
+  
+  // Fall back to storage
+  if(!CU){
+    const saved=loadSession();
+    if(!saved) return false;
+    CU=saved;
+  }
+  
   const destMod=params.get('go')||'home';
   if(window.history&&window.history.replaceState) window.history.replaceState({},'',window.location.pathname);
   if(destMod==='operativa') enterMod('operativa');
