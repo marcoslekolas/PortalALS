@@ -540,6 +540,7 @@ textarea.fi{resize:vertical;min-height:72px}
       <div class="h-right">
         <div class="hdr-cert">ISO 9001<br>ISO 14001</div>
         <a class="grist-btn" href="https://docs.getgrist.com" target="_blank">Grist ↗</a>
+        <button id="btn-to-operativa" class="btn btn-s btn-sm nav-mod-btn" onclick="irAOperativa()" style="display:none" title="Ir a Operativa"><span class="mod-btn-icon">🏢</span><span class="mod-btn-txt">Operativa</span></button>
         <button id="btn-to-almacen" class="btn btn-s btn-sm nav-mod-btn" onclick="irAAlmacen()" style="display:none" title="Ir a Almacén & Embarque"><span class="mod-btn-icon">📦</span><span class="mod-btn-txt">Almacén</span></button>
         <button id="btn-to-airport" class="btn btn-s btn-sm nav-mod-btn" onclick="window.open('airport_cargo.html','_blank')" style="display:none" title="Ir a Airport Cargo"><span class="mod-btn-icon">✈️</span><span class="mod-btn-txt">Airport</span></button>
         <button class="btn btn-s btn-sm nav-mod-btn" onclick="volverHome()" title="Menú principal"><span class="mod-btn-icon">🏠</span><span class="mod-btn-txt">Inicio</span></button>
@@ -1047,16 +1048,88 @@ function showHome(){
   const init=(CU.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   document.getElementById('hm-av').textContent=init;
   document.getElementById('hm-name').textContent=CU.nombre||CU.email;
-  const c=document.getElementById('hm-cards');c.innerHTML='';
-  if(['admin','oficina','aduanas'].includes(CU.rol))c.innerHTML+=`<div class="hm-card" onclick="enterMod('operativa')"><div class="hm-icon blue">🏢</div><div class="hm-ctitle">Operativa</div><div class="hm-cdesc">Gestión completa de buques, expediciones, documentación aduanera y seguimiento operativo.</div><div class="hm-feat">Dashboard y KPIs en tiempo real</div><div class="hm-feat">Buques, expediciones y flota</div><div class="hm-feat">Kanban, calendario y timeline</div><div class="hm-feat">Alertas, estadísticas y log</div></div>`;
-  if(['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol))c.innerHTML+=`<div class="hm-card" onclick="enterMod('almacen')"><div class="hm-icon teal">📦</div><div class="hm-ctitle">Almacén &amp; Embarque</div><div class="hm-cdesc">Operaciones de almacén, confirmación de llegadas, gestión de ubicaciones y control de embarques.</div><div class="hm-feat">Confirmar llegadas y fotos</div><div class="hm-feat">Carga camión y albaranes</div><div class="hm-feat">Control de ubicaciones</div><div class="hm-feat">Buques listos para embarcar</div></div>`;
-  if(['admin','oficina','aduanas'].includes(CU.rol))c.innerHTML+=`<div class="hm-card" onclick="window.location.href='airport_cargo.html'" style="border-left:3px solid #1565c0"><div class="hm-icon" style="background:#e3f2fd">✈️</div><div class="hm-ctitle">Airport Cargo</div><div class="hm-cdesc">Gestión de entradas de aeropuerto con cálculo automático de handling (Swissport / Groundforce).</div><div class="hm-feat">Cálculo automático de tarifas</div><div class="hm-feat">Almacenaje, gestión documental, tasa recinto</div><div class="hm-feat">Resumen mensual y anual</div><div class="hm-feat">Réplica exacta del proyecto Grist</div></div>`;
+  const c=document.getElementById('hm-cards');
+  c.innerHTML='';
+
+  if(['admin','oficina','aduanas'].includes(CU.rol))
+    c.innerHTML+=`<div class="hm-card" onclick="enterMod('operativa')">
+      <div class="hm-icon blue">🏢</div>
+      <div class="hm-ctitle">Operativa</div>
+      <div class="hm-cdesc">Gestión completa de buques, expediciones, documentación aduanera y seguimiento operativo.</div>
+      <div class="hm-feat">Dashboard y KPIs en tiempo real</div>
+      <div class="hm-feat">Buques, expediciones y flota</div>
+      <div class="hm-feat">Kanban, calendario y timeline</div>
+      <div class="hm-feat">Alertas, estadísticas y log</div>
+    </div>`;
+
+  if(['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol))
+    c.innerHTML+=`<div class="hm-card" onclick="enterMod('almacen')">
+      <div class="hm-icon teal">📦</div>
+      <div class="hm-ctitle">Almacén &amp; Embarque</div>
+      <div class="hm-cdesc">Operaciones de almacén, confirmación de llegadas, gestión de ubicaciones y control de embarques.</div>
+      <div class="hm-feat">Confirmar llegadas y fotos</div>
+      <div class="hm-feat">Carga camión y albaranes</div>
+      <div class="hm-feat">Control de ubicaciones</div>
+      <div class="hm-feat">Buques listos para embarcar</div>
+    </div>`;
+
+  if(['admin','oficina','aduanas'].includes(CU.rol))
+    c.innerHTML+=`<div class="hm-card" onclick="window.location.href='airport_cargo.html'" style="border-left:3px solid #1565c0">
+      <div class="hm-icon" style="background:#e3f2fd">✈️</div>
+      <div class="hm-ctitle">Airport Cargo</div>
+      <div class="hm-cdesc">Gestión de entradas de aeropuerto con cálculo automático de handling (Swissport / Groundforce).</div>
+      <div class="hm-feat">Cálculo automático de tarifas</div>
+      <div class="hm-feat">Almacenaje, gestión documental, tasa recinto</div>
+      <div class="hm-feat">Resumen mensual y anual</div>
+      <div class="hm-feat">Réplica exacta del proyecto Grist</div>
+    </div>`;
+
+  if(CU.rol==='admin')
+    c.innerHTML+=`<div class="hm-card" onclick="enterMod('configuracion')" style="border-left:3px solid var(--g400)">
+      <div class="hm-icon" style="background:var(--g100)">⚙️</div>
+      <div class="hm-ctitle">Configuración</div>
+      <div class="hm-cdesc">Administración del sistema, gestión de usuarios, log de actividad y ajustes del portal.</div>
+      <div class="hm-feat">Gestión de usuarios y roles</div>
+      <div class="hm-feat">Log de actividad completo</div>
+      <div class="hm-feat">Cambiar contraseña</div>
+      <div class="hm-feat">Solo accesible para administradores</div>
+    </div>`;
 }
 
 function enterMod(mod){
   const puedeOperativa=['admin','oficina','aduanas'];
-  const soloAlmacen=['almacen','transportista'];
+  const esExclusivoAlmacen=['almacen','transportista'].includes(CU.rol);
   if(mod==='operativa'&&!puedeOperativa.includes(CU.rol)) mod='almacen';
+  if(mod==='configuracion'&&CU.rol!=='admin'){ showHome(); return; }
+
+  // Módulo configuración: abre directamente Operativa con nav-adm visible
+  if(mod==='configuracion'){
+    mod='operativa';
+    MOD='operativa';
+    document.getElementById('screen-home').style.display='none';
+    document.getElementById('app').style.display='flex';
+    const init=(CU.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    document.getElementById('sb-av').textContent=init;
+    document.getElementById('sb-name').textContent=CU.nombre||'—';
+    document.getElementById('sb-role').textContent='Administrador';
+    document.getElementById('nav-op').style.display='block';
+    document.getElementById('nav-alm').style.display='none';
+    document.getElementById('btn-nb').style.display='none';
+    document.getElementById('btn-ne').style.display='none';
+    document.getElementById('bc-mod').textContent='Configuración';
+    const navAdm=document.getElementById('nav-adm');
+    if(navAdm) navAdm.style.display='block';
+    const btnAlmacen=document.getElementById('btn-to-almacen');
+    const btnAirport=document.getElementById('btn-to-airport');
+    const btnOperativa=document.getElementById('btn-to-operativa');
+    if(btnAlmacen) btnAlmacen.style.display='';
+    if(btnAirport) btnAirport.style.display='';
+    if(btnOperativa) btnOperativa.style.display='none';
+    // Ir directo a la sección de usuarios
+    nav('usuarios', document.querySelector('#nav-adm .nav-item'));
+    return;
+  }
+
   MOD=mod;
   document.getElementById('screen-home').style.display='none';
   document.getElementById('app').style.display='flex';
@@ -1066,13 +1139,10 @@ function enterMod(mod){
   const rolLabels={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
   document.getElementById('sb-role').textContent=rolLabels[CU.rol]||CU.rol;
 
-  // Botones de navegación entre módulos
-  const puedeAirport=['admin','oficina','aduanas'].includes(CU.rol);
-  const puedeAlmacen=['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol);
-  const esExclusivoAlmacen=['almacen','transportista'].includes(CU.rol);
-
+  const puedeAirport=puedeOperativa.includes(CU.rol);
   const btnAlmacen=document.getElementById('btn-to-almacen');
   const btnAirport=document.getElementById('btn-to-airport');
+  const btnOperativa=document.getElementById('btn-to-operativa');
 
   if(mod==='operativa'){
     document.getElementById('nav-op').style.display='block';
@@ -1082,9 +1152,9 @@ function enterMod(mod){
     const navAdm=document.getElementById('nav-adm');
     if(navAdm) navAdm.style.display=CU.rol==='admin'?'block':'none';
     document.getElementById('bc-mod').textContent='Operativa';
-    // Desde Operativa: botón Almacén (todos) y botón Airport (admin/oficina/aduanas)
-    if(btnAlmacen) btnAlmacen.style.display=puedeAlmacen?'':'none';
+    if(btnAlmacen){btnAlmacen.style.display='';btnAlmacen.title='Almacén & Embarque';}
     if(btnAirport) btnAirport.style.display=puedeAirport?'':'none';
+    if(btnOperativa) btnOperativa.style.display='none';
     nav('dashboard',document.querySelector('#nav-op .nav-item'));
   } else {
     document.getElementById('nav-op').style.display='none';
@@ -1092,17 +1162,15 @@ function enterMod(mod){
     document.getElementById('btn-nb').style.display='none';
     document.getElementById('btn-ne').style.display='none';
     document.getElementById('bc-mod').textContent='Almacén & Embarque';
-    // Desde Almacén: botón Airport solo para no-exclusivos; botón 🏠 ya existe
-    if(btnAlmacen) btnAlmacen.style.display='none'; // ya estamos en almacén
-    if(btnAirport) btnAirport.style.display=puedeAirport?'':'none';
+    if(btnAlmacen) btnAlmacen.style.display='none';
+    if(btnAirport) btnAirport.style.display=(!esExclusivoAlmacen&&puedeAirport)?'':'none';
+    if(btnOperativa) btnOperativa.style.display=esExclusivoAlmacen?'none':'';
     nav('alm-dashboard',document.querySelector('#nav-alm .nav-item'));
   }
 }
 
-function irAAlmacen(){
-  // Cambiar de módulo operativa → almacén sin volver al home
-  enterMod('almacen');
-}
+function irAAlmacen(){ enterMod('almacen'); }
+function irAOperativa(){ enterMod('operativa'); }
 
 function volverHome(){document.getElementById('app').style.display='none';showHome();}
 function doLogout(){CU=null;MOD=null;document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
