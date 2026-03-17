@@ -418,7 +418,17 @@ async function init(){
   loadDashboard();
   checkUrl();
 }
-async function loadAll(){const {data}=await sb.from('airport_cargo').select('*,empresa:empresa_id(nombre,email_confronta,otros_emails)').order('fecha_llegada',{ascending:false});ALL=data||[];return ALL;}
+async function loadAll(){
+  const {data,error}=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:false});
+  if(error){console.error('loadAll error:',error.message);ALL=[];return ALL;}
+  ALL=data||[];
+  // Try to enrich with empresa data if column exists (requires airport_cargo_empresa.sql)
+  try{
+    const {data:d2}=await sb.from('airport_cargo').select('id,empresa:empresa_id(nombre,email_confronta,otros_emails)').order('id');
+    if(d2){const m={};d2.forEach(r=>{if(r.empresa)m[r.id]=r.empresa;});ALL.forEach(e=>{if(m[e.id])e.empresa=m[e.id];});}
+  }catch(e){/* empresa_id column not yet added - SQL pending */}
+  return ALL;
+}
 function checkUrl(){
   const p=new URLSearchParams(window.location.search);
   const eid=p.get('edit'),isn=p.get('new');
