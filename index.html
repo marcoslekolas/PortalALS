@@ -1222,6 +1222,8 @@ function pb(n,t){const p=t>0?Math.round(n/t*100):0;const c=p===100?'prog-g':p>50
 function imoL(imo,nom){if(!imo)return'<span style="font-size:12px;color:var(--g400)">Sin IMO</span>';return`<a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic</a>`;}
 function apbaL(n){if(!n||n==='Sin Escala')return'<span class="badge ba">Sin escala</span>';return`<a class="ext-link" href="https://www.apba.es/escalabuques" target="_blank">✅ ${n}</a>`;}
 function gv(id){const e=document.getElementById(id);return e?e.value:'';}
+// Normalize Supabase array or string fields to scalar
+function scalar(v){return Array.isArray(v)?(v[0]||null):v;}
 function gc(id){const e=document.getElementById(id);return e?e.checked:false;}
 
 async function logAct(tabla,rid,rnom,accion,campo,vant,vnew){
@@ -3017,7 +3019,7 @@ async function openExpD(id){
       <div class="df"><div class="dl">Kilos</div><div class="dv">${e.kilos} kg</div></div>
     </div>
     <div class="fr2">
-      <div class="fg2"><label class="fl2">Status aduanero</label><select id="sta-sel" class="fi fs" ><option value="" ${!e.status_aduanero?'selected':''}>— Seleccionar —</option>${['Comunitario','DAE','T1','Terceros','X'].map(s=>`<option ${e.status_aduanero===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="fg2"><label class="fl2">Status aduanero</label><select id="sta-sel" class="fi fs" ><option value="" ${!e.status_aduanero?'selected':''}>— Seleccionar —</option>${(()=>{const sv=Array.isArray(e.status_aduanero)?e.status_aduanero[0]:e.status_aduanero;return['Comunitario','DAE','T1','Terceros','X'].map(s=>`<option ${sv===s?'selected':''}>${s}</option>`).join('');})()}</select></div>
       <div class="fg2"><label class="fl2">Fecha máx. despacho</label><input id="fmax-inp" class="fi" type="date" value="${e.fecha_max_despacho?e.fecha_max_despacho.slice(0,10):''}" ></div>
     </div>
     <div class="df"><div class="dl">Nº MRN</div><div style="font-family:var(--mono);font-size:13px;font-weight:500;color:${e.nº_mrn?'var(--g900)':'var(--am600)'}">${e.nº_mrn||'⚠️ Sin MRN — requerido para autorizar'}</div></div>
@@ -3027,7 +3029,7 @@ async function openExpD(id){
     <div class="fg2"><label class="fl2">Nº MRN</label><input id="mrn-inp" class="fi" value="${e.nº_mrn||''}" placeholder="26ES…"></div>
     <div class="fr2">
       <div class="fg2"><label class="fl2">Trámite aduanero</label><select id="tra-sel" class="fi fs" onchange="saveTra('${e.id}',this.value)"><option ${e.tramite_aduanero==='Pendiente despachar'?'selected':''}>Pendiente despachar</option><option ${e.tramite_aduanero==='Despachado'?'selected':''}>Despachado</option></select></div>
-      <div class="fg2"><label class="fl2">Docs. Puerto</label><select id="docs-sel" class="fi fs" onchange="saveDocs('${e.id}',this.value)"><option ${(e.docs_puerto||'No requiere')==='No requiere'?'selected':''}>No requiere</option><option ${e.docs_puerto==='Pendiente'?'selected':''}>Pendiente</option><option ${e.docs_puerto==='En progreso'?'selected':''}>En progreso</option><option ${e.docs_puerto==='Sellada'?'selected':''}>Sellada</option></select></div>
+      <div class="fg2"><label class="fl2">Docs. Puerto</label><select id="docs-sel" class="fi fs" onchange="saveDocs('${e.id}',this.value)">${(()=>{const dv=Array.isArray(e.docs_puerto)?e.docs_puerto[0]:e.docs_puerto;return['No requiere','Pendiente','En progreso','Sellada'].map(o=>`<option ${(dv||'No requiere')===o?'selected':''}>${o}</option>`).join('');})()}</select></div>
     </div>
     <div class="fr2">
       <div class="fg2"><label class="fl2">Ubicación</label><select id="ubic-sel" class="fi fs" onchange="saveUbic('${e.id}',this.value)">${UBICACIONES.map(u=>`<option ${e.ubicacion===u?'selected':''}>${u}</option>`).join('')}</select></div>
@@ -3061,7 +3063,7 @@ function checkNbUnlock(){
   else{rest.style.opacity='.35';rest.style.pointerEvents='none';}
 }
 
-async function saveDocs(id,val){await sb.from('expediciones').update({docs_puerto:val}).eq('id',id);await logAct('expediciones',id,'','editar','docs_puerto',null,val);showToast('Docs. Puerto → '+val);}
+async function saveDocs(id,val){const dbVal=val==='No requiere'?null:[val];await sb.from('expediciones').update({docs_puerto:dbVal}).eq('id',id);await logAct('expediciones',id,'','editar','docs_puerto',null,val);showToast('Docs. Puerto → '+val);}
 async function saveStatus(id,val){await sb.from('expediciones').update({status_aduanero:val||null}).eq('id',id);await logAct('expediciones',id,'','editar','status_aduanero',null,val);showToast('Status → '+val);}
 async function saveFmax(id,val){await sb.from('expediciones').update({fecha_max_despacho:val||null}).eq('id',id);await logAct('expediciones',id,'','editar','fecha_max_despacho',null,val);showToast('Fecha máx. despacho actualizada');}
 
@@ -3133,7 +3135,7 @@ async function guardarExpedicion(id){
   if(status) obj.status_aduanero=status;
   obj.fecha_max_despacho=fmax||null;
   if(tra) obj.tramite_aduanero=tra;
-  if(docs) obj.docs_puerto=docs;
+  if(docs!==null) obj.docs_puerto=docs==='No requiere'?null:[docs];
   if(ubic) obj.ubicacion=ubic;
   // Auto-lógica: MRN + Despachado → Autorizado (igual que saveMRN)
   if(mrn && tra==='Despachado'){
