@@ -108,9 +108,10 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
     <span class="hdr-title">✈️ Airport Cargo</span>
     <div class="hdr-spacer"></div>
     <button class="hdr-btn" onclick="openNueva()">+ Nueva</button>
-    <button class="hdr-btn" style="margin-left:4px" onclick="window.location.href='index.html'">📦 Almacén</button>
-    <button class="hdr-btn" style="margin-left:4px" onclick="window.location.href='index.html'">🏢 Operativa</button>
-    <button class="hdr-btn" style="margin-left:4px" onclick="window.location.href='index.html'">🏠</button>
+    <button class="hdr-btn" style="margin-left:4px" onclick="goTo('almacen')">📦 Almacén</button>
+    <button class="hdr-btn" style="margin-left:4px" onclick="goTo('operativa')">🏢 Operativa</button>
+    <button class="hdr-btn" style="margin-left:4px" onclick="goTo('home')">🏠 Inicio</button>
+    <button class="hdr-btn" style="margin-left:4px;background:rgba(239,68,68,.3);border-color:rgba(239,68,68,.5)" onclick="exitApp()" title="Cerrar sesión">🚪</button>
   </header>
   <div id="body">
     <nav id="sidebar">
@@ -188,6 +189,17 @@ const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 let sb;
 (function(){const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';s.onload=()=>{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});init();};s.onerror=()=>{document.body.innerHTML='<p style="padding:40px;color:red">Error SDK</p>';};document.head.appendChild(s);})();
+
+// Navegar a index.html preservando la sesión
+function goTo(mod){
+  // La sesión ya está en sessionStorage (guardada por index.html al login)
+  // Solo navegamos con el parámetro ?go= para que index.html sepa a dónde ir
+  window.location.href='index.html'+(mod&&mod!=='home'?'?go='+mod:'');
+}
+function exitApp(){
+  try{sessionStorage.removeItem('als_cu');}catch(e){}
+  window.location.href='index.html';
+}
 
 // ═══════════════════════════════════════════════
 // TARIFAS 2026 — verificadas contra Airport_Cargo.grist

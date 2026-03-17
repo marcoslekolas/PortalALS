@@ -508,7 +508,7 @@ textarea.fi{resize:vertical;min-height:72px}
       <div class="hm-cert">ISO 9001 · ISO 14001<br>BUREAU VERITAS</div>
       <a class="grist-hm-btn" href="https://docs.getgrist.com" target="_blank">Grist ↗</a>
       <button id="pwa-install-btn" onclick="installPWA()" style="display:none;align-items:center;gap:6px;background:var(--b600);color:#fff;border:none;padding:7px 14px;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer">📲 Instalar app</button>
-      <div class="hm-user"><div class="hm-av" id="hm-av">?</div><span id="hm-name">—</span><button class="hm-logout" onclick="doLogout()">Cerrar sesión</button></div>
+      <div class="hm-user"><div class="hm-av" id="hm-av">?</div><span id="hm-name">—</span><button class="hm-logout" onclick="doLogout()">🚪 Cerrar sesión</button></div>
     </div>
   </div>
   <div class="hm-body">
@@ -544,6 +544,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <button id="btn-to-almacen" class="btn btn-s btn-sm nav-mod-btn" onclick="irAAlmacen()" style="display:none" title="Ir a Almacén & Embarque"><span class="mod-btn-icon">📦</span><span class="mod-btn-txt">Almacén</span></button>
         <button id="btn-to-airport" class="btn btn-s btn-sm nav-mod-btn" onclick="window.open('airport_cargo.html','_blank')" style="display:none" title="Ir a Airport Cargo"><span class="mod-btn-icon">✈️</span><span class="mod-btn-txt">Airport</span></button>
         <button class="btn btn-s btn-sm nav-mod-btn" onclick="volverHome()" title="Menú principal"><span class="mod-btn-icon">🏠</span><span class="mod-btn-txt">Inicio</span></button>
+        <button class="btn btn-d btn-sm nav-mod-btn" onclick="doLogout()" title="Cerrar sesión"><span class="mod-btn-icon">🚪</span><span class="mod-btn-txt">Salir</span></button>
         <button class="btn btn-p btn-sm" id="btn-nb" onclick="openModal('nuevo-buque')" style="display:none">+ Buque</button>
         <button class="btn btn-s btn-sm" id="btn-ne" onclick="openModal('nueva-expedicion')" style="display:none">+ Expedición</button>
       </div>
@@ -911,6 +912,26 @@ function sbQ(){
 
 let CU=null,MOD=null;
 
+// ── Persistencia de sesión con sessionStorage ──────────────
+function saveSession(cu){try{sessionStorage.setItem('als_cu',JSON.stringify(cu));}catch(e){}}
+function loadSession(){try{const s=sessionStorage.getItem('als_cu');return s?JSON.parse(s):null;}catch(e){return null;}}
+function clearSession(){try{sessionStorage.removeItem('als_cu');}catch(e){}}
+
+// ── Restaurar sesión al cargar (viene de airport_cargo u otro módulo) ──
+// Se llama al final del script, después de que enterMod esté definido
+function checkSession(){
+  const saved=loadSession();
+  if(!saved) return false;
+  CU=saved;
+  const params=new URLSearchParams(window.location.search);
+  const destMod=params.get('go')||'home';
+  if(window.history&&window.history.replaceState) window.history.replaceState({},'',window.location.pathname);
+  if(destMod==='operativa') enterMod('operativa');
+  else if(destMod==='almacen') enterMod('almacen');
+  else showHome();
+  return true;
+}
+
 // ── Test de conexión al cargar ──
 (async()=>{
   const errEl=document.getElementById('li-err');
@@ -971,6 +992,7 @@ async function doLogin(){
     const rows=await r.json();
     if(!rows||rows.length===0){if(errEl)errEl.textContent='Email o contraseña incorrectos';return;}
     CU=rows[0];
+    saveSession(CU);
     // Init SDK (best effort)
     if(!sb){try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});}catch(e3){console.warn('SDK init:',e3);}}
     // Update last access
@@ -1037,6 +1059,7 @@ async function doChangePwd(){
   }
   CU.must_change_password=false;
   CU.password_hash=p1;
+  saveSession(CU);
   document.getElementById('screen-changepwd').style.display='none';
   showToast('✅ Contraseña actualizada correctamente');
   showHome();
@@ -1173,7 +1196,7 @@ function irAAlmacen(){ enterMod('almacen'); }
 function irAOperativa(){ enterMod('operativa'); }
 
 function volverHome(){document.getElementById('app').style.display='none';showHome();}
-function doLogout(){CU=null;MOD=null;document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
+function doLogout(){CU=null;MOD=null;clearSession();document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
 
 const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas'};
 let CV='dashboard';
@@ -3296,6 +3319,9 @@ async function impExpAlb(expId){
 
 // ── Exponer todas las funciones al ámbito global (window) ──
 // Esto es necesario porque los onclick del HTML las buscan en window
+
+// Restaurar sesión si venimos de otro módulo (airport_cargo, etc.)
+checkSession();
 
 </script>
 <script>
