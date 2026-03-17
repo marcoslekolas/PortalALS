@@ -243,8 +243,21 @@ let sb;
 })();
 
 // ── NAVEGACIÓN ───────────────────────────────────────────
-function goTo(mod){window.location.href='index.html'+(mod&&mod!=='home'?'?go='+mod:'');}
-function exitApp(){try{sessionStorage.removeItem('als_cu');}catch(e){}window.location.href='index.html';}
+function goTo(mod){
+  // Check session is still alive before navigating
+  var sess=null;
+  try{sess=sessionStorage.getItem('als_cu');}catch(e){}
+  if(!sess){
+    // No session - just go to login
+    window.location.href='index.html';
+    return;
+  }
+  window.location.href='index.html'+(mod&&mod!=='home'?'?go='+mod:'');
+}
+function exitApp(){
+  try{sessionStorage.removeItem('als_cu');}catch(e){}
+  window.location.href='index.html';
+}
 function toggleSB(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('mob-ov').classList.toggle('show');}
 function closeModal(){document.getElementById('mo').classList.remove('open');}
 function openModal(){document.getElementById('mo').classList.add('open');}
@@ -392,6 +405,22 @@ async function init(){
   await loadAll();
   loadDashboard();
   checkUrl();
+  // Event delegation — must be set up after DOM ready, avoids onclick quote issues
+  document.addEventListener('click', function(ev){
+    var chk = ev.target.closest('input[type=checkbox]');
+    if(chk) return;
+    var btn = ev.target.closest('button[data-action]');
+    if(btn){
+      ev.stopPropagation();
+      var aid = btn.getAttribute('data-id');
+      var action = btn.getAttribute('data-action');
+      if(action==='edit') editEntrada(aid);
+      else if(action==='del') delEntrada(aid);
+      return;
+    }
+    var tr = ev.target.closest('tr.tbl-row');
+    if(tr){ var tid = tr.getAttribute('data-id'); if(tid) openDetalle(tid); }
+  });
 }
 
 function checkUrl(){
@@ -495,21 +524,6 @@ function renderRows(list){
   }).join('');
 }
 
-// Event delegation for table rows — avoids quote-nesting issues in onclick
-document.addEventListener('click', function(ev){
-  var tr = ev.target.closest('tr.tbl-row');
-  var btn = ev.target.closest('button[data-action]');
-  var chk = ev.target.closest('input[type=checkbox]');
-  if(chk) return; // let checkbox handle itself
-  if(btn){
-    ev.stopPropagation();
-    var id = btn.dataset.id;
-    if(btn.dataset.action==='edit') editEntrada(id);
-    else if(btn.dataset.action==='del') delEntrada(id);
-    return;
-  }
-  if(tr && tr.dataset.id) openDetalle(tr.dataset.id);
-});
 
 function toggleAll(el){document.querySelectorAll('.row-chk').forEach(function(c){c.checked=el.checked;});updateSel();}
 function updateSel(){var n=getSelected().length;var el=document.getElementById('sel-info');if(el)el.textContent=n?'✓ '+n+' entrada'+(n>1?'s':'')+' seleccionada'+(n>1?'s':'')+'. Pulsa 📧 Notificar para enviar.':'';}
