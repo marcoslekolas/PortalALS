@@ -480,7 +480,7 @@ textarea.fi{resize:vertical;min-height:72px}
     <div class="li-title">Portal Operativo</div>
     <div class="li-sub">Sistema de gestión logística portuaria</div>
     <div class="li-card">
-      <div class="fg2"><label class="fl2">Email</label><input id="li-email" class="fi" type="email" placeholder="usuario@als.com" autocomplete="username"></div>
+      <div class="fg2"><label class="fl2">Usuario</label><input id="li-email" class="fi" type="text" placeholder="Nombre y apellidos" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"></div>
       <div class="fg2" style="margin-bottom:8px"><label class="fl2">Contraseña</label><input id="li-pass" class="fi" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
       <div class="li-err" id="li-err"></div>
       <button class="btn btn-p btn-full" style="margin-top:16px" onclick="doLogin()">Entrar al sistema →</button>
@@ -787,8 +787,8 @@ textarea.fi{resize:vertical;min-height:72px}
       sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
     }catch(e){ console.warn('SDK createClient:',e); }
     // Procesar destino pendiente (si venimos de airport_cargo)
-    if(typeof _pendingMod !== 'undefined' && _pendingMod){
-      var dest=_pendingMod; _pendingMod=null;
+    if(window._pendingMod){
+      var dest=window._pendingMod; window._pendingMod=null;
       if(dest==='operativa') enterMod('operativa');
       else if(dest==='almacen') enterMod('almacen');
       else showHome();
@@ -947,7 +947,7 @@ function clearSession(){
 // ── Restaurar sesión al cargar (viene de airport_cargo u otro módulo) ──
 // Se llama al final del script, después de que enterMod esté definido
 // Destino pendiente si checkSession corre antes de que el SDK esté listo
-var _pendingMod = null;
+window._pendingMod = null;
 
 function checkSession(){
   const params=new URLSearchParams(window.location.search);
@@ -979,7 +979,7 @@ function checkSession(){
     else showHome();
   } else {
     // SDK aún no cargado — guardar destino, el onload lo recogerá
-    _pendingMod = destMod;
+    window._pendingMod = destMod;
   }
   return true;
 }
@@ -1027,10 +1027,11 @@ async function doLogin(){
   const errEl=document.getElementById('li-err');
   const btn=document.querySelector('#screen-login .btn-p');
   if(errEl){errEl.style.color='var(--rd600)';errEl.textContent='';}
-  if(!email||!pass){if(errEl)errEl.textContent='Introduce email y contraseña';return;}
+  if(!email||!pass){if(errEl)errEl.textContent='Introduce usuario y contraseña';return;}
   if(btn){btn.textContent='Conectando…';btn.disabled=true;}
   try{
-    const params='email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=1';
+    // Buscar por nombre (ilike) o email exacto — compatible con usuarios legacy
+    const params='nombre=ilike.'+encodeURIComponent('*'+email+'*')+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=5';
     const r=await fetch(SB_URL+'/rest/v1/usuarios?'+params,{
       headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,Accept:'application/json'}
     });
@@ -1041,8 +1042,15 @@ async function doLogin(){
       if(errEl)errEl.textContent='Error de conexión ('+r.status+'): '+txt.slice(0,120);
       return;
     }
-    const rows=await r.json();
-    if(!rows||rows.length===0){if(errEl)errEl.textContent='Email o contraseña incorrectos';return;}
+    let rows=await r.json();
+    // Si no encuentra por nombre, intentar por email exacto (usuarios legacy)
+    if(!rows||rows.length===0){
+      const r2=await fetch(SB_URL+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=1',{
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,Accept:'application/json'}
+      });
+      if(r2.ok) rows=await r2.json();
+    }
+    if(!rows||rows.length===0){if(errEl)errEl.textContent='Usuario o contraseña incorrectos';return;}
     CU=rows[0];
     saveSession(CU);
     // Init SDK (best effort)
@@ -2879,8 +2887,8 @@ const MODALS={
   after:()=>setTimeout(()=>setupFotos('gl-fi','gl-fpv','gl-fst'),100)
 },
 'nuevo-usuario':{t:'👤 Nuevo usuario',btn:'👤 Crear usuario',
-  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre y apellidos"></div><div class="fg2"><label class="fl2">Email *</label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="oficina">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
-  action:async()=>{const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');if(!n||!e||!p){alert('Nombre, email y contraseña son obligatorios');return;}const {error}=await sb.from('usuarios').insert({nombre:n,email:e,rol:r,password_hash:p,must_change_password:true});if(error){alert('Error: '+error.message);return;}showToast('Usuario creado — deberá cambiar su contraseña al primer inicio de sesión');closeModal();loadView(CV);}
+  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre y apellidos"></div><div class="fg2"><label class="fl2">Email <span style="font-weight:400;color:var(--g400)">(opcional)</span></label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="oficina">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
+  action:async()=>{const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');if(!n||!p){alert('Nombre y contraseña son obligatorios');return;}const obj={nombre:n,rol:r,password_hash:p,must_change_password:true};if(e)obj.email=e;const {error}=await sb.from('usuarios').insert(obj);if(error){alert('Error: '+error.message);return;}showToast('Usuario creado — deberá cambiar su contraseña al primer inicio de sesión');closeModal();loadView(CV);}
 },
 'nueva-empresa':{t:'🏢 Nueva empresa',btn:'🏢 Crear empresa',
   body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="nmp-n" class="fi" placeholder="Nombre empresa"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="nmp-p" class="fi" placeholder="Nombre y apellidos"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="nmp-e" class="fi" type="email" placeholder="email@empresa.com"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="nmp-t" class="fi" placeholder="+34 956…"></div></div><div class="fg2"><label class="fl2">Otros emails <span style="color:var(--g400);font-weight:400">(separados por coma)</span></label><input id="nmp-o" class="fi" placeholder="email2@, email3@…"></div><div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="nmp-r-${r}" style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>`,
