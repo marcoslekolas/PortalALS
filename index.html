@@ -913,9 +913,29 @@ function sbQ(){
 let CU=null,MOD=null;
 
 // ── Persistencia de sesión con sessionStorage ──────────────
-function saveSession(cu){try{sessionStorage.setItem('als_cu',JSON.stringify(cu));}catch(e){}}
-function loadSession(){try{const s=sessionStorage.getItem('als_cu');return s?JSON.parse(s):null;}catch(e){return null;}}
-function clearSession(){try{sessionStorage.removeItem('als_cu');}catch(e){}}
+function saveSession(cu){
+  var s=JSON.stringify(cu);
+  try{sessionStorage.setItem('als_cu',s);}catch(e){}
+  try{localStorage.setItem('als_cu',s);}catch(e){}
+}
+function loadSession(){
+  try{
+    var s=sessionStorage.getItem('als_cu');
+    if(s) return JSON.parse(s);
+    // Fallback: try localStorage (persists across tabs/refreshes)
+    var ls=localStorage.getItem('als_cu');
+    if(ls){
+      // Restore to sessionStorage for this tab
+      try{sessionStorage.setItem('als_cu',ls);}catch(e){}
+      return JSON.parse(ls);
+    }
+    return null;
+  }catch(e){return null;}
+}
+function clearSession(){
+  try{sessionStorage.removeItem('als_cu');}catch(e){}
+  try{localStorage.removeItem('als_cu');}catch(e){}
+}
 
 // ── Restaurar sesión al cargar (viene de airport_cargo u otro módulo) ──
 // Se llama al final del script, después de que enterMod esté definido

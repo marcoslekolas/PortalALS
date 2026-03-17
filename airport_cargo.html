@@ -244,14 +244,7 @@ let sb;
 
 // ── NAVEGACIÓN ───────────────────────────────────────────
 function goTo(mod){
-  // Check session is still alive before navigating
-  var sess=null;
-  try{sess=sessionStorage.getItem('als_cu');}catch(e){}
-  if(!sess){
-    // No session - just go to login
-    window.location.href='index.html';
-    return;
-  }
+  // Navigate directly — index.html will handle session restore or show login
   window.location.href='index.html'+(mod&&mod!=='home'?'?go='+mod:'');
 }
 function exitApp(){
@@ -1003,8 +996,10 @@ async function crearEmpresaDesdeConsignatario(){
     '<input id="ne-nombre" style="width:100%;padding:8px 12px;border:1px solid #dee2e6;border-radius:8px;font-size:13px" value="'+nombre+'"></div>' +
     '<div style="margin-bottom:10px"><label style="font-size:12px;font-weight:600;color:#495057;display:block;margin-bottom:4px">Email confronta</label>' +
     '<input id="ne-email" type="email" style="width:100%;padding:8px 12px;border:1px solid #dee2e6;border-radius:8px;font-size:13px" placeholder="email@empresa.com"></div>' +
-    '<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:#495057;display:block;margin-bottom:4px">Teléfono</label>' +
+    '<div style="margin-bottom:10px"><label style="font-size:12px;font-weight:600;color:#495057;display:block;margin-bottom:4px">Teléfono</label>' +
     '<input id="ne-tel" style="width:100%;padding:8px 12px;border:1px solid #dee2e6;border-radius:8px;font-size:13px" placeholder="+34..."></div>' +
+    '<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:#495057;display:block;margin-bottom:4px">Otros emails <span style="font-weight:400;color:#adb5bd">(separados por coma)</span></label>' +
+    '<input id="ne-otros" style="width:100%;padding:8px 12px;border:1px solid #dee2e6;border-radius:8px;font-size:13px" placeholder="cc@empresa.com, otro@empresa.com"></div>' +
     '<div style="display:flex;gap:8px;justify-content:flex-end">' +
     '<button id="ne-cancel" style="padding:7px 14px;border:1px solid #dee2e6;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">Cancelar</button>' +
     '<button id="ne-save" style="padding:7px 14px;border:none;border-radius:8px;background:#1565c0;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Crear empresa</button>' +
@@ -1015,10 +1010,13 @@ async function crearEmpresaDesdeConsignatario(){
     var nom = (document.getElementById('ne-nombre').value||'').trim();
     var email = (document.getElementById('ne-email').value||'').trim();
     var tel = (document.getElementById('ne-tel').value||'').trim();
+    var otrosRaw = (document.getElementById('ne-otros').value||'').trim();
+    var otros = otrosRaw ? otrosRaw.split(',').map(function(e){return e.trim();}).filter(Boolean) : [];
     if(!nom){ alert('El nombre es obligatorio'); return; }
     var obj = {nombre:nom};
     if(email) obj.email_confronta = email;
     if(tel) obj.telefono = tel;
+    if(otros.length) obj.otros_emails = otros;
     var r = await sb.from('empresas').insert(obj);
     if(r.error){ alert('Error: '+r.error.message); return; }
     document.body.removeChild(overlay);
