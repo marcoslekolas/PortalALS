@@ -491,6 +491,7 @@ function closeModalOut(e){if(e.target.id==='mo')closeModal();}
 
 // ── INIT ──────────────────────────────────────────────────
 async function init(){
+  checkUrlParams();
   loadDashboard();
 }
 
@@ -698,7 +699,7 @@ async function openDetalle(id){
     :`<div class="warn-box">Handler no estándar — coste introducido manualmente: ${fc(e.coste_manual)}</div>
       <div class="cost-row total"><span class="cost-lbl">TOTAL HANDLING</span><span class="cost-val">${fc(total)}</span></div>`}
     ${e.observaciones?`<div style="margin-top:12px;padding:10px;background:var(--g50);border-radius:var(--r);font-size:12px;color:var(--g600)">${e.observaciones}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cerrar</button><button class="btn btn-s" onclick="editEntrada('${id}');closeModal()">✏️ Editar</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cerrar</button><button class="btn btn-p" onclick="closeModal();setTimeout(()=>editEntrada('${id}'),80)">✏️ Editar</button>`;
   document.getElementById('mo').classList.add('open');
 }
 
@@ -706,9 +707,30 @@ async function openDetalle(id){
 function openModal(key, data){
   if(key==='nueva-entrada') showFormEntrada(null);
 }
+
 async function editEntrada(id){
-  const e=allEntradas.find(x=>x.id==id);
-  if(e) showFormEntrada(e);
+  // Buscar en memoria primero, si no cargar de BD
+  let e = allEntradas.find(x => String(x.id) === String(id));
+  if(!e){
+    const {data} = await sb.from('airport_cargo').select('*').eq('id', id).single();
+    if(!data){ alert('No se encontró la entrada'); return; }
+    e = data;
+    // Añadir a memoria si no está
+    if(!allEntradas.find(x => String(x.id) === String(id))) allEntradas.push(e);
+  }
+  showFormEntrada(e);
+}
+
+// Al cargar la página, comprobar si hay un parámetro edit= en la URL
+function checkUrlParams(){
+  const params = new URLSearchParams(window.location.search);
+  const editId = params.get('edit');
+  const newEntry = params.get('new');
+  if(editId){
+    setTimeout(() => editEntrada(editId), 500);
+  } else if(newEntry === '1'){
+    setTimeout(() => showFormEntrada(null), 500);
+  }
 }
 function showFormEntrada(e){
   const isEdit=!!e;
