@@ -264,8 +264,15 @@ function getTRFh(h,year){
 // Cargar tarifas de Supabase y convertir al formato TRF_BY_YEAR
 async function loadTarifasFromDB(){
   try{
-    const {data}=await sb.from('tarifas_handling').select('*').order('year_validity,proveedor,concepto_es');
-    if(!data||!data.length) return; // usar defaults
+    let data=null;
+    try{
+      const res=await sb.from('tarifas_handling').select('*').order('year_validity,proveedor,concepto_es');
+      data=res.data;
+    }catch(e2){
+      console.warn('Tabla tarifas_handling no encontrada, usando defaults 2026');
+      return;
+    }
+    if(!data||!data.length){console.log('Sin tarifas en BD, usando defaults 2026');return;} // usar defaults
     const CONCEPT_MAP={
       'Almacenaje General (Tramo 1)':'alm',
       'Gestión Documental (Mismo Día)':'gd','Gestión Documental':'gd',
@@ -308,8 +315,14 @@ async function loadTarifasFromDB(){
   }
 }
 
-// Alias TRF para compatibilidad con código legacy (usa año actual)
-const TRF=new Proxy({},{get:(_,h)=>{const t=getTRF(new Date().getFullYear());return t[h]||null;}});
+// TRF(h) — helper para verificar si un handler tiene tarifas (usa año actual como referencia)
+// Para chequeos booleanos: !!hasTRF(h)
+function hasTRF(h){const t=getTRF(new Date().getFullYear());return !!(t&&t[h]);}
+// Alias compatibilidad: TRF como objeto que delega a año actual
+const TRF={
+  get Swissport(){return getTRF(new Date().getFullYear()).Swissport||null;},
+  get Groundforce(){return getTRF(new Date().getFullYear()).Groundforce||null;},
+};
 
 // ═══════════════════════════════════════════════
 // CÁLCULOS — réplica exacta de Grist Python
@@ -399,7 +412,12 @@ function closeModal(){document.getElementById('mo').classList.remove('open');}
 
 // ═══════════════════════════════════════════════ INIT
 let ALL=[];
-async function init(){await loadTarifasFromDB();await loadAll();loadDashboard();checkUrl();}
+async function init(){
+  try{await loadTarifasFromDB();}catch(e){console.warn('loadTarifasFromDB error:',e.message);}
+  await loadAll();
+  loadDashboard();
+  checkUrl();
+}
 async function loadAll(){const {data}=await sb.from('airport_cargo').select('*,empresa:empresa_id(nombre,email_confronta,otros_emails)').order('fecha_llegada',{ascending:false});ALL=data||[];return ALL;}
 function checkUrl(){
   const p=new URLSearchParams(window.location.search);
@@ -450,7 +468,7 @@ function renderRows(list){
   const tbody=document.getElementById('tbody');
   if(!list.length){tbody.innerHTML='<tr><td colspan="22"><div class="empty">Sin entradas</div></td></tr>';return;}
   tbody.innerHTML=list.map(e=>{
-    const isAuto=!!TRF[e.handling];
+    const isAuto=hasTRF(e.handling);
     const kg=parseFloat(e.kilos_tasables)||0;
     const d=isAuto?diasFact(e.fecha_llegada,e.fecha_retirada,e.handling):0;
     const alm=isAuto?calcAlm(kg,d,e.handling):0;
@@ -929,7 +947,7 @@ async function crearNuevoAnioTarifas(){
 function openDetalle(id){
   const e=ALL.find(x=>String(x.id)===String(id));
   if(!e)return;
-  const isAuto=!!TRF[e.handling];
+  const isAuto=hasTRF(e.handling);
   const d=isAuto&&e.fecha_retirada?desglose(e):null;
   const kg=parseFloat(e.kilos_tasables)||0;
   document.getElementById('m-title').textContent='✈️ '+e.awb;
@@ -974,7 +992,7 @@ async function editEntrada(id){
   showForm(e);
 }
 async function showForm(e){
-  const isEdit=!!e,h=e?.handling||'',isAuto=!!TRF[h];
+  const isEdit=!!e,h=e?.handling||'',isAuto=hasTRF(h);
   // Load empresas for selector
   let empresas=[];
   try{const {data}=await sb.from('empresas').select('id,nombre,email_confronta').order('nombre');empresas=data||[];}catch(ex){empresas=[];}
@@ -1011,7 +1029,7 @@ async function showForm(e){
           <option value="" ${!h?'selected':''}>— Seleccionar —</option>
           <option ${h==='Swissport'?'selected':''}>Swissport</option>
           <option ${h==='Groundforce'?'selected':''}>Groundforce</option>
-          <option value="Otro" ${h&&!TRF[h]?'selected':''}>Otro</option>
+          <option value="Otro" ${h&&!hasTRF(h)?'selected':''}>Otro</option>
         </select>
       </div>
       <div class="fg"><label class="fl">Status aduanero</label>
@@ -1035,7 +1053,7 @@ async function showForm(e){
       <label class="toggle-row"><input type="checkbox" id="f-cc" ${e?.aplica_carga_camion?'checked':''} onchange="lc()"> 🚛 Carga Camión</label>
       <label class="toggle-row"><input type="checkbox" id="f-ap" ${e?.aplica_apertura?'checked':''} onchange="lc()"> 🔓 Apertura fuera de horario</label>
     </div>
-    <div id="man" ${(h&&!TRF[h])?'':'style="display:none"'}>
+    <div id="man" ${(h&&!hasTRF(h))?'':'style="display:none"'}>
       <div class="fg" style="margin-top:10px"><label class="fl">Coste total manual €</label>
         <input id="f-man" class="fi" type="number" min="0" step="0.01" value="${e?.coste_manual||''}">
         <div style="font-size:11px;color:var(--am600);margin-top:3px">⚠️ Handler sin tarifa automática</div>
@@ -1050,7 +1068,7 @@ async function showForm(e){
   onHC();if(isEdit)setTimeout(lc,50);
 }
 function onHC(){
-  const h=gv('f-handler'),isAuto=!!TRF[h];
+  const h=gv('f-handler'),isAuto=hasTRF(h);
   const ex=document.getElementById('ext'),mn=document.getElementById('man');
   if(ex)ex.style.display=isAuto?'':'none';
   if(mn)mn.style.display=(h&&!isAuto)?'':'none';
@@ -1058,7 +1076,7 @@ function onHC(){
 function lc(){
   const h=gv('f-handler'),ll=gv('f-ll'),rt=gv('f-rt'),kg=parseFloat(gv('f-kg'))||0;
   const el=document.getElementById('lc-prev');if(!el)return;
-  if(!TRF[h]||!rt||!kg){el.innerHTML='';return;}
+  if(!hasTRF(h)||!rt||!kg){el.innerHTML='';return;}
   const tmpE={handling:h,fecha_llegada:ll,fecha_retirada:rt,kilos_tasables:kg,aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap')};
   const d=desglose(tmpE);
   el.innerHTML=`<div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:12px">
@@ -1085,7 +1103,7 @@ function syncEmpresa(){
   }
 }
 function buildObj(){
-  const h=gv('f-handler'),isAuto=!!TRF[h];
+  const h=gv('f-handler'),isAuto=hasTRF(h);
   const rt=gv('f-rt')||null;
   const empId=gv('f-emp')||null;
   return{awb:gv('f-awb').trim(),consignatario:gv('f-cons').trim(),empresa_id:empId,buque:gv('f-buque').trim()||null,aeropuerto:gv('f-apto')||'AGP',handling:h||null,status:gv('f-status')||'T1',fecha_llegada:gv('f-ll')||null,fecha_retirada:rt,kilos_tasables:parseFloat(gv('f-kg'))||0,bultos:parseInt(gv('f-blt'))||null,aplica_finde:isAuto?gc('f-fi'):false,aplica_express:isAuto?gc('f-ex'):false,aplica_carga_camion:isAuto?gc('f-cc'):false,aplica_apertura:isAuto?gc('f-ap'):false,coste_manual:(!isAuto&&h)?parseFloat(gv('f-man'))||null:null,observaciones:gv('f-obs').trim()||null,mes_operacion:calcMes(rt),operation_year:rt?new Date(rt).getFullYear():null};
