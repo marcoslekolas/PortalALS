@@ -522,6 +522,7 @@ function renderRows(list){
         '<button class="btn btn-sm btn-d" data-action="del" data-id="'+e.id+'">🗑️</button>'+
       '</td></tr>';
   }).join('');
+  tbody.innerHTML = rows;
 }
 
 
@@ -908,8 +909,23 @@ async function abrirEmail(){
   var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
   var totalKg=sel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
   var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
-  var filas=sel.map(function(e){return'AWB: '+(e.awb||'—')+' | '+(e.bultos||'—')+' bultos | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+' | Llegada: '+fd(e.fecha_llegada)+(e.buque?' | Buque: '+e.buque:'');}).join('\n');
-  var cuerpo='Estimados Sres. / Dear Sirs,\n\nNos dirigimos a ustedes en nombre de Algeciras Logistic Solutions (ALS) para informarles de la situación actual de sus expediciones aéreas en tránsito hacia '+apts+'.\n\n── RESUMEN ──────────────────────────────────────────────\n\nConsignatario: '+cons+'\nExpediciones: '+sel.length+'\nTotal bultos: '+totalBlt+'\nTotal kilos: '+totalKg.toLocaleString('es-ES')+' kg\n\n── DETALLE ──────────────────────────────────────────────\n\n'+filas+'\n\n── PRÓXIMOS PASOS ───────────────────────────────────────\n\nLas mercancías se encuentran en proceso de gestión aduanera. Una vez obtenida la autorización de despacho (DUA), coordinaremos la entrega conforme a las instrucciones de su agente aduanal.\n\nPara cualquier consulta:\n📞 +34 956 58 13 16\n✉️ als@alsalgeciras.com\n📍 Puerto de Algeciras\n\nAtentamente / Kind regards,\nDpto. de Operaciones — ALGECIRAS LOGISTIC SOLUTIONS (ALS)\n──────────────────────────────────────────────────────\n'+hoy;
+  // Agrupar expediciones por buque
+  var byBuque = {};
+  sel.forEach(function(e){
+    var bkey = e.buque || '(Sin buque asignado)';
+    if(!byBuque[bkey]) byBuque[bkey] = [];
+    byBuque[bkey].push(e);
+  });
+  var detalle = Object.keys(byBuque).map(function(buque){
+    var exps = byBuque[buque];
+    var bloque = '  Buque: ' + buque + '\n';
+    exps.forEach(function(e){
+      bloque += '  · AWB: '+(e.awb||'—')+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+' | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+' | Llegada: '+fd(e.fecha_llegada)+'\n';
+    });
+    return bloque;
+  }).join('\n');
+
+  var cuerpo='Estimados Sres. / Dear Sirs,\n\nNos dirigimos a ustedes para informarles de la situación actual de sus expediciones aéreas en tránsito hacia '+apts+'.\n\n── RESUMEN ──────────────────────────────────────────────\n\nConsignatario: '+cons+'\nExpediciones: '+sel.length+'\nTotal bultos: '+totalBlt+'\nTotal kilos: '+totalKg.toLocaleString('es-ES')+' kg\n\n── DETALLE POR BUQUE ────────────────────────────────────\n\n'+detalle+'── PRÓXIMOS PASOS ───────────────────────────────────────\n\nLas mercancías se encuentran en proceso de gestión aduanera. Una vez concluido, coordinaremos la entrega conforme a sus instrucciones.\n\nPara cualquier consulta:\n📞 +34 956 58 13 16\n✉️ als@alsalgeciras.com\n📍 Pol. La Menacha, Avda. La Bahía 14\n\nAtentamente / Kind regards,\nDpto. de Operaciones — ALGECIRAS LOGISTIC SOLUTIONS (ALS)\n──────────────────────────────────────────────────────\n'+hoy;
   document.getElementById('m-title').textContent='Notificar expediciones';
   document.getElementById('m-body').innerHTML=
     '<div class="info-box">'+sel.length+' expedición'+(sel.length>1?'es':'')+' seleccionada'+(sel.length>1?'s':'')+'. '+(ids.length===0?'No hay selección — se incluyen todas las entradas.':'')+' </div>'+
