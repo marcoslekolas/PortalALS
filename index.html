@@ -2631,14 +2631,16 @@ function renderE(list){
     const fmax=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null;
     const fmaxStr=fmax?fd(e.fecha_max_despacho):'—';
     const fmaxAlerta=fmax&&fmax<hoy&&e.tramite_aduanero!=='Despachado';
-    const hasFoto=e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url;
+    const hasFoto=e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url||(e.ubicacion==='Landed'&&e.estado_semaforo==='⌛ ESPERANDO ALMACÉN');
+    // Corregir semáforo visualmente si es Landed/UBICADA (pending DB fix)
+    const semDisplay=e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo;
     return`<tr onclick="openExpD('${e.id}')">
       <td onclick="event.stopPropagation()"><input type="checkbox" style="accent-color:var(--b600)" onchange="toggleExpLote('${e.id}',this)"></td>
       <td><div class="fw" style="cursor:pointer" onclick="event.stopPropagation();abrirTrackingAWB('${e.nº_expedicion}')" title="Rastrear AWB">${e.nº_expedicion} <span style="font-size:10px;color:var(--g400)">✈️</span></div></td>
       <td class="sm">${e.buques?.nombre||'—'}</td>
       <td class="sm">${e.empresas?.nombre||'—'}</td>
       <td class="sm">${e.bultos}b·${e.kilos}kg</td>
-      <td>${bdg(e.estado_semaforo)}${hasFoto?'<span title="Tiene fotos" style="margin-left:3px;font-size:11px">📸</span>':''}</td>
+      <td>${bdg(semDisplay)}${hasFoto?'<span title="Tiene fotos" style="margin-left:3px;font-size:11px">📸</span>':''}</td>
       <td><span class="badge bgr" style="font-size:10px">${e.status_aduanero||'—'}</span></td>
       <td class="sm">${e.tramite_aduanero||'—'}</td>
       <td class="sm">${e.ubicacion||'—'}</td>
@@ -2679,7 +2681,7 @@ async function loadKanban(){
       .select('id,nombre,eta_buque,estado_operacion')
       .order('eta_buque',{ascending:true,nullsFirst:false}),
     sb.from('expediciones')
-      .select('id,nº_expedicion,buque_id,estado_semaforo,estado_carga,nº_mrn,ubicacion,bultos,kilos,status_aduanero,buques(nombre)')
+      .select('id,nº_expedicion,buque_id,estado_semaforo,estado_carga,nº_mrn,ubicacion,bultos,kilos,status_aduanero,foto_llegada_url,foto_carga_url,foto_embarque_url,buques(nombre)')
       .neq('estado_semaforo','🚢 EMBARCADO')
   ]);
 
@@ -3485,7 +3487,7 @@ async function loadAlmFotos(tab){
     if(!buques.length){cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay buques activos</div></div>';return;}
     // Solo mostrar expediciones YA marcadas como Landed (ubicacion='Landed') por buque
     // Mostrar solo Landed pendientes de recoger (excluir los ya recogidos = ESPERANDO ALMACÉN)
-    const {data:landedExps}=await sb.from('expediciones').select('id,buque_id,nº_expedicion,bultos,kilos').eq('ubicacion','Landed').neq('estado_semaforo','⌛ ESPERANDO ALMACÉN');
+    const {data:landedExps}=await sb.from('expediciones').select('id,buque_id,nº_expedicion,bultos,kilos,foto_llegada_url').eq('ubicacion','Landed').neq('estado_semaforo','⌛ ESPERANDO ALMACÉN');
     const landedByBuque={};
     (landedExps||[]).forEach(e=>{if(!e.buque_id)return;if(!landedByBuque[e.buque_id])landedByBuque[e.buque_id]=[];landedByBuque[e.buque_id].push(e);});
     // Filtrar buques que tienen al menos una expedición Landed
@@ -3504,7 +3506,7 @@ async function loadAlmFotos(tab){
         <div style="padding:16px">
           <div style="margin-bottom:12px">
             <div style="font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Mercancía a recoger del barco:</div>
-            ${bLanded.map(e=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--g100);font-size:12px"><span style="font-weight:700;font-family:var(--mono)">${e.nº_expedicion}</span><span style="color:var(--g500)">${e.bultos||'—'} btos · ${e.kilos||'—'} kg</span></div>`).join('')}
+            ${bLanded.map(e=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--g100);font-size:12px"><span style="font-weight:700;font-family:var(--mono)">${e.nº_expedicion}</span><span style="color:var(--g500)">${e.bultos||'—'} btos · ${e.kilos||'—'} kg</span>${e.foto_llegada_url?'<span title="Tiene foto" style="font-size:11px">📸</span>':''}</div>`).join('')}
           </div>
           <div class="fg2"><label class="fl2">Foto de recogida en muelle</label>
             <div class="foto-area" onclick="document.getElementById('lnd-fi-${b.id}').click()">
@@ -3654,7 +3656,8 @@ async function confirmarLandedBuque(buqueId, buqueNombre){
   // Estado: mercancía recogida del muelle → queda en ubicacion Landed
   // pero semáforo cambia a ESPERANDO ALMACÉN para que mozo la confirme en pestaña Llegadas
   const upd={estado_semaforo:'⌛ ESPERANDO ALMACÉN', estado_carga:'⌛ ESPERANDO ALMACÉN'};
-  if(fotoUrl) upd.foto_llegada_url=fotoUrl;
+  // Guardar foto en foto_llegada_url para que el indicador 📸 funcione en la lista
+  if(fotoUrl){ upd.foto_llegada_url=fotoUrl; }
   await sb.from('expediciones').update(upd)
     .eq('buque_id',buqueId).eq('ubicacion','Landed');
 
@@ -4171,8 +4174,10 @@ async function openExpD(id){
   const emailCli=e.empresas?.email_confronta||'';
   // Auto-corregir semáforo si hay inconsistencia con la ubicación
   const semCorrect=semaforoDeUbicacion(e.ubicacion);
-  if(semCorrect && e.estado_semaforo !== semCorrect &&
-     !['✅ AUTORIZADO','🚢 EMBARCADO','🚛 CARGADO CAMIÓN'].includes(e.estado_semaforo)){
+  // Corrección forzada para Landed: '📦 UBICADA' es incorrecto cuando ubicacion=Landed
+  const forceCorrect = e.ubicacion==='Landed' && e.estado_semaforo==='📦 UBICADA';
+  if(semCorrect && (forceCorrect || (e.estado_semaforo !== semCorrect &&
+     !['✅ AUTORIZADO','🚢 EMBARCADO','🚛 CARGADO CAMIÓN'].includes(e.estado_semaforo)))){
     // Corregir en BD de forma silenciosa
     sb.from('expediciones').update({estado_semaforo:semCorrect,estado_carga:semCorrect}).eq('id',id).then(()=>{});
     e.estado_semaforo=semCorrect;
