@@ -1777,7 +1777,14 @@ function fdl(d){if(!d)return'—';return new Date(d).toLocaleDateString('es-ES',
 function fdt(d){if(!d)return'—';return new Date(d).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});}
 function pb(n,t){const p=t>0?Math.round(n/t*100):0;const c=p===100?'prog-g':p>50?'prog-a':'prog-r';return`<div style="display:flex;align-items:center;gap:8px"><div class="prog"><div class="prog-f ${c}" style="width:${p}%"></div></div><span style="font-size:12px;color:var(--g500);font-weight:500">${n}/${t}</span></div>`;}
 // Solo VesselFinder y MarineTraffic
-function imoL(imo,nom){if(!imo)return'<span style="font-size:12px;color:var(--g400)">Sin IMO</span>';return`<a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic</a>`;}
+function imoL(imo,nom){
+  if(!imo){
+    // No IMO: show name-based search links if nombre is available
+    if(!nom||nom.length<2) return '<span style="font-size:12px;color:var(--g400)">Sin IMO</span>';
+    var enc=encodeURIComponent(nom);
+    return '<a class="ext-link" href="https://www.marinetraffic.com/en/ais/index/ships/all/shipname:'+enc+'" target="_blank" title="Buscar '+nom+' en MarineTraffic">🌍 Buscar por nombre</a>'+
+           '<a class="ext-link" href="https://www.vesselfinder.com/?name='+enc+'" target="_blank" title="Buscar '+nom+' en VesselFinder">🎯 VesselFinder</a>';
+  }return`<a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic</a>`;}
 function apbaL(n){
   if(!n||n==='Sin Escala') return '<span class="badge ba">Sin escala</span>';
   // Abre SUGB APBA y copia el nº de escala al portapapeles para pegarlo en el buscador
@@ -1785,26 +1792,53 @@ function apbaL(n){
 }
 function abrirSUGB(ev,escala){
   ev.preventDefault();
-  // Abrir SUGB en nueva pestaña
   window.open('https://sugb.frontend.app.teleportpcs.com/generalsupply/list','_blank');
-  // Mostrar modal con el nº escala seleccionable para copiar
-  var mo=document.getElementById('mo');
+  // Build modal with DOM methods — no quote nesting issues
   var mt=document.getElementById('m-title');
   var mb=document.getElementById('m-body');
   var mf=document.getElementById('m-foot');
-  if(mo&&mt&&mb&&mf){
-    mt.textContent='🔍 Buscar en SUGB APBA';
-    mb.innerHTML=
-      '<div style="font-size:13px;color:var(--g600);margin-bottom:12px">SUGB se ha abierto en una nueva pestaña. Copia el número de escala y pégalo en el campo de búsqueda:</div>'+
-      '<div style="display:flex;gap:8px;align-items:center">'+
-      '<input id="sugb-escala-inp" value="'+escala+'" readonly style="flex:1;padding:10px 14px;font-size:16px;font-weight:700;font-family:var(--mono);background:var(--b50);border:2px solid var(--b200);border-radius:var(--r);color:var(--b700);cursor:pointer" onclick="this.select()" title="Haz clic para seleccionar">'+
-      '<button class="btn btn-p" onclick="var i=document.getElementById('sugb-escala-inp');i.select();try{document.execCommand('copy');}catch(e){}showToast('📋 Copiado — pégalo en SUGB');">📋 Copiar</button>'+
-      '</div>'+
-      '<div style="font-size:11px;color:var(--g400);margin-top:8px">💡 Haz clic en el campo y pulsa Ctrl+A → Ctrl+C (o Cmd+A → Cmd+C)</div>';
-    mf.innerHTML='<button class="btn btn-s" onclick="closeModal()">Cerrar</button>';
-    mo.classList.add('open');
-    setTimeout(function(){var i=document.getElementById('sugb-escala-inp');if(i)i.select();},100);
-  }
+  var mo=document.getElementById('mo');
+  if(!mo||!mt||!mb||!mf) return;
+  mt.textContent='🔍 Buscar en SUGB APBA';
+  // Clear body and build with DOM
+  mb.innerHTML='';
+  var desc=document.createElement('div');
+  desc.style.cssText='font-size:13px;color:var(--g600);margin-bottom:12px';
+  desc.textContent='SUGB se ha abierto en una nueva pestaña. Copia el número de escala y pégalo en el campo de búsqueda:';
+  mb.appendChild(desc);
+  var row=document.createElement('div');
+  row.style.cssText='display:flex;gap:8px;align-items:center';
+  var inp=document.createElement('input');
+  inp.id='sugb-escala-inp';
+  inp.value=escala;
+  inp.readOnly=true;
+  inp.style.cssText='flex:1;padding:10px 14px;font-size:16px;font-weight:700;font-family:var(--mono);background:var(--b50);border:2px solid var(--b200);border-radius:var(--r);color:var(--b700);cursor:pointer';
+  inp.title='Haz clic para seleccionar';
+  inp.onclick=function(){this.select();};
+  row.appendChild(inp);
+  var btn=document.createElement('button');
+  btn.className='btn btn-p';
+  btn.textContent='📋 Copiar';
+  btn.onclick=function(){
+    inp.select();
+    try{document.execCommand('copy');}catch(e){}
+    if(navigator.clipboard){navigator.clipboard.writeText(escala).catch(function(){});}
+    showToast('📋 Copiado — pégalo en SUGB');
+  };
+  row.appendChild(btn);
+  mb.appendChild(row);
+  var tip=document.createElement('div');
+  tip.style.cssText='font-size:11px;color:var(--g400);margin-top:8px';
+  tip.textContent='Haz clic en el campo y pulsa Ctrl+A → Ctrl+C (o Cmd+A → Cmd+C en Mac)';
+  mb.appendChild(tip);
+  mf.innerHTML='';
+  var closeBtn=document.createElement('button');
+  closeBtn.className='btn btn-s';
+  closeBtn.textContent='Cerrar';
+  closeBtn.onclick=function(){closeModal();};
+  mf.appendChild(closeBtn);
+  mo.classList.add('open');
+  setTimeout(function(){inp.select();},120);
 }
 function gv(id){const e=document.getElementById(id);return e?e.value:'';}
 // Normalize Supabase array or string fields to scalar
