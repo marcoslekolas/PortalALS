@@ -1780,8 +1780,18 @@ function pb(n,t){const p=t>0?Math.round(n/t*100):0;const c=p===100?'prog-g':p>50
 function imoL(imo,nom){if(!imo)return'<span style="font-size:12px;color:var(--g400)">Sin IMO</span>';return`<a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic</a>`;}
 function apbaL(n){
   if(!n||n==='Sin Escala') return '<span class="badge ba">Sin escala</span>';
-  // Link to APBA with the scale number visible; user can search it in APBA portal
-  return '<a class="ext-link" href="https://www.apba.es/posidonia-web" target="_blank" title="Ver en Posidonia Web — APBA: '+n+'">✅ '+n+' ↗</a>';
+  // Abre SUGB APBA y copia el nº de escala al portapapeles para pegarlo en el buscador
+  return '<a class="ext-link" href="#" onclick="abrirSUGB(event,\''+ n +'\')" title="Abrir SUGB APBA — escala '+n+'">✅ '+n+' ↗</a>';
+}
+function abrirSUGB(ev,escala){
+  ev.preventDefault();
+  if(navigator.clipboard && escala){
+    navigator.clipboard.writeText(escala)
+      .then(function(){showToast('📋 Nº Escala "'+escala+'" copiado — pégalo en el buscador SUGB');}).catch(function(){});
+  } else if(escala){
+    showToast('Escala: '+escala+' — introdúcela en SUGB APBA');
+  }
+  window.open('https://sugb.frontend.app.teleportpcs.com/generalsupply/list','_blank');
 }
 function gv(id){const e=document.getElementById(id);return e?e.value:'';}
 // Normalize Supabase array or string fields to scalar
@@ -3614,7 +3624,7 @@ const MODALS={
     </div>
     <div id="nb-rest" style="opacity:.35;pointer-events:none;transition:opacity .2s">
       <div class="fg2"><label class="fl2">IMO — <a href="#" onclick="buscarIMOporNombre();return false;" style="color:var(--b600);font-size:11px;font-weight:600">🔍 Buscar IMO</a></label><input id="nb-imo" class="fi" placeholder="Ej: 9246695" oninput="prevIMO(this.value)"><div id="imo-prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div><div id="nombre-search"></div></div>
-      <div class="fg2"><label class="fl2">Nº Escala APBA — <a href="https://www.apba.es/posidonia-web" target="_blank" style="color:var(--b600);font-size:11px">🔎 APBA Posidonia</a></label><input id="nb-esc" class="fi" placeholder="ESALG…"></div>
+      <div class="fg2"><label class="fl2">Nº Escala APBA — <a href="https://sugb.frontend.app.teleportpcs.com/generalsupply/list" target="_blank" style="color:var(--b600);font-size:11px">🔎 SUGB APBA</a></label><input id="nb-esc" class="fi" placeholder="ESALG…"></div>
       <div class="fr2"><div class="fg2"><label class="fl2">ETA buque</label><input id="nb-eta" class="fi" type="datetime-local"></div><div class="fg2"><label class="fl2">Puerto / Terminal</label><input id="nb-pto" class="fi" placeholder="Algeciras / T. Ro-Ro"></div></div>
       <div class="fr2"><div class="fg2"><label class="fl2">Cliente</label><select id="nb-cli" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div><div class="fg2"><label class="fl2">Estado operación</label><select id="nb-est" class="fi fs"><option>Sin comenzar</option><option selected>En proceso</option><option>Embarcado</option><option>Cancelado</option><option>Aplazado</option></select></div></div>
       <div class="fg2"><label class="fl2">Consignatario</label><select id="nb-con" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div>
@@ -3790,7 +3800,7 @@ async function openBuque(id){
       <input id="bq-imo-${id}" class="fi" value="${b.imo||''}" placeholder="Ej: 9246695" oninput="prevIMOEdit('${id}',this.value)">
       <div id="imo-prev-edit-${id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">${b.imo?`<a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${b.imo}" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${b.imo}" target="_blank">🌍 MarineTraffic</a>`:''}</div>
     </div>
-    <div class="fg2"><label class="fl2">Nº Escala APBA — <a href="https://www.apba.es/posidonia-web" target="_blank" style="color:var(--b600);font-size:11px">🔎 APBA Posidonia</a></label>
+    <div class="fg2"><label class="fl2">Nº Escala APBA — <a href="https://sugb.frontend.app.teleportpcs.com/generalsupply/list" target="_blank" style="color:var(--b600);font-size:11px">🔎 SUGB APBA</a></label>
       <input id="bq-esc-${id}" class="fi" value="${b.nº_escala||''}" placeholder="ESALG…">
     </div>
     <div class="fr2">
