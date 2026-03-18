@@ -208,7 +208,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
           <div class="pt">💰 Tarifas Handling</div>
           <div style="display:flex;gap:8px;align-items:center">
             <select id="tar-year" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadTarifasView()">
-              <option value="2026">2026</option>
+              <option value="2026">2026</option><option value="2025">2025</option>
             </select>
             <button class="btn btn-p btn-sm" onclick="abrirNuevoAnio()">+ Nuevo año</button>
           </div>
@@ -246,51 +246,42 @@ let sb;
 
 // ── NAVEGACIÓN ───────────────────────────────────────────
 function goTo(mod){
-  // airport_cargo runs in a separate tab opened by index.html
-  // Use window.opener to navigate the PARENT tab, then close this one
-  if(window.opener && !window.opener.closed){
-    try{
-      // Tell the parent tab to navigate to the requested module
-      if(mod === 'home'){
-        window.opener.showHome && window.opener.showHome();
-      } else if(mod === 'operativa'){
-        window.opener.enterMod && window.opener.enterMod('operativa');
-      } else if(mod === 'almacen'){
-        window.opener.enterMod && window.opener.enterMod('almacen');
+  // BLINDADO: usa window.opener para navegar el tab padre, nunca cierra sesión aquí
+  try {
+    if(window.opener && !window.opener.closed){
+      if(mod==='home'){
+        if(typeof window.opener.showHome==='function') window.opener.showHome();
+      } else if(mod==='operativa'){
+        if(typeof window.opener.enterMod==='function') window.opener.enterMod('operativa');
+      } else if(mod==='almacen'){
+        if(typeof window.opener.enterMod==='function') window.opener.enterMod('almacen');
       }
-      // Focus the parent tab and close this one
       window.opener.focus();
-      window.close();
-      return;
-    }catch(e){
-      console.warn('opener communication failed:', e);
+    } else {
+      // Sin opener: abrir index.html en nueva pestaña
+      window.open('index.html','_parent');
     }
+  } catch(e){
+    console.warn('goTo error:', e);
+    window.open('index.html','_blank');
   }
-  // Fallback: if no opener (e.g. opened directly), navigate normally
-  // Pass session in URL
-  var sess = null;
-  try{ sess = localStorage.getItem('als_cu'); }catch(e){}
-  var url = 'index.html' + (mod && mod !== 'home' ? '?go=' + mod : '');
-  if(sess){
-    try{ url += (url.includes('?')?'&':'?') + '_s=' + btoa(unescape(encodeURIComponent(sess))); }catch(e){}
-  }
-  window.location.href = url;
 }
+
 function exitApp(){
-  // Clear session everywhere
-  try{sessionStorage.removeItem('als_cu');}catch(e){}
-  try{localStorage.removeItem('als_cu');}catch(e){}
-  // If opened from index.html, trigger logout there and close this tab
-  if(window.opener && !window.opener.closed){
-    try{
-      window.opener.doLogout && window.opener.doLogout();
+  // BLINDADO: doLogout en el padre, nunca aquí
+  try {
+    if(window.opener && !window.opener.closed){
+      if(typeof window.opener.doLogout==='function') window.opener.doLogout();
       window.opener.focus();
-      window.close();
-      return;
-    }catch(e){}
+    } else {
+      window.open('index.html','_blank');
+    }
+  } catch(e){
+    console.warn('exitApp error:', e);
   }
-  window.location.href='index.html';
+  window.close();
 }
+
 function toggleSB(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('mob-ov').classList.toggle('show');}
 function closeModal(){document.getElementById('mo').classList.remove('open');}
 function openModal(){document.getElementById('mo').classList.add('open');}
@@ -323,6 +314,30 @@ function gc(id){var e=document.getElementById(id);return e?e.checked:false;}
 function calcMes(rt){if(!rt)return'';var d=new Date(rt);return d.getFullYear()+' | '+['01-Ene','02-Feb','03-Mar','04-Abr','05-May','06-Jun','07-Jul','08-Ago','09-Sep','10-Oct','11-Nov','12-Dic'][d.getMonth()];}
 
 // ── TARIFAS POR AÑO ──────────────────────────────────────
+// Tarifas Groundforce 2025 (valores anteriores — guardados como historial)
+var TRF_GF_2025={
+  alm:{dl:3,min:47.47,u:11.21},
+  gd:{min:44.57,u:0},
+  tr:{min:0.43,u:1.9},
+  tm:{min:0,u:28.73},
+  fi:{min:138.9,u:0},
+  ex:{min:70.01,u:0.23},
+  cc:{min:108.94,u:1.15},
+  ap:{min:383.33,u:1.72,fijo:80.74}
+};
+
+// Tarifas Groundforce 2026 — THC válido desde 01.04.2026
+var TRF_GF_2026={
+  alm:{dl:4,min:53.73,u:11.51},      // 4.1 Almacenaje general AGP (1er escalón)
+  gd:{min:56.00,u:0},                 // 1.2 Gestión documental AGP/VLC
+  tr:{min:0,u:0.050},                 // 7.5 Cuota Terminal AGP
+  tm:{min:119.84,u:0},                // 7.6.1 Hora hombre cargo staff (fijo AWB)
+  fi:{min:105.29,u:0},                // 2.3B Temperatura controlada
+  ex:{min:67.87,u:0.142},             // 2.12 Handling express
+  cc:{min:50.60,u:0.127},             // 3.7C Carga/descarga camiones (contrato)
+  ap:{min:88.82,u:0.189,fijo:0}       // 7.10A Entrega fuera horario operativo (import)
+};
+
 var TRF_DEFAULT={
   Swissport:{
     alm:{dl:2,min:51.31,u:12.12},
@@ -334,18 +349,9 @@ var TRF_DEFAULT={
     cc:{min:71.9,u:0.11},
     ap:{min:0,u:150,fijo:0}
   },
-  Groundforce:{
-    alm:{dl:3,min:47.47,u:11.21},
-    gd:{min:44.57,u:0},
-    tr:{min:0.43,u:1.9},
-    tm:{min:0,u:28.73},
-    fi:{min:138.9,u:0},
-    ex:{min:70.01,u:0.23},
-    cc:{min:108.94,u:1.15},
-    ap:{min:383.33,u:1.72,fijo:80.74}
-  }
+  Groundforce: TRF_GF_2026
 };
-var TRF_YEARS={2026:TRF_DEFAULT};
+var TRF_YEARS={2025:{Swissport:TRF_DEFAULT.Swissport,Groundforce:TRF_GF_2025},2026:TRF_DEFAULT};
 
 function getTRF(year){
   var y=parseInt(year)||new Date().getFullYear();
@@ -449,6 +455,7 @@ async function init(){
       var action = btn.getAttribute('data-action');
       if(action==='edit') editEntrada(aid);
       else if(action==='del') delEntrada(aid);
+      else if(action==='awb') abrirTrackingAWB(btn.getAttribute('data-awb'));
       return;
     }
     var tr = ev.target.closest('tr.tbl-row');
@@ -471,7 +478,8 @@ async function loadDashboard(){
   var kg=yd.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
   var hc={};
   yd.forEach(function(e){if(e.handling)hc[e.handling]=(hc[e.handling]||0)+1;});
-  var pendRet=yd.filter(function(e){return !e.fecha_retirada;}).length;
+  var pendRet=ALL.filter(function(e){return !e.fecha_retirada;}).length;
+  var pendComp=ALL.filter(function(e){return !e.fecha_retirada||!e.handling;}).length;
   var totalBultos=yd.reduce(function(a,e){return a+(e.bultos||0);},0);
   var mesActual=new Date().toISOString().slice(0,7);
   var ydMes=yd.filter(function(e){return e.fecha_retirada&&e.fecha_retirada.startsWith(mesActual);});
@@ -496,7 +504,7 @@ function miniTable(list){
   if(!list.length)return'<div class="empty">Sin entradas</div>';
   var rows=list.map(function(e){
     return'<tr class="tbl-row" data-id="'+e.id+'" style="cursor:pointer"><td class="fw" style="font-family:var(--mono)">'+
-      (e.awb||'—')+'</td><td>'+(e.consignatario||'—')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
+      (e.awb||'—')+' <button class="btn btn-sm" data-action="awb" data-awb="'+(e.awb||'')+'" style="background:none;border:none;cursor:pointer;padding:0;font-size:10px;color:var(--g400)" title="Rastrear">✈️</button></td><td>'+(e.consignatario||'—')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
       '<td><span class="badge bb">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+fd(e.fecha_llegada)+'</td><td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
       '<td style="font-weight:700;color:var(--b700)">'+fc(calcTotal(e))+'</td></tr>';
@@ -543,7 +551,7 @@ function renderRows(list){
     // Use data-id on tr — onclick delegated via JS, no inline quote nesting
     return'<tr'+bg+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="text-align:center"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600)" onchange="updateSel()"></td>'+
-      '<td class="fw" style="font-family:var(--mono);font-size:11px">'+( e.awb||'—')+'</td>'+
+      '<td class="fw" style="font-family:var(--mono);font-size:11px">'+( e.awb||'—')+' <button class="btn btn-sm" data-action="awb" data-awb="'+(e.awb||'')+'" style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:10px;color:var(--g400)" title="Rastrear AWB">✈️</button></td>'+
       '<td style="cursor:pointer">'+( e.consignatario||'—')+'</td>'+
       '<td class="sm" style="cursor:pointer">'+( e.buque||'—')+'</td>'+
       '<td><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
