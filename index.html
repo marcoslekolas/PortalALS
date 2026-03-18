@@ -1349,11 +1349,12 @@ async function checkAlertasDespacho(){
         const d=new Date(e.fecha_max_despacho);
         const venc=d<now;
         const dias=Math.round((d-now)/86400000);
-        return`<div style="display:flex;align-items:center;gap:10px;padding:4px 0;font-size:12px;cursor:pointer" onclick="openExpD('${e.id}')">
+        return`<div style="display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.05)" onclick="openExpD('${e.id}');nav('expediciones',null)">
           <span class="badge ${venc?'br':'ba'}">${venc?'VENCIDA':'En '+dias+'d'}</span>
           <span style="font-weight:600">${e.nº_expedicion}</span>
           <span style="color:var(--g500)">${e.buques?.nombre||'—'}</span>
           <span style="color:var(--g500)">Máx: ${new Date(e.fecha_max_despacho).toLocaleDateString('es-ES')}</span>
+          <button class="btn btn-sm btn-p" style="font-size:10px;padding:2px 8px;margin-left:auto" onclick="event.stopPropagation();openExpD('${e.id}')">Abrir →</button>
         </div>`;
       }).join('')}
     </div>`;
@@ -1697,6 +1698,47 @@ function renderPaginacion(info, onCambio){
   return`<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 0;border-top:1px solid var(--g200)">${btns.join('')}</div>`;
 }
 
+
+// Ver todas las fotos de una expedición agrupadas por tipo
+async function verFotosExpedicion(expId, ref){
+  try{
+    const {data}=await sb.from('fotos_operativas')
+      .select('storage_url,tipo,created_at,subida_por')
+      .eq('entidad','expediciones')
+      .eq('entidad_id',expId)
+      .order('created_at');
+
+    if(!data||!data.length){
+      showToast('No hay fotos guardadas para '+ref);
+      return;
+    }
+
+    // También buscar fotos de campos directos
+    const {data:exp}=await sb.from('expediciones')
+      .select('foto_llegada_url,foto_carga_url,foto_embarque_url')
+      .eq('id',expId).single();
+
+    const todasUrls=[];
+    const tipos={};
+    // Fotos de la tabla fotos_operativas
+    data.forEach(f=>{
+      todasUrls.push(f.storage_url);
+      tipos[f.storage_url]=f.tipo;
+    });
+    // Fotos de campos directos (legacy / primeras implementaciones)
+    [['llegada',exp?.foto_llegada_url],['carga',exp?.foto_carga_url],['embarque',exp?.foto_embarque_url]]
+      .forEach(([tipo,url])=>{
+        if(url&&!todasUrls.includes(url)){todasUrls.push(url);tipos[url]=tipo;}
+      });
+
+    if(!todasUrls.length){showToast('No hay fotos para '+ref);return;}
+
+    // Mostrar galería
+    abrirGaleriaFotos(todasUrls,'📸 Fotos — '+ref);
+
+  }catch(e){showToast('Error cargando fotos: '+e.message);}
+}
+
 function doLogout(){CU=null;MOD=null;clearSession();document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
 
 const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas'};
@@ -1731,17 +1773,163 @@ async function logAct(tabla,rid,rnom,accion,campo,vant,vnew){
   try{await sb.from('activity_log').insert({tabla,registro_id:rid||null,registro_nombre:rnom||null,accion,campo_modificado:campo||null,valor_anterior:String(vant||''),valor_nuevo:String(vnew||''),usuario_id:CU?.id,usuario_nombre:CU?.nombre});}catch(e){console.warn('log err',e);}
 }
 
-async function compFoto(f,mw=1200,q=0.75){
-  return new Promise(r=>{
-    const img=new Image(),u=URL.createObjectURL(f);
-    img.onload=()=>{let w=img.width,h=img.height;if(w>mw){h=Math.round(h*mw/w);w=mw;}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);c.toBlob(b=>{URL.revokeObjectURL(u);r(new File([b],f.name,{type:'image/jpeg'}));},'image/jpeg',q);};img.src=u;
+// Compresión adaptativa: 
+//   - Preview/almacén: 1400px max, calidad 0.82 (buena para pantalla, ~200-400KB)  
+//   - Descarga/cliente: calidad 0.92 (alta, apta para envío)
+async function compFoto(f, mw=1400, q=0.82){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    const u=URL.createObjectURL(f);
+    img.onerror=()=>{URL.revokeObjectURL(u);resolve(f);}; // fallback: usar original
+    img.onload=()=>{
+      let w=img.width, h=img.height;
+      // Solo reducir si es más grande que el máximo
+      if(w>mw){ h=Math.round(h*mw/w); w=mw; }
+      const canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      const ctx=canvas.getContext('2d');
+      // Fondo blanco para imágenes con transparencia
+      ctx.fillStyle='#ffffff';
+      ctx.fillRect(0,0,w,h);
+      ctx.drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(u);
+      canvas.toBlob(blob=>{
+        if(!blob){resolve(f);return;}
+        // Mantener nombre original pero con extensión .jpg
+        const nombre=f.name.replace(/\.[^.]+$/,'')+'.jpg';
+        resolve(new File([blob], nombre, {type:'image/jpeg', lastModified:Date.now()}));
+      },'image/jpeg', q);
+    };
+    img.src=u;
   });
 }
-async function procesarFotos(files,stId){
-  const el=document.getElementById(stId);if(el)el.textContent='Comprimiendo...';
-  const out=[];for(const f of files){const c=await compFoto(f);out.push(c);}
-  if(el){const orig=files.reduce((a,f)=>a+f.size,0),fin=out.reduce((a,f)=>a+f.size,0);el.textContent=`✅ ${out.length} fotos · ${(fin/1024/1024).toFixed(1)} MB · ahorro ${Math.round((1-fin/orig)*100)}%`;}
+
+// Generar versión alta calidad para descarga/envío cliente
+async function compFotoAlta(f){
+  return compFoto(f, 2000, 0.92);
+}
+
+async function procesarFotos(files, stId){
+  const el=document.getElementById(stId);
+  if(el){el.textContent='Comprimiendo...';el.style.color='var(--b600)';}
+  const out=[];
+  for(const f of files){
+    const comp=await compFoto(f);
+    out.push(comp);
+  }
+  if(el){
+    const orig=files.reduce((a,f)=>a+f.size,0);
+    const fin=out.reduce((a,f)=>a+f.size,0);
+    const ahorro=orig>0?Math.round((1-fin/orig)*100):0;
+    el.textContent=`✅ ${out.length} foto${out.length>1?'s':''} · ${(fin/1024).toFixed(0)}KB${ahorro>10?' · -'+ahorro+'%':''}`;
+    el.style.color='var(--gr600)';
+  }
   return out;
+}
+
+// Subir fotos a Supabase Storage y retornar URLs
+async function subirFotosYGuardar(files, entidad, entidadId, tipo){
+  if(!files||!files.length) return [];
+  const urls=[];
+  for(const file of files){
+    try{
+      const url=await subirFotoStorage(file, entidad, entidadId, tipo);
+      if(url) urls.push(url);
+    }catch(e){console.warn('Error subiendo foto:',e);}
+  }
+  return urls;
+}
+
+// Mostrar galería de fotos con opción de descarga
+function abrirGaleriaFotos(urls, titulo='Fotos'){
+  if(!urls||!urls.length){showToast('No hay fotos disponibles');return;}
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;flex-direction:column';
+  let idx=0;
+  
+  const render=()=>{
+    const url=urls[idx];
+    const nombre=url.split('/').pop()||'foto.jpg';
+    overlay.innerHTML=
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.5)">'+
+      '<div style="color:#fff;font-weight:600">'+titulo+' ('+( idx+1)+'/'+urls.length+')</div>'+
+      '<div style="display:flex;gap:10px">'+
+      '<a href="'+url+'" download="'+nombre+'" target="_blank" style="background:#1565c0;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px">⬇️ Descargar</a>'+
+      '<a href="'+url+'" target="_blank" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;text-decoration:none">🔍 Ver original</a>'+
+      '<button onclick="this.closest('div[style*=z-index]').remove()" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer">✕ Cerrar</button>'+
+      '</div></div>'+
+      '<div style="flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:12px">'+
+      (urls.length>1?'<button onclick="cambiarFoto(-1)" style="position:absolute;left:12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:50%;width:44px;height:44px;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center">‹</button>':'')+ 
+      '<img src="'+url+'" style="max-width:100%;max-height:calc(100vh - 120px);object-fit:contain;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.5)">'+
+      (urls.length>1?'<button onclick="cambiarFoto(1)" style="position:absolute;right:12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:50%;width:44px;height:44px;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center">›</button>':'')+ 
+      '</div>'+
+      (urls.length>1?'<div style="display:flex;gap:6px;justify-content:center;padding:10px;background:rgba(0,0,0,.5)">'+
+        urls.map((u,i)=>'<div onclick="cambiarFoto('+(i-idx)+')" style="width:48px;height:48px;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid '+(i===idx?'#fff':'transparent')+'"><img src="'+u+'" style="width:100%;height:100%;object-fit:cover"></div>').join('')+
+      '</div>':'');
+  };
+
+  window.cambiarFoto=(delta)=>{
+    idx=Math.max(0,Math.min(urls.length-1,idx+delta));
+    render();
+  };
+  
+  // Cerrar con Escape o click en fondo
+  overlay.addEventListener('keydown',e=>{
+    if(e.key==='Escape') overlay.remove();
+    if(e.key==='ArrowLeft') window.cambiarFoto(-1);
+    if(e.key==='ArrowRight') window.cambiarFoto(1);
+  });
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  overlay.tabIndex=0;
+  
+  document.body.appendChild(overlay);
+  overlay.focus();
+  render();
+}
+
+// Descargar fotos de una expedición como ZIP (si hay múltiples)
+async function descargarFotosExpedicion(expId, ref){
+  try{
+    const {data}=await sb.from('fotos_operativas')
+      .select('storage_url,tipo,created_at')
+      .eq('entidad','expediciones')
+      .eq('entidad_id',expId)
+      .order('created_at');
+    if(!data||!data.length){showToast('No hay fotos guardadas para esta expedición');return;}
+    if(data.length===1){
+      // Descarga directa
+      const a=document.createElement('a');
+      a.href=data[0].storage_url;
+      a.download='foto_'+ref+'_'+data[0].tipo+'.jpg';
+      a.target='_blank';
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+    } else {
+      // Mostrar galería con opción de descarga individual
+      abrirGaleriaFotos(data.map(f=>f.storage_url), 'Fotos — '+ref);
+    }
+  }catch(e){showToast('Error cargando fotos: '+e.message);}
+}
+
+// Cargar y mostrar fotos existentes de una expedición/buque
+async function cargarFotosExistentes(entidad, entidadId, tipo, contenedor){
+  if(!contenedor)return;
+  try{
+    const {data}=await sb.from('fotos_operativas')
+      .select('storage_url,created_at,tipo')
+      .eq('entidad',entidad)
+      .eq('entidad_id',entidadId)
+      .eq('tipo',tipo)
+      .order('created_at',{ascending:false})
+      .limit(10);
+    if(!data||!data.length){contenedor.innerHTML='';return;}
+    contenedor.innerHTML='<div style="font-size:11px;color:var(--g400);margin-bottom:6px">'+data.length+' foto'+( data.length>1?'s':'')+' guardada'+( data.length>1?'s':'')+'</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+      data.map(f=>`<div style="width:60px;height:60px;border-radius:6px;overflow:hidden;cursor:pointer;border:1px solid var(--g200)" onclick="abrirGaleriaFotos(['${f.storage_url}'],'${tipo}')">
+        <img src="${f.storage_url}" style="width:100%;height:100%;object-fit:cover" loading="lazy">
+      </div>`).join('')+
+      '</div>'+
+      '<button class="btn btn-s btn-sm" style="margin-top:6px;font-size:11px" onclick="abrirGaleriaFotos(['+data.map(f=>"'"+f.storage_url+"'").join(',')+"],'Fotos')">🖼️ Ver galería</button>';
+  }catch(e){contenedor.innerHTML='';}
 }
 function setupFotos(inpId,prevId,stId){
   const inp=document.getElementById(inpId),prev=document.getElementById(prevId);
@@ -2664,11 +2852,53 @@ function tlNext(){window.tlMonth++;if(window.tlMonth>11){window.tlMonth=0;window
 function tlToday(){window.tlYear=null;window.tlMonth=null;loadTL();}
 
 async function loadAlertas(){
-  const [{data:al},{data:inc}]=await Promise.all([sb.from('v_alertas').select('*'),sb.from('incidencias').select('*,expediciones(nº_expedicion)').neq('estado','Cerrada')]);
+  const [{data:al},{data:inc}]=await Promise.all([
+    sb.from('v_alertas').select('*'),
+    sb.from('incidencias').select('*,expediciones(id,nº_expedicion)').neq('estado','Cerrada')
+  ]);
   let html='';
-  (al||[]).forEach(a=>{const crit=a.tipo_alerta?.includes('VENC');html+=`<div class="a-item ${crit?'crit':'wrn'}"><div class="a-icon">${crit?'🔴':'🟡'}</div><div class="a-info"><div class="a-title">${a.nº_expedicion} — ${a.buque_nombre||'—'}</div><div class="a-detail">${a.tipo_alerta||'Requiere atención'} · Despacho máx: ${fd(a.fecha_max_despacho)}</div></div><span class="badge ${crit?'br':'ba'}">${a.tipo_alerta||'Alerta'}</span></div>`;});
-  (inc||[]).forEach(i=>{html+=`<div class="a-item wrn"><div class="a-icon">⚠️</div><div class="a-info"><div class="a-title">Incidencia ${i.tipo} — ${i.expediciones?.nº_expedicion||'—'}</div><div class="a-detail">${i.descripcion||'Sin descripción'} · ${fd(i.fecha)}</div></div><span class="badge br">${i.estado}</span></div>`;});
-  document.getElementById('alertas-list').innerHTML=html||'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay alertas activas</div></div>';
+
+  // Alertas de despacho — clickable → abre expedición directamente
+  (al||[]).forEach(a=>{
+    const crit=a.tipo_alerta?.includes('VENC');
+    const diasTxt=a.dias_restantes!=null
+      ?(a.dias_restantes<0?`Venció hace ${Math.abs(a.dias_restantes)}d`:`Vence en ${a.dias_restantes}d`)
+      :'';
+    html+=`<div class="a-item ${crit?'crit':'wrn'}" style="cursor:pointer" onclick="openExpD('${a.id}');nav('expediciones',null)" title="Abrir expedición">
+      <div class="a-icon">${crit?'🔴':'🟡'}</div>
+      <div class="a-info">
+        <div class="a-title">${a.nº_expedicion} — ${a.buque_nombre||'—'}</div>
+        <div class="a-detail">${a.tipo_alerta||'Requiere atención'} · F.máx: ${fd(a.fecha_max_despacho)} ${diasTxt?'· '+diasTxt:''}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+        <span class="badge ${crit?'br':'ba'}">${a.tipo_alerta||'Alerta'}</span>
+        <button class="btn btn-sm btn-p" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();openExpD('${a.id}')">
+          Abrir →
+        </button>
+      </div>
+    </div>`;
+  });
+
+  // Incidencias activas — clickable → abre incidencia y expedición
+  (inc||[]).forEach(i=>{
+    const expId=i.expediciones?.id;
+    html+=`<div class="a-item wrn" style="cursor:pointer" onclick="${expId?`openExpD('${expId}');nav('expediciones',null)`:`openIncD('${i.id}')`}" title="${expId?'Abrir expedición':'Abrir incidencia'}">
+      <div class="a-icon">⚠️</div>
+      <div class="a-info">
+        <div class="a-title">Incidencia: ${i.tipo} — ${i.expediciones?.nº_expedicion||'—'}</div>
+        <div class="a-detail">${i.descripcion||'Sin descripción'} · ${fd(i.fecha_incidencia||i.created_at)}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+        <span class="badge br">${i.estado}</span>
+        <button class="btn btn-sm btn-s" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();openIncD('${i.id}')">
+          Ver →
+        </button>
+      </div>
+    </div>`;
+  });
+
+  document.getElementById('alertas-list').innerHTML=html||
+    '<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay alertas activas</div></div>';
 }
 
 async function loadAlmacen(){
@@ -2676,7 +2906,7 @@ async function loadAlmacen(){
   const pend=(data||[]).filter(e=>e.estado_semaforo==='⏳ EN TRÁNSITO'||e.estado_semaforo==='⌛ ESPERANDO ALMACÉN');
   const rev=(data||[]).filter(e=>e.estado_semaforo==='🚨 EN ALMACÉN - REVISAR');
   const lis=(data||[]).filter(e=>e.estado_carga==='✅ AUTORIZADO');
-  const rP=e=>`<div class="ll-row" onclick="openExpD('${e.id}')"><span style="font-size:18px">📦</span><div class="ll-info"><div class="ll-ref">${e.nº_expedicion}</div><div class="ll-sub">${e.buques?.nombre||'—'} · ${e.bultos} btos · ${bdg(e.estado_semaforo)}</div></div><div class="ll-acts"><div class="ib" title="Confirmar llegada" onclick="event.stopPropagation();confirmLlegada('${e.id}')">✅</div><div class="ib" title="Con fotos" onclick="event.stopPropagation();modalFotos('${e.id}','${e.nº_expedicion}')">📸</div></div></div>`;
+  const rP=e=>`<div class="ll-row" onclick="openExpD('${e.id}')"><span style="font-size:18px">📦</span><div class="ll-info"><div class="ll-ref">${e.nº_expedicion}</div><div class="ll-sub">${e.buques?.nombre||'—'} · ${e.bultos} btos · ${bdg(e.estado_semaforo)}</div></div><div class="ll-acts">${e.foto_llegada_url?`<div class="ib" title="Ver foto" onclick="event.stopPropagation();abrirGaleriaFotos(['${e.foto_llegada_url}'],'Llegada')">🖼️</div>`:''}<div class="ib" title="Confirmar llegada" onclick="event.stopPropagation();confirmLlegada('${e.id}')">✅</div><div class="ib" title="Con fotos" onclick="event.stopPropagation();modalFotos('${e.id}','${e.nº_expedicion}')">📸</div></div></div>`;
   const rR=e=>`<div class="ll-row" onclick="openExpD('${e.id}')"><span style="font-size:18px">🚨</span><div class="ll-info"><div class="ll-ref">${e.nº_expedicion}</div><div class="ll-sub">${e.buques?.nombre||'—'} · ${e.ubicacion||'—'} · ${e.bultos} btos</div></div><div class="ll-acts"><div class="ib" onclick="event.stopPropagation();openExpD('${e.id}')">📋</div></div></div>`;
   const rL=e=>`<div class="ll-row" onclick="openExpD('${e.id}')"><span style="font-size:18px">🟢</span><div class="ll-info"><div class="ll-ref">${e.nº_expedicion}</div><div class="ll-sub">${e.buques?.nombre||'—'} · MRN: ${e.nº_mrn||'—'} · ${e.bultos} btos · 📍${e.ubicacion||'—'}</div></div><div class="ll-acts"><div class="ib" title="Marcar cargado" onclick="event.stopPropagation();marcarCarg('${e.id}')">🚛</div><div class="ib" title="Albarán" onclick="event.stopPropagation();impExpAlb('${e.id}')">🖨️</div></div></div>`;
   document.getElementById('alm-pend').innerHTML=pend.length?pend.map(rP).join(''):'<div class="empty"><div class="empty-txt">Sin pendientes</div></div>';
@@ -2942,10 +3172,23 @@ async function loadAlmFotos(tab){
 
 async function confirmarLlegadaFotos(id){
   const {data:e}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',id).single();
-  await sb.from('expediciones').update({ubicacion:'Almacén-Sin Ubicar',notif_llegada_sent:true}).eq('id',id);
-  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir','Almacén-Sin Ubicar');
+  // Obtener fotos del input correspondiente
+  const inp=document.getElementById('fl-fi-'+id)||document.getElementById('fl-i');
+  const prevEl=document.getElementById('fl-pv-'+id)||document.getElementById('fl-p');
+  const files=prevEl?._files||[];
+  // Comprimir y subir fotos si las hay
+  let fotoUrl=null;
+  if(files.length){
+    showToast('📤 Subiendo fotos...');
+    const urls=await subirFotosYGuardar(files,'expediciones',id,'llegada');
+    if(urls.length) fotoUrl=urls[0];
+  }
+  const upd={ubicacion:'Almacén-Sin Ubicar',notif_llegada_sent:true};
+  if(fotoUrl) upd.foto_llegada_url=fotoUrl;
+  await sb.from('expediciones').update(upd).eq('id',id);
+  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir','Almacén-Sin Ubicar'+(fotoUrl?' [con foto]':''));
   await alertarOperativa(id,e?.nº_expedicion||'',e?.buques?.nombre||'');
-  showToast('✅ Llegada confirmada → Almacén-Sin Ubicar');
+  showToast('✅ Llegada confirmada'+( fotoUrl?' con foto 📸':''));
   await loadAlmFotos('llegadas');
 }
 
@@ -2983,26 +3226,47 @@ async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin
   if(!confirm('¿Confirmar carga en camión para TODAS las expediciones autorizadas de este buque?'))return;
   const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO');
   if(!data||!data.length){alert('No hay expediciones autorizadas');return;}
+  // Subir fotos del buque (una foto para toda la carga)
+  const prevEl=document.getElementById('cg-pv-'+bid);
+  const files=prevEl?._files||[];
+  let fotoUrl=null;
+  if(files.length){
+    showToast('📤 Subiendo fotos...');
+    const urls=await subirFotosYGuardar(files,'buques',bid,'carga_camion');
+    if(urls.length) fotoUrl=urls[0];
+  }
   const ts=new Date().toISOString();
   for(const e of data){
-    await sb.from('expediciones').update({hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'}).eq('id',e.id);
-    await logAct('expediciones',e.id,e.nº_expedicion,'editar','ubicacion','—','Camión cargado — '+new Date().toLocaleString('es-ES'));
+    const upd={hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'};
+    if(fotoUrl) upd.foto_carga_url=fotoUrl;
+    await sb.from('expediciones').update(upd).eq('id',e.id);
+    await logAct('expediciones',e.id,e.nº_expedicion,'editar','ubicacion','—','Camión cargado'+( fotoUrl?' [con foto]':''));
   }
-  showToast('✅ Carga confirmada — '+data.length+' expediciones');
+  showToast('✅ Carga confirmada — '+data.length+' expediciones'+( fotoUrl?' 📸':''));
   await loadAlmFotos('carga');
 }
 function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);}}
 async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
   if(!confirm('¿Marcar el buque como EMBARCADO? Las expediciones pasarán a "A bordo" (excepto las Landed).'))return;
+  // Subir fotos de embarque
+  const prevEl=document.getElementById('embt-pv-'+bid);
+  const files=prevEl?._files||[];
+  let fotoUrl=null;
+  if(files.length){
+    showToast('📤 Subiendo fotos...');
+    const urls=await subirFotosYGuardar(files,'buques',bid,'embarque');
+    if(urls.length) fotoUrl=urls[0];
+  }
   await sb.from('buques').update({estado_operacion:'Embarcado'}).eq('id',bid);
-  // Solo cambiar a "A bordo" las expediciones que NO son Landed
   const {data:exps}=await sb.from('expediciones').select('id,ubicacion').eq('buque_id',bid);
   for(const e of exps||[]){
-    if(e.ubicacion==='Landed') continue; // mantener Landed
-    await sb.from('expediciones').update({estado_semaforo:'🚢 EMBARCADO',ubicacion:'A bordo'}).eq('id',e.id);
+    if(e.ubicacion==='Landed') continue;
+    const upd={estado_semaforo:'🚢 EMBARCADO',ubicacion:'A bordo'};
+    if(fotoUrl) upd.foto_embarque_url=fotoUrl;
+    await sb.from('expediciones').update(upd).eq('id',e.id);
   }
-  await logAct('buques',bid,'','editar','estado_operacion','En proceso','Embarcado por '+CU?.nombre+' — '+new Date().toLocaleString('es-ES'));
-  showToast('¡Embarcado! ✅');
+  await logAct('buques',bid,'','editar','estado_operacion','En proceso','Embarcado por '+CU?.nombre+(fotoUrl?' [con foto]':''));
+  showToast('¡Embarcado! ✅'+(fotoUrl?' 📸':''));
   await loadAlmFotos('embarque');
 }
 function onLandedFoto(){const f=document.getElementById('lnd-fi')?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn');if(btn)btn.style.display='';setupFotos('lnd-fi','lnd-pv',null);}}
@@ -3036,8 +3300,19 @@ function modalFotos(id,ref){
 async function guardarFL(id){
   const ubic=gv('fl-u');
   const {data:e}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',id).single();
-  await sb.from('expediciones').update({ubicacion:ubic,notif_llegada_sent:true}).eq('id',id);
-  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir',ubic);
+  // Upload photos from modal
+  const prevEl=document.getElementById('fl-p');
+  const files=prevEl?._files||[];
+  let fotoUrl=null;
+  if(files.length){
+    showToast('📤 Subiendo fotos...');
+    const urls=await subirFotosYGuardar(files,'expediciones',id,'llegada');
+    if(urls.length) fotoUrl=urls[0];
+  }
+  const upd={ubicacion:ubic,notif_llegada_sent:true};
+  if(fotoUrl) upd.foto_llegada_url=fotoUrl;
+  await sb.from('expediciones').update(upd).eq('id',id);
+  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir',ubic+(fotoUrl?' [con foto]':''));
   await alertarOperativa(id,e?.nº_expedicion||'',e?.buques?.nombre||'');
   closeModal();await loadAlmacen();
 }
@@ -3558,7 +3833,7 @@ async function openExpD(id){
     </div>
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
   const gLink=gristLink(Object.assign({},e,{buques:e.buques,empresas:e.empresas}));
