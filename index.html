@@ -833,7 +833,7 @@ textarea.fi{resize:vertical;min-height:72px}
   <button class="mob-alm-btn" id="mab-landed" onclick="switchFotosTab('landed',this);navAlmMob(this)">
     <span class="mob-icon">⚓</span><span class="mob-lbl">Landed</span>
   </button>
-  <button class="mob-alm-btn" id="mab-home" onclick="nav('alm-dashboard',null);hideMobAlmBar()">
+  <button class="mob-alm-btn" id="mab-home" onclick="navAlmMobHome()">
     <span class="mob-icon">🏠</span><span class="mob-lbl">Inicio</span>
   </button>
 </div>
@@ -1308,6 +1308,8 @@ function enterMod(mod){
   MOD=mod;
   document.getElementById('screen-home').style.display='none';
   document.getElementById('app').style.display='flex';
+  // Ocultar barra móvil al cambiar de módulo (se muestra solo para almacen)
+  hideMobAlmBar();
   // Mostrar búsqueda global al entrar en módulo
   const gsw=document.getElementById('global-search-wrap');
   if(gsw) gsw.style.display='';
@@ -1840,13 +1842,20 @@ function hideMobAlmBar(){
   if(content) content.classList.remove('has-mob-bar');
 }
 function navAlmMob(el){
-  // Highlight active button
   document.querySelectorAll('.mob-alm-btn').forEach(function(b){b.classList.remove('active');});
   if(el) el.classList.add('active');
-  // Make sure we're on alm-fotos view
+  // Ensure alm-fotos view is active (tabs live there)
   if(!document.getElementById('view-alm-fotos').classList.contains('active')){
     nav('alm-fotos', document.querySelector('#nav-alm .nav-item:nth-child(2)'));
   }
+}
+function navAlmMobHome(){
+  // Ir al dashboard de almacén SIN ocultar la barra
+  document.querySelectorAll('.mob-alm-btn').forEach(function(b){b.classList.remove('active');});
+  var homeBtn=document.getElementById('mab-home');
+  if(homeBtn) homeBtn.classList.add('active');
+  nav('alm-dashboard', null);
+  // La barra sigue visible — el usuario puede volver a las pestañas
 }
 
 function doLogout(){CU=null;MOD=null;clearSession();document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
@@ -3268,6 +3277,15 @@ async function loadAlmExpBuque(){
 }
 let currentFotosTab='llegadas';
 function switchFotosTab(tab,el){
+  // Sync mobile bottom bar button
+  if(window.innerWidth<=768){
+    var _barMap={'llegadas':'mab-llegadas','carga':'mab-carga','embarque':'mab-embarque','landed':'mab-landed'};
+    document.querySelectorAll('.mob-alm-btn').forEach(function(b){b.classList.remove('active');});
+    var _barBtn=document.getElementById(_barMap[tab]);
+    if(_barBtn) _barBtn.classList.add('active');
+    // Show bar if hidden (e.g. coming back from dashboard)
+    showMobAlmBar();
+  }
   currentFotosTab=tab;
   document.querySelectorAll('.fotos-tab').forEach(b=>{b.style.borderBottomColor='transparent';b.style.color='var(--g500)';});
   el.style.borderBottomColor='var(--b600)';el.style.color='var(--b600)';
