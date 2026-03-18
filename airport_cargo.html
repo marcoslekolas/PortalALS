@@ -122,9 +122,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
     <span class="hdr-title">✈️ Airport Cargo</span>
     <div class="hdr-spacer"></div>
     <button class="hdr-btn" onclick="openNueva()">+ Nueva</button>
-    <button class="hdr-btn" style="margin-left:4px" onclick="goTo('almacen')">📦 Almacén</button>
-    <button class="hdr-btn" style="margin-left:4px" onclick="goTo('operativa')">🏢 Operativa</button>
-    <button class="hdr-btn" style="margin-left:4px" onclick="goTo('home')">🏠</button>
+    <button class="hdr-btn" style="margin-left:4px;background:var(--b600);color:#fff;font-weight:700" onclick="goTo('home')" title="Volver al Portal ALS">🏠 Portal ALS</button>
     <button class="hdr-btn" style="margin-left:4px;background:rgba(220,38,38,.3)" onclick="exitApp()">🚪</button>
   </header>
   <div id="body">
@@ -246,39 +244,18 @@ let sb;
 
 // ── NAVEGACIÓN ───────────────────────────────────────────
 function goTo(mod){
-  // Solución definitiva: guardar destino en localStorage y navegar a index.html
-  // Funciona siempre independientemente de window.opener
+  // Navegar al Portal ALS principal (menu inicio)
+  // Simple y sin depender de window.opener
   try {
-    if(mod && mod !== 'home'){
-      localStorage.setItem('als_goto_mod', mod);
-    } else {
-      localStorage.removeItem('als_goto_mod');
-    }
-    // Intentar también via opener si está disponible (más rápido)
+    localStorage.removeItem('als_goto_mod');
+    // Intentar con opener si existe
     try {
       var op = window.opener;
-      if(op && !op.closed && typeof op.enterMod === 'function'){
-        if(mod === 'home' && typeof op.showHome === 'function'){
-          op.showHome(); op.focus();
-          localStorage.removeItem('als_goto_mod');
-          return;
-        } else if(mod === 'operativa' || mod === 'almacen'){
-          // Recuperar CU si hace falta
-          if(!op.CU || !op.CU.id){
-            if(typeof op.loadSession === 'function'){
-              var rec = op.loadSession();
-              if(rec && rec.id) op.CU = rec;
-            }
-          }
-          if(op.CU && op.CU.id){
-            op.enterMod(mod); op.focus();
-            localStorage.removeItem('als_goto_mod');
-            return;
-          }
-        }
+      if(op && !op.closed && typeof op.showHome === 'function'){
+        op.showHome(); op.focus(); return;
       }
-    } catch(oe){ /* opener no disponible — usar redirect */ }
-    // Fallback siempre funcional: navegar en esta pestaña
+    } catch(oe){}
+    // Fallback: abrir index.html en esta pestaña
     var base = window.location.href.replace(/airport_cargo\.html.*$/, '');
     window.location.href = base + 'index.html';
   } catch(e){
