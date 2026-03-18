@@ -1785,13 +1785,26 @@ function apbaL(n){
 }
 function abrirSUGB(ev,escala){
   ev.preventDefault();
-  if(navigator.clipboard && escala){
-    navigator.clipboard.writeText(escala)
-      .then(function(){showToast('📋 Nº Escala "'+escala+'" copiado — pégalo en el buscador SUGB');}).catch(function(){});
-  } else if(escala){
-    showToast('Escala: '+escala+' — introdúcela en SUGB APBA');
-  }
+  // Abrir SUGB en nueva pestaña
   window.open('https://sugb.frontend.app.teleportpcs.com/generalsupply/list','_blank');
+  // Mostrar modal con el nº escala seleccionable para copiar
+  var mo=document.getElementById('mo');
+  var mt=document.getElementById('m-title');
+  var mb=document.getElementById('m-body');
+  var mf=document.getElementById('m-foot');
+  if(mo&&mt&&mb&&mf){
+    mt.textContent='🔍 Buscar en SUGB APBA';
+    mb.innerHTML=
+      '<div style="font-size:13px;color:var(--g600);margin-bottom:12px">SUGB se ha abierto en una nueva pestaña. Copia el número de escala y pégalo en el campo de búsqueda:</div>'+
+      '<div style="display:flex;gap:8px;align-items:center">'+
+      '<input id="sugb-escala-inp" value="'+escala+'" readonly style="flex:1;padding:10px 14px;font-size:16px;font-weight:700;font-family:var(--mono);background:var(--b50);border:2px solid var(--b200);border-radius:var(--r);color:var(--b700);cursor:pointer" onclick="this.select()" title="Haz clic para seleccionar">'+
+      '<button class="btn btn-p" onclick="var i=document.getElementById('sugb-escala-inp');i.select();try{document.execCommand('copy');}catch(e){}showToast('📋 Copiado — pégalo en SUGB');">📋 Copiar</button>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--g400);margin-top:8px">💡 Haz clic en el campo y pulsa Ctrl+A → Ctrl+C (o Cmd+A → Cmd+C)</div>';
+    mf.innerHTML='<button class="btn btn-s" onclick="closeModal()">Cerrar</button>';
+    mo.classList.add('open');
+    setTimeout(function(){var i=document.getElementById('sugb-escala-inp');if(i)i.select();},100);
+  }
 }
 function gv(id){const e=document.getElementById(id);return e?e.value:'';}
 // Normalize Supabase array or string fields to scalar
@@ -4229,7 +4242,7 @@ function htmlAlb(b, exps, expsLanded){
   .logo{font-size:26px;font-weight:900;letter-spacing:-1px;color:#1565c0}
   .logo-sub{font-size:13px;color:#333;margin-top:2px}
   .contact{font-size:10px;color:#555;margin-top:6px;line-height:1.7}
-  .cert{background:#cc0000;color:#fff;font-size:9px;padding:4px 8px;border-radius:4px;font-weight:700;line-height:1.4;text-align:center;display:inline-block}
+  .cert{background:#cc0000;color:#fff;font-size:9px;padding:4px 8px;border-radius:4px;font-weight:700;line-height:1.4;text-align:center;display:inline-block;-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1px solid #990000}
   .dt{font-size:14px;font-weight:700;text-align:right}.dd{font-size:11px;color:#666;text-align:right;margin-top:3px}
   h3{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#666;margin:16px 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}
   .g2{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px}
@@ -4239,7 +4252,7 @@ function htmlAlb(b, exps, expsLanded){
   .landed-hdr th{background:#b45309}
   .landed-info{background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:8px 10px;margin:10px 0;font-size:11px;color:#92400e;line-height:1.6}
   .sign{margin-top:36px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}.sb{border-top:1px solid #000;padding-top:8px;font-size:10px;color:#555}
-  @media print{.np{display:none}}
+  @media print{.np{display:none}* {-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}}
   </style></head><body>
   <div class="hd">
     <div>
