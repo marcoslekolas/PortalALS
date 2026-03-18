@@ -1040,22 +1040,21 @@ async function doLogin(){
   if(!email||!pass){if(errEl)errEl.textContent='Introduce usuario y contraseña';return;}
   if(btn){btn.textContent='Conectando…';btn.disabled=true;}
   try{
-    // Buscar por nombre (ilike) o email exacto — compatible con usuarios legacy
-    const params='nombre=ilike.'+encodeURIComponent('*'+email+'*')+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=5';
-    const r=await fetch(SB_URL+'/rest/v1/usuarios?'+params,{
-      headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,Accept:'application/json'}
+    // Usar función segura verificar_password (bcrypt) con fallback legacy
+    const rpcBody=JSON.stringify({p_nombre:email,p_password:pass});
+    const rpcR=await fetch(SB_URL+'/rest/v1/rpc/verificar_password',{
+      method:'POST',
+      headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Accept:'application/json'},
+      body:rpcBody
     });
     if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
-    if(!r.ok){
-      const txt=await r.text();
-      console.error('Login REST error:',r.status,txt);
-      if(errEl)errEl.textContent='Error de conexión ('+r.status+'): '+txt.slice(0,120);
-      return;
-    }
-    let rows=await r.json();
-    // Si no encuentra por nombre, intentar por email exacto (usuarios legacy)
-    if(!rows||rows.length===0){
-      const r2=await fetch(SB_URL+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=1',{
+    let rows=null;
+    if(rpcR.ok){
+      rows=await rpcR.json();
+    } else {
+      // Fallback: búsqueda directa legacy (mientras se migra)
+      const params='nombre=ilike.'+encodeURIComponent('*'+email+'*')+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=5';
+      const r2=await fetch(SB_URL+'/rest/v1/usuarios?'+params,{
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,Accept:'application/json'}
       });
       if(r2.ok) rows=await r2.json();
@@ -1118,14 +1117,19 @@ async function doChangePwd(){
     },
     body:JSON.stringify({password_hash:p1,must_change_password:false})
   });
-  if(!r.ok){
-    const txt=await r.text();
-    console.error('ChangePwd error:',r.status,txt);
-    // Fallback: si RLS bloquea el PATCH directo, usar el SDK
+  // Intentar también con la función segura bcrypt
+  if(sb){
     try{
-      const {error}=await sb.from('usuarios').update({password_hash:p1,must_change_password:false}).eq('id',CU.id);
-      if(error){err.textContent='Error al guardar: '+error.message;return;}
-    }catch(e2){err.textContent='Error al guardar. Verifica la política RLS en Supabase (usuarios: allow self-update).';return;}
+      await sb.rpc('cambiar_password',{p_usuario_id:CU.id,p_nueva:p1});
+    }catch(e2){
+      // Fallback SDK
+      if(!r.ok){
+        const {error}=await sb.from('usuarios').update({password_hash:p1,must_change_password:false}).eq('id',CU.id);
+        if(error){err.textContent='Error al guardar: '+error.message;return;}
+      }
+    }
+  } else if(!r.ok){
+    err.textContent='Error al guardar. Verifica la conexión.';return;
   }
   CU.must_change_password=false;
   CU.password_hash=p1;
@@ -1551,6 +1555,146 @@ async function guardarPlantilla(){
   if(error){alert('Error: '+error.message);return;}
   _emailPlantillas[tipo]={tipo,asunto,cuerpo};
   showToast('✅ Plantilla guardada');
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// ROBUSTEZ: Reconexión automática y detección de estado de red
+// ═══════════════════════════════════════════════════════════════
+let _online = navigator.onLine;
+window.addEventListener('online', function(){
+  _online = true;
+  showToast('✅ Conexión restaurada');
+  // Recargar vista actual
+  if(typeof CV !== 'undefined' && CV) loadView(CV);
+});
+window.addEventListener('offline', function(){
+  _online = false;
+  mostrarBanner('⚠️ Sin conexión a internet — los cambios no se guardarán', 'var(--am600)');
+});
+
+function checkOnline(){
+  if(!_online){
+    showToast('⚠️ Sin conexión — operación cancelada');
+    return false;
+  }
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ROBUSTEZ: Retry automático en operaciones críticas
+// ═══════════════════════════════════════════════════════════════
+async function sbWithRetry(fn, retries=3, delay=1000){
+  for(let i=0; i<retries; i++){
+    try{
+      const result = await fn();
+      if(result.error && i < retries-1){
+        console.warn(`Retry ${i+1}/${retries}:`, result.error.message);
+        await new Promise(r=>setTimeout(r, delay*(i+1)));
+        continue;
+      }
+      return result;
+    }catch(e){
+      if(i === retries-1) throw e;
+      await new Promise(r=>setTimeout(r, delay*(i+1)));
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ROBUSTEZ: Confirmación antes de acciones destructivas
+// ═══════════════════════════════════════════════════════════════
+function confirmarAccion(mensaje, accionPeligrosa=false){
+  return new Promise(resolve=>{
+    // Modal de confirmación más seguro que confirm() nativo
+    const overlay=document.createElement('div');
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    overlay.innerHTML=
+      '<div style="background:#fff;border-radius:12px;padding:24px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.3)">'+
+      '<div style="font-size:16px;font-weight:700;margin-bottom:12px">'+(accionPeligrosa?'⚠️ ':'❓ ')+'Confirmar acción</div>'+
+      '<div style="font-size:14px;color:#495057;margin-bottom:20px;line-height:1.5">'+mensaje+'</div>'+
+      '<div style="display:flex;gap:10px;justify-content:flex-end">'+
+      '<button id="conf-no" style="padding:8px 16px;border:1px solid #dee2e6;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">Cancelar</button>'+
+      '<button id="conf-si" style="padding:8px 16px;border:none;border-radius:8px;background:'+(accionPeligrosa?'#dc2626':'#1565c0')+';color:#fff;cursor:pointer;font-size:13px;font-weight:600">'+(accionPeligrosa?'Sí, eliminar':'Confirmar')+'</button>'+
+      '</div></div>';
+    document.body.appendChild(overlay);
+    overlay.querySelector('#conf-si').onclick=()=>{document.body.removeChild(overlay);resolve(true);};
+    overlay.querySelector('#conf-no').onclick=()=>{document.body.removeChild(overlay);resolve(false);};
+    overlay.addEventListener('click',e=>{if(e.target===overlay){document.body.removeChild(overlay);resolve(false);}});
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ROBUSTEZ: Auto-guardado de cambios pendientes
+// ═══════════════════════════════════════════════════════════════
+let _draftKey = null;
+let _draftTimer = null;
+
+function autosaveDraft(key, data){
+  _draftKey = key;
+  clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(()=>{
+    try{
+      localStorage.setItem('als_draft_'+key, JSON.stringify({data, ts:Date.now()}));
+    }catch(e){}
+  }, 1000);
+}
+
+function loadDraft(key){
+  try{
+    const raw = localStorage.getItem('als_draft_'+key);
+    if(!raw) return null;
+    const d = JSON.parse(raw);
+    // Draft caduca a las 2 horas
+    if(Date.now() - d.ts > 7200000){ localStorage.removeItem('als_draft_'+key); return null; }
+    return d.data;
+  }catch(e){ return null; }
+}
+
+function clearDraft(key){
+  try{ localStorage.removeItem('als_draft_'+(key||_draftKey)); }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ROBUSTEZ: Validación de formularios centralizada
+// ═══════════════════════════════════════════════════════════════
+function validarFormulario(rules){
+  // rules: [{id, label, required, minLen, type}]
+  const errors=[];
+  rules.forEach(r=>{
+    const el=document.getElementById(r.id);
+    const val=(el?el.value:'').trim();
+    if(r.required && !val) errors.push(r.label+' es obligatorio');
+    if(val && r.minLen && val.length < r.minLen) errors.push(r.label+' debe tener al menos '+r.minLen+' caracteres');
+    if(val && r.type==='email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) errors.push(r.label+' no tiene formato de email válido');
+    if(val && r.type==='number' && isNaN(parseFloat(val))) errors.push(r.label+' debe ser un número');
+  });
+  if(errors.length){
+    showToast('⚠️ '+errors[0]);
+    return false;
+  }
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ROBUSTEZ: Paginación para listas largas
+// ═══════════════════════════════════════════════════════════════
+function paginar(lista, pagina=1, porPagina=50){
+  const total=lista.length;
+  const totalPags=Math.ceil(total/porPagina);
+  const pag=Math.max(1,Math.min(pagina,totalPags));
+  const inicio=(pag-1)*porPagina;
+  const items=lista.slice(inicio, inicio+porPagina);
+  return{items, pag, totalPags, total, inicio, fin:inicio+items.length};
+}
+
+function renderPaginacion(info, onCambio){
+  if(info.totalPags<=1) return '';
+  const btns=[];
+  if(info.pag>1) btns.push(`<button class="btn btn-s btn-sm" onclick="(${onCambio})(${info.pag-1})">‹ Anterior</button>`);
+  btns.push(`<span style="font-size:12px;color:var(--g500);padding:0 8px">Página ${info.pag} de ${info.totalPags} · ${info.total} registros</span>`);
+  if(info.pag<info.totalPags) btns.push(`<button class="btn btn-s btn-sm" onclick="(${onCambio})(${info.pag+1})">Siguiente ›</button>`);
+  return`<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 0;border-top:1px solid var(--g200)">${btns.join('')}</div>`;
 }
 
 function doLogout(){CU=null;MOD=null;clearSession();document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
@@ -2835,7 +2979,7 @@ async function guardarIncidenciaLlegada(){
   closeModal();
 }
 function onCargaFoto(bid){const f=document.getElementById('cg-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='';setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);}}
-async function confirmarCargaBuque(bid){
+async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
   if(!confirm('¿Confirmar carga en camión para TODAS las expediciones autorizadas de este buque?'))return;
   const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO');
   if(!data||!data.length){alert('No hay expediciones autorizadas');return;}
@@ -2848,7 +2992,7 @@ async function confirmarCargaBuque(bid){
   await loadAlmFotos('carga');
 }
 function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);}}
-async function confirmarEmbarqueTab(bid){
+async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
   if(!confirm('¿Marcar el buque como EMBARCADO? Las expediciones pasarán a "A bordo" (excepto las Landed).'))return;
   await sb.from('buques').update({estado_operacion:'Embarcado'}).eq('id',bid);
   // Solo cambiar a "A bordo" las expediciones que NO son Landed
@@ -3492,7 +3636,7 @@ async function saveTra(id,val){await sb.from('expediciones').update({tramite_adu
 async function saveUbic(id,val){await sb.from('expediciones').update({ubicacion:val}).eq('id',id);await logAct('expediciones',id,'','editar','ubicacion',null,val);showToast('Ubicación actualizada');}
 
 // Guarda TODOS los campos editables de la ficha de expedición de una vez
-async function guardarExpedicion(id){
+async function guardarExpedicion(id){if(!checkOnline())return;
   const mrn=(document.getElementById('mrn-inp')?.value||'').trim()||null;
   const status=document.getElementById('sta-sel')?.value||null;
   const fmax=document.getElementById('fmax-inp')?.value||null;
@@ -3585,6 +3729,9 @@ function abrirExpEnBuque(buqueId,buqueNombre){
     document.getElementById('mo').classList.add('open');
     // Pasar buqueId directamente a body() para que preseleccione el buque
     document.getElementById('m-body').innerHTML=await m.body(buqueId);
+    // Restore draft if available
+    const draft=loadDraft('nueva-exp-'+buqueId);
+    if(draft){Object.entries(draft).forEach(([k,v])=>{const el=document.getElementById(k);if(el)el.value=v;});showToast('📝 Borrador restaurado');}
     document.getElementById('mab').onclick=m.action;
     if(m.after)m.after();
   },80);
