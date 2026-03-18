@@ -244,29 +244,49 @@ let sb;
 
 // ── NAVEGACIÓN ───────────────────────────────────────────
 function goTo(mod){
-  // Read session from any available storage
-  var sess = null;
-  try{ sess = sessionStorage.getItem('als_cu'); }catch(e){}
-  if(!sess){ try{ sess = localStorage.getItem('als_cu'); }catch(e){} }
-  
-  // Build URL with destination
-  var url = 'index.html';
-  var params = [];
-  if(mod && mod !== 'home') params.push('go=' + mod);
-  
-  // Pass session in URL so index.html receives it regardless of storage state
-  if(sess){
+  // airport_cargo runs in a separate tab opened by index.html
+  // Use window.opener to navigate the PARENT tab, then close this one
+  if(window.opener && !window.opener.closed){
     try{
-      // Encode session as base64 to pass safely in URL
-      params.push('_s=' + btoa(unescape(encodeURIComponent(sess))));
-    }catch(e){}
+      // Tell the parent tab to navigate to the requested module
+      if(mod === 'home'){
+        window.opener.showHome && window.opener.showHome();
+      } else if(mod === 'operativa'){
+        window.opener.enterMod && window.opener.enterMod('operativa');
+      } else if(mod === 'almacen'){
+        window.opener.enterMod && window.opener.enterMod('almacen');
+      }
+      // Focus the parent tab and close this one
+      window.opener.focus();
+      window.close();
+      return;
+    }catch(e){
+      console.warn('opener communication failed:', e);
+    }
   }
-  
-  if(params.length) url += '?' + params.join('&');
+  // Fallback: if no opener (e.g. opened directly), navigate normally
+  // Pass session in URL
+  var sess = null;
+  try{ sess = localStorage.getItem('als_cu'); }catch(e){}
+  var url = 'index.html' + (mod && mod !== 'home' ? '?go=' + mod : '');
+  if(sess){
+    try{ url += (url.includes('?')?'&':'?') + '_s=' + btoa(unescape(encodeURIComponent(sess))); }catch(e){}
+  }
   window.location.href = url;
 }
 function exitApp(){
+  // Clear session everywhere
   try{sessionStorage.removeItem('als_cu');}catch(e){}
+  try{localStorage.removeItem('als_cu');}catch(e){}
+  // If opened from index.html, trigger logout there and close this tab
+  if(window.opener && !window.opener.closed){
+    try{
+      window.opener.doLogout && window.opener.doLogout();
+      window.opener.focus();
+      window.close();
+      return;
+    }catch(e){}
+  }
   window.location.href='index.html';
 }
 function toggleSB(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('mob-ov').classList.toggle('show');}
