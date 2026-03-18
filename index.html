@@ -1858,6 +1858,70 @@ function navAlmMobHome(){
   // La barra sigue visible — el usuario puede volver a las pestañas
 }
 
+
+// ── AWB TRACKING — enlace directo al portal de la aerolínea ──
+const AWB_PORTALS={
+  '001':'https://www.aacargo.com/track/?awb=',           // American Airlines
+  '006':'https://lufthansa-cargo.com/tracking?awb=',     // Lufthansa
+  '012':'https://cargo.flysas.com/tracking?awb=',        // SAS
+  '014':'https://www.airtransat.com/',
+  '020':'https://lufthansa-cargo.com/tracking?awb=',     // Lufthansa
+  '023':'https://aircargo.united.com/us/en/tracking?awb=',// United
+  '052':'https://cargo.iberia.com/tracking?awb=',        // Iberia
+  '055':'https://www.afklcargo.com/tracking?awb=',       // Air France
+  '057':'https://www.afklcargo.com/tracking?awb=',       // KLM
+  '074':'https://www.aacargo.com/track/?awb=',           // American
+  '083':'https://www.cathaycargo.com/en-us/track-and-trace.html?awb=', // Cathay
+  '086':'https://www.lufthansa-cargo.com/tracking?awb=',
+  '098':'https://cargo.britishairways.com/tracking?awb=',// British Airways
+  '125':'https://cargo.bru.iberia.com/tracking?awb=',    // Vueling
+  '139':'https://cargo.flyone.am/tracking?awb=',
+  '172':'https://www.emiratesgroup.com/tracking?awb=',   // Emirates
+  '176':'https://cargo.etihadairways.com/tracking?awb=', // Etihad
+  '180':'https://www.corendon.com/',
+  '232':'https://cargo.delta.com/track?awb=',            // Delta
+  '235':'https://cargo.turkish.com/tracking?awb=',       // Turkish
+  '297':'https://www.singaporeair.com/cargo/tracking?awb=',
+  '369':'https://cargo.turkishairlines.com/tracking?awb=',
+  '618':'https://cargo.finnair.com/tracking?awb=',       // Finnair
+  '724':'https://cargo.iberia.com/tracking?awb=',        // Iberia
+  '783':'https://cargo.ryanair.com/',
+};
+
+function awbTrackingUrl(awb){
+  if(!awb) return null;
+  // Normalizar: quitar guiones y espacios
+  var clean=awb.replace(/[-\s]/g,'');
+  var prefix=clean.substring(0,3);
+  var number=clean.substring(3);
+  var base=AWB_PORTALS[prefix];
+  if(base){
+    // Si la URL ya tiene ?awb= añadir el número formateado
+    if(base.includes('?awb=')) return base+prefix+'-'+number;
+    return base;
+  }
+  // Fallback: track-trace.com que soporta 244 aerolíneas
+  return 'https://www.track-trace.com/aircargo#'+prefix+'-'+number;
+}
+
+function abrirTrackingAWB(awb){
+  var url=awbTrackingUrl(awb);
+  if(!url){showToast('AWB no válido');return;}
+  window.open(url,'_blank');
+  // Copiar AWB al portapapeles por si la web requiere introducirlo manualmente
+  var clean=awb.replace(/[-\s]/g,'');
+  var prefix=clean.substring(0,3);
+  var number=clean.substring(3);
+  var formatted=prefix+'-'+number;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(formatted).then(function(){
+      showToast('🔍 Abriendo tracking · AWB '+formatted+' copiado');
+    }).catch(function(){showToast('🔍 Abriendo tracking de '+formatted);});
+  } else {
+    showToast('🔍 Abriendo tracking de '+formatted);
+  }
+}
+
 function doLogout(){CU=null;MOD=null;clearSession();document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
 
 const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas'};
@@ -2562,7 +2626,7 @@ function renderE(list){
     const hasFoto=e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url;
     return`<tr onclick="openExpD('${e.id}')">
       <td onclick="event.stopPropagation()"><input type="checkbox" style="accent-color:var(--b600)" onchange="toggleExpLote('${e.id}',this)"></td>
-      <td><div class="fw">${e.nº_expedicion}</div></td>
+      <td><div class="fw" style="cursor:pointer" onclick="event.stopPropagation();abrirTrackingAWB('${e.nº_expedicion}')" title="Rastrear AWB">${e.nº_expedicion} <span style="font-size:10px;color:var(--g400)">✈️</span></div></td>
       <td class="sm">${e.buques?.nombre||'—'}</td>
       <td class="sm">${e.empresas?.nombre||'—'}</td>
       <td class="sm">${e.bultos}b·${e.kilos}kg</td>
@@ -4097,7 +4161,17 @@ async function openExpD(id){
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
   const emailCli=e.empresas?.email_confronta||'';
-  document.getElementById('m-title').textContent='📦 '+e.nº_expedicion;
+  // Auto-corregir semáforo si hay inconsistencia con la ubicación
+  const semCorrect=semaforoDeUbicacion(e.ubicacion);
+  if(semCorrect && e.estado_semaforo !== semCorrect &&
+     !['✅ AUTORIZADO','🚢 EMBARCADO','🚛 CARGADO CAMIÓN'].includes(e.estado_semaforo)){
+    // Corregir en BD de forma silenciosa
+    sb.from('expediciones').update({estado_semaforo:semCorrect,estado_carga:semCorrect}).eq('id',id).then(()=>{});
+    e.estado_semaforo=semCorrect;
+    e.estado_carga=semCorrect;
+  }
+  var titleEl=document.getElementById('m-title');
+  titleEl.innerHTML='📦 <span style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="abrirTrackingAWB(\'' + (e.nº_expedicion||'') + '\')" title="Rastrear AWB en portal del carrier">'+e.nº_expedicion+'</span> <span style="font-size:11px;color:var(--b400)" title="Rastrear en portal del carrier">✈️</span>';
   document.getElementById('m-body').innerHTML=`
     <div class="dg">
       <div class="df"><div class="dl">Buque</div><div class="dv" style="cursor:pointer;color:var(--b600)" onclick="closeModal();setTimeout(()=>openBuque('${e.buques?.id}'),60)">${e.buques?.nombre||'—'} ↗</div></div>
@@ -4110,7 +4184,7 @@ async function openExpD(id){
       <div class="fg2"><label class="fl2">Fecha máx. despacho</label><input id="fmax-inp" class="fi" type="date" value="${e.fecha_max_despacho?e.fecha_max_despacho.slice(0,10):''}" ></div>
     </div>
     <div class="df"><div class="dl">Nº MRN</div><div style="font-family:var(--mono);font-size:13px;font-weight:500;color:${e.nº_mrn?'var(--g900)':'var(--am600)'}">${e.nº_mrn||'⚠️ Sin MRN — requerido para autorizar'}</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">${bdg(e.estado_semaforo)}<span class="badge ${e.estado_carga==='✅ AUTORIZADO'?'bg':'br'}">${e.estado_carga}</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px" data-exp-badges>${bdg(e.estado_semaforo)}<span class="badge ${e.estado_carga==='✅ AUTORIZADO'?'bg':'br'}">${e.estado_carga}</span></div>
     ${e.created_by_nombre?`<div style="font-size:11px;color:var(--g400);margin-bottom:12px">Creado por <strong>${e.created_by_nombre}</strong>${e.updated_at?` · Última edición: ${fdt(e.updated_at)}`:''}</div>`:''}
     <hr class="fdiv">
     <div class="fg2"><label class="fl2">Nº MRN</label><input id="mrn-inp" class="fi" value="${e.nº_mrn||''}" placeholder="26ES…"></div>
@@ -4213,7 +4287,17 @@ async function saveMRN(id){
   closeModal();loadView(CV);
 }
 async function saveTra(id,val){await sb.from('expediciones').update({tramite_aduanero:val}).eq('id',id);await logAct('expediciones',id,'','editar','tramite_aduanero',null,val);showToast('Trámite actualizado');}
-async function saveUbic(id,val){await sb.from('expediciones').update({ubicacion:val}).eq('id',id);await logAct('expediciones',id,'','editar','ubicacion',null,val);showToast('Ubicación actualizada');}
+async function saveUbic(id,val){
+  const upd={ubicacion:val};
+  const sem=semaforoDeUbicacion(val);
+  if(sem) { upd.estado_semaforo=sem; upd.estado_carga=sem; }
+  await sb.from('expediciones').update(upd).eq('id',id);
+  await logAct('expediciones',id,'','editar','ubicacion',null,val+(sem?' → '+sem:''));
+  // Refresh the badge in modal
+  const badgeWrap=document.querySelector('[data-exp-badges]');
+  if(badgeWrap&&sem) badgeWrap.innerHTML=bdg(sem)+badgeWrap.innerHTML.replace(/<span[^>]*badge[^>]*>[^<]*<\/span>/,'');
+  showToast('Ubicación: '+val+(sem?' · '+sem:''));
+}
 
 // Guarda TODOS los campos editables de la ficha de expedición de una vez
 
