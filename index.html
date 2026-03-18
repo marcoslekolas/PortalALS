@@ -184,6 +184,48 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .h-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .grist-btn{background:#1a6b4a;color:#fff;border:none;padding:5px 10px;border-radius:var(--r);font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
 .hdr-cert{background:#cc0000;color:#fff;font-size:9px;font-weight:600;padding:3px 7px;border-radius:4px;line-height:1.4;text-align:center;white-space:nowrap}
+
+/* ── Barra de acceso rápido móvil — solo visible en módulo almacén ── */
+#mob-alm-bar{
+  display:none;
+  position:fixed;
+  bottom:0;left:0;right:0;
+  background:var(--w);
+  border-top:1px solid var(--g200);
+  padding:8px 4px max(8px,env(safe-area-inset-bottom));
+  z-index:200;
+  box-shadow:0 -2px 12px rgba(0,0,0,.10);
+}
+#mob-alm-bar.visible{display:flex;}
+.mob-alm-btn{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+  padding:6px 2px;
+  background:none;
+  border:none;
+  border-radius:var(--r);
+  cursor:pointer;
+  font-family:var(--f);
+  color:var(--g600);
+  font-size:10px;
+  font-weight:600;
+  min-width:0;
+  transition:background .12s, color .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+.mob-alm-btn:active{background:var(--b50);color:var(--b700);}
+.mob-alm-btn.active{color:var(--b700);background:var(--b50);}
+.mob-alm-btn .mob-icon{font-size:22px;line-height:1;}
+.mob-alm-btn .mob-lbl{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;}
+@media(max-width:768px){
+  /* Push content up when bottom bar is visible */
+  #content.has-mob-bar .view.active{padding-bottom:80px;}
+}
+
 .hamburger{display:none;background:none;border:none;color:var(--g600);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0}
 
 /* ── BUTTONS ── */
@@ -777,6 +819,24 @@ textarea.fi{resize:vertical;min-height:72px}
 </div>
 
 <div class="mob-ov" id="mob-ov" onclick="toggleSB()"></div>
+<!-- Barra rápida móvil — módulo Almacén -->
+<div id="mob-alm-bar">
+  <button class="mob-alm-btn active" id="mab-llegadas" onclick="switchFotosTab('llegadas',this);navAlmMob(this)">
+    <span class="mob-icon">📥</span><span class="mob-lbl">Llegadas</span>
+  </button>
+  <button class="mob-alm-btn" id="mab-carga" onclick="switchFotosTab('carga',this);navAlmMob(this)">
+    <span class="mob-icon">🚛</span><span class="mob-lbl">Carga</span>
+  </button>
+  <button class="mob-alm-btn" id="mab-embarque" onclick="switchFotosTab('embarque',this);navAlmMob(this)">
+    <span class="mob-icon">🚢</span><span class="mob-lbl">Embarque</span>
+  </button>
+  <button class="mob-alm-btn" id="mab-landed" onclick="switchFotosTab('landed',this);navAlmMob(this)">
+    <span class="mob-icon">⚓</span><span class="mob-lbl">Landed</span>
+  </button>
+  <button class="mob-alm-btn" id="mab-home" onclick="nav('alm-dashboard',null);hideMobAlmBar()">
+    <span class="mob-icon">🏠</span><span class="mob-lbl">Inicio</span>
+  </button>
+</div>
 <div class="mo" id="mo" onclick="closeModalOut(event)">
   <div class="modal" id="mbox">
     <div class="mh"><div class="mt" id="m-title"></div><button class="mc" onclick="closeModal()">×</button></div>
@@ -1283,14 +1343,20 @@ function enterMod(mod){
     if(btnAlmacen) btnAlmacen.style.display='none';
     if(btnAirport) btnAirport.style.display=(!esExclusivoAlmacen&&puedeAirport)?'':'none';
     if(btnOperativa) btnOperativa.style.display=esExclusivoAlmacen?'none':'';
-    nav('alm-dashboard',document.querySelector('#nav-alm .nav-item'));
+    // En móvil: ir directamente a Fotos & Confirmar con la barra visible
+    if(window.innerWidth<=768){
+      nav('alm-fotos',document.querySelector('#nav-alm .nav-item:nth-child(2)'));
+      setTimeout(showMobAlmBar, 150);
+    } else {
+      nav('alm-dashboard',document.querySelector('#nav-alm .nav-item'));
+    }
   }
 }
 
 function irAAlmacen(){ enterMod('almacen'); }
 function irAOperativa(){ enterMod('operativa'); }
 
-function volverHome(){document.getElementById('app').style.display='none';showHome();}
+function volverHome(){document.getElementById('app').style.display='none';hideMobAlmBar();showHome();}
 
 // ═══════════════════════════════════════════════════════════════
 // BÚSQUEDA GLOBAL
@@ -1754,6 +1820,35 @@ async function verFotosExpedicion(expId, ref){
   }catch(e){showToast('Error cargando fotos: '+e.message);}
 }
 
+
+// ── Barra móvil almacén ───────────────────────────────────────
+function showMobAlmBar(){
+  var bar=document.getElementById('mob-alm-bar');
+  var content=document.getElementById('content');
+  if(bar) bar.classList.add('visible');
+  if(content) content.classList.add('has-mob-bar');
+  // Asegurar que la vista alm-fotos está activa
+  if(document.getElementById('view-alm-fotos') &&
+     !document.getElementById('view-alm-fotos').classList.contains('active')){
+    nav('alm-fotos', null);
+  }
+}
+function hideMobAlmBar(){
+  var bar=document.getElementById('mob-alm-bar');
+  var content=document.getElementById('content');
+  if(bar) bar.classList.remove('visible');
+  if(content) content.classList.remove('has-mob-bar');
+}
+function navAlmMob(el){
+  // Highlight active button
+  document.querySelectorAll('.mob-alm-btn').forEach(function(b){b.classList.remove('active');});
+  if(el) el.classList.add('active');
+  // Make sure we're on alm-fotos view
+  if(!document.getElementById('view-alm-fotos').classList.contains('active')){
+    nav('alm-fotos', document.querySelector('#nav-alm .nav-item:nth-child(2)'));
+  }
+}
+
 function doLogout(){CU=null;MOD=null;clearSession();document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
 
 const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas'};
@@ -1771,7 +1866,7 @@ function nav(view,el){
 function toggleSB(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('mob-ov').classList.toggle('show');}
 
 // ── HELPERS ──
-function bdg(s){const m={'✅ AUTORIZADO':'bg','🚛 CARGADO CAMIÓN':'bg','🚢 EMBARCADO':'bg','⏳ EN TRÁNSITO':'bb','⌛ ESPERANDO ALMACÉN':'bb','📦 UBICADA':'bt','🚨 EN ALMACÉN - REVISAR':'br'};return`<span class="badge ${m[s]||'bgr'}">${s||'—'}</span>`;}
+function bdg(s){const m={'✅ AUTORIZADO':'bg','🚛 CARGADO CAMIÓN':'bg','🚢 EMBARCADO':'bg','⏳ EN TRÁNSITO':'bb','⌛ ESPERANDO ALMACÉN':'bb','📦 UBICADA':'bt','🚨 EN ALMACÉN - REVISAR':'br','⚓ Landed':'ba'};return`<span class="badge ${m[s]||'bgr'}">${s||'—'}</span>`;}
 function fd(d){if(!d)return'—';return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit'});}
 function fdl(d){if(!d)return'—';return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});}
 function fdt(d){if(!d)return'—';return new Date(d).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});}
@@ -4103,6 +4198,20 @@ async function saveTra(id,val){await sb.from('expediciones').update({tramite_adu
 async function saveUbic(id,val){await sb.from('expediciones').update({ubicacion:val}).eq('id',id);await logAct('expediciones',id,'','editar','ubicacion',null,val);showToast('Ubicación actualizada');}
 
 // Guarda TODOS los campos editables de la ficha de expedición de una vez
+
+// Calcula el estado_semáforo correcto según la ubicación
+function semaforoDeUbicacion(ubic){
+  if(!ubic) return null;
+  if(ubic==='Landed')           return '⚓ Landed';
+  if(ubic==='A bordo')          return '🚢 EMBARCADO';
+  if(ubic==='Camión cargado')   return '🚛 CARGADO CAMIÓN';
+  if(ubic==='Pendiente recibir')return '⏳ EN TRÁNSITO';
+  if(ubic.startsWith('Almacén'))return '📦 UBICADA';
+  if(ubic==='Puerto')           return '📦 UBICADA';
+  if(ubic.startsWith('Aeropuerto')) return '⏳ EN TRÁNSITO';
+  return null; // no cambiar
+}
+
 async function guardarExpedicion(id){if(!checkOnline())return;
   const mrn=(document.getElementById('mrn-inp')?.value||'').trim()||null;
   const status=document.getElementById('sta-sel')?.value||null;
@@ -4117,7 +4226,12 @@ async function guardarExpedicion(id){if(!checkOnline())return;
   if(tra) obj.tramite_aduanero=tra;
   if(docs!==null) obj.docs_puerto=docs==='No requiere'?null:[docs];
   if(ubic) obj.ubicacion=ubic;
-  // Auto-lógica: MRN + Despachado → Autorizado (igual que saveMRN)
+  // Auto-lógica semáforo desde ubicación
+  if(ubic){
+    const semUbic=semaforoDeUbicacion(ubic);
+    if(semUbic){ obj.estado_semaforo=semUbic; obj.estado_carga=semUbic; }
+  }
+  // Auto-lógica: MRN + Despachado → Autorizado (sobreescribe lo anterior)
   if(mrn && tra==='Despachado'){
     obj.estado_carga='✅ AUTORIZADO';
     obj.estado_semaforo='✅ AUTORIZADO';
