@@ -246,24 +246,40 @@ let sb;
 
 // ── NAVEGACIÓN ───────────────────────────────────────────
 function goTo(mod){
-  // BLINDADO: usa window.opener para navegar el tab padre, nunca cierra sesión aquí
+  // BLINDADO: usa window.opener para navegar el tab padre sin cerrar sesión
   try {
     if(window.opener && !window.opener.closed){
-      if(mod==='home'){
-        if(typeof window.opener.showHome==='function') window.opener.showHome();
-      } else if(mod==='operativa'){
-        if(typeof window.opener.enterMod==='function') window.opener.enterMod('operativa');
-      } else if(mod==='almacen'){
-        if(typeof window.opener.enterMod==='function') window.opener.enterMod('almacen');
+      var op = window.opener;
+      // Asegurar que CU está cargado en el padre antes de enterMod
+      if(mod !== 'home'){
+        // Si CU no existe o está vacío en el padre, recargarlo desde sessionStorage
+        if(!op.CU || !op.CU.id){
+          if(typeof op.loadSession === 'function'){
+            var recovered=op.loadSession();
+            if(recovered && recovered.id) op.CU=recovered;
+          }
+          // Si aún sin sesión, ir a home del padre
+          if(!op.CU || !op.CU.id){
+            if(typeof op.showHome === 'function') op.showHome();
+            op.focus();
+            return;
+          }
+        }
       }
-      window.opener.focus();
+      if(mod==='home'){
+        if(typeof op.showHome==='function') op.showHome();
+      } else if(mod==='operativa'){
+        if(typeof op.enterMod==='function') op.enterMod('operativa');
+      } else if(mod==='almacen'){
+        if(typeof op.enterMod==='function') op.enterMod('almacen');
+      }
+      op.focus();
     } else {
-      // Sin opener: abrir index.html en nueva pestaña
-      window.open('index.html','_parent');
+      // Sin opener: no hacer nada peligroso, mostrar aviso
+      alert('Abre esta página desde el Portal ALS principal.');
     }
   } catch(e){
-    console.warn('goTo error:', e);
-    window.open('index.html','_blank');
+    console.warn('goTo error:', e.message);
   }
 }
 
