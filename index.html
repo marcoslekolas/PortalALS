@@ -2455,13 +2455,14 @@ function renderE(list){
     const fmax=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null;
     const fmaxStr=fmax?fd(e.fecha_max_despacho):'—';
     const fmaxAlerta=fmax&&fmax<hoy&&e.tramite_aduanero!=='Despachado';
+    const hasFoto=e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url;
     return`<tr onclick="openExpD('${e.id}')">
       <td onclick="event.stopPropagation()"><input type="checkbox" style="accent-color:var(--b600)" onchange="toggleExpLote('${e.id}',this)"></td>
       <td><div class="fw">${e.nº_expedicion}</div></td>
       <td class="sm">${e.buques?.nombre||'—'}</td>
       <td class="sm">${e.empresas?.nombre||'—'}</td>
       <td class="sm">${e.bultos}b·${e.kilos}kg</td>
-      <td>${bdg(e.estado_semaforo)}</td>
+      <td>${bdg(e.estado_semaforo)}${hasFoto?'<span title="Tiene fotos" style="margin-left:3px;font-size:11px">📸</span>':''}</td>
       <td><span class="badge bgr" style="font-size:10px">${e.status_aduanero||'—'}</span></td>
       <td class="sm">${e.tramite_aduanero||'—'}</td>
       <td class="sm">${e.ubicacion||'—'}</td>
@@ -3298,7 +3299,8 @@ async function loadAlmFotos(tab){
     (expsAll||[]).forEach(e=>{if(!e.buque_id)return;if(!expsByBuque[e.buque_id])expsByBuque[e.buque_id]=[];expsByBuque[e.buque_id].push(e);});
     if(!buques.length){cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay buques activos</div></div>';return;}
     // Solo mostrar expediciones YA marcadas como Landed (ubicacion='Landed') por buque
-    const {data:landedExps}=await sb.from('expediciones').select('id,buque_id,nº_expedicion,bultos,kilos').eq('ubicacion','Landed');
+    // Mostrar solo Landed pendientes de recoger (excluir los ya recogidos = ESPERANDO ALMACÉN)
+    const {data:landedExps}=await sb.from('expediciones').select('id,buque_id,nº_expedicion,bultos,kilos').eq('ubicacion','Landed').neq('estado_semaforo','⌛ ESPERANDO ALMACÉN');
     const landedByBuque={};
     (landedExps||[]).forEach(e=>{if(!e.buque_id)return;if(!landedByBuque[e.buque_id])landedByBuque[e.buque_id]=[];landedByBuque[e.buque_id].push(e);});
     // Filtrar buques que tienen al menos una expedición Landed
@@ -3442,24 +3444,40 @@ async function confirmarLanded(){
   showToast('⚓ Landed confirmado');await loadAlmFotos('landed');
 }
 async function confirmarLandedBuque(buqueId, buqueNombre){
-  // Marcar expediciones Landed de este buque como recogidas en muelle → Almacén-Sin Ubicar
   const {data:exps}=await sb.from('expediciones').select('id,nº_expedicion')
     .eq('buque_id',buqueId).eq('ubicacion','Landed');
   if(!exps||!exps.length){showToast('Sin expediciones Landed para '+buqueNombre);return;}
-  // Subir fotos si las hay
+
+  // Leer fotos del INPUT (no del preview — el preview puede no tener _files si no se cambió)
+  const inp=document.getElementById('lnd-fi-'+buqueId);
   const prevEl=document.getElementById('lnd-pv-'+buqueId);
-  const files=prevEl?._files||[];
-  if(files.length){
-    showToast('📤 Subiendo fotos...');
-    await subirFotosYGuardar(files,'buques',buqueId,'landed');
+  // Combinar: fotos del input nativo + fotos del preview (comprimidas)
+  const rawFiles=inp&&inp.files&&inp.files.length?Array.from(inp.files):[];
+  const compFiles=prevEl&&prevEl._files&&prevEl._files.length?prevEl._files:rawFiles;
+  const filesToUpload=compFiles.length?compFiles:rawFiles;
+
+  let fotoUrl=null;
+  if(filesToUpload.length){
+    showToast('📤 Subiendo foto...');
+    // Subir vinculada a cada expedición Landed
+    for(const e of exps){
+      const urls=await subirFotosYGuardar(filesToUpload,'expediciones',e.id,'landed');
+      if(urls&&urls.length&&!fotoUrl) fotoUrl=urls[0];
+    }
   }
-  // Cambiar ubicación: Landed → Almacén-Sin Ubicar (recogida confirmada)
-  await sb.from('expediciones').update({ubicacion:'Almacén-Sin Ubicar'})
+
+  // Estado: mercancía recogida del muelle → queda en ubicacion Landed
+  // pero semáforo cambia a ESPERANDO ALMACÉN para que mozo la confirme en pestaña Llegadas
+  const upd={estado_semaforo:'⌛ ESPERANDO ALMACÉN', estado_carga:'⌛ ESPERANDO ALMACÉN'};
+  if(fotoUrl) upd.foto_llegada_url=fotoUrl;
+  await sb.from('expediciones').update(upd)
     .eq('buque_id',buqueId).eq('ubicacion','Landed');
+
   for(const e of exps){
-    await logAct('expediciones',e.id,e.nº_expedicion,'editar','ubicacion','Landed','Recogida Landed confirmada — buque '+buqueNombre+' por '+CU?.nombre);
+    await logAct('expediciones',e.id,e.nº_expedicion,'editar','estado_semaforo','Landed',
+      'Mercancía recogida del muelle'+(fotoUrl?' [con foto]':' [sin foto]')+' — '+buqueNombre+' por '+CU?.nombre);
   }
-  showToast('✅ Recogida confirmada — '+exps.length+' expedición'+(exps.length>1?'es':'')+' → Almacén');
+  showToast('✅ Recogida confirmada'+(fotoUrl?' 📸':'')+' — '+(exps.length>1?exps.length+' expediciones':'1 expedición')+' → pendiente llegada almacén');
   await loadAlmFotos('landed');
 }
 
