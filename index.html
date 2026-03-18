@@ -1976,6 +1976,12 @@ function awbTrackingUrl(awb){
   return 'https://www.track-trace.com/aircargo#'+prefix+'-'+number;
 }
 
+// Delegation for ✈️ AWB tracking — only on Aeropuerto expeditions
+document.addEventListener('click', function(ev){
+  var el=ev.target.closest('.als-awb-track');
+  if(el && el.dataset.awb){ ev.stopPropagation(); abrirTrackingAWB(el.dataset.awb); }
+});
+
 function abrirTrackingAWB(awb){
   var url=awbTrackingUrl(awb);
   if(!url){showToast('AWB no válido');return;}
@@ -2700,7 +2706,7 @@ function renderE(list){
     const semDisplay=e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo;
     return`<tr onclick="openExpD('${e.id}')">
       <td onclick="event.stopPropagation()"><input type="checkbox" style="accent-color:var(--b600)" onchange="toggleExpLote('${e.id}',this)"></td>
-      <td><div class="fw" style="cursor:pointer" onclick="event.stopPropagation();abrirTrackingAWB('${e.nº_expedicion}')" title="Rastrear AWB">${e.nº_expedicion} <span style="font-size:10px;color:var(--g400)">✈️</span></div></td>
+      <td><div class="fw">${e.nº_expedicion}${(e.ubicacion||'').toLowerCase().includes('aeropuerto')?'<span class="als-awb-track" data-awb="'+e.nº_expedicion+'" style="cursor:pointer;font-size:10px;color:var(--b500);margin-left:3px" title="Rastrear en portal del carrier">✈️</span>':''}</div></td>
       <td class="sm">${e.buques?.nombre||'—'}</td>
       <td class="sm">${e.empresas?.nombre||'—'}</td>
       <td class="sm">${e.bultos}b·${e.kilos}kg</td>
@@ -4248,7 +4254,12 @@ async function openExpD(id){
     e.estado_carga=semCorrect;
   }
   var titleEl=document.getElementById('m-title');
-  titleEl.innerHTML='📦 <span style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="abrirTrackingAWB(\'' + (e.nº_expedicion||'') + '\')" title="Rastrear AWB en portal del carrier">'+e.nº_expedicion+'</span> <span style="font-size:11px;color:var(--b400)" title="Rastrear en portal del carrier">✈️</span>';
+  var esAeropuerto=(e.ubicacion||'').toLowerCase().includes('aeropuerto');
+  if(esAeropuerto){
+    titleEl.innerHTML='✈️ <span class="als-awb-track" data-awb="'+(e.nº_expedicion||'')+'" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Rastrear en portal del carrier">'+e.nº_expedicion+'</span>';
+  } else {
+    titleEl.textContent='📦 '+e.nº_expedicion;
+  }
   document.getElementById('m-body').innerHTML=`
     <div class="dg">
       <div class="df"><div class="dl">Buque</div><div class="dv" style="cursor:pointer;color:var(--b600)" onclick="closeModal();setTimeout(()=>openBuque('${e.buques?.id}'),60)">${e.buques?.nombre||'—'} ↗</div></div>
