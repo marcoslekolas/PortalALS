@@ -394,14 +394,61 @@ async function loadTarifasDB(){
   }catch(e){console.warn('tarifas_handling no disponible, usando defaults:',e.message);}
 }
 
+
+// ── AWB TRACKING — enlace al portal del carrier ──────────────
+var AWB_PORTALS={
+  '006':'https://lufthansa-cargo.com/tracking?awb=',
+  '020':'https://lufthansa-cargo.com/tracking?awb=',
+  '052':'https://cargo.iberia.com/tracking?awb=',
+  '055':'https://www.afklcargo.com/tracking?awb=',
+  '057':'https://www.afklcargo.com/tracking?awb=',
+  '083':'https://www.cathaycargo.com/en-us/track-and-trace.html?awb=',
+  '098':'https://cargo.britishairways.com/tracking?awb=',
+  '125':'https://cargo.vueling.com/tracking?awb=',
+  '172':'https://skycargo.com/tracking?awb=',
+  '176':'https://cargo.etihadairways.com/tracking?awb=',
+  '232':'https://cargo.delta.com/track?awb=',
+  '235':'https://cargo.turkishairlines.com/tracking?awb=',
+  '618':'https://cargo.finnair.com/tracking?awb=',
+  '724':'https://cargo.iberia.com/tracking?awb='
+};
+function abrirTrackingAWB(awb){
+  if(!awb||awb==='—'||awb==='') return;
+  var clean=awb.replace(/[\-\s]/g,'');
+  var prefix=clean.substring(0,3);
+  var number=clean.substring(3);
+  var base=AWB_PORTALS[prefix];
+  var url;
+  if(base){
+    url = base.includes('?awb=') ? base+prefix+'-'+number : base;
+  } else {
+    url = 'https://www.track-trace.com/aircargo#'+prefix+'-'+number;
+  }
+  window.open(url,'_blank');
+  var fmt=prefix+'-'+number;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(fmt).catch(function(){});
+  }
+  toast('✈️ '+fmt+' — abriendo tracking');
+}
+
 // ── CÁLCULOS ─────────────────────────────────────────────
 function diasFact(ll,rt,h){
-  if(!ll||!rt||!h)return 0;
-  var l=new Date(ll),r=new Date(rt);
-  var dsig=Math.round((r-l)/86400000);
-  var dnat=dsig+1;
-  if(h==='Swissport'){var dow=l.getDay();var fr=(dow===0||dow===6)?3:2;return dnat<=fr?0:dsig;}
-  if(h==='Groundforce'){return dnat<=3?0:dnat;}
+  if(!ll||!rt||!h) return 0;
+  var l=new Date(ll), r=new Date(rt);
+  // dnat = días naturales incluyendo día de llegada y día de retirada
+  var dsig=Math.round((r-l)/86400000); // diferencia en días
+  var dnat=dsig+1; // +1 porque contamos el día de llegada
+  if(h==='Swissport'){
+    var dow=l.getDay();
+    var fr=(dow===0||dow===6)?3:2; // fin de semana: 3 días libres
+    return dnat<=fr?0:dsig;
+  }
+  if(h==='Groundforce'){
+    // THC 2026: 4 días libres desde día de llegada inclusive
+    // Si excede: se cobra desde día de llegada (= dnat días completos)
+    return dnat<=4?0:dnat;
+  }
   return 0;
 }
 function calcAlm(kg,d,h,yr){var t=getH(h,yr);if(!d||!t||!t.alm)return 0;return Math.max(Math.ceil(kg/100)*t.alm.u*d,t.alm.min);}
