@@ -3297,31 +3297,40 @@ async function loadAlmFotos(tab){
     const expsByBuque={};
     (expsAll||[]).forEach(e=>{if(!e.buque_id)return;if(!expsByBuque[e.buque_id])expsByBuque[e.buque_id]=[];expsByBuque[e.buque_id].push(e);});
     if(!buques.length){cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay buques activos</div></div>';return;}
-    cont.innerHTML=`
-      <div style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--am600);margin-bottom:16px;line-height:1.5">
-        <strong>⚓ Landed</strong>: Mercancía entregada a bordo que debe descargarse y recogerse en el muelle tras finalizar la operación de embarque. Al confirmar, se cambia la ubicación de las expediciones del buque a <strong>Landed</strong>.
-      </div>`+buques.map(b=>{
-      const bExps=expsByBuque[b.id]||[];
+    // Solo mostrar expediciones YA marcadas como Landed (ubicacion='Landed') por buque
+    const {data:landedExps}=await sb.from('expediciones').select('id,buque_id,nº_expedicion,bultos,kilos').eq('ubicacion','Landed');
+    const landedByBuque={};
+    (landedExps||[]).forEach(e=>{if(!e.buque_id)return;if(!landedByBuque[e.buque_id])landedByBuque[e.buque_id]=[];landedByBuque[e.buque_id].push(e);});
+    // Filtrar buques que tienen al menos una expedición Landed
+    const buquesConLanded=buques.filter(b=>(landedByBuque[b.id]||[]).length>0);
+    if(!buquesConLanded.length){
+      cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay expediciones Landed pendientes de recoger</div></div>';
+      return;
+    }
+    cont.innerHTML=buquesConLanded.map(b=>{
+      const bLanded=landedByBuque[b.id]||[];
       return`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
-        <div style="background:var(--g50);border-bottom:1px solid var(--g200);padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
+        <div style="background:var(--am50);border-bottom:1px solid #fde68a;padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
           <div style="font-weight:700;color:var(--g900)">🚢 ${b.nombre}</div>
-          <div style="font-size:12px;color:var(--g500)">ETA: ${fd(b.eta_buque)||'—'} · ${bExps.length} exp.</div>
+          <div style="font-size:12px;color:var(--am600)">⚓ ${bLanded.length} exp. Landed</div>
         </div>
         <div style="padding:16px">
-          ${bExps.length?`<div style="margin-bottom:12px;font-size:12px;color:var(--g600)">Expediciones: ${bExps.map(e=>`<span class="badge bgr" style="margin:2px">${e.nº_expedicion}</span>`).join('')}</div>`:'<div style="font-size:12px;color:var(--g400);margin-bottom:12px">Sin expediciones activas</div>'}
-          <div class="fg2"><label class="fl2">Fotos Landed <span style="color:var(--rd600);font-size:10px">requeridas</span></label>
+          <div style="margin-bottom:12px">
+            <div style="font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Mercancía a recoger del barco:</div>
+            ${bLanded.map(e=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--g100);font-size:12px"><span style="font-weight:700;font-family:var(--mono)">${e.nº_expedicion}</span><span style="color:var(--g500)">${e.bultos||'—'} btos · ${e.kilos||'—'} kg</span></div>`).join('')}
+          </div>
+          <div class="fg2"><label class="fl2">Foto de recogida en muelle</label>
             <div class="foto-area" onclick="document.getElementById('lnd-fi-${b.id}').click()">
               <input type="file" id="lnd-fi-${b.id}" accept="image/*" multiple onchange="onLandedBuqueFoto('${b.id}')">
-              <div style="font-size:22px;margin-bottom:4px">⚓</div><div style="font-size:12px;color:var(--g600)">Foto de la mercancía en muelle</div>
+              <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto opcional de la mercancía en muelle</div>
             </div>
             <div class="foto-prev" id="lnd-pv-${b.id}"></div>
           </div>
-          <div class="fg2"><label class="fl2">Notas (opcional)</label><textarea id="lnd-not-${b.id}" class="fi" style="min-height:48px" placeholder="Descripción de la mercancía landed…"></textarea></div>
-          <button id="lnd-btn-${b.id}" class="btn btn-g btn-full" style="display:none;margin-top:8px" onclick="confirmarLandedBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">⚓ Confirmar Landed — ${b.nombre}</button>
+          <button id="lnd-btn-${b.id}" class="btn btn-g btn-full" style="margin-top:8px" onclick="confirmarLandedBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">⚓ Confirmar recogida Landed — ${b.nombre}</button>
         </div>
       </div>`;
     }).join('');
-    buques.forEach(b=>setupFotos('lnd-fi-'+b.id,'lnd-pv-'+b.id,null));
+    buquesConLanded.forEach(b=>setupFotos('lnd-fi-'+b.id,'lnd-pv-'+b.id,null));
   }
 }
 
@@ -3433,14 +3442,24 @@ async function confirmarLanded(){
   showToast('⚓ Landed confirmado');await loadAlmFotos('landed');
 }
 async function confirmarLandedBuque(buqueId, buqueNombre){
-  const {data:exps}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',buqueId).neq('estado_semaforo','🚢 EMBARCADO');
-  if(exps&&exps.length){
-    await sb.from('expediciones').update({ubicacion:'Landed'}).eq('buque_id',buqueId).neq('estado_semaforo','🚢 EMBARCADO');
-    for(const e of exps){
-      await logAct('expediciones',e.id,e.nº_expedicion,'editar','ubicacion','—','Landed confirmado — buque '+buqueNombre+' por '+CU?.nombre);
-    }
+  // Marcar expediciones Landed de este buque como recogidas en muelle → Almacén-Sin Ubicar
+  const {data:exps}=await sb.from('expediciones').select('id,nº_expedicion')
+    .eq('buque_id',buqueId).eq('ubicacion','Landed');
+  if(!exps||!exps.length){showToast('Sin expediciones Landed para '+buqueNombre);return;}
+  // Subir fotos si las hay
+  const prevEl=document.getElementById('lnd-pv-'+buqueId);
+  const files=prevEl?._files||[];
+  if(files.length){
+    showToast('📤 Subiendo fotos...');
+    await subirFotosYGuardar(files,'buques',buqueId,'landed');
   }
-  showToast('⚓ Landed confirmado — '+buqueNombre);
+  // Cambiar ubicación: Landed → Almacén-Sin Ubicar (recogida confirmada)
+  await sb.from('expediciones').update({ubicacion:'Almacén-Sin Ubicar'})
+    .eq('buque_id',buqueId).eq('ubicacion','Landed');
+  for(const e of exps){
+    await logAct('expediciones',e.id,e.nº_expedicion,'editar','ubicacion','Landed','Recogida Landed confirmada — buque '+buqueNombre+' por '+CU?.nombre);
+  }
+  showToast('✅ Recogida confirmada — '+exps.length+' expedición'+(exps.length>1?'es':'')+' → Almacén');
   await loadAlmFotos('landed');
 }
 
