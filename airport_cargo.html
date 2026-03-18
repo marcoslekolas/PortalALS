@@ -246,40 +246,36 @@ let sb;
 
 // ── NAVEGACIÓN ───────────────────────────────────────────
 function goTo(mod){
-  // BLINDADO: usa window.opener para navegar el tab padre sin cerrar sesión
   try {
-    if(window.opener && !window.opener.closed){
-      var op = window.opener;
-      // Asegurar que CU está cargado en el padre antes de enterMod
-      if(mod !== 'home'){
-        // Si CU no existe o está vacío en el padre, recargarlo desde sessionStorage
-        if(!op.CU || !op.CU.id){
-          if(typeof op.loadSession === 'function'){
-            var recovered=op.loadSession();
-            if(recovered && recovered.id) op.CU=recovered;
-          }
-          // Si aún sin sesión, ir a home del padre
-          if(!op.CU || !op.CU.id){
-            if(typeof op.showHome === 'function') op.showHome();
-            op.focus();
-            return;
-          }
+    // Intentar con window.opener primero (caso normal)
+    var op = window.opener;
+    if(op && !op.closed){
+      // Recuperar CU si hace falta
+      if(mod !== 'home' && (!op.CU || !op.CU.id)){
+        if(typeof op.loadSession === 'function'){
+          var rec = op.loadSession();
+          if(rec && rec.id) op.CU = rec;
         }
       }
-      if(mod==='home'){
-        if(typeof op.showHome==='function') op.showHome();
-      } else if(mod==='operativa'){
-        if(typeof op.enterMod==='function') op.enterMod('operativa');
-      } else if(mod==='almacen'){
-        if(typeof op.enterMod==='function') op.enterMod('almacen');
-      }
+      if(mod==='home'        && typeof op.showHome  ==='function') op.showHome();
+      else if(mod==='operativa' && typeof op.enterMod==='function') op.enterMod('operativa');
+      else if(mod==='almacen'   && typeof op.enterMod==='function') op.enterMod('almacen');
+      else if(typeof op.showHome==='function') op.showHome();
       op.focus();
-    } else {
-      // Sin opener: no hacer nada peligroso, mostrar aviso
-      alert('Abre esta página desde el Portal ALS principal.');
+      return;
     }
-  } catch(e){
-    console.warn('goTo error:', e.message);
+  } catch(e){ console.warn('goTo opener error:', e.message); }
+
+  // Sin opener (recarga de página, Safari perdió referencia):
+  // Guardar destino y navegar a index.html en esta misma pestaña
+  try {
+    if(mod && mod !== 'home') localStorage.setItem('als_goto_mod', mod);
+    else localStorage.removeItem('als_goto_mod');
+    // Calcular URL relativa de index.html
+    var base = window.location.href.replace(/airport_cargo\.html.*$/, '');
+    window.location.href = base + 'index.html';
+  } catch(e2){
+    window.location.href = 'index.html';
   }
 }
 
@@ -412,22 +408,42 @@ async function loadTarifasDB(){
 
 
 // ── AWB TRACKING — enlace al portal del carrier ──────────────
+// Prefijos AWB → URL directa del portal del carrier (con AWB pre-cargado)
 var AWB_PORTALS={
-  '006':'https://lufthansa-cargo.com/tracking?awb=',
-  '020':'https://lufthansa-cargo.com/tracking?awb=',
-  '052':'https://cargo.iberia.com/tracking?awb=',
-  '055':'https://www.afklcargo.com/tracking?awb=',
-  '057':'https://www.afklcargo.com/tracking?awb=',
+  '001':'https://www.aacargo.com/track/?awb=',
+  '006':'https://www.lhcargo.com/track/track-shipment.html?awb=',
+  '014':'https://www.airfranceklm.com/en/cargo/tracking?awb=',
+  '020':'https://www.lhcargo.com/track/track-shipment.html?awb=',
+  '023':'https://www.unitedcargo.com/uc/tracking?awb=',
+  '052':'https://iberia.com/cargo/tracking?awb=',
+  '055':'https://www.airfranceklm.com/en/cargo/tracking?awb=',
+  '057':'https://www.airfranceklm.com/en/cargo/tracking?awb=',
+  '074':'https://www.aacargo.com/track/?awb=',
   '083':'https://www.cathaycargo.com/en-us/track-and-trace.html?awb=',
-  '098':'https://cargo.britishairways.com/tracking?awb=',
-  '125':'https://cargo.vueling.com/tracking?awb=',
+  '098':'https://www.iagcargo.com/en/tools/track-a-shipment?awb=',
+  '125':'https://www.iagcargo.com/en/tools/track-a-shipment?awb=',
   '172':'https://skycargo.com/tracking?awb=',
-  '176':'https://cargo.etihadairways.com/tracking?awb=',
-  '232':'https://cargo.delta.com/track?awb=',
-  '235':'https://cargo.turkishairlines.com/tracking?awb=',
+  '176':'https://cargo.etihad.com/tracking?awb=',
+  '180':'https://www.corendon.com/',
+  '235':'https://www.turkishcargo.com/en/track-shipment?awb=',
   '618':'https://cargo.finnair.com/tracking?awb=',
-  '724':'https://cargo.iberia.com/tracking?awb='
+  '724':'https://iberia.com/cargo/tracking?awb='
 };
+function awbUrl(awb){
+  if(!awb||awb==='—'||awb==='') return '#';
+  var clean=awb.replace(/[\-\s]/g,'');
+  var prefix=clean.substring(0,3);
+  var number=clean.substring(3);
+  var formatted=prefix+'-'+number;
+  var base=AWB_PORTALS[prefix];
+  if(base){
+    // URL directa del carrier con AWB pre-cargado
+    return base.includes('?awb=') ? base+formatted : base;
+  }
+  // Fallback: track-trace con el número formateado en el campo de búsqueda
+  // Nota: track-trace pre-carga el número desde el hash de la URL
+  return 'https://www.track-trace.com/aircargo#'+formatted;
+}
 function abrirTrackingAWB(awb){
   if(!awb||awb==='—'||awb==='') return;
   var clean=awb.replace(/[\-\s]/g,'');
@@ -567,7 +583,7 @@ function miniTable(list){
   if(!list.length)return'<div class="empty">Sin entradas</div>';
   var rows=list.map(function(e){
     return'<tr class="tbl-row" data-id="'+e.id+'" style="cursor:pointer"><td class="fw" style="font-family:var(--mono)">'+
-      (e.awb||'—')+' <button class="btn btn-sm" data-action="awb" data-awb="'+(e.awb||'')+'" style="background:none;border:none;cursor:pointer;padding:0;font-size:10px;color:var(--g400)" title="Rastrear">✈️</button></td><td>'+(e.consignatario||'—')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
+      (e.awb||'—')+(e.awb?(' <a href="'+awbUrl(e.awb)+'" target="_blank" style="font-size:10px;color:var(--g400);text-decoration:none" title="Rastrear AWB">✈️</a>'):'')+' </td><td>'+(e.consignatario||'—')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
       '<td><span class="badge bb">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+fd(e.fecha_llegada)+'</td><td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
       '<td style="font-weight:700;color:var(--b700)">'+fc(calcTotal(e))+'</td></tr>';
@@ -614,7 +630,7 @@ function renderRows(list){
     // Use data-id on tr — onclick delegated via JS, no inline quote nesting
     return'<tr'+bg+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="text-align:center"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600)" onchange="updateSel()"></td>'+
-      '<td class="fw" style="font-family:var(--mono);font-size:11px">'+( e.awb||'—')+' <button class="btn btn-sm" data-action="awb" data-awb="'+(e.awb||'')+'" style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:10px;color:var(--g400)" title="Rastrear AWB">✈️</button></td>'+
+      '<td class="fw" style="font-family:var(--mono);font-size:11px">'+( e.awb||'—')+(e.awb?(' <a href="'+awbUrl(e.awb)+'" target="_blank" style="font-size:10px;color:var(--g400);text-decoration:none" title="Rastrear AWB">✈️</a>'):'')+' </td>'+
       '<td style="cursor:pointer">'+( e.consignatario||'—')+'</td>'+
       '<td class="sm" style="cursor:pointer">'+( e.buque||'—')+'</td>'+
       '<td><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
