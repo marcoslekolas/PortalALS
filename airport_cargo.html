@@ -183,7 +183,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div class="tc"><table class="tbl">
           <thead><tr>
             <th style="width:32px"><input type="checkbox" id="chk-all" onchange="toggleAll(this)" style="accent-color:var(--b600)"></th>
-            <th>AWB</th><th>Consignatario</th><th>Buque</th><th>Handler</th><th>Apto</th>
+            <th>AWB</th><th>Consignatario / Cliente</th><th>Buque</th><th>Handler</th><th>Apto</th>
             <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th>
             <th>Almacenaje</th><th>Gest.Doc.</th><th>T.Recinto</th><th>T.Mant.</th>
             <th>Finde</th><th>Express</th><th>C.Camión</th><th>Apertura</th>
@@ -246,35 +246,42 @@ let sb;
 
 // ── NAVEGACIÓN ───────────────────────────────────────────
 function goTo(mod){
+  // Solución definitiva: guardar destino en localStorage y navegar a index.html
+  // Funciona siempre independientemente de window.opener
   try {
-    // Intentar con window.opener primero (caso normal)
-    var op = window.opener;
-    if(op && !op.closed){
-      // Recuperar CU si hace falta
-      if(mod !== 'home' && (!op.CU || !op.CU.id)){
-        if(typeof op.loadSession === 'function'){
-          var rec = op.loadSession();
-          if(rec && rec.id) op.CU = rec;
+    if(mod && mod !== 'home'){
+      localStorage.setItem('als_goto_mod', mod);
+    } else {
+      localStorage.removeItem('als_goto_mod');
+    }
+    // Intentar también via opener si está disponible (más rápido)
+    try {
+      var op = window.opener;
+      if(op && !op.closed && typeof op.enterMod === 'function'){
+        if(mod === 'home' && typeof op.showHome === 'function'){
+          op.showHome(); op.focus();
+          localStorage.removeItem('als_goto_mod');
+          return;
+        } else if(mod === 'operativa' || mod === 'almacen'){
+          // Recuperar CU si hace falta
+          if(!op.CU || !op.CU.id){
+            if(typeof op.loadSession === 'function'){
+              var rec = op.loadSession();
+              if(rec && rec.id) op.CU = rec;
+            }
+          }
+          if(op.CU && op.CU.id){
+            op.enterMod(mod); op.focus();
+            localStorage.removeItem('als_goto_mod');
+            return;
+          }
         }
       }
-      if(mod==='home'        && typeof op.showHome  ==='function') op.showHome();
-      else if(mod==='operativa' && typeof op.enterMod==='function') op.enterMod('operativa');
-      else if(mod==='almacen'   && typeof op.enterMod==='function') op.enterMod('almacen');
-      else if(typeof op.showHome==='function') op.showHome();
-      op.focus();
-      return;
-    }
-  } catch(e){ console.warn('goTo opener error:', e.message); }
-
-  // Sin opener (recarga de página, Safari perdió referencia):
-  // Guardar destino y navegar a index.html en esta misma pestaña
-  try {
-    if(mod && mod !== 'home') localStorage.setItem('als_goto_mod', mod);
-    else localStorage.removeItem('als_goto_mod');
-    // Calcular URL relativa de index.html
+    } catch(oe){ /* opener no disponible — usar redirect */ }
+    // Fallback siempre funcional: navegar en esta pestaña
     var base = window.location.href.replace(/airport_cargo\.html.*$/, '');
     window.location.href = base + 'index.html';
-  } catch(e2){
+  } catch(e){
     window.location.href = 'index.html';
   }
 }
@@ -583,12 +590,12 @@ function miniTable(list){
   if(!list.length)return'<div class="empty">Sin entradas</div>';
   var rows=list.map(function(e){
     return'<tr class="tbl-row" data-id="'+e.id+'" style="cursor:pointer"><td class="fw" style="font-family:var(--mono)">'+
-      (e.awb||'—')+(e.awb?(' <a href="'+awbUrl(e.awb)+'" target="_blank" style="font-size:10px;color:var(--g400);text-decoration:none" title="Rastrear AWB">✈️</a>'):'')+' </td><td>'+(e.consignatario||'—')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
+      (e.awb||'—')+(e.awb?(' <a href="'+awbUrl(e.awb)+'" target="_blank" style="font-size:10px;color:var(--g400);text-decoration:none" title="Rastrear AWB">✈️</a>'):'')+' </td><td>'+(e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
       '<td><span class="badge bb">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+fd(e.fecha_llegada)+'</td><td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
       '<td style="font-weight:700;color:var(--b700)">'+fc(calcTotal(e))+'</td></tr>';
   }).join('');
-  return'<table class="tbl"><thead><tr><th>AWB</th><th>Consignatario</th><th>Buque</th><th>Handler</th><th>Llegada</th><th>Retirada</th><th>Total</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  return'<table class="tbl"><thead><tr><th>AWB</th><th>Consignatario / Cliente</th><th>Buque</th><th>Handler</th><th>Llegada</th><th>Retirada</th><th>Total</th></tr></thead><tbody>'+rows+'</tbody></table>';
 }
 
 // ── ENTRADAS ─────────────────────────────────────────────
@@ -631,7 +638,7 @@ function renderRows(list){
     return'<tr'+bg+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="text-align:center"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600)" onchange="updateSel()"></td>'+
       '<td class="fw" style="font-family:var(--mono);font-size:11px">'+( e.awb||'—')+(e.awb?(' <a href="'+awbUrl(e.awb)+'" target="_blank" style="font-size:10px;color:var(--g400);text-decoration:none" title="Rastrear AWB">✈️</a>'):'')+' </td>'+
-      '<td style="cursor:pointer">'+( e.consignatario||'—')+'</td>'+
+      '<td style="cursor:pointer">'+( e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td>'+
       '<td class="sm" style="cursor:pointer">'+( e.buque||'—')+'</td>'+
       '<td><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+( e.aeropuerto||'—')+'</td>'+
@@ -668,13 +675,18 @@ function getSelected(){return Array.from(document.querySelectorAll('.row-chk:che
 // Export airport cargo to CSV
 function exportarAirportCSV(){
   if(!ALL||!ALL.length){toast('Sin datos para exportar');return;}
-  var headers=['AWB','Consignatario','Buque','Handler','Aeropuerto','Fecha Llegada','Fecha Retirada','Días','Kg','Bultos','Status','Total EUR'];
-  var rows=ALL.map(function(e){
+  // Exportar solo seleccionados, o todos si no hay selección
+  var ids=getSelected();
+  var lista=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL;
+  if(!lista.length){toast('Sin datos para exportar');return;}
+  toast('⬇️ Exportando '+(ids.length>0?ids.length+' seleccionadas':'todas')+' las entradas...');
+  var headers=['AWB','Cliente','Consignatario','Buque','Handler','Aeropuerto','Fecha Llegada','Fecha Retirada','Días','Kg','Bultos','Status','Observaciones','Total EUR'];
+  var rows=lista.map(function(e){
     var d=hasH(e.handling)&&e.fecha_retirada?diasFact(e.fecha_llegada,e.fecha_retirada,e.handling):0;
     return[
-      e.awb||'',e.consignatario||'',e.buque||'',e.handling||'',e.aeropuerto||'',
+      e.awb||'',(e.cliente||e.consignatario||''),(e.consignatario||''),e.buque||'',e.handling||'',e.aeropuerto||'',
       fd(e.fecha_llegada),fd(e.fecha_retirada),d,
-      e.kilos_tasables||0,e.bultos||0,e.status||'',
+      e.kilos_tasables||0,e.bultos||0,e.status||'',(e.observaciones||''),
       calcTotal(e).toFixed(2)
     ].map(function(v){return String(v).replace(/,/g,';');});
   });
@@ -934,6 +946,7 @@ async function showForm(e){
     '<div class="fr2">'+
     '<div class="fg"><label class="fl">AWB *</label><input id="f-awb" class="fi" value="'+(e?e.awb||'':'')+'" placeholder="123-12345678" style="font-family:var(--mono)"></div>'+
     '<div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="'+(e?e.consignatario||'':'')+'" placeholder="Escribe para filtrar..." list="cons-list" autocomplete="off" oninput="onConsInput()"></div>'+
+    '<div class="fg"><label class="fl">Cliente <span style="font-size:10px;color:var(--g400)">(si difiere del consignatario)</span></label><input id="f-cli" class="fi" value="'+(e?e.cliente||'':'')+'" placeholder="Empresa cliente..." list="cons-list" autocomplete="off"></div>'+
     '<datalist id="cons-list"></datalist>'+
     '<div id="cons-hint" style="font-size:11px;color:var(--b600);margin-top:3px;display:none">'+'<span>¿No está en la lista?</span> '+
     '<button type="button" class="btn btn-sm btn-s" style="padding:2px 8px;font-size:11px" id="btn-crear-emp">+ Crear empresa</button></div>'+
@@ -1009,7 +1022,7 @@ function liveCalc(){
 }
 function buildObj(){
   var h=gv('f-handler'),isAuto=hasH(h),rt=gv('f-rt')||null;
-  return{awb:gv('f-awb').trim(),consignatario:gv('f-cons').trim(),buque:gv('f-buque').trim()||null,
+  var cli=gv('f-cli').trim();return{awb:gv('f-awb').trim(),consignatario:gv('f-cons').trim(),cliente:cli||null,buque:gv('f-buque').trim()||null,
     aeropuerto:gv('f-apto')||'AGP',handling:h||null,status:gv('f-status')||'T1',
     fecha_llegada:gv('f-ll')||null,fecha_retirada:rt,kilos_tasables:parseFloat(gv('f-kg'))||0,
     bultos:parseInt(gv('f-blt'))||null,aplica_finde:isAuto?gc('f-fi'):false,
@@ -1045,70 +1058,128 @@ function loadView(){
   else if(CV==='resumen')loadResumen();
 }
 
+function emEmpChange(sel){var o=sel.options[sel.selectedIndex];var i=document.getElementById('em-email');if(i&&o&&o.dataset.email)i.value=o.dataset.email;}
 // ── EMAIL ────────────────────────────────────────────────
 async function abrirEmail(){
   var ids=getSelected();
   var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL;
-  if(!sel.length){alert('No hay entradas. Selecciona una o varias en la tabla.');return;}
-  var empresas=[];
-  try{var er=await sb.from('empresas').select('id,nombre,email_confronta').order('nombre');empresas=er.data||[];}catch(e){}
-  var cons=Array.from(new Set(sel.map(function(e){return e.consignatario;}).filter(Boolean))).join(' / ');
-  var matchEmp=null;
-  if(cons&&empresas.length){
-    var q=cons.toLowerCase();
-    matchEmp=empresas.filter(function(e){return(e.nombre||'').toLowerCase().includes(q)||q.includes((e.nombre||'').toLowerCase());})[0]||null;
+  if(!sel.length){toast('Sin entradas. Selecciona una o varias en la tabla.');return;}
+
+  // ── Validación: todos deben tener el mismo cliente ──────
+  // Identificar cliente de cada entrada (campo cliente si existe, sino consignatario)
+  var clientes=Array.from(new Set(sel.map(function(e){
+    return (e.cliente||e.consignatario||'').trim().toLowerCase();
+  }).filter(Boolean)));
+  if(clientes.length>1){
+    toast('⚠️ Selección incompatible: las entradas pertenecen a '+clientes.length+' clientes distintos. Selecciona solo entradas del mismo cliente.');
+    return;
   }
-  var empOpts=empresas.map(function(e){return'<option value="'+e.id+'" data-email="'+(e.email_confronta||'')+'" '+(matchEmp&&matchEmp.id===e.id?'selected':'')+'>'+e.nombre+(e.email_confronta?' — '+e.email_confronta:' ⚠️ sin email')+'</option>';}).join('');
+
+  // Cliente representativo (primer valor real)
+  var clienteNombre=sel.map(function(e){return e.cliente||e.consignatario||'';}).filter(Boolean)[0]||'';
+
+  // Cargar empresas para buscar email del cliente
+  var empresas=[];
+  try{var er=await sb.from('empresas').select('id,nombre,email_confronta,otros_emails').order('nombre');empresas=er.data||[];}catch(e){}
+
+  // Buscar empresa del cliente
+  var matchCli=null;
+  if(clienteNombre&&empresas.length){
+    var q=clienteNombre.toLowerCase();
+    matchCli=empresas.filter(function(emp){
+      return(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase().substring(0,5));
+    })[0]||null;
+  }
+
+  var empOpts=empresas.map(function(emp){
+    var sel2=matchCli&&matchCli.id===emp.id?'selected':'';
+    return'<option value="'+emp.id+'" data-email="'+(emp.email_confronta||'')+'" '+sel2+'>'+emp.nombre+(emp.email_confronta?' — '+emp.email_confronta:' ⚠️ sin email')+'</option>';
+  }).join('');
+
+  // Email inicial del cliente
+  var emailInicial=matchCli?matchCli.email_confronta||'':'';
+
   var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
   var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
   var totalKg=sel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
   var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
-  // Agrupar expediciones por buque
-  var byBuque = {};
+
+  // ── Construir cuerpo del email ──────────────────────────
+  // Agrupar por buque
+  var byBuque={};
   sel.forEach(function(e){
-    var bkey = e.buque || '(Sin buque asignado)';
-    if(!byBuque[bkey]) byBuque[bkey] = [];
+    var bkey=e.buque||'(Sin buque asignado)';
+    if(!byBuque[bkey]) byBuque[bkey]=[];
     byBuque[bkey].push(e);
   });
-  var detalle = Object.keys(byBuque).map(function(buque){
-    var exps = byBuque[buque];
-    var bloque = '  Buque: ' + buque + '\n';
+
+  var detalle=Object.keys(byBuque).map(function(buque){
+    var exps=byBuque[buque];
+    var bloque='  Buque: '+buque+'\n';
     exps.forEach(function(e){
-      bloque += '  · AWB: '+(e.awb||'—')+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+' | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+' | Llegada: '+fd(e.fecha_llegada)+'\n';
+      // Mostrar consignatario solo si difiere del cliente
+      var diffCons=(e.consignatario||'').toLowerCase()!==(clienteNombre||'').toLowerCase();
+      var consStr=diffCons?' | Consignatario: '+(e.consignatario||'—'):'';
+      var obsStr=e.observaciones?'\n    Obs: '+e.observaciones:'';
+      bloque+='  · AWB: '+(e.awb||'—')+consStr+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+
+        ' | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+
+        ' | Llegada: '+fd(e.fecha_llegada)+obsStr+'\n';
     });
     return bloque;
   }).join('\n');
 
-  var cuerpo='Estimados Sres. / Dear Sirs,\n\nNos dirigimos a ustedes para informarles de la situación actual de sus expediciones aéreas en tránsito hacia '+apts+'.\n\n── RESUMEN ──────────────────────────────────────────────\n\nConsignatario: '+cons+'\nExpediciones: '+sel.length+'\nTotal bultos: '+totalBlt+'\nTotal kilos: '+totalKg.toLocaleString('es-ES')+' kg\n\n── DETALLE POR BUQUE ────────────────────────────────────\n\n'+detalle+'── PRÓXIMOS PASOS ───────────────────────────────────────\n\nLas mercancías se encuentran en proceso de gestión aduanera. Una vez concluido, coordinaremos la entrega conforme a sus instrucciones.\n\nPara cualquier consulta:\n📞 +34 956 58 13 16\n✉️ als@alsalgeciras.com\n📍 Pol. La Menacha, Avda. La Bahía 14\n\nAtentamente / Kind regards,\nDpto. de Operaciones — ALGECIRAS LOGISTIC SOLUTIONS (ALS)\n──────────────────────────────────────────────────────\n'+hoy;
-  document.getElementById('m-title').textContent='Notificar expediciones';
+  var NL='\n';
+  var cuerpo=[
+    'Estimados Sres. / Dear Sirs,',NL,NL,
+    'Nos dirigimos a ustedes para informarles de la situación actual de sus expediciones aéreas en tránsito hacia '+apts+'.',NL,NL,
+    '── RESUMEN ──────────────────────────────────────────────',NL,NL,
+    'Cliente: '+clienteNombre,NL,
+    'Expediciones: '+sel.length,NL,
+    'Total bultos: '+totalBlt,NL,
+    'Total kilos: '+totalKg.toLocaleString('es-ES')+' kg',NL,NL,
+    '── DETALLE POR BUQUE ────────────────────────────────────',NL,NL,
+    detalle,
+    '── PRÓXIMOS PASOS ───────────────────────────────────────',NL,NL,
+    'Las mercancías se encuentran en proceso de gestión aduanera. Una vez concluido, coordinaremos la entrega conforme a sus instrucciones.',NL,NL,
+    'Para cualquier consulta:',NL,
+    '📞 +34 956 58 13 16',NL,
+    '✉️ als@alsalgeciras.com',NL,
+    '📍 Pol. La Menacha, Avda. La Bahía 14',NL,NL,
+    'Atentamente / Kind regards,',NL,
+    'Dpto. de Operaciones — ALGECIRAS LOGISTIC SOLUTIONS (ALS)',NL,
+    '──────────────────────────────────────────────────────',NL,
+    hoy
+  ].join('');
+  document.getElementById('m-title').textContent='Notificar a '+clienteNombre;
   document.getElementById('m-body').innerHTML=
-    '<div class="info-box">'+sel.length+' expedición'+(sel.length>1?'es':'')+' seleccionada'+(sel.length>1?'s':'')+'. '+(ids.length===0?'No hay selección — se incluyen todas las entradas.':'')+' </div>'+
-    '<div class="fg"><label class="fl">Empresa destinataria</label>'+
-    '<select id="em-emp" class="fi fs" onchange="var o=this.options[this.selectedIndex];var i=document.getElementById(\'em-email\');if(i&&o.dataset.email)i.value=o.dataset.email;">'+
+    '<div class="info-box" style="margin-bottom:12px">'+sel.length+' expedición'+(sel.length>1?'es':'')+' de <strong>'+clienteNombre+'</strong>'+(ids.length===0?' (sin selección — todas las entradas)':'')+'. El email irá al email del <strong>cliente</strong>.</div>'+
+    '<div class="fg"><label class="fl">Cliente (empresa facturación)</label>'+
+    '<select id="em-emp" class="fi fs" onchange="emEmpChange(this)">'+
     '<option value="">— Sin vincular —</option>'+empOpts+'</select></div>'+
-    '<div class="fg"><label class="fl">Email destinatario</label>'+
-    '<input id="em-email" class="fi" type="email" placeholder="email@empresa.com" value="'+(matchEmp?matchEmp.email_confronta||'':'')+'" ></div>'+
+    '<div class="fg"><label class="fl">Email cliente</label>'+
+    '<input id="em-email" class="fi" type="email" placeholder="email@empresa.com" value="'+emailInicial+'"></div>'+
     '<div class="fg"><label class="fl">CC</label><input id="em-cc" class="fi" placeholder="als@alsalgeciras.com"></div>'+
     '<div class="fdiv"></div>'+
     '<div class="sect">Cuerpo del email <span style="font-size:10px;color:var(--g400);font-weight:400">(editable)</span></div>'+
-    '<textarea id="em-body" class="fi" style="min-height:220px;font-family:var(--mono);font-size:11px;line-height:1.6;resize:vertical">'+cuerpo+'</textarea>';
-  document.getElementById('m-foot').innerHTML='<button class="btn btn-s" onclick="closeModal()">Cancelar</button>'+
-    '<button class="btn btn-p" onclick="enviarEmail(\''+encodeURIComponent(cuerpo)+'\',\''+encodeURIComponent(cons)+'\')">📧 Abrir cliente correo</button>';
+    '<textarea id="em-body" class="fi" style="min-height:240px;font-family:var(--mono);font-size:11px;line-height:1.6;resize:vertical">'+cuerpo+'</textarea>';
+  window._emailCliente = clienteNombre;
+  document.getElementById('m-foot').innerHTML=
+    '<button class="btn btn-s" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-p" onclick="enviarEmail()">📧 Abrir cliente correo</button>';
   openModal();
 }
-function enviarEmail(bodyCoded,consCoded){
-  // Read edited body from textarea if available
+function enviarEmail(){
   var textarea=document.getElementById('em-body');
-  if(textarea) bodyCoded=encodeURIComponent(textarea.value);
+  var bodyCoded=textarea?encodeURIComponent(textarea.value):'';
   var dest=document.getElementById('em-email').value.trim();
-  if(!dest){alert('Introduce el email del destinatario');return;}
+  if(!dest){toast('⚠️ Introduce el email del cliente');return;}
   var cc=document.getElementById('em-cc').value.trim()||'als@alsalgeciras.com';
-  var cons=decodeURIComponent(consCoded);
-  var asunto=encodeURIComponent('Situación expediciones aeropuerto — '+cons+' · '+new Date().toLocaleDateString('es-ES'));
-  var a=document.createElement('a');
-  a.href='mailto:'+dest+'?cc='+encodeURIComponent(cc)+'&subject='+asunto+'&body='+bodyCoded;
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  closeModal();toast('📧 Abriendo cliente de correo...');
+  var cliente=window._emailCliente||'';
+  var asunto=encodeURIComponent('Situación expediciones aeropuerto — '+(cliente||'ALS')+' · '+new Date().toLocaleDateString('es-ES'));
+  var mailtoUrl='mailto:'+dest+'?cc='+encodeURIComponent(cc)+'&subject='+asunto+'&body='+bodyCoded;
+  closeModal();
+  window.location.href=mailtoUrl;
+  toast('📧 Abriendo cliente de correo...');
 }
 
 // ── CONSIGNATARIO AUTOCOMPLETE ────────────────────────────
