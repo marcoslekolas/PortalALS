@@ -1040,25 +1040,40 @@ async function doLogin(){
   if(!email||!pass){if(errEl)errEl.textContent='Introduce usuario y contraseña';return;}
   if(btn){btn.textContent='Conectando…';btn.disabled=true;}
   try{
-    // Usar función segura verificar_password (bcrypt) con fallback legacy
-    const rpcBody=JSON.stringify({p_nombre:email,p_password:pass});
-    const rpcR=await fetch(SB_URL+'/rest/v1/rpc/verificar_password',{
-      method:'POST',
-      headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Accept:'application/json'},
-      body:rpcBody
-    });
-    if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
     let rows=null;
-    if(rpcR.ok){
-      rows=await rpcR.json();
-    } else {
-      // Fallback: búsqueda directa legacy (mientras se migra)
+
+    // 1. Intentar con función segura verificar_password (bcrypt)
+    try{
+      const rpcR=await fetch(SB_URL+'/rest/v1/rpc/verificar_password',{
+        method:'POST',
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Accept:'application/json'},
+        body:JSON.stringify({p_nombre:email,p_password:pass})
+      });
+      if(rpcR.ok){
+        const data=await rpcR.json();
+        if(data&&data.length>0) rows=data;
+      }
+    }catch(rpcErr){console.warn('RPC no disponible, usando fallback:',rpcErr.message);}
+
+    // 2. Fallback: búsqueda por nombre + password_hash (texto plano, legacy)
+    if(!rows||!rows.length){
       const params='nombre=ilike.'+encodeURIComponent('*'+email+'*')+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=5';
       const r2=await fetch(SB_URL+'/rest/v1/usuarios?'+params,{
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,Accept:'application/json'}
       });
-      if(r2.ok) rows=await r2.json();
+      if(r2.ok){const d=await r2.json();if(d&&d.length>0)rows=d;}
     }
+
+    // 3. Fallback: búsqueda por email exacto (usuarios legacy con email)
+    if(!rows||!rows.length){
+      const params='email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=1';
+      const r3=await fetch(SB_URL+'/rest/v1/usuarios?'+params,{
+        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,Accept:'application/json'}
+      });
+      if(r3.ok){const d=await r3.json();if(d&&d.length>0)rows=d;}
+    }
+
+    if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
     if(!rows||rows.length===0){if(errEl)errEl.textContent='Usuario o contraseña incorrectos';return;}
     CU=rows[0];
     saveSession(CU);
@@ -1841,53 +1856,125 @@ async function subirFotosYGuardar(files, entidad, entidadId, tipo){
 }
 
 // Mostrar galería de fotos con opción de descarga
-function abrirGaleriaFotos(urls, titulo='Fotos'){
+function abrirGaleriaFotos(urls, titulo){
+  titulo = titulo || 'Fotos';
   if(!urls||!urls.length){showToast('No hay fotos disponibles');return;}
-  const overlay=document.createElement('div');
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;flex-direction:column';
-  let idx=0;
-  
-  const render=()=>{
-    const url=urls[idx];
-    const nombre=url.split('/').pop()||'foto.jpg';
-    overlay.innerHTML=
-      '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.5)">'+
-      '<div style="color:#fff;font-weight:600">'+titulo+' ('+( idx+1)+'/'+urls.length+')</div>'+
-      '<div style="display:flex;gap:10px">'+
-      '<a href="'+url+'" download="'+nombre+'" target="_blank" style="background:#1565c0;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px">⬇️ Descargar</a>'+
-      '<a href="'+url+'" target="_blank" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;text-decoration:none">🔍 Ver original</a>'+
-      '<button onclick="this.closest('div[style*=z-index]').remove()" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer">✕ Cerrar</button>'+
-      '</div></div>'+
-      '<div style="flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:12px">'+
-      (urls.length>1?'<button onclick="cambiarFoto(-1)" style="position:absolute;left:12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:50%;width:44px;height:44px;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center">‹</button>':'')+ 
-      '<img src="'+url+'" style="max-width:100%;max-height:calc(100vh - 120px);object-fit:contain;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.5)">'+
-      (urls.length>1?'<button onclick="cambiarFoto(1)" style="position:absolute;right:12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:50%;width:44px;height:44px;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center">›</button>':'')+ 
-      '</div>'+
-      (urls.length>1?'<div style="display:flex;gap:6px;justify-content:center;padding:10px;background:rgba(0,0,0,.5)">'+
-        urls.map((u,i)=>'<div onclick="cambiarFoto('+(i-idx)+')" style="width:48px;height:48px;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid '+(i===idx?'#fff':'transparent')+'"><img src="'+u+'" style="width:100%;height:100%;object-fit:cover"></div>').join('')+
-      '</div>':'');
-  };
 
-  window.cambiarFoto=(delta)=>{
-    idx=Math.max(0,Math.min(urls.length-1,idx+delta));
-    render();
-  };
-  
-  // Cerrar con Escape o click en fondo
-  overlay.addEventListener('keydown',e=>{
-    if(e.key==='Escape') overlay.remove();
-    if(e.key==='ArrowLeft') window.cambiarFoto(-1);
-    if(e.key==='ArrowRight') window.cambiarFoto(1);
-  });
-  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
-  overlay.tabIndex=0;
-  
+  // Remove existing gallery if open
+  var existing = document.getElementById('als-gallery-overlay');
+  if(existing) existing.remove();
+
+  var idx = 0;
+  var overlay = document.createElement('div');
+  overlay.id = 'als-gallery-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;flex-direction:column;outline:none';
+  overlay.tabIndex = 0;
   document.body.appendChild(overlay);
-  overlay.focus();
+
+  function render(){
+    var url = urls[idx];
+    var nombre = url.split('/').pop() || 'foto.jpg';
+
+    // Header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.5);flex-shrink:0';
+    
+    var title = document.createElement('div');
+    title.style.cssText = 'color:#fff;font-weight:600;font-size:14px';
+    title.textContent = titulo + ' (' + (idx+1) + '/' + urls.length + ')';
+    hdr.appendChild(title);
+
+    var btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:10px;align-items:center';
+
+    // Download button
+    var dlBtn = document.createElement('a');
+    dlBtn.href = url;
+    dlBtn.download = nombre;
+    dlBtn.target = '_blank';
+    dlBtn.style.cssText = 'background:#1565c0;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:5px';
+    dlBtn.textContent = '⬇️ Descargar';
+    btns.appendChild(dlBtn);
+
+    // View original button
+    var viewBtn = document.createElement('a');
+    viewBtn.href = url;
+    viewBtn.target = '_blank';
+    viewBtn.style.cssText = 'background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;text-decoration:none';
+    viewBtn.textContent = '🔍 Original';
+    btns.appendChild(viewBtn);
+
+    // Close button
+    var closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer';
+    closeBtn.textContent = '✕ Cerrar';
+    closeBtn.onclick = function(){ overlay.remove(); };
+    btns.appendChild(closeBtn);
+
+    hdr.appendChild(btns);
+
+    // Image area
+    var imgWrap = document.createElement('div');
+    imgWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:12px;overflow:hidden';
+
+    if(urls.length > 1){
+      var prevBtn = document.createElement('button');
+      prevBtn.textContent = '‹';
+      prevBtn.style.cssText = 'position:absolute;left:12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:50%;width:44px;height:44px;font-size:24px;cursor:pointer;z-index:1;display:flex;align-items:center;justify-content:center;flex-shrink:0';
+      prevBtn.onclick = function(){ if(idx>0){idx--;overlay.innerHTML='';render();} };
+      imgWrap.appendChild(prevBtn);
+    }
+
+    var img = document.createElement('img');
+    img.src = url;
+    img.style.cssText = 'max-width:100%;max-height:calc(100vh - 130px);object-fit:contain;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.5)';
+    imgWrap.appendChild(img);
+
+    if(urls.length > 1){
+      var nextBtn = document.createElement('button');
+      nextBtn.textContent = '›';
+      nextBtn.style.cssText = 'position:absolute;right:12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:50%;width:44px;height:44px;font-size:24px;cursor:pointer;z-index:1;display:flex;align-items:center;justify-content:center;flex-shrink:0';
+      nextBtn.onclick = function(){ if(idx<urls.length-1){idx++;overlay.innerHTML='';render();} };
+      imgWrap.appendChild(nextBtn);
+    }
+
+    // Thumbnails strip
+    var strip = null;
+    if(urls.length > 1){
+      strip = document.createElement('div');
+      strip.style.cssText = 'display:flex;gap:6px;justify-content:center;padding:10px;background:rgba(0,0,0,.5);flex-shrink:0;overflow-x:auto';
+      urls.forEach(function(u, i){
+        var th = document.createElement('div');
+        th.style.cssText = 'width:52px;height:52px;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid '+(i===idx?'#fff':'transparent')+';flex-shrink:0';
+        th.onclick = (function(i){ return function(){ idx=i; overlay.innerHTML=''; render(); }; })(i);
+        var timg = document.createElement('img');
+        timg.src = u;
+        timg.style.cssText = 'width:100%;height:100%;object-fit:cover';
+        timg.loading = 'lazy';
+        th.appendChild(timg);
+        strip.appendChild(th);
+      });
+    }
+
+    // Assemble
+    overlay.innerHTML = '';
+    overlay.appendChild(hdr);
+    overlay.appendChild(imgWrap);
+    if(strip) overlay.appendChild(strip);
+  }
+
+  // Keyboard navigation
+  overlay.addEventListener('keydown', function(e){
+    if(e.key === 'Escape'){ overlay.remove(); }
+    else if(e.key === 'ArrowLeft' && idx > 0){ idx--; overlay.innerHTML=''; render(); }
+    else if(e.key === 'ArrowRight' && idx < urls.length-1){ idx++; overlay.innerHTML=''; render(); }
+  });
+
+  overlay.addEventListener('click', function(e){ if(e.target === overlay) overlay.remove(); });
   render();
+  overlay.focus();
 }
 
-// Descargar fotos de una expedición como ZIP (si hay múltiples)
 async function descargarFotosExpedicion(expId, ref){
   try{
     const {data}=await sb.from('fotos_operativas')
@@ -1924,11 +2011,18 @@ async function cargarFotosExistentes(entidad, entidadId, tipo, contenedor){
     if(!data||!data.length){contenedor.innerHTML='';return;}
     contenedor.innerHTML='<div style="font-size:11px;color:var(--g400);margin-bottom:6px">'+data.length+' foto'+( data.length>1?'s':'')+' guardada'+( data.length>1?'s':'')+'</div>'+
       '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-      data.map(f=>`<div style="width:60px;height:60px;border-radius:6px;overflow:hidden;cursor:pointer;border:1px solid var(--g200)" onclick="abrirGaleriaFotos(['${f.storage_url}'],'${tipo}')">
-        <img src="${f.storage_url}" style="width:100%;height:100%;object-fit:cover" loading="lazy">
-      </div>`).join('')+
+      data.map(f=>'<div style="width:60px;height:60px;border-radius:6px;overflow:hidden;cursor:pointer;border:1px solid var(--g200)" class="als-foto-thumb" data-url="'+f.storage_url+'">'+'<img src="'+f.storage_url+'" style="width:100%;height:100%;object-fit:cover" loading="lazy">'+'</div>').join('')+
       '</div>'+
-      '<button class="btn btn-s btn-sm" style="margin-top:6px;font-size:11px" onclick="abrirGaleriaFotos(['+data.map(f=>"'"+f.storage_url+"'").join(',')+"],'Fotos')">🖼️ Ver galería</button>';
+      '<button class="btn btn-s btn-sm" style="margin-top:6px;font-size:11px" id="als-foto-galeria-btn">🖼️ Ver galería</button>';
+    // Attach click after innerHTML set (avoids quote nesting)
+    setTimeout(function(){
+      var btn=document.getElementById('als-foto-galeria-btn');
+      if(btn){
+        var allUrls=data.map(function(f){return f.storage_url;});
+        btn.onclick=function(){abrirGaleriaFotos(allUrls,'Fotos');};
+        btn.id=''; // clear id to avoid conflicts
+      }
+    },50);
   }catch(e){contenedor.innerHTML='';}
 }
 function setupFotos(inpId,prevId,stId){
