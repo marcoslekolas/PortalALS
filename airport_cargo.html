@@ -204,7 +204,36 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 :root.dark ::-webkit-scrollbar-thumb { background:#2d2d5e; }
 :root.dark ::-webkit-scrollbar-thumb:hover { background:#3d3d7e; }
 
+
+/* ── Airport Cargo IDs específicos ── */
+:root.dark #app { background:#0f0f1a !important; }
+:root.dark #body { background:#0f0f1a !important; }
+:root.dark #content { background:#0f0f1a !important; }
+:root.dark #hdr { background:#12122a !important; border-bottom:1px solid #1e1e3f !important; }
+:root.dark #sidebar { background:#12122a !important; border-right:1px solid #1e1e3f !important; }
+:root.dark #view-dashboard,
+:root.dark #view-entradas,
+:root.dark #view-resumen,
+:root.dark #view-tarifas { background:#0f0f1a !important; }
+:root.dark #dash-kpis { background:transparent !important; }
+:root.dark #dash-recent { background:transparent !important; }
+:root.dark #tar-content { background:#0f0f1a !important; }
+:root.dark #tar-tabs { background:#12122a !important; border-color:#1e1e3f !important; }
+:root.dark #res-content { background:#0f0f1a !important; }
+:root.dark #fil-h,#fil-m,#fil-y { background:#1e1e3f !important; color:#e8eaf0 !important; }
+:root.dark #ext { background:#1a1a2e !important; border-color:#1e1e3f !important; }
+:root.dark #mob-ov { background:rgba(0,0,0,.6) !important; }
+:root.dark #cons-list { background:#1a1a2e !important; border-color:#1e1e3f !important; }
+
+
 </style>
+<script>
+(function(){
+  var saved=localStorage.getItem('als_dark');
+  var prefersDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches;
+  if(saved==='1'||(saved===null&&prefersDark)) document.documentElement.classList.add('dark');
+})();
+</script>
 </head>
 <body>
 <div id="app">
@@ -342,16 +371,29 @@ let sb;
 function toggleDarkMode(){
   const isDark=document.documentElement.classList.toggle('dark');
   localStorage.setItem('als_dark', isDark?'1':'0');
-  const btn=document.getElementById('dark-toggle');
-  if(btn) btn.textContent=isDark?'☀️':'🌙';
+  _updateDarkBtn();
+}
+function _updateDarkBtn(){
+  const isDark=document.documentElement.classList.contains('dark');
+  document.querySelectorAll('#dark-toggle,.dark-toggle-btn').forEach(btn=>{
+    btn.textContent=isDark?'☀️':'🌙';
+    btn.title=isDark?'Modo claro':'Modo oscuro';
+  });
 }
 function initDarkMode(){
   const saved=localStorage.getItem('als_dark');
   const prefersDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches;
-  if(saved==='1'||(saved===null&&prefersDark)){
-    document.documentElement.classList.add('dark');
-    const btn=document.getElementById('dark-toggle');
-    if(btn) btn.textContent='☀️';
+  const useDark=saved==='1'||(saved===null&&prefersDark);
+  if(useDark) document.documentElement.classList.add('dark');
+  else document.documentElement.classList.remove('dark');
+  _updateDarkBtn();
+  if(window.matchMedia){
+    window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change',e=>{
+      if(localStorage.getItem('als_dark')===null){
+        e.matches?document.documentElement.classList.add('dark'):document.documentElement.classList.remove('dark');
+        _updateDarkBtn();
+      }
+    });
   }
 }
 
