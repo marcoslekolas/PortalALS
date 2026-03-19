@@ -437,7 +437,7 @@ textarea.fi{resize:vertical;min-height:80px}
   <!-- HEADER -->
   <header id="hdr">
     <button class="hamburger" onclick="toggleSB()">☰</button>
-    <div class="hdr-mark">ALS</div>
+    <div class="hdr-mark" style="font-family:monospace;font-size:10px;letter-spacing:.5px">CW</div>
     <div class="hdr-divider"></div>
     <div class="hdr-title-wrap">
       <div style="display:flex;flex-direction:column;gap:1px">
@@ -451,7 +451,7 @@ textarea.fi{resize:vertical;min-height:80px}
     <div class="hdr-spacer"></div>
     <div style="display:flex;align-items:center;gap:8px">
       <button id="dark-toggle" class="hdr-icon-btn-air" onclick="toggleDarkMode()" title="Modo oscuro">🌙</button>
-      <button class="hdr-icon-btn-air" onclick="goHome()" title="Portal ALS">🏠</button>
+      <button class="hdr-icon-btn-air" onclick="goHome()" title="Customs Way">🏠</button>
     </div>
   </header>
 
@@ -460,8 +460,8 @@ textarea.fi{resize:vertical;min-height:80px}
     <nav id="sidebar">
       <div id="sb-header">
         <div id="sb-logo" onclick="goHome()">
-          <div id="sb-logo-mark">ALS</div>
-          <span id="sb-logo-txt">TARIC</span>
+          <div id="sb-logo-mark" style="background:linear-gradient(135deg,#0f2d6e,#312e81);font-family:monospace;font-size:10px;letter-spacing:.5px">CW</div>
+          <span id="sb-logo-txt">Customs Way</span>
         </div>
         <button class="sb-toggle" onclick="toggleSidebar()" title="Colapsar">
           <span class="ti-expand">◀</span>
@@ -503,7 +503,7 @@ textarea.fi{resize:vertical;min-height:80px}
           <span class="ni">📜</span>
           <span class="nav-item-txt">BTI/CAV ↗</span>
         </div>
-        <div class="nav-item" onclick="window.open('https://sede.agenciatributaria.gob.es/Sede/aduanas/nomenclatura-arancelaria-taric.html','_blank')">
+        <div class="nav-item" onclick="window.open('https://www2.agenciatributaria.gob.es/wlpl/ADUA-JDIT/ControlNomenclaturaArancelaria','_blank')">
           <span class="ni">🏛</span>
           <span class="nav-item-txt">AEAT ↗</span>
         </div>
@@ -511,7 +511,7 @@ textarea.fi{resize:vertical;min-height:80px}
 
       <div class="sb-bot">
         <div class="sb-user" onclick="goHome()">
-          <div class="sb-av" id="sb-av">ALS</div>
+          <div class="sb-av" id="sb-av" style="background:linear-gradient(135deg,#0f2d6e,#312e81);font-family:monospace;font-size:10px;letter-spacing:.5px">CW</div>
           <div style="min-width:0;overflow:hidden">
             <div style="font-size:12px;font-weight:600;color:var(--g700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="sb-name">Portal ALS</div>
             <div style="font-size:10px;color:var(--g400)">← Volver al portal</div>
@@ -744,6 +744,9 @@ textarea.fi{resize:vertical;min-height:80px}
 const SB_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
+// Proxy Supabase Edge Function para evitar CORS (api.anthropic.com no permite
+// llamadas directas desde navegador). El proxy reenvía a Anthropic server-side.
+const CLAUDE_PROXY = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/claude-proxy';
 
 let sb = null;
 let CV = 'busqueda';
@@ -849,10 +852,11 @@ function closeModal(){ document.getElementById('mo').classList.remove('open'); }
 // ── Navigation home ───────────────────────────────────────────
 function goHome(){
   try {
-    const base = window.location.href.replace(/\/taric\.html.*$/, '');
     if(window.opener && !window.opener.closed && typeof window.opener.showHome==='function'){
       window.opener.showHome(); window.opener.focus(); return;
     }
+    // Navigate back to ALS portal
+    const base = window.location.href.replace(/\/taric\.html.*$/, '');
     window.location.href = base + '/index.html';
   } catch(e){ window.location.href = 'index.html'; }
 }
@@ -899,7 +903,7 @@ async function clasificar(){
 async function llamarClaudeAPI(descripcion){
   const prompt = buildPromptClasificacion(descripcion);
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetch(CLAUDE_PROXY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1254,7 +1258,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
     ]
   }];
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetch(CLAUDE_PROXY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1713,7 +1717,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
     ]
   }];
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetch(CLAUDE_PROXY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1000, messages })
