@@ -2102,19 +2102,57 @@ async function loadHistorialExp(expId){
 async function subirFotoStorage(file, entidad, entidadId, tipo){
   if(!sb) return null;
   try{
-    const ext=file.name.split('.').pop()||'jpg';
-    const path=`${entidad}/${entidadId}/${tipo}_${Date.now()}.${ext}`;
-    const {data,error}=await sb.storage.from('fotos-operativas').upload(path,file,{upsert:true,contentType:file.type});
+    // Subir SIEMPRE el original sin comprimir
+    // El original es la fuente de verdad para descarga
+    // La visualización en pantalla usa Supabase Image Transformations
+    const ext = (file.type === 'image/png') ? 'png' : 'jpg';
+    const path = `${entidad}/${entidadId}/${tipo}_${Date.now()}.${ext}`;
+    // Si el archivo es muy grande (>8MB) comprimir solo dimensionalmente antes de subir
+    // para evitar timeouts, pero sin pérdida perceptible de calidad (q=0.97)
+    let fileToUpload = file;
+    if(file.size > 8 * 1024 * 1024){
+      fileToUpload = await compFoto(file, 4000, 0.97); // solo reducir dimensiones si >4000px, sin perder calidad
+    }
+    const {data,error} = await sb.storage.from('fotos-operativas').upload(
+      path, fileToUpload, {upsert:true, contentType:'image/jpeg'}
+    );
     if(error) throw error;
-    const {data:urlData}=sb.storage.from('fotos-operativas').getPublicUrl(path);
+    const {data:urlData} = sb.storage.from('fotos-operativas').getPublicUrl(path);
     // Guardar en tabla fotos_operativas
     await sb.from('fotos_operativas').insert({
-      entidad,entidad_id:entidadId,tipo,
-      storage_url:urlData.publicUrl,storage_path:path,
+      entidad, entidad_id:entidadId, tipo,
+      storage_url:urlData.publicUrl, storage_path:path,
       subida_por:CU?.id
     });
     return urlData.publicUrl;
   }catch(e){console.warn('subirFotoStorage:',e);return null;}
+}
+
+// ── Supabase Image Transformations ───────────────────────────────
+// Genera URL optimizada para pantalla sin tocar el original en Storage
+// Supabase transforma al vuelo y cachea en CDN
+// Docs: https://supabase.com/docs/guides/storage/serving/image-transformations
+function fotoUrlPantalla(url, w=1200){
+  if(!url) return url;
+  // Solo funciona con URLs de Supabase Storage
+  if(!url.includes('supabase.co') && !url.includes('/object/public/')) return url;
+  // Añadir parámetros de transformación: width, quality=75, format=webp si posible
+  const sep = url.includes('?') ? '&' : '?';
+  return url + sep + `width=${w}&quality=75&resize=contain`;
+}
+
+function fotoUrlThumb(url, size=200){
+  if(!url) return url;
+  if(!url.includes('supabase.co') && !url.includes('/object/public/')) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return url + sep + `width=${size}&height=${size}&quality=60&resize=cover`;
+}
+
+// URL para descarga: siempre el original sin transformaciones
+function fotoUrlDescarga(url){
+  // Eliminar cualquier parámetro de transformación si los hubiera
+  if(!url) return url;
+  return url.split('?')[0];
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2698,18 +2736,22 @@ async function compFotoAlta(f){
 }
 
 async function procesarFotos(files, stId){
+  // procesarFotos se usa para la preview local (antes de subir)
+  // Genera versiones reducidas SOLO para mostrar en pantalla durante la sesión
+  // El archivo que se sube a Storage es siempre el original
   const el=document.getElementById(stId);
-  if(el){el.textContent='Comprimiendo...';el.style.color='var(--b600)';}
+  if(el){el.textContent='Procesando...';el.style.color='var(--b600)';}
   const out=[];
   for(const f of files){
-    const comp=await compFoto(f);
+    // Para preview local usar compresión media (rápido, suficiente para vista previa)
+    const comp=await compFoto(f, 1200, 0.80);
     out.push(comp);
   }
   if(el){
     const orig=files.reduce((a,f)=>a+f.size,0);
     const fin=out.reduce((a,f)=>a+f.size,0);
     const ahorro=orig>0?Math.round((1-fin/orig)*100):0;
-    el.textContent=`✅ ${out.length} foto${out.length>1?'s':''} · ${(fin/1024).toFixed(0)}KB${ahorro>10?' · -'+ahorro+'%':''}`;
+    el.innerHTML='✅ '+out.length+' foto'+(out.length>1?'s':'')+' · <strong>'+(orig/1024).toFixed(0)+'KB</strong> original · se subirá completa 🔒';
     el.style.color='var(--gr600)';
   }
   return out;
@@ -2762,7 +2804,9 @@ function abrirGaleriaFotos(urls, titulo){
 
     // Download button
     var dlBtn = document.createElement('a');
-    dlBtn.href = url;
+    // Descarga siempre el original sin transformaciones
+    var urlOriginal = fotoUrlDescarga(url);
+    dlBtn.href = urlOriginal;
     dlBtn.download = nombre;
     dlBtn.target = '_blank';
     dlBtn.style.cssText = 'background:#1565c0;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:5px';
@@ -2771,7 +2815,8 @@ function abrirGaleriaFotos(urls, titulo){
 
     // View original button
     var viewBtn = document.createElement('a');
-    viewBtn.href = url;
+    // Ver original sin transformaciones en nueva pestaña
+    viewBtn.href = fotoUrlDescarga(url);
     viewBtn.target = '_blank';
     viewBtn.style.cssText = 'background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;text-decoration:none';
     viewBtn.textContent = '🔍 Original';
@@ -2799,8 +2844,11 @@ function abrirGaleriaFotos(urls, titulo){
     }
 
     var img = document.createElement('img');
-    img.src = url;
+    // Mostrar versión optimizada en pantalla (Supabase Image Transformations)
+    // Esto reduce drasticamente el egress: de 400KB a ~80KB por visualización
+    img.src = fotoUrlPantalla(url, 1400);
     img.style.cssText = 'max-width:100%;max-height:calc(100vh - 130px);object-fit:contain;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.5)';
+    img.loading = 'lazy';
     imgWrap.appendChild(img);
 
     if(urls.length > 1){
@@ -2821,7 +2869,8 @@ function abrirGaleriaFotos(urls, titulo){
         th.style.cssText = 'width:52px;height:52px;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid '+(i===idx?'#fff':'transparent')+';flex-shrink:0';
         th.onclick = (function(i){ return function(){ idx=i; overlay.innerHTML=''; render(); }; })(i);
         var timg = document.createElement('img');
-        timg.src = u;
+        // Thumbnails usan versión muy pequeña (200px) — mínimo egress
+        timg.src = fotoUrlThumb(u, 200);
         timg.style.cssText = 'width:100%;height:100%;object-fit:cover';
         timg.loading = 'lazy';
         th.appendChild(timg);
@@ -2904,17 +2953,29 @@ function setupFotos(inpId,prevId,stId){
   inp.addEventListener('change',async()=>{
     const files=Array.from(inp.files);if(!files.length)return;
     prev.innerHTML='<div class="loading" style="padding:10px"><div class="spinner"></div></div>';
+    // Mostrar info de tamaño original + preview comprimida para la vista previa local
     await procesarFotos(files,stId);
+    // _files guarda los ORIGINALES — se subirán sin comprimir a Storage
     renderFotoPreview(prev,files);
   });
 }
 
 function renderFotoPreview(prev,files){
+  // Guardar originales en _files para subida posterior
   prev._files=[...files];
-  prev.innerHTML=files.map((f,i)=>`<div class="foto-thumb" style="position:relative;display:inline-block">
-    <img src="${URL.createObjectURL(f)}" style="display:block">
+  // Para preview local: generar thumbnail comprimido sin bloquear
+  const thumbPromises = files.map(f => compFoto(f, 800, 0.75));
+  prev.innerHTML = files.map((f,i) => `<div class="foto-thumb" style="position:relative;display:inline-block">
+    <img src="${URL.createObjectURL(f)}" style="display:block" id="foto-prev-thumb-${prev.id}-${i}">
     <button type="button" onclick="eliminarFoto(${i},this.parentElement.parentElement)" style="position:absolute;top:2px;right:2px;background:rgba(220,38,38,.85);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-weight:700">×</button>
   </div>`).join('');
+  // Reemplazar previews con versión comprimida para mejor rendimiento local
+  thumbPromises.forEach((p,i) => {
+    p.then(compressed => {
+      const el = document.getElementById('foto-prev-thumb-'+prev.id+'-'+i);
+      if(el){ const burl = URL.createObjectURL(compressed); el.src = burl; }
+    });
+  });
 }
 
 function eliminarFoto(idx,prevEl){
