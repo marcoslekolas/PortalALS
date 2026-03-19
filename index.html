@@ -924,6 +924,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="nav-item" onclick="nav('incidencias',this)"><span class="ni">⚠️</span><span class="nav-item-txt">Incidencias</span></div>
         <div class="nav-item" onclick="nav('empresas',this)"><span class="ni">🏢</span><span class="nav-item-txt">Empresas</span></div>
         <div class="nav-item" onclick="nav('estadisticas',this)"><span class="ni">📈</span><span class="nav-item-txt">Estadísticas</span></div>
+        <div class="nav-item" id="nav-facturacion" onclick="nav('facturacion',this)"><span class="ni">💶</span><span class="nav-item-txt">Facturación<span class="nb" id="badge-fact" style="display:none">0</span></span></div>
         <div id="nav-adm" style="display:none">
           <div class="sb-sec">Configuración</div>
           <div class="nav-item" onclick="nav('versiones',this)"><span class="ni">🏷️</span><span class="nav-item-txt">Versiones</span></div>
@@ -1191,7 +1192,67 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="ph"><div class="pt">Log de actividad</div></div>
         <div class="tc"><table class="tbl"><thead><tr><th>Acción</th><th>Registro</th><th>Tabla</th><th>Campo</th><th>Valor anterior</th><th>Valor nuevo</th><th>Usuario</th><th>Fecha y hora</th></tr></thead><tbody id="log-tbody"></tbody></table></div>
       </div>
-      <div class="view" id="view-estadisticas">
+      <div class="view" id="view-facturacion">
+  <div class="ph">
+    <div class="pt">💶 Facturación — Buques Embarcados</div>
+  </div>
+  <div style="padding:16px">
+    <!-- KPIs -->
+    <div class="kpi-grid" id="fact-kpis" style="margin-bottom:20px">
+      <div class="kpi"><div class="kpi-lbl">Pendientes facturar</div><div class="kpi-val" id="fact-k-pend">—</div></div>
+      <div class="kpi"><div class="kpi-lbl">Facturados este mes</div><div class="kpi-val" id="fact-k-mes">—</div></div>
+      <div class="kpi"><div class="kpi-lbl">Email enviado</div><div class="kpi-val" id="fact-k-email">—</div></div>
+      <div class="kpi"><div class="kpi-lbl">Total embarcados</div><div class="kpi-val" id="fact-k-total">—</div></div>
+    </div>
+
+    <!-- Filtros -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+      <select id="fact-fil-estado" class="fi fs" style="width:auto" onchange="loadFacturacion()">
+        <option value="">Todos los estados</option>
+        <option value="pendiente">⏳ Pendiente facturar</option>
+        <option value="facturado">✅ Facturado</option>
+      </select>
+      <select id="fact-fil-mes" class="fi fs" style="width:auto" onchange="loadFacturacion()">
+        <option value="">Todos los meses</option>
+      </select>
+      <button class="btn btn-s btn-sm" onclick="loadFacturacion()">🔄 Actualizar</button>
+    </div>
+
+    <!-- Tabla -->
+    <div style="overflow-x:auto">
+      <table class="tbl" id="fact-tabla">
+        <thead>
+          <tr>
+            <th>Buque</th>
+            <th>Ref. Visual Trans</th>
+            <th>Cliente</th>
+            <th>Fecha embarque</th>
+            <th>Expediciones</th>
+            <th>Email facturación</th>
+            <th>Estado</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody id="fact-tbody">
+          <tr><td colspan="8" style="text-align:center;padding:32px;color:var(--g400)">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Email configuración -->
+    <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px;margin-top:20px">
+      <div style="font-size:13px;font-weight:600;color:var(--b700);margin-bottom:8px">⚙️ Configuración email de facturación</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="font-size:13px;color:var(--g600)">Email destinatario:</label>
+        <input id="fact-email-dest" class="fi" style="width:260px" placeholder="facturacion@empresa.com"
+          value="" oninput="localStorage.setItem('als_fact_email',this.value)">
+        <span style="font-size:12px;color:var(--g400)">Se guardará en este navegador</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="view" id="view-estadisticas">
         <div class="kpi-grid" id="st-kpis"></div>
         <div class="cg" id="st-charts"></div>
       </div>
@@ -1902,6 +1963,7 @@ function enterMod(mod){
     if(btnAirport) btnAirport.style.display=puedeAirport?'':'none';
     if(btnOperativa) btnOperativa.style.display='none';
     nav('dashboard',document.querySelector('#nav-op .nav-item'));
+    setTimeout(loadFactBadge, 800);
   } else {
     document.getElementById('nav-op').style.display='none';
     document.getElementById('nav-alm').style.display='block';
@@ -2887,6 +2949,7 @@ async function loadView(view){
     case 'usuarios':await loadUsuarios();break;
     case 'log':await loadLog();break;
     case 'estadisticas':await loadStats();break;
+    case 'facturacion':await loadFacturacion();break;
   }
 }
 
@@ -4174,6 +4237,232 @@ async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin
   await loadAlmFotos('carga');
 }
 function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);}}
+
+async function loadFactBadge(){
+  try {
+    const {count:cnt} = await sb.from('buques')
+      .select('*',{count:'exact',head:true})
+      .not('estado_facturacion','is',null)
+      .eq('estado_facturacion','pendiente');
+    const badge = document.getElementById('badge-fact');
+    if(badge){ badge.textContent=cnt||0; badge.style.display=(cnt>0)?'':'none'; }
+  } catch(e){}
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// MÓDULO FACTURACIÓN
+// ══════════════════════════════════════════════════════════════════
+
+async function loadFacturacion(){
+  // Inicializar email guardado
+  const emailGuardado = localStorage.getItem('als_fact_email')||'';
+  const emailInput = document.getElementById('fact-email-dest');
+  if(emailInput && !emailInput.value) emailInput.value = emailGuardado;
+
+  // Poblar filtro de meses
+  const mesSel = document.getElementById('fact-fil-mes');
+  if(mesSel && mesSel.options.length <= 1){
+    const now = new Date();
+    for(let i=0; i<12; i++){
+      const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+      const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      const lbl = d.toLocaleDateString('es-ES',{month:'long',year:'numeric'});
+      mesSel.innerHTML += `<option value="${val}">${lbl.charAt(0).toUpperCase()+lbl.slice(1)}</option>`;
+    }
+  }
+
+  const estadoFil = document.getElementById('fact-fil-estado')?.value||'';
+  const mesFil = document.getElementById('fact-fil-mes')?.value||'';
+
+  // Obtener buques embarcados o finalizados
+  // Buscar buques embarcados: los que tienen estado_facturacion definido
+  // o cuyo estado_operacion sea Finalizado (el estado final en el enum)
+  let query = sb.from('buques')
+    .select('*,ec:cliente_id(nombre,email_confronta),en:consignatario_id(nombre)')
+    .not('estado_facturacion','is',null)
+    .order('updated_at',{ascending:false});
+
+  if(estadoFil) query = query.eq('estado_facturacion', estadoFil);
+
+  const {data:buques,error} = await query;
+  if(error){ console.error(error); return; }
+
+  let lista = buques||[];
+
+  // Filtrar por mes si aplica
+  if(mesFil){
+    lista = lista.filter(b=>{
+      const d = new Date(b.updated_at||b.created_at);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` === mesFil;
+    });
+  }
+
+  // KPIs
+  const pendientes = (buques||[]).filter(b=>b.estado_facturacion==='pendiente').length;
+  const facturadosMes = (buques||[]).filter(b=>{
+    if(b.estado_facturacion!=='facturado') return false;
+    const d = new Date(b.updated_at||b.created_at);
+    const now = new Date();
+    return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
+  }).length;
+  const conEmail = (buques||[]).filter(b=>b.email_facturacion_sent).length;
+
+  const set = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  set('fact-k-pend', pendientes);
+  set('fact-k-mes', facturadosMes);
+  set('fact-k-email', conEmail);
+  set('fact-k-total', (buques||[]).length);
+
+  // Badge en sidebar
+  const badge = document.getElementById('badge-fact');
+  if(badge){ badge.textContent=pendientes; badge.style.display=pendientes>0?'':'none'; }
+
+  // Tabla
+  if(!lista.length){
+    document.getElementById('fact-tbody').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--g400)">No hay buques en este filtro</td></tr>';
+    return;
+  }
+
+  // Para cada buque, obtener expediciones
+  const rows = await Promise.all(lista.map(async b => {
+    const {data:exps} = await sb.from('expediciones')
+      .select('id,nº_expedicion,bultos,kilos,status_aduanero,nº_mrn')
+      .eq('buque_id',b.id);
+    const numExps = (exps||[]).length;
+    const totalBultos = (exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
+    const totalKilos = (exps||[]).reduce((a,e)=>a+(e.kilos||0),0);
+    const estado = b.estado_facturacion||'pendiente';
+    const emailSent = b.email_facturacion_sent;
+    const emailFecha = b.email_facturacion_fecha ? new Date(b.email_facturacion_fecha).toLocaleDateString('es-ES') : '—';
+
+    return `<tr>
+      <td><strong>${sanitize(b.nombre)}</strong></td>
+      <td style="font-family:var(--mono);font-size:12px">${sanitize(b.ref_visual_trans||'—')}</td>
+      <td>${sanitize(b.ec?.nombre||'—')}</td>
+      <td>${b.updated_at ? new Date(b.updated_at).toLocaleDateString('es-ES') : '—'}</td>
+      <td>
+        <span style="font-weight:600">${numExps} exp.</span>
+        <span style="color:var(--g400);font-size:11px"> · ${totalBultos} btos · ${totalKilos.toLocaleString('es-ES')} kg</span>
+      </td>
+      <td>
+        ${emailSent
+          ? `<span class="badge bg" title="Enviado el ${emailFecha}">✅ Enviado ${emailFecha}</span>`
+          : `<span class="badge bb">⏳ Pendiente</span>`}
+        <button class="btn btn-s btn-sm" style="margin-top:4px;font-size:11px" onclick="enviarEmailFacturacion('${b.id}')">
+          ${emailSent ? '↩️ Reenviar' : '📧 Enviar'}
+        </button>
+      </td>
+      <td>
+        <select class="fi fs" style="font-size:12px;padding:4px 8px;width:auto"
+          onchange="marcarFacturado('${b.id}',this.value)">
+          <option value="pendiente" ${estado==='pendiente'?'selected':''}>⏳ Pendiente</option>
+          <option value="facturado" ${estado==='facturado'?'selected':''}>✅ Facturado</option>
+        </select>
+      </td>
+      <td>
+        <button class="btn btn-s btn-sm" onclick="openBuque('${b.id}')">Ver ficha</button>
+      </td>
+    </tr>`;
+  }));
+
+  document.getElementById('fact-tbody').innerHTML = rows.join('');
+}
+
+async function enviarEmailFacturacion(buqueId){
+  const emailDest = document.getElementById('fact-email-dest')?.value?.trim()
+    || localStorage.getItem('als_fact_email')||'';
+
+  if(!emailDest){
+    alert('Por favor, introduce el email de facturación en la configuración de la parte inferior de esta pantalla.');
+    return;
+  }
+
+  // Obtener datos del buque y expediciones
+  const {data:b} = await sb.from('buques')
+    .select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)')
+    .eq('id',buqueId).single();
+  if(!b){ showToast('Error al obtener datos del buque'); return; }
+
+  const {data:exps} = await sb.from('expediciones')
+    .select('id,nº_expedicion,bultos,kilos,status_aduanero,nº_mrn,estado_semaforo')
+    .eq('buque_id',buqueId);
+
+  const totalBultos = (exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
+  const totalKilos = (exps||[]).reduce((a,e)=>a+(e.kilos||0),0);
+  const hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  const NL = '\n';
+
+  // Construir cuerpo del email
+  const listaExps = (exps||[]).map(e =>
+    '  · '+e.nº_expedicion+' — '+e.bultos+' btos / '+(e.kilos||0)+' kg'+(e.nº_mrn?' | MRN: '+e.nº_mrn:'')+' | '+e.status_aduanero
+  ).join(NL);
+
+  const cuerpo = [
+    'Estimado Departamento de Facturación,',NL,NL,
+    'Les comunicamos que el siguiente buque ha finalizado su escala en el puerto de Algeciras y está listo para proceder con la facturación de los servicios prestados.',NL,NL,
+    '── DATOS DEL BUQUE ─────────────────────────────────────',NL,
+    'Buque: '+(b.nombre||'—'),NL,
+    'Ref. Visual Trans: '+(b.ref_visual_trans||'—'),NL,
+    'IMO: '+(b.imo||'—'),NL,
+    'Nº Escala APBA: '+(b.nº_escala||'—'),NL,
+    'Terminal: '+(b.puerto_terminal||b.place||'—'),NL,
+    'Cliente: '+(b.ec?.nombre||'—'),NL,
+    'Consignatario: '+(b.en?.nombre||'—'),NL,NL,
+    '── EXPEDICIONES A FACTURAR ─────────────────────────────',NL,
+    'Total expediciones: '+(exps||[]).length,NL,
+    'Total bultos: '+totalBultos,NL,
+    'Total kilos: '+totalKilos.toLocaleString('es-ES')+' kg',NL,NL,
+    listaExps,NL,NL,
+    '── AVISO ────────────────────────────────────────────────',NL,
+    'Este mensaje ha sido generado automáticamente por el Portal Operativo ALS.',NL,
+    'Fecha de notificación: '+hoy,NL,NL,
+    'Atentamente,',NL,
+    'Departamento de Operaciones',NL,
+    'ALGECIRAS LOGISTIC SOLUTIONS (ALS)',NL,
+    '📞 +34 956 58 13 16 · als@alsalgeciras.com'
+  ].join('');
+
+  const asunto = encodeURIComponent('FACTURACIÓN — Buque '+b.nombre+' ('+( b.ref_visual_trans||'Sin Ref.')+') — '+hoy);
+  const body = encodeURIComponent(cuerpo);
+
+  // Abrir cliente de correo
+  window.location.href = `mailto:${emailDest}?subject=${asunto}&body=${body}`;
+
+  // Registrar en BD que el email fue enviado
+  const ahora = new Date().toISOString();
+  await sb.from('buques').update({
+    email_facturacion_sent: true,
+    email_facturacion_fecha: ahora,
+    estado_facturacion: 'pendiente' // mantener pendiente hasta que lo marquen como facturado
+  }).eq('id',buqueId);
+
+  await logAct('buques',buqueId,b.nombre,'editar','email_facturacion_sent','false',
+    'Email facturación enviado a '+emailDest+' por '+CU?.nombre);
+
+  showToast('📧 Email de facturación abierto — '+b.nombre);
+
+  // Actualizar vista
+  setTimeout(()=>loadFacturacion(), 1000);
+}
+
+async function marcarFacturado(buqueId, estado){
+  await sb.from('buques').update({estado_facturacion: estado}).eq('id',buqueId);
+  const {data:b} = await sb.from('buques').select('nombre').eq('id',buqueId).single();
+  await logAct('buques',buqueId,b?.nombre||'','editar','estado_facturacion','—',estado+' por '+CU?.nombre);
+  showToast(estado==='facturado' ? '✅ Marcado como facturado' : '⏳ Marcado como pendiente');
+  // Recargar KPIs y badge sin recargar la tabla completa
+  loadFacturacion();
+}
+
+async function enviarEmailFacturacionAuto(buqueId){
+  // Llamado automáticamente desde confirmarEmbarqueTab cuando el buque se embarca
+  // Solo envía si hay email configurado en localStorage
+  const emailDest = localStorage.getItem('als_fact_email')||'';
+  if(!emailDest) return; // Sin email configurado, no enviar automáticamente
+  await enviarEmailFacturacion(buqueId);
+}
+
 async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
   if(!confirm('¿Marcar el buque como EMBARCADO? Las expediciones pasarán a "A bordo" (excepto las Landed).'))return;
   // Subir fotos de embarque
@@ -4185,7 +4474,7 @@ async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Si
     const urls=await subirFotosYGuardar(files,'buques',bid,'embarque');
     if(urls.length) fotoUrl=urls[0];
   }
-  await sb.from('buques').update({estado_operacion:'Embarcado'}).eq('id',bid);
+  await sb.from('buques').update({estado_operacion:'Finalizado'}).eq('id',bid);
   const {data:exps}=await sb.from('expediciones').select('id,ubicacion').eq('buque_id',bid);
   for(const e of exps||[]){
     if(e.ubicacion==='Landed') continue;
@@ -4195,6 +4484,9 @@ async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Si
   }
   await logAct('buques',bid,'','editar','estado_operacion','En proceso','Embarcado por '+CU?.nombre+(fotoUrl?' [con foto]':''));
   showToast('¡Embarcado! ✅'+(fotoUrl?' 📸':''));
+  // Auto-notificar a facturación si hay email configurado
+  await sb.from('buques').update({estado_facturacion:'pendiente'}).eq('id',bid);
+  enviarEmailFacturacionAuto(bid);
   await loadAlmFotos('embarque');
 }
 function onLandedFoto(){const f=document.getElementById('lnd-fi')?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn');if(btn)btn.style.display='';setupFotos('lnd-fi','lnd-pv',null);}}
@@ -4660,7 +4952,7 @@ async function openBuque(id){
     </div>
     <div class="fg2"><label class="fl2">Estado operación</label>
       <select id="bq-est-${id}" class="fi fs" onchange="saveBuqueEst('${id}',this.value)">
-        ${['Sin comenzar','En proceso','Embarcado','Cancelado','Aplazado'].map(s=>`<option ${(b.estado_operacion||'En proceso')===s?'selected':''}>${s}</option>`).join('')}
+        ${['Sin comenzar','En proceso','Finalizado','Cancelado','Aplazado'].map(s=>`<option ${(b.estado_operacion||'En proceso')===s?'selected':''}>${s}</option>`).join('')}
       </select>
     </div>
     ${b.created_by_nombre?`<div style="font-size:12px;color:var(--g400);margin-bottom:10px">Creado por <strong>${b.created_by_nombre}</strong>${b.updated_at?` · Actualizado: ${fdt(b.updated_at)}`:''}</div>`:''}
@@ -4673,7 +4965,23 @@ async function openBuque(id){
       <div><div style="font-weight:600;font-size:13px">${e.nº_expedicion}</div><div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div></div>
       ${bdg(e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo)}${(e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url)?'<span title="Tiene fotos" style="font-size:11px;margin-left:4px">📸</span>':''}
     </div>`).join('')||'<div class="empty" style="padding:20px"><div class="empty-txt">Sin expediciones</div></div>'}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button><button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button>`;
+  // Info facturación en ficha de buque
+  const factBadge = b.email_facturacion_sent
+    ? `<span class="badge bg" title="Email enviado el ${b.email_facturacion_fecha ? new Date(b.email_facturacion_fecha).toLocaleDateString('es-ES') : '—'}">📧 Email fact. ${b.email_facturacion_fecha ? new Date(b.email_facturacion_fecha).toLocaleDateString('es-ES') : ''}</span>`
+    : (b.estado_operacion==='Embarcado' ? '<span class="badge bb">⏳ Fact. pendiente</span>' : '');
+  const factEstado = b.estado_facturacion==='facturado' ? '<span class="badge bg" style="margin-left:4px">✅ Facturado</span>' : '';
+
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button>`;
+  // Añadir badge de facturación en el modal body si procede
+  if(factBadge||factEstado){
+    const mbody = document.getElementById('m-body');
+    if(mbody){
+      const factDiv = document.createElement('div');
+      factDiv.style.cssText='display:flex;gap:6px;align-items:center;margin-top:10px;padding:10px;background:var(--g50);border-radius:var(--r);border:1px solid var(--g200)';
+      factDiv.innerHTML='<span style="font-size:12px;color:var(--g500);font-weight:600">💶 Facturación:</span>'+factBadge+factEstado;
+      mbody.appendChild(factDiv);
+    }
+  }
   document.getElementById('mo').classList.add('open');
 }
 
@@ -4858,7 +5166,7 @@ function onEmbFoto(){
 async function confirmarEmbarque(){
   const bqId=gv('emb-bq');if(!bqId){alert('Selecciona un buque');return;}
   if(!confirm('¿Marcar el buque como EMBARCADO? Esto cambiará el estado de la operación y el color de la etiqueta.'))return;
-  await sb.from('buques').update({estado_operacion:'Embarcado'}).eq('id',bqId);
+  await sb.from('buques').update({estado_operacion:'Finalizado'}).eq('id',bqId);
   const {data:exps}=await sb.from('expediciones').select('id').eq('buque_id',bqId);
   for(const e of exps||[]){
     await sb.from('expediciones').update({estado_semaforo:'🚢 EMBARCADO'}).eq('id',e.id);
