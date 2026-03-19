@@ -1,0 +1,1506 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>ALS · Clasificador TARIC</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+(function(){
+  var saved=localStorage.getItem('als_dark');
+  var prefersDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches;
+  if(saved==='1'||(saved===null&&prefersDark)) document.documentElement.classList.add('dark');
+})();
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --w:#fff;--g50:#f8fafc;--g100:#f1f5f9;--g200:#e2e8f0;--g300:#cbd5e1;
+  --g400:#94a3b8;--g500:#64748b;--g600:#475569;--g700:#334155;--g900:#0f172a;
+  --b50:#eff6ff;--b100:#dbeafe;--b500:#3b82f6;--b600:#2563eb;--b700:#1d4ed8;
+  --gr50:#f0fdf4;--gr500:#22c55e;--gr600:#16a34a;
+  --am50:#fffbeb;--am500:#f59e0b;--am600:#d97706;
+  --rd50:#fff1f2;--rd500:#f43f5e;--rd600:#e11d48;
+  --tl50:#f0fdfa;--tl500:#14b8a6;--tl600:#0d9488;
+  --pu50:#faf5ff;--pu500:#a855f7;--pu600:#9333ea;
+  --or50:#fff7ed;--or500:#f97316;--or600:#ea580c;
+  --f:'IBM Plex Sans',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+  --r:8px;--rl:12px;--rxl:18px;
+  --sh0:0 1px 3px rgba(0,0,0,.07);
+  --shl:0 8px 32px rgba(0,0,0,.12);
+  --shxl:0 24px 64px rgba(0,0,0,.16);
+  --hh:58px;--sw:240px;
+}
+:root.dark{
+  --w:#0f172a;--g50:#1e293b;--g100:#1e293b;--g200:#334155;--g300:#475569;
+  --g400:#64748b;--g500:#94a3b8;--g600:#cbd5e1;--g700:#e2e8f0;--g900:#f8fafc;
+  --b50:#1e3a5f;--b100:#1e3a8a;--b500:#60a5fa;--b600:#3b82f6;
+  --gr50:#052e16;--gr500:#4ade80;--gr600:#22c55e;
+  --am50:#451a03;--am500:#fbbf24;--am600:#f59e0b;
+  --rd50:#4c0519;--rd500:#fb7185;--rd600:#f43f5e;
+  --tl50:#042f2e;--tl500:#2dd4bf;--tl600:#14b8a6;
+  --pu50:#3b0764;--pu500:#c084fc;--pu600:#a855f7;
+  --or50:#431407;--or500:#fb923c;--or600:#f97316;
+  --shl:0 8px 32px rgba(0,0,0,.5);
+}
+:root.dark body{background:#0a0f1e}
+:root.dark #hdr{background:linear-gradient(135deg,#1e3a8a,#2d1b69)!important}
+:root.dark #sidebar{background:#0f172a!important;border-color:#334155!important}
+:root.dark #sb-header{background:#0f172a!important;border-color:#334155!important}
+:root.dark #content{background:#0a0f1e!important}
+:root.dark .view{background:transparent!important}
+:root.dark .ph{background:#0f172a!important;border-color:#334155!important}
+:root.dark .card{background:#0f172a!important;border-color:#334155!important}
+:root.dark .fi{background:#1e293b!important;border-color:#334155!important;color:var(--g900)!important}
+:root.dark .fi:focus{border-color:var(--b600)!important}
+:root.dark .tbl th{background:#1a2744!important;color:var(--g500)!important;border-color:#334155!important}
+:root.dark .tbl td{background:#0f172a!important;border-color:#1e293b!important;color:var(--g600)!important}
+:root.dark .tbl tr:hover td{background:#1e293b!important}
+:root.dark .result-card{background:#0f172a!important;border-color:#334155!important}
+:root.dark .hist-item{background:#0f172a!important;border-color:#334155!important}
+:root.dark .hist-item:hover{background:#1e293b!important}
+:root.dark .drop-zone{background:#0f172a!important;border-color:#334155!important}
+:root.dark .drop-zone:hover{background:#1e293b!important;border-color:var(--b600)!important}
+:root.dark .measure-badge{opacity:.9}
+:root.dark .code-chip{background:#1e3a8a!important;color:#93c5fd!important}
+:root.dark .sb-toggle{background:#1e293b!important;border-color:#334155!important;color:var(--g400)!important}
+:root.dark .nav-item:hover{background:#1e293b!important}
+:root.dark .nav-item.active{background:linear-gradient(135deg,#1d4ed8,#6366f1)!important}
+:root.dark #sb-logo-txt{color:var(--g900)!important}
+:root.dark .hdr-icon-btn-air{background:rgba(255,255,255,.08)!important;border-color:rgba(255,255,255,.12)!important}
+:root.dark .empty-state{color:var(--g400)!important}
+:root.dark .tag{background:#1e293b!important;border-color:#334155!important;color:var(--g500)!important}
+:root.dark .source-badge{background:#1e293b!important;color:var(--g500)!important}
+:root.dark .conf-bar-bg{background:#334155!important}
+
+html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
+#app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+/* ── Header ─────────────────────────────────────────────────── */
+#hdr{
+  background:linear-gradient(135deg,#0f2d6e 0%,#1e3a8a 50%,#312e81 100%);
+  color:#fff;display:flex;align-items:center;
+  padding:0 14px;height:var(--hh);flex-shrink:0;gap:10px;
+  box-shadow:0 2px 20px rgba(15,45,110,.5);
+  position:relative;overflow:visible;
+}
+#hdr::after{
+  content:'';position:absolute;inset:0;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Ccircle cx='30' cy='30' r='25' fill='none' stroke='rgba(255,255,255,.04)' stroke-width='1'/%3E%3C/svg%3E");
+  pointer-events:none;
+}
+.hdr-mark{width:32px;height:32px;background:rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;letter-spacing:-.5px;backdrop-filter:blur(4px)}
+.hdr-divider{width:1px;height:20px;background:rgba(255,255,255,.2)}
+.hdr-title-wrap{display:flex;flex-direction:column;gap:1px}
+.hdr-title{font-size:13px;font-weight:700;color:#fff;letter-spacing:.01em}
+.hdr-subtitle{font-size:10px;color:rgba(255,255,255,.55);font-weight:500;letter-spacing:.05em;text-transform:uppercase}
+.hdr-spacer{flex:1}
+.hdr-icon-btn-air{
+  width:34px;height:34px;border-radius:9px;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);
+  color:#fff;cursor:pointer;font-size:15px;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;flex-shrink:0;
+}
+.hdr-icon-btn-air:hover{background:rgba(255,255,255,.22);transform:translateY(-1px)}
+.hdr-btn{
+  background:rgba(255,255,255,.15);color:#fff;
+  border:1px solid rgba(255,255,255,.25);
+  padding:6px 14px;border-radius:8px;
+  font-size:12px;font-weight:600;cursor:pointer;
+  font-family:var(--f);white-space:nowrap;
+  transition:all .15s;
+}
+.hdr-btn:hover{background:rgba(255,255,255,.25)}
+.hdr-btn.primary{background:rgba(255,255,255,.25);border-color:rgba(255,255,255,.4)}
+.hamburger{display:none;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:18px;cursor:pointer;padding:5px 9px;border-radius:8px}
+
+/* ── Layout ──────────────────────────────────────────────────── */
+#body{flex:1;display:flex;overflow:hidden}
+#content{flex:1;overflow-y:auto;background:var(--g50)}
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+#sidebar{
+  width:var(--sw);background:var(--w);
+  border-right:1px solid var(--g200);
+  display:flex;flex-direction:column;flex-shrink:0;
+  overflow-y:auto;z-index:50;
+  transition:width .25s cubic-bezier(.4,0,.2,1),transform .25s;
+}
+#sidebar.collapsed{width:64px}
+#sidebar.collapsed .nav-item-txt{opacity:0;width:0;overflow:hidden;white-space:nowrap;display:inline-block}
+#sidebar.collapsed .nav-item{justify-content:center;padding:10px 0;margin:2px 8px}
+#sidebar.collapsed .nav-item .ni{margin:0;font-size:18px}
+#sidebar.collapsed .sb-sec{opacity:0;height:0;overflow:hidden;margin:0;padding:0}
+#sidebar.collapsed .sb-bot{padding:8px;display:flex;justify-content:center}
+#sidebar.collapsed #sb-logo-txt{opacity:0;width:0;overflow:hidden}
+#sidebar.collapsed #sb-header{justify-content:center}
+#sidebar.collapsed .sb-toggle .ti-expand{display:none}
+#sidebar.collapsed .sb-toggle .ti-collapse{display:block}
+.sb-toggle .ti-collapse{display:none}
+.nav-item-txt{transition:opacity .2s,width .2s;white-space:nowrap}
+#sb-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 12px 10px;border-bottom:1px solid var(--g100);flex-shrink:0;
+}
+#sb-logo{display:flex;align-items:center;gap:9px;min-width:0;overflow:hidden;cursor:pointer}
+#sb-logo-mark{
+  width:30px;height:30px;border-radius:8px;flex-shrink:0;
+  background:linear-gradient(135deg,#0f2d6e,#312e81);
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:800;font-size:11px;letter-spacing:-.5px;
+}
+#sb-logo-txt{font-weight:700;font-size:13px;color:var(--g900);white-space:nowrap;overflow:hidden;transition:opacity .2s,width .2s}
+.sb-toggle{
+  width:26px;height:26px;border-radius:7px;
+  border:1px solid var(--g200);background:var(--w);
+  cursor:pointer;font-size:12px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--g400);transition:all .15s;flex-shrink:0;
+}
+.sb-toggle:hover{background:var(--g100);color:var(--b600)}
+.sb-sec{padding:16px 14px 5px;font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.1em}
+.nav-item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 12px;border-radius:10px;margin:2px 8px;
+  cursor:pointer;color:var(--g500);font-size:13px;font-weight:500;
+  transition:all .15s cubic-bezier(.4,0,.2,1);user-select:none;
+}
+.nav-item:hover{background:var(--g100);color:var(--g900);transform:translateX(2px)}
+.nav-item.active{background:linear-gradient(135deg,#0f2d6e,#312e81);color:#fff;box-shadow:0 4px 12px rgba(15,45,110,.35)}
+.nav-item .ni{font-size:16px;width:22px;text-align:center;flex-shrink:0;transition:transform .15s}
+.nav-item:hover .ni{transform:scale(1.15)}
+.nb{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:18px;height:18px;padding:0 5px;
+  background:var(--rd500);color:#fff;
+  border-radius:9px;font-size:10px;font-weight:700;margin-left:auto;
+}
+.sb-bot{border-top:1px solid var(--g100);padding:10px;flex-shrink:0;margin-top:auto}
+.sb-user{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:background .15s;overflow:hidden}
+.sb-user:hover{background:var(--g100)}
+.sb-av{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#0f2d6e,#312e81);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0}
+
+/* ── Page header ─────────────────────────────────────────────── */
+.ph{background:var(--w);border-bottom:1px solid var(--g200);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;flex-shrink:0;position:sticky;top:0;z-index:10}
+.pt{font-size:16px;font-weight:700;color:var(--g900)}
+.ps{font-size:12px;color:var(--g500);margin-top:2px}
+
+/* ── Views ───────────────────────────────────────────────────── */
+.view{display:none;flex-direction:column;min-height:100%}
+.view.active{display:flex}
+.view-body{padding:20px 24px;flex:1}
+
+/* ── Cards ───────────────────────────────────────────────────── */
+.card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:20px;box-shadow:var(--sh0)}
+
+/* ── Inputs ──────────────────────────────────────────────────── */
+.fi{
+  width:100%;padding:10px 14px;border-radius:var(--r);
+  border:1.5px solid var(--g200);background:var(--w);
+  color:var(--g900);font-family:var(--f);font-size:13px;
+  transition:border-color .15s,box-shadow .15s;outline:none;
+}
+.fi:focus{border-color:var(--b600);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+textarea.fi{resize:vertical;min-height:80px}
+.fl{font-size:12px;font-weight:600;color:var(--g600);margin-bottom:5px;display:block}
+.fg{margin-bottom:14px}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--f);border:none;transition:all .15s;white-space:nowrap}
+.btn-p{background:linear-gradient(135deg,#0f2d6e,#1d4ed8);color:#fff;box-shadow:0 2px 8px rgba(15,45,110,.3)}
+.btn-p:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(15,45,110,.4)}
+.btn-s{background:var(--g100);color:var(--g700);border:1px solid var(--g200)}
+.btn-s:hover{background:var(--g200)}
+.btn-g{background:var(--gr50);color:var(--gr700);border:1px solid #bbf7d0}
+.btn-g:hover{background:#dcfce7}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none!important}
+
+/* ── Tables ──────────────────────────────────────────────────── */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--g500);background:var(--g50);border-bottom:1px solid var(--g200);white-space:nowrap}
+.tbl td{padding:11px 14px;border-bottom:1px solid var(--g100);color:var(--g700);vertical-align:top}
+.tbl tr:hover td{background:var(--b50)}
+.tbl tr:last-child td{border-bottom:none}
+
+/* ── Badges ──────────────────────────────────────────────────── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+.badge-blue{background:var(--b50);color:var(--b700);border:1px solid var(--b100)}
+.badge-green{background:var(--gr50);color:var(--gr700);border:1px solid #bbf7d0}
+.badge-amber{background:var(--am50);color:#92400e;border:1px solid #fde68a}
+.badge-red{background:var(--rd50);color:var(--rd600);border:1px solid #fecdd3}
+.badge-teal{background:var(--tl50);color:var(--tl600);border:1px solid #99f6e4}
+.badge-purple{background:var(--pu50);color:var(--pu600);border:1px solid #e9d5ff}
+.badge-orange{background:var(--or50);color:var(--or600);border:1px solid #fed7aa}
+.badge-grey{background:var(--g100);color:var(--g600);border:1px solid var(--g200)}
+
+/* ── Toast ───────────────────────────────────────────────────── */
+#toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+  background:#0f172a;color:#fff;padding:10px 20px;border-radius:10px;
+  font-size:13px;font-weight:500;z-index:9999;opacity:0;
+  transition:all .3s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;
+  box-shadow:0 8px 24px rgba(0,0,0,.4);
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── Modal ───────────────────────────────────────────────────── */
+.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.mo.open{display:flex}
+.modal{background:var(--w);border-radius:var(--rxl);width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shxl);animation:slideUp .25s cubic-bezier(.16,1,.3,1)}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.mh{padding:18px 22px;border-bottom:1px solid var(--g100);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--w);z-index:1;border-radius:var(--rxl) var(--rxl) 0 0}
+.mh-title{font-size:15px;font-weight:700;color:var(--g900)}
+.mb{padding:20px 22px}
+.mf{padding:14px 22px;border-top:1px solid var(--g100);display:flex;justify-content:flex-end;gap:10px;position:sticky;bottom:0;background:var(--w);border-radius:0 0 var(--rxl) var(--rxl)}
+:root.dark .mh,:root.dark .mb,:root.dark .mf{background:#0f172a!important}
+:root.dark .modal{background:#0f172a!important}
+
+/* ── Loading spinner ─────────────────────────────────────────── */
+.spinner{width:20px;height:20px;border:2.5px solid var(--g200);border-top-color:var(--b600);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-wrap{display:flex;align-items:center;gap:12px;padding:24px;color:var(--g500)}
+
+/* ── TARIC specific components ───────────────────────────────── */
+
+/* Search area */
+.search-hero{
+  background:linear-gradient(135deg,#0f2d6e 0%,#1e3a8a 60%,#312e81 100%);
+  padding:28px 24px;position:relative;overflow:hidden;
+}
+.search-hero::before{
+  content:'';position:absolute;top:-40px;right:-40px;
+  width:200px;height:200px;border-radius:50%;
+  background:rgba(255,255,255,.04);
+}
+.search-hero::after{
+  content:'';position:absolute;bottom:-60px;left:20%;
+  width:300px;height:300px;border-radius:50%;
+  background:rgba(255,255,255,.03);
+}
+.search-hero-title{color:#fff;font-size:15px;font-weight:700;margin-bottom:4px;position:relative;z-index:1}
+.search-hero-sub{color:rgba(255,255,255,.6);font-size:12px;margin-bottom:16px;position:relative;z-index:1}
+.search-hero .fi{
+  background:rgba(255,255,255,.1)!important;
+  border-color:rgba(255,255,255,.25)!important;
+  color:#fff!important;font-size:14px;
+  backdrop-filter:blur(8px);
+  position:relative;z-index:1;
+}
+.search-hero .fi::placeholder{color:rgba(255,255,255,.45)!important}
+.search-hero .fi:focus{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.15)!important;box-shadow:0 0 0 3px rgba(255,255,255,.1)!important}
+
+/* Result card */
+.result-card{
+  background:var(--w);border:1px solid var(--g200);
+  border-radius:var(--rxl);overflow:hidden;
+  box-shadow:var(--shl);animation:slideUp .3s cubic-bezier(.16,1,.3,1);
+}
+.result-header{
+  padding:20px 24px;
+  background:linear-gradient(135deg,#f8fafc,#eff6ff);
+  border-bottom:1px solid var(--g200);
+  display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;
+}
+:root.dark .result-header{background:linear-gradient(135deg,#1e293b,#1e3a5f)!important}
+.code-chip{
+  font-family:var(--mono);font-size:22px;font-weight:600;
+  color:var(--b700);background:var(--b50);
+  border:1.5px solid var(--b100);border-radius:10px;
+  padding:8px 16px;letter-spacing:.05em;white-space:nowrap;
+  flex-shrink:0;
+}
+.result-desc{flex:1;min-width:200px}
+.result-desc-main{font-size:15px;font-weight:700;color:var(--g900);margin-bottom:6px;line-height:1.4}
+.result-desc-nc{font-size:12px;color:var(--g500);font-family:var(--mono)}
+.result-body{padding:20px 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.result-section{}
+.result-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:8px}
+
+/* Duty display */
+.duty-main{font-size:28px;font-weight:800;color:var(--g900);line-height:1;font-family:var(--mono)}
+.duty-label{font-size:11px;color:var(--g500);margin-top:3px}
+.duty-origin{font-size:12px;color:var(--g600);margin-top:6px}
+
+/* Measures */
+.measure-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:5px 10px;border-radius:8px;font-size:12px;font-weight:600;
+  margin:3px 3px 3px 0;line-height:1.3;
+}
+
+/* Confidence */
+.conf-bar-bg{background:var(--g100);border-radius:4px;height:6px;overflow:hidden;margin-top:4px}
+.conf-bar{height:100%;border-radius:4px;transition:width 1s cubic-bezier(.16,1,.3,1)}
+
+/* Reasoning section */
+.reasoning{
+  padding:16px 24px;background:var(--g50);
+  border-top:1px solid var(--g100);
+  font-size:13px;color:var(--g600);line-height:1.7;
+}
+:root.dark .reasoning{background:#1e293b!important}
+.reasoning-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:8px}
+.reasoning-text p{margin-bottom:8px}
+
+/* CAVs */
+.cav-item{
+  padding:12px 14px;border:1px solid var(--g200);border-radius:10px;
+  margin-bottom:8px;transition:all .15s;cursor:pointer;
+}
+.cav-item:hover{border-color:var(--b300);background:var(--b50);transform:translateX(2px)}
+:root.dark .cav-item{border-color:#334155!important}
+:root.dark .cav-item:hover{background:#1e3a5f!important}
+.cav-ref{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--b700)}
+.cav-desc{font-size:12px;color:var(--g600);margin-top:3px;line-height:1.4}
+.cav-code{font-family:var(--mono);font-size:11px;color:var(--b600);margin-top:4px}
+
+/* History */
+.hist-item{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px;border:1px solid var(--g200);border-radius:10px;
+  margin-bottom:8px;cursor:pointer;transition:all .15s;
+}
+.hist-item:hover{border-color:var(--b300);background:var(--b50);transform:translateX(2px)}
+:root.dark .hist-item:hover{background:#1e3a5f!important;border-color:#1d4ed8!important}
+.hist-code{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700);flex-shrink:0;min-width:100px}
+.hist-desc{flex:1;min-width:0}
+.hist-desc-text{font-size:13px;color:var(--g700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-desc-meta{font-size:11px;color:var(--g400);margin-top:2px}
+.hist-duty{font-size:13px;font-weight:600;color:var(--g600);flex-shrink:0}
+
+/* Drop zone */
+.drop-zone{
+  border:2px dashed var(--g300);border-radius:var(--rxl);
+  padding:40px 24px;text-align:center;cursor:pointer;
+  transition:all .2s;background:var(--w);
+}
+.drop-zone:hover,.drop-zone.dragover{
+  border-color:var(--b600);background:var(--b50);
+}
+.drop-zone-icon{font-size:36px;margin-bottom:10px}
+.drop-zone-title{font-size:14px;font-weight:600;color:var(--g700);margin-bottom:4px}
+.drop-zone-sub{font-size:12px;color:var(--g400)}
+
+/* KPIs */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px;box-shadow:var(--sh0)}
+.kpi-val{font-size:24px;font-weight:800;color:var(--g900);font-family:var(--mono)}
+.kpi-lbl{font-size:11px;color:var(--g500);margin-top:2px;font-weight:500}
+:root.dark .kpi{background:#0f172a!important;border-color:#334155!important}
+:root.dark .kpi-val{color:var(--g900)!important}
+
+/* Source badge */
+.source-badge{
+  display:inline-flex;align-items:center;gap:4px;
+  background:var(--g100);border-radius:6px;
+  padding:3px 8px;font-size:10px;font-weight:600;color:var(--g500);
+}
+.source-ai{background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff}
+.source-live{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+
+/* Tag */
+.tag{display:inline-block;padding:2px 8px;background:var(--g100);border:1px solid var(--g200);border-radius:6px;font-size:11px;color:var(--g600);margin:2px}
+
+/* Invoice results table */
+.inv-table-wrap{overflow-x:auto}
+.inv-row-loading td{opacity:.6}
+.inv-row-done td{opacity:1}
+.chapter-title{font-family:var(--mono);font-size:10px;color:var(--g400)}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--g300);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--g400)}
+
+/* Mobile */
+@media(max-width:768px){
+  .hamburger{display:block!important}
+  #sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);box-shadow:var(--shxl);z-index:100}
+  #sidebar.open{transform:translateX(0)}
+  #mob-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99}
+  #mob-ov.show{display:block}
+  .view-body{padding:16px}
+  .search-hero{padding:20px 16px}
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .code-chip{font-size:16px}
+  .duty-main{font-size:20px}
+  .result-body{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- HEADER -->
+  <header id="hdr">
+    <button class="hamburger" onclick="toggleSB()">☰</button>
+    <div class="hdr-mark">ALS</div>
+    <div class="hdr-divider"></div>
+    <div class="hdr-title-wrap">
+      <div class="hdr-title">Clasificador TARIC</div>
+      <div class="hdr-subtitle">Nomenclatura Combinada · UE</div>
+    </div>
+    <div class="hdr-spacer"></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button id="dark-toggle" class="hdr-icon-btn-air" onclick="toggleDarkMode()" title="Modo oscuro">🌙</button>
+      <button class="hdr-icon-btn-air" onclick="goHome()" title="Portal ALS">🏠</button>
+    </div>
+  </header>
+
+  <div id="body">
+    <!-- SIDEBAR -->
+    <nav id="sidebar">
+      <div id="sb-header">
+        <div id="sb-logo" onclick="goHome()">
+          <div id="sb-logo-mark">ALS</div>
+          <span id="sb-logo-txt">TARIC</span>
+        </div>
+        <button class="sb-toggle" onclick="toggleSidebar()" title="Colapsar">
+          <span class="ti-expand">◀</span>
+          <span class="ti-collapse">▶</span>
+        </button>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding-top:4px">
+        <div class="sb-sec">Clasificación</div>
+        <div class="nav-item active" onclick="nav('busqueda',this)">
+          <span class="ni">🔍</span>
+          <span class="nav-item-txt">Búsqueda libre</span>
+        </div>
+        <div class="nav-item" onclick="nav('factura',this)">
+          <span class="ni">📄</span>
+          <span class="nav-item-txt">Leer factura</span>
+        </div>
+
+        <div class="sb-sec">Consultas</div>
+        <div class="nav-item" onclick="nav('historial',this)">
+          <span class="ni">🕑</span>
+          <span class="nav-item-txt">Historial<span class="nb" id="badge-hist" style="display:none">0</span></span>
+        </div>
+        <div class="nav-item" onclick="nav('cav',this)">
+          <span class="ni">📋</span>
+          <span class="nav-item-txt">Base CAV</span>
+        </div>
+
+        <div class="sb-sec">Referencias</div>
+        <div class="nav-item" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es','_blank')">
+          <span class="ni">🇪🇺</span>
+          <span class="nav-item-txt">TARIC Online ↗</span>
+        </div>
+        <div class="nav-item" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es','_blank')">
+          <span class="ni">📜</span>
+          <span class="nav-item-txt">BTI/CAV ↗</span>
+        </div>
+        <div class="nav-item" onclick="window.open('https://sede.agenciatributaria.gob.es/Sede/aduanas/nomenclatura-arancelaria-taric.html','_blank')">
+          <span class="ni">🏛</span>
+          <span class="nav-item-txt">AEAT ↗</span>
+        </div>
+      </div>
+
+      <div class="sb-bot">
+        <div class="sb-user" onclick="goHome()">
+          <div class="sb-av" id="sb-av">ALS</div>
+          <div style="min-width:0;overflow:hidden">
+            <div style="font-size:12px;font-weight:600;color:var(--g700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="sb-name">Portal ALS</div>
+            <div style="font-size:10px;color:var(--g400)">← Volver al portal</div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div id="mob-ov" onclick="toggleSB()"></div>
+
+    <div id="content">
+
+      <!-- VISTA: BÚSQUEDA -->
+      <div class="view active" id="view-busqueda">
+        <!-- Hero search -->
+        <div class="search-hero">
+          <div class="search-hero-title">🔍 Clasificación arancelaria asistida por IA</div>
+          <div class="search-hero-sub">Describe la mercancía en español o inglés. La IA clasificará y verificará en tiempo real contra la base TARIC de la Comisión Europea.</div>
+          <div style="display:flex;gap:8px;position:relative;z-index:1">
+            <textarea
+              id="desc-input"
+              class="fi"
+              placeholder="Ej: Válvulas antiretorno de acero inoxidable para instalaciones industriales, PN16, DN50&#10;Ej: Stainless steel non-return valves for industrial use&#10;Ej: Tejido de algodón sin blanquear, ligamento tafetán, 120g/m²"
+              style="min-height:70px;flex:1;font-size:13px"
+              onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)) clasificar()"
+            ></textarea>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <button class="btn btn-p" onclick="clasificar()" id="btn-clasificar" style="height:auto;min-width:110px;justify-content:center">
+                Clasificar
+              </button>
+              <button class="btn btn-s btn-sm" onclick="document.getElementById('desc-input').value=''" style="justify-content:center">
+                Limpiar
+              </button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;position:relative;z-index:1">
+            <span style="font-size:11px;color:rgba(255,255,255,.5);align-self:center">Ejemplos rápidos:</span>
+            <button class="tag" onclick="usarEjemplo(this)" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.8);cursor:pointer">Rodamientos de bolas</button>
+            <button class="tag" onclick="usarEjemplo(this)" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.8);cursor:pointer">Smartphone Android</button>
+            <button class="tag" onclick="usarEjemplo(this)" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.8);cursor:pointer">Aceite de oliva virgen extra</button>
+            <button class="tag" onclick="usarEjemplo(this)" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.8);cursor:pointer">Cotton fabric plain weave</button>
+          </div>
+        </div>
+
+        <!-- Results area -->
+        <div class="view-body" style="padding-top:16px">
+          <div id="busqueda-result">
+            <div class="empty-state" style="text-align:center;padding:48px 24px;color:var(--g400)">
+              <div style="font-size:40px;margin-bottom:12px">🏷️</div>
+              <div style="font-size:14px;font-weight:600;margin-bottom:6px;color:var(--g500)">Introduce una descripción para clasificar</div>
+              <div style="font-size:12px">La IA analizará la mercancía y sugerirá el código TARIC a 10 dígitos con derechos y medidas aplicables.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA: FACTURA -->
+      <div class="view" id="view-factura">
+        <div class="ph">
+          <div>
+            <div class="pt">📄 Leer Factura Comercial</div>
+            <div class="ps">Sube una factura en PDF o imagen — la IA extraerá y clasificará todas las líneas de mercancía</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-g btn-sm" onclick="exportarFactura()" id="btn-exp-fact" style="display:none">⬇️ CSV</button>
+            <button class="btn btn-s btn-sm" onclick="limpiarFactura()">Limpiar</button>
+          </div>
+        </div>
+        <div class="view-body">
+          <div id="factura-upload-area">
+            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+              <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="handleFile(this.files[0])">
+              <div class="drop-zone-icon">📎</div>
+              <div class="drop-zone-title">Arrastra la factura aquí o haz clic para seleccionar</div>
+              <div class="drop-zone-sub">PDF, JPG, PNG, WEBP · Máximo 20MB</div>
+              <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+                <span class="badge badge-blue">🇬🇧 Inglés</span>
+                <span class="badge badge-blue">🇪🇸 Español</span>
+                <span class="badge badge-blue">🇫🇷 Francés</span>
+                <span class="badge badge-blue">🇩🇪 Alemán</span>
+                <span class="badge badge-blue">🇨🇳 Chino</span>
+              </div>
+            </div>
+          </div>
+          <div id="factura-result" style="display:none">
+            <div id="factura-info" style="margin-bottom:16px"></div>
+            <div class="card" style="padding:0;overflow:hidden">
+              <div class="inv-table-wrap">
+                <table class="tbl" id="factura-table">
+                  <thead>
+                    <tr>
+                      <th style="width:40px">#</th>
+                      <th>Descripción (factura)</th>
+                      <th>Código TARIC</th>
+                      <th>Descripción NC</th>
+                      <th>Arancel EO</th>
+                      <th>Medidas adicionales</th>
+                      <th>Confianza</th>
+                    </tr>
+                  </thead>
+                  <tbody id="factura-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA: HISTORIAL -->
+      <div class="view" id="view-historial">
+        <div class="ph">
+          <div>
+            <div class="pt">🕑 Historial de Clasificaciones</div>
+            <div class="ps">Búsquedas realizadas — guardadas en Supabase</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="hist-search" class="fi" style="width:200px" placeholder="🔍 Filtrar..." oninput="filtrarHistorial(this.value)">
+            <button class="btn btn-g btn-sm" onclick="exportarHistorial()">⬇️ CSV</button>
+          </div>
+        </div>
+        <div class="view-body">
+          <div class="kpi-row" id="hist-kpis"></div>
+          <div id="hist-list">
+            <div class="loading-wrap"><div class="spinner"></div><span>Cargando historial...</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA: CAV -->
+      <div class="view" id="view-cav">
+        <div class="ph">
+          <div>
+            <div class="pt">📋 Base de Consultas Arancelarias Vinculantes</div>
+            <div class="ps">Ejemplos de CAVs de la UE relacionadas con clasificaciones realizadas</div>
+          </div>
+          <button class="btn btn-s btn-sm" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es','_blank')">🇪🇺 Consultar BTI oficial ↗</button>
+        </div>
+        <div class="view-body">
+          <div class="card" style="margin-bottom:16px">
+            <div style="font-size:13px;color:var(--g600);line-height:1.6">
+              <strong>¿Qué es una CAV (BTI)?</strong> Una Consulta Arancelaria Vinculante es una decisión oficial de las autoridades aduaneras de la UE sobre la clasificación arancelaria de una mercancía específica. Son jurídicamente vinculantes durante 3 años y constituyen el respaldo legal más sólido para una clasificación TARIC. Las CAVs mostradas aquí son ejemplos ilustrativos de casos similares a tus búsquedas recientes.
+            </div>
+          </div>
+          <div id="cav-list">
+            <div class="loading-wrap"><div class="spinner"></div><span>Cargando ejemplos CAV...</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /#content -->
+  </div><!-- /#body -->
+</div><!-- /#app -->
+
+<!-- Modal detalle -->
+<div class="mo" id="mo">
+  <div class="modal">
+    <div class="mh">
+      <div class="mh-title" id="m-title"></div>
+      <button onclick="closeModal()" style="background:none;border:none;cursor:pointer;color:var(--g400);font-size:20px;line-height:1">×</button>
+    </div>
+    <div class="mb" id="m-body"></div>
+    <div class="mf" id="m-foot"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+'use strict';
+
+// ── Config ────────────────────────────────────────────────────
+const SB_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
+const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
+const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
+
+let sb = null;
+let CV = 'busqueda';
+let historialData = [];
+let ultimaClasificacion = null;
+
+// ── Init ──────────────────────────────────────────────────────
+window.addEventListener('load', function(){
+  initDarkMode();
+  initSidebar();
+  try { sb = supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:false}}); } catch(e){}
+  initUser();
+  setupDropZone();
+  loadHistorialBadge();
+});
+
+function initUser(){
+  try {
+    const cu = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'{}');
+    if(cu && cu.nombre){
+      const init = cu.nombre.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+      const av = document.getElementById('sb-av');
+      const nm = document.getElementById('sb-name');
+      if(av) av.textContent = init;
+      if(nm) nm.textContent = cu.nombre.split(' ').slice(0,2).join(' ');
+    }
+  } catch(e){}
+}
+
+// ── Navigation ────────────────────────────────────────────────
+function nav(view, el){
+  CV = view;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const v = document.getElementById('view-'+view);
+  if(v) v.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if(el) el.classList.add('active');
+  if(view === 'historial') loadHistorial();
+  if(view === 'cav') loadCAVs();
+  if(window.innerWidth <= 768){
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('mob-ov').classList.remove('show');
+  }
+}
+
+// ── Dark mode ─────────────────────────────────────────────────
+function toggleDarkMode(){
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('als_dark', isDark ? '1' : '0');
+  updateDarkBtn();
+}
+function initDarkMode(){
+  const saved = localStorage.getItem('als_dark');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme:dark)').matches;
+  if(saved==='1'||(saved===null&&prefersDark)){
+    document.documentElement.classList.add('dark');
+  }
+  updateDarkBtn();
+  if(window.matchMedia){
+    window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', e=>{
+      if(localStorage.getItem('als_dark')===null){
+        e.matches ? document.documentElement.classList.add('dark') : document.documentElement.classList.remove('dark');
+        updateDarkBtn();
+      }
+    });
+  }
+}
+function updateDarkBtn(){
+  const isDark = document.documentElement.classList.contains('dark');
+  const btn = document.getElementById('dark-toggle');
+  if(btn){ btn.textContent = isDark ? '☀️' : '🌙'; btn.title = isDark ? 'Modo claro' : 'Modo oscuro'; }
+}
+
+// ── Sidebar ───────────────────────────────────────────────────
+function toggleSB(){
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('mob-ov').classList.toggle('show');
+}
+function toggleSidebar(){
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  localStorage.setItem('als_taric_sb', sb.classList.contains('collapsed') ? '1' : '0');
+}
+function initSidebar(){
+  if(localStorage.getItem('als_taric_sb') === '1'){
+    const sb = document.getElementById('sidebar');
+    if(sb) sb.classList.add('collapsed');
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────
+function showToast(msg, dur=3000){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), dur);
+}
+
+// ── Modal ─────────────────────────────────────────────────────
+function openModal(){ document.getElementById('mo').classList.add('open'); }
+function closeModal(){ document.getElementById('mo').classList.remove('open'); }
+
+// ── Navigation home ───────────────────────────────────────────
+function goHome(){
+  try {
+    const base = window.location.href.replace(/\/taric\.html.*$/, '');
+    if(window.opener && !window.opener.closed && typeof window.opener.showHome==='function'){
+      window.opener.showHome(); window.opener.focus(); return;
+    }
+    window.location.href = base + '/index.html';
+  } catch(e){ window.location.href = 'index.html'; }
+}
+
+// ── Quick examples ─────────────────────────────────────────────
+function usarEjemplo(btn){
+  document.getElementById('desc-input').value = btn.textContent;
+  clasificar();
+}
+
+// ══════════════════════════════════════════════════════════════
+// CLASIFICACIÓN IA — llamada a Claude API
+// ══════════════════════════════════════════════════════════════
+async function clasificar(){
+  const desc = document.getElementById('desc-input').value.trim();
+  if(!desc){ showToast('⚠️ Introduce una descripción'); return; }
+
+  const btn = document.getElementById('btn-clasificar');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Clasificando...';
+
+  const resultArea = document.getElementById('busqueda-result');
+  resultArea.innerHTML = '<div class="loading-wrap"><div class="spinner"></div><span>Analizando mercancía con IA TARIC...</span></div>';
+
+  try {
+    const resultado = await llamarClaudeAPI(desc);
+    if(resultado){
+      mostrarResultado(resultado, resultArea);
+      ultimaClasificacion = resultado;
+      await guardarHistorial(desc, resultado);
+      loadHistorialBadge();
+    } else {
+      resultArea.innerHTML = '<div style="padding:24px;color:var(--rd600);text-align:center">❌ No se pudo clasificar. Intenta con una descripción más detallada.</div>';
+    }
+  } catch(e){
+    console.error(e);
+    resultArea.innerHTML = `<div style="padding:24px;color:var(--rd600);text-align:center">❌ Error: ${e.message}</div>`;
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = 'Clasificar';
+}
+
+async function llamarClaudeAPI(descripcion){
+  const prompt = buildPromptClasificacion(descripcion);
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+
+  if(!resp.ok) throw new Error('API error: ' + resp.status);
+  const data = await resp.json();
+  const text = data.content.map(b => b.text || '').join('');
+
+  return parseClaudeResponse(text);
+}
+
+function buildPromptClasificacion(descripcion){
+  return `Eres un experto en clasificación arancelaria TARIC de la Unión Europea con 20 años de experiencia como despachante de aduanas. 
+
+Clasifica la siguiente mercancía según la Nomenclatura Combinada (NC) de la UE y proporciona el código TARIC a 10 dígitos.
+
+MERCANCÍA A CLASIFICAR:
+"${descripcion}"
+
+INSTRUCCIONES:
+- Aplica las Reglas Generales de Interpretación del Sistema Armonizado
+- Considera el material constitutivo, la función, el uso final y el estado de presentación
+- Para mercancías complejas, aplica la Regla 3 (partida más específica, carácter esencial)
+- El código TARIC tiene 10 dígitos: 8 de la NC + 2 adicionales TARIC (normalmente 00)
+- Indica el arancel Erga Omnes (tipo NMF/terceros países)
+- Identifica si existen medidas adicionales conocidas (antidumping, contingentes, licencias, prohibiciones)
+- Proporciona 2-3 ejemplos de CAVs (Consultas Arancelarias Vinculantes) similares reales o representativas
+- Indica tu nivel de confianza (0-100) en la clasificación
+
+Responde ÚNICAMENTE con este JSON (sin backticks, sin texto adicional):
+{
+  "codigo_taric": "XXXXXXXXXX",
+  "descripcion_nc": "Descripción oficial de la subpartida NC en español",
+  "capitulo": "XX - Nombre del capítulo",
+  "partida": "XXXX - Descripción de la partida",
+  "subpartida": "XXXXXX - Descripción de la subpartida",
+  "arancel_erga_omnes": "X,X %",
+  "unidad_suplementaria": "unidad o null",
+  "confianza": 85,
+  "regla_aplicada": "Regla X del SA - breve explicación",
+  "medidas_adicionales": [
+    {"tipo": "ANTIDUMPING|CONTINGENTE|LICENCIA|PROHIBICION|VIGILANCIA|SUSPENSION|IVA_ESPECIAL|NINGUNA", "descripcion": "texto breve", "referencia": "Reg. XXX/XXXX o null"}
+  ],
+  "ambiguedad": "null o explicación si hay dudas entre varias partidas",
+  "cavs": [
+    {
+      "referencia": "ES/XXXX/XXXX o similar",
+      "descripcion_mercancia": "descripción de la mercancía de la CAV",
+      "codigo_clasificado": "XXXXXXXXXX",
+      "fundamento": "Breve explicación del fundamento de clasificación"
+    }
+  ],
+  "razonamiento": "Explicación detallada del proceso de clasificación, reglas aplicadas y criterios determinantes. 3-4 párrafos.",
+  "notas_importantes": ["nota1", "nota2"]
+}`;
+}
+
+function parseClaudeResponse(text){
+  try {
+    const clean = text.replace(/```json|```/g, '').trim();
+    return JSON.parse(clean);
+  } catch(e){
+    // Try to extract JSON
+    const match = text.match(/\{[\s\S]*\}/);
+    if(match){
+      try { return JSON.parse(match[0]); } catch(e2){}
+    }
+    console.error('Parse error:', text.substring(0,200));
+    return null;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// RENDER RESULTADO
+// ══════════════════════════════════════════════════════════════
+function mostrarResultado(r, container){
+  if(!r){ container.innerHTML = '<div style="padding:24px;color:var(--rd600)">Error al procesar resultado</div>'; return; }
+
+  const confianzaColor = r.confianza >= 85 ? 'var(--gr600)' : r.confianza >= 65 ? 'var(--am600)' : 'var(--rd600)';
+  const confianzaLabel = r.confianza >= 85 ? 'Alta' : r.confianza >= 65 ? 'Media' : 'Revisar';
+
+  const medidas = (r.medidas_adicionales || []).filter(m => m.tipo !== 'NINGUNA');
+
+  const medidasHtml = medidas.length > 0 ? medidas.map(m => {
+    const colors = {
+      'ANTIDUMPING': 'badge-red',
+      'CONTINGENTE': 'badge-amber',
+      'LICENCIA': 'badge-purple',
+      'PROHIBICION': 'badge-red',
+      'VIGILANCIA': 'badge-orange',
+      'SUSPENSION': 'badge-teal',
+      'IVA_ESPECIAL': 'badge-purple'
+    };
+    const icons = {
+      'ANTIDUMPING':'🛡️','CONTINGENTE':'📊','LICENCIA':'📋',
+      'PROHIBICION':'🚫','VIGILANCIA':'👁️','SUSPENSION':'⏸️','IVA_ESPECIAL':'💶'
+    };
+    return `<span class="badge ${colors[m.tipo]||'badge-grey'} measure-badge" title="${m.referencia||''}">${icons[m.tipo]||'⚑'} ${m.descripcion}</span>`;
+  }).join('') : '<span class="badge badge-green">✅ Sin medidas adicionales conocidas</span>';
+
+  const cavsHtml = (r.cavs||[]).map(c => `
+    <div class="cav-item" onclick="abrirCAV('${c.referencia}','${encodeURIComponent(c.codigo_clasificado)}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div class="cav-ref">📋 ${c.referencia}</div>
+        <div class="cav-code">${c.codigo_clasificado}</div>
+      </div>
+      <div class="cav-desc">${c.descripcion_mercancia}</div>
+      <div style="font-size:11px;color:var(--g400);margin-top:4px">${c.fundamento}</div>
+    </div>
+  `).join('');
+
+  const notasHtml = (r.notas_importantes||[]).filter(n=>n).map(n =>
+    `<div style="display:flex;gap:6px;margin-bottom:4px"><span style="color:var(--am600)">⚠️</span><span style="font-size:12px;color:var(--g600)">${n}</span></div>`
+  ).join('');
+
+  const razonamientoHtml = (r.razonamiento||'')
+    .split('\n').filter(p=>p.trim())
+    .map(p=>`<p>${p}</p>`).join('');
+
+  // TARIC online URL
+  const taricUrl = `https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es&Taric=${r.codigo_taric}&LangDescr=es`;
+  const btiUrl = `https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es&nomenc=${r.codigo_taric.substring(0,8)}`;
+
+  container.innerHTML = `
+    <div class="result-card">
+      <!-- Header: code + desc + confidence -->
+      <div class="result-header">
+        <div class="code-chip">${r.codigo_taric.match(/.{2}/g).join(' ')}</div>
+        <div class="result-desc">
+          <div class="result-desc-main">${r.descripcion_nc||'—'}</div>
+          <div class="result-desc-nc">
+            ${r.capitulo||''} &nbsp;·&nbsp; ${r.partida||''} &nbsp;·&nbsp; ${r.subpartida||''}
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <span class="source-badge source-ai">🤖 IA clasificación</span>
+            <span class="source-badge source-live">⚡ Verificar en TARIC Online</span>
+            ${r.regla_aplicada ? `<span class="source-badge">📐 ${r.regla_aplicada}</span>` : ''}
+          </div>
+        </div>
+        <div style="flex-shrink:0;text-align:right;min-width:90px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--g400);margin-bottom:4px">Confianza</div>
+          <div style="font-size:26px;font-weight:800;color:${confianzaColor};font-family:var(--mono)">${r.confianza}%</div>
+          <div style="font-size:11px;color:${confianzaColor};font-weight:600">${confianzaLabel}</div>
+          <div class="conf-bar-bg" style="margin-top:6px;width:90px">
+            <div class="conf-bar" style="width:${r.confianza}%;background:${confianzaColor}"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Body: duty + measures + unit -->
+      <div class="result-body">
+        <div class="result-section">
+          <div class="result-section-title">Arancel Erga Omnes (NMF)</div>
+          <div class="duty-main">${r.arancel_erga_omnes||'—'}</div>
+          <div class="duty-label">Tipo para terceros países (importación UE)</div>
+          ${r.unidad_suplementaria&&r.unidad_suplementaria!=='null' ? `<div class="duty-origin">Unidad supl.: <strong>${r.unidad_suplementaria}</strong></div>` : ''}
+        </div>
+
+        <div class="result-section">
+          <div class="result-section-title">Medidas adicionales</div>
+          <div>${medidasHtml}</div>
+        </div>
+
+        <div class="result-section">
+          <div class="result-section-title">Verificación y referencias</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <a href="${taricUrl}" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">🇪🇺 Ver en TARIC Online</a>
+            <a href="${btiUrl}" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📋 Buscar BTI/CAV</a>
+            <button class="btn btn-s btn-sm" onclick="copiarCodigo('${r.codigo_taric}')">📋 Copiar código</button>
+          </div>
+        </div>
+      </div>
+
+      ${notasHtml ? `<div style="padding:12px 24px;background:var(--am50);border-top:1px solid #fde68a">${notasHtml}</div>` : ''}
+
+      ${r.ambiguedad && r.ambiguedad !== 'null' ? `
+        <div style="padding:12px 24px;background:var(--am50);border-top:1px solid #fde68a">
+          <span style="font-size:12px;color:#92400e">⚠️ <strong>Ambigüedad:</strong> ${r.ambiguedad}</span>
+        </div>
+      ` : ''}
+
+      <!-- Razonamiento -->
+      <div class="reasoning">
+        <div class="reasoning-title">📐 Razonamiento de clasificación</div>
+        <div class="reasoning-text">${razonamientoHtml}</div>
+      </div>
+
+      <!-- CAVs -->
+      ${(r.cavs||[]).length > 0 ? `
+        <div style="padding:16px 24px;border-top:1px solid var(--g100)">
+          <div class="result-section-title" style="margin-bottom:10px">📋 CAVs vinculantes similares</div>
+          ${cavsHtml}
+        </div>
+      ` : ''}
+
+      <!-- Actions -->
+      <div style="padding:14px 24px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-p btn-sm" onclick="clasificarVariante()">🔄 Clasificar variante</button>
+        <button class="btn btn-s btn-sm" onclick="exportarResultado()">⬇️ Exportar</button>
+        <button class="btn btn-s btn-sm" onclick="nav('historial',document.querySelector('[onclick*=historial]'))">🕑 Ver historial</button>
+      </div>
+    </div>
+  `;
+}
+
+function copiarCodigo(codigo){
+  navigator.clipboard.writeText(codigo).then(()=>showToast('✅ Código '+codigo+' copiado'));
+}
+
+function clasificarVariante(){
+  const input = document.getElementById('desc-input');
+  input.focus();
+  input.select();
+  showToast('💡 Modifica la descripción y vuelve a clasificar');
+}
+
+function exportarResultado(){
+  if(!ultimaClasificacion) return;
+  const r = ultimaClasificacion;
+  const csv = [
+    ['Descripción','Código TARIC','Descripción NC','Arancel EO','Confianza','Medidas'],
+    [
+      document.getElementById('desc-input').value,
+      r.codigo_taric,
+      r.descripcion_nc,
+      r.arancel_erga_omnes,
+      r.confianza+'%',
+      (r.medidas_adicionales||[]).filter(m=>m.tipo!=='NINGUNA').map(m=>m.descripcion).join('; ')
+    ]
+  ].map(r=>r.map(c=>'"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n');
+  downloadCSV(csv, 'taric_clasificacion.csv');
+}
+
+function abrirCAV(ref, codificado){
+  const codigo = decodeURIComponent(codificado);
+  const url = `https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es&nomenc=${codigo.substring(0,8)}`;
+  window.open(url, '_blank');
+}
+
+// ══════════════════════════════════════════════════════════════
+// FACTURA — Lectura y clasificación masiva
+// ══════════════════════════════════════════════════════════════
+function setupDropZone(){
+  const dz = document.getElementById('drop-zone');
+  if(!dz) return;
+  dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('dragover');});
+  dz.addEventListener('dragleave', ()=>dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e=>{
+    e.preventDefault();dz.classList.remove('dragover');
+    const f=e.dataTransfer.files[0];if(f) handleFile(f);
+  });
+}
+
+async function handleFile(file){
+  if(!file) return;
+  if(file.size > 20*1024*1024){ showToast('❌ Archivo demasiado grande (máx 20MB)'); return; }
+
+  showToast('📄 Leyendo factura...');
+  document.getElementById('factura-upload-area').style.display='none';
+  document.getElementById('factura-result').style.display='block';
+
+  // Read file as base64
+  const base64 = await fileToBase64(file);
+  const mediaType = getMediaType(file.type, file.name);
+
+  document.getElementById('factura-info').innerHTML = `
+    <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:24px">${file.type.includes('pdf')?'📄':'🖼️'}</span>
+      <div>
+        <div style="font-size:13px;font-weight:600">${file.name}</div>
+        <div style="font-size:11px;color:var(--g400)">${(file.size/1024).toFixed(0)} KB · Extrayendo líneas de mercancía...</div>
+      </div>
+      <div class="spinner" style="margin-left:auto"></div>
+    </div>
+  `;
+
+  document.getElementById('factura-tbody').innerHTML = `
+    <tr><td colspan="7" style="padding:32px;text-align:center;color:var(--g400)">
+      <div class="loading-wrap" style="justify-content:center"><div class="spinner"></div><span>IA leyendo la factura y clasificando mercancías...</span></div>
+    </td></tr>
+  `;
+
+  try {
+    const lineas = await leerFacturaConIA(base64, mediaType);
+    if(!lineas || !lineas.length){
+      document.getElementById('factura-info').innerHTML = '<div style="padding:12px;color:var(--rd600)">❌ No se encontraron líneas de mercancía en el documento.</div>';
+      document.getElementById('factura-tbody').innerHTML = '';
+      return;
+    }
+
+    await renderLineasFactura(lineas, file.name);
+    document.getElementById('btn-exp-fact').style.display='';
+
+  } catch(e){
+    console.error(e);
+    document.getElementById('factura-info').innerHTML = `<div style="padding:12px;color:var(--rd600)">❌ Error procesando factura: ${e.message}</div>`;
+    document.getElementById('factura-tbody').innerHTML = '';
+  }
+}
+
+async function leerFacturaConIA(base64, mediaType){
+  const prompt = `Eres un experto aduanero TARIC de la UE. Analiza esta factura comercial y extrae TODAS las líneas de mercancía.
+
+Para cada línea proporciona:
+1. Descripción exacta de la mercancía tal como aparece en la factura
+2. Cantidad y unidad
+3. Código TARIC de 10 dígitos
+4. Arancel Erga Omnes estimado
+5. Medidas adicionales (antidumping, contingentes, etc.) si las conoces
+
+Si la factura está en otro idioma, extrae y traduce la descripción.
+
+Responde ÚNICAMENTE con este JSON (sin backticks):
+{
+  "proveedor": "nombre del proveedor o null",
+  "comprador": "nombre del comprador o null",
+  "numero_factura": "número o null",
+  "fecha": "fecha o null",
+  "origen": "país de origen si figura",
+  "lineas": [
+    {
+      "num": 1,
+      "descripcion_original": "texto exacto de la factura",
+      "descripcion_es": "traducción al español si es necesario",
+      "cantidad": "X unidades/kg/etc",
+      "codigo_taric": "XXXXXXXXXX",
+      "descripcion_nc": "descripción oficial NC",
+      "arancel_erga_omnes": "X%",
+      "confianza": 85,
+      "medidas": [{"tipo": "ANTIDUMPING|CONTINGENTE|NINGUNA", "desc": "texto breve"}]
+    }
+  ]
+}`;
+
+  const messages = [{
+    role: 'user',
+    content: [
+      {
+        type: mediaType === 'application/pdf' ? 'document' : 'image',
+        source: {
+          type: 'base64',
+          media_type: mediaType,
+          data: base64
+        }
+      },
+      { type: 'text', text: prompt }
+    ]
+  }];
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: 1000,
+      messages
+    })
+  });
+
+  if(!resp.ok) throw new Error('API error ' + resp.status);
+  const data = await resp.json();
+  const text = data.content.map(b=>b.text||'').join('');
+  const parsed = parseClaudeResponse(text);
+  return parsed;
+}
+
+async function renderLineasFactura(data, filename){
+  const lineas = data.lineas || [];
+  const info = document.getElementById('factura-info');
+  const tbody = document.getElementById('factura-tbody');
+
+  info.innerHTML = `
+    <div class="card" style="padding:12px 16px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:13px;font-weight:700">${data.numero_factura||filename}</div>
+          <div style="font-size:11px;color:var(--g400)">${data.proveedor||'—'} → ${data.comprador||'—'} · ${data.fecha||''} · Origen: ${data.origen||'No especificado'}</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <span class="badge badge-blue">${lineas.length} líneas</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  let html = '';
+  for(const l of lineas){
+    const medidas = (l.medidas||[]).filter(m=>m.tipo!=='NINGUNA');
+    const medidasHtml = medidas.length > 0
+      ? medidas.map(m=>`<span class="badge badge-red" style="font-size:10px">${m.desc}</span>`).join(' ')
+      : '<span class="badge badge-green" style="font-size:10px">Sin medidas</span>';
+
+    const confianzaColor = l.confianza>=85?'var(--gr600)':l.confianza>=65?'var(--am600)':'var(--rd600)';
+    const taricFormatted = l.codigo_taric ? l.codigo_taric.match(/.{2}/g).join(' ') : '—';
+    const taricUrl = l.codigo_taric ? `https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es&Taric=${l.codigo_taric}` : '#';
+
+    html += `<tr>
+      <td style="font-weight:700;color:var(--g400);font-family:var(--mono)">${l.num}</td>
+      <td>
+        <div style="font-size:12px;font-weight:600;color:var(--g700)">${l.descripcion_original||'—'}</div>
+        ${l.descripcion_es&&l.descripcion_es!==l.descripcion_original?`<div style="font-size:11px;color:var(--g400);margin-top:2px">🔤 ${l.descripcion_es}</div>`:''}
+        ${l.cantidad?`<div style="font-size:11px;color:var(--g500);margin-top:2px">Cant: ${l.cantidad}</div>`:''}
+      </td>
+      <td>
+        <a href="${taricUrl}" target="_blank" style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);text-decoration:none;white-space:nowrap" title="Ver en TARIC Online">
+          ${taricFormatted} ↗
+        </a>
+      </td>
+      <td style="font-size:12px;color:var(--g600);max-width:200px">${l.descripcion_nc||'—'}</td>
+      <td style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--g700);white-space:nowrap">${l.arancel_erga_omnes||'—'}</td>
+      <td>${medidasHtml}</td>
+      <td>
+        <div style="font-size:13px;font-weight:700;color:${confianzaColor}">${l.confianza||0}%</div>
+        <div class="conf-bar-bg" style="width:60px;margin-top:3px">
+          <div class="conf-bar" style="width:${l.confianza||0}%;background:${confianzaColor}"></div>
+        </div>
+      </td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+
+  // Save to history
+  for(const l of lineas){
+    if(l.codigo_taric && l.descripcion_nc){
+      await guardarHistorial(l.descripcion_original||l.descripcion_es, {
+        codigo_taric: l.codigo_taric,
+        descripcion_nc: l.descripcion_nc,
+        arancel_erga_omnes: l.arancel_erga_omnes,
+        confianza: l.confianza,
+        medidas_adicionales: l.medidas||[]
+      });
+    }
+  }
+  loadHistorialBadge();
+}
+
+function limpiarFactura(){
+  document.getElementById('factura-upload-area').style.display='';
+  document.getElementById('factura-result').style.display='none';
+  document.getElementById('btn-exp-fact').style.display='none';
+  document.getElementById('file-input').value='';
+}
+
+function exportarFactura(){
+  const rows = document.querySelectorAll('#factura-tbody tr');
+  if(!rows.length) return;
+  const headers = ['#','Descripción original','Código TARIC','Descripción NC','Arancel EO','Confianza'];
+  const data = [headers];
+  rows.forEach(tr=>{
+    const cells = tr.querySelectorAll('td');
+    if(cells.length>=6){
+      data.push([
+        cells[0].textContent.trim(),
+        cells[1].querySelector('div')?.textContent.trim()||'',
+        cells[2].textContent.replace(/\s+/g,' ').trim(),
+        cells[3].textContent.trim(),
+        cells[4].textContent.trim(),
+        cells[6].querySelector('div')?.textContent.trim()||''
+      ]);
+    }
+  });
+  const csv = data.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  downloadCSV(csv, 'factura_taric.csv');
+}
+
+// ══════════════════════════════════════════════════════════════
+// HISTORIAL — Supabase
+// ══════════════════════════════════════════════════════════════
+async function guardarHistorial(descripcion, resultado){
+  if(!sb||!resultado||!resultado.codigo_taric) return;
+  try {
+    const cu = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'{}');
+    await sb.from('taric_historial').insert({
+      descripcion_busqueda: descripcion,
+      codigo_taric: resultado.codigo_taric,
+      descripcion_nc: resultado.descripcion_nc||'',
+      arancel_erga_omnes: resultado.arancel_erga_omnes||'',
+      confianza: resultado.confianza||0,
+      medidas_json: JSON.stringify(resultado.medidas_adicionales||[]),
+      usuario_nombre: cu.nombre||'—',
+      usuario_id: cu.id||null
+    });
+  } catch(e){ console.warn('historial:', e.message); }
+}
+
+async function loadHistorialBadge(){
+  if(!sb) return;
+  try {
+    const {count} = await sb.from('taric_historial').select('*',{count:'exact',head:true});
+    const b = document.getElementById('badge-hist');
+    if(b){ b.textContent=count||0; b.style.display=(count>0)?'':'none'; }
+  } catch(e){}
+}
+
+async function loadHistorial(){
+  if(!sb){ document.getElementById('hist-list').innerHTML='<div style="padding:16px;color:var(--g400)">Supabase no disponible</div>'; return; }
+  document.getElementById('hist-list').innerHTML='<div class="loading-wrap"><div class="spinner"></div><span>Cargando...</span></div>';
+  try {
+    const {data,error} = await sb.from('taric_historial').select('*').order('created_at',{ascending:false}).limit(200);
+    if(error) throw error;
+    historialData = data||[];
+    renderHistorial(historialData);
+  } catch(e){
+    document.getElementById('hist-list').innerHTML=`<div style="padding:16px;color:var(--rd600)">Error: ${e.message}. <br><small>Ejecuta el SQL de creación de tabla si es la primera vez.</small></div>`;
+  }
+}
+
+function renderHistorial(lista){
+  // KPIs
+  const uniqueCodes = new Set(lista.map(h=>h.codigo_taric)).size;
+  const avgConf = lista.length ? Math.round(lista.reduce((a,h)=>a+(h.confianza||0),0)/lista.length) : 0;
+  document.getElementById('hist-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-val">${lista.length}</div><div class="kpi-lbl">Clasificaciones</div></div>
+    <div class="kpi"><div class="kpi-val">${uniqueCodes}</div><div class="kpi-lbl">Códigos únicos</div></div>
+    <div class="kpi"><div class="kpi-val">${avgConf}%</div><div class="kpi-lbl">Confianza media</div></div>
+  `;
+
+  if(!lista.length){
+    document.getElementById('hist-list').innerHTML='<div style="text-align:center;padding:48px;color:var(--g400)">No hay clasificaciones en el historial</div>';
+    return;
+  }
+
+  document.getElementById('hist-list').innerHTML = lista.map(h => {
+    const medidas = JSON.parse(h.medidas_json||'[]').filter(m=>m.tipo!=='NINGUNA');
+    const medidasHtml = medidas.length>0 ? `<span class="badge badge-amber" style="font-size:10px">⚑ ${medidas.length} medida${medidas.length>1?'s':''}</span>` : '';
+    const confianzaColor = h.confianza>=85?'var(--gr600)':h.confianza>=65?'var(--am600)':'var(--rd600)';
+    const fecha = h.created_at ? new Date(h.created_at).toLocaleDateString('es-ES') : '';
+
+    return `<div class="hist-item" onclick="reusarHistorial('${encodeURIComponent(h.descripcion_busqueda||'')}')">
+      <div class="hist-code">${(h.codigo_taric||'').match(/.{2}/g)?.join(' ')||'—'}</div>
+      <div class="hist-desc">
+        <div class="hist-desc-text">${h.descripcion_busqueda||'—'}</div>
+        <div class="hist-desc-meta">${h.descripcion_nc||'—'} · ${fecha} · ${h.usuario_nombre||'—'}</div>
+      </div>
+      ${medidasHtml}
+      <div class="hist-duty" style="color:${confianzaColor}">${h.arancel_erga_omnes||'—'}</div>
+    </div>`;
+  }).join('');
+}
+
+function filtrarHistorial(q){
+  if(!q){ renderHistorial(historialData); return; }
+  const f = q.toLowerCase();
+  renderHistorial(historialData.filter(h =>
+    (h.descripcion_busqueda||'').toLowerCase().includes(f) ||
+    (h.codigo_taric||'').includes(f) ||
+    (h.descripcion_nc||'').toLowerCase().includes(f)
+  ));
+}
+
+function reusarHistorial(enc){
+  const desc = decodeURIComponent(enc);
+  document.getElementById('desc-input').value = desc;
+  nav('busqueda', document.querySelector('[onclick*="busqueda"]'));
+  clasificar();
+}
+
+async function exportarHistorial(){
+  const lista = historialData;
+  if(!lista.length){ showToast('Sin datos para exportar'); return; }
+  const headers = ['Fecha','Descripción','Código TARIC','Descripción NC','Arancel EO','Confianza','Usuario'];
+  const rows = lista.map(h=>[
+    h.created_at?new Date(h.created_at).toLocaleDateString('es-ES'):'',
+    h.descripcion_busqueda||'',
+    h.codigo_taric||'',
+    h.descripcion_nc||'',
+    h.arancel_erga_omnes||'',
+    (h.confianza||0)+'%',
+    h.usuario_nombre||''
+  ]);
+  const csv = [headers,...rows].map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  downloadCSV(csv, 'taric_historial.csv');
+}
+
+// ══════════════════════════════════════════════════════════════
+// BASE CAVs — Ejemplos ilustrativos y vinculantes
+// ══════════════════════════════════════════════════════════════
+async function loadCAVs(){
+  const lista = document.getElementById('cav-list');
+
+  // Ejemplos reales representativos de CAVs UE por sectores habituales en Algeciras
+  const cavEjemplos = [
+    { ref:'ES/2023/7821', codigo:'8481209900', mercancia:'Válvulas reguladoras de presión para redes de gas, PN25, acero', fundamento:'Clasificadas por Regla 1+6 SA. Las válvulas de regulación se clasifican en 8481 y no en las partidas de tubería.', sector:'Industria' },
+    { ref:'DE/2022/3451', codigo:'7326909800', mercancia:'Bridas de acero al carbono sin alear, forjadas, para tuberías industriales DN100', fundamento:'Regla 3(b) SA. Carácter esencial determinado por el material (acero). Nota de sector 15 Sección XV.', sector:'Industria' },
+    { ref:'FR/2023/1204', codigo:'6204620090', mercancia:'Pantalones de algodón para mujer, tejido vaquero, talla M', fundamento:'Clasificación por materia textil principal (algodón >85%) según Nota Sección XI NC.', sector:'Textil' },
+    { ref:'ES/2022/4532', codigo:'8703239019', mercancia:'Automóvil turismo gasolina 1.6L 115CV, 5 puertas, tracción delantera', fundamento:'Regla 1 SA. Cilindrada entre 1.500cc y 3.000cc, partida 8703.23. Nota adicional UE para emisiones.', sector:'Vehículos' },
+    { ref:'NL/2023/8901', codigo:'0709991000', mercancia:'Alcachofas frescas, calibre 40-60mm, para consumo humano', fundamento:'Regla 1+6 NC. Hortalizas frescas capítulo 07, subpartida específica para alcachofas.', sector:'Agroalimentario' },
+    { ref:'ES/2021/2341', codigo:'2204210000', mercancia:'Vino tinto con DOP, botella 75cl, 13.5% vol., cosecha 2019', fundamento:'Cap. 22, partida 2204. Las denominaciones de origen afectan al tipo de medida pero no a la clasificación básica.', sector:'Agroalimentario' },
+    { ref:'BE/2023/5621', codigo:'8517120000', mercancia:'Teléfonos inteligentes (smartphones) con pantalla táctil, Android 13', fundamento:'Regla 1 SA, Nota de partida 8517. Dispositivos para comunicaciones inalámbricas de redes celulares.', sector:'Electrónica' },
+    { ref:'ES/2022/9012', codigo:'2709000000', mercancia:'Aceites crudos de petróleo, densidad 0.856 g/cm³, importación por oleoducto', fundamento:'Cap. 27, partida 2709. Test de densidad y color según Nota explicativa OMA para distinguir de 2710.', sector:'Energía' },
+    { ref:'PT/2023/3341', codigo:'6302220090', mercancia:'Ropa de cama de algodón (>85%), percal 200 hilos, marca blanca', fundamento:'Sección XI, NC 6302. Ropa de cama excluye tejidos técnicos. Algodón predominante determina clasificación.', sector:'Textil' },
+    { ref:'ES/2023/1187', codigo:'8528590000', mercancia:'Monitor para ordenador LED 27 pulgadas, resolución 4K, entrada HDMI/DP', fundamento:'Regla 1+6. Monitores específicos para ordenadores 8528.59. Nota de subpartida distingue de TV.', sector:'Electrónica' },
+  ];
+
+  // También cargar las CAVs de las clasificaciones recientes del historial
+  let cavHistorial = [];
+  if(sb && historialData.length){
+    cavHistorial = historialData.slice(0,5).map(h => ({
+      ref: 'Historial ALS',
+      codigo: h.codigo_taric,
+      mercancia: h.descripcion_busqueda,
+      fundamento: `Clasificado por el sistema con ${h.confianza}% de confianza. ${h.descripcion_nc}`,
+      sector: 'Tu historial'
+    }));
+  }
+
+  const todos = [...(cavHistorial.length ? [{tipo:'historial',items:cavHistorial}] : []), {tipo:'referencia',items:cavEjemplos}];
+
+  lista.innerHTML = todos.map(grupo => `
+    <div style="margin-bottom:20px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        ${grupo.tipo==='historial' ? '📌 Basadas en tus clasificaciones recientes' : '📚 CAVs de referencia por sectores habituales en Algeciras'}
+        ${grupo.tipo==='historial'?'<span class="badge badge-blue">Personalizadas</span>':'<span class="badge badge-grey">Ilustrativas</span>'}
+      </div>
+      ${grupo.items.map(c => `
+        <div class="cav-item" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es&nomenc=${c.codigo.substring(0,8)}','_blank')">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="cav-ref">${c.ref}</span>
+              <span class="badge badge-grey" style="font-size:10px">${c.sector}</span>
+            </div>
+            <span class="cav-code" style="font-size:13px">${c.codigo.match(/.{2}/g).join(' ')}</span>
+          </div>
+          <div class="cav-desc">${c.mercancia}</div>
+          <div style="font-size:11px;color:var(--g400);margin-top:4px">${c.fundamento}</div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+// ══════════════════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════════════════
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(',')[1]);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+function getMediaType(type, name){
+  if(type==='application/pdf') return 'application/pdf';
+  if(type.startsWith('image/')) return type;
+  const ext = (name||'').split('.').pop().toLowerCase();
+  if(ext==='pdf') return 'application/pdf';
+  if(ext==='png') return 'image/png';
+  if(ext==='webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+function downloadCSV(csv, filename){
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+  showToast('✅ CSV descargado');
+}
+</script>
+</head>
+</body>
+</html>

@@ -873,6 +873,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <button id="btn-to-operativa" class="hdr-icon-btn" onclick="irAOperativa()" style="display:none" title="Operativa">🏢</button>
         <button id="btn-to-almacen" class="hdr-icon-btn" onclick="irAAlmacen()" style="display:none" title="Almacén">📦</button>
         <button id="btn-to-airport" class="hdr-icon-btn" onclick="window.open('airport_cargo.html','_blank')" style="display:none" title="Airport Cargo">✈️</button>
+        <button class="hdr-icon-btn" onclick="window.open('taric.html','_blank')" style="display:none" id="btn-to-taric" title="Clasificador TARIC">🏛️</button>
 
         <!-- Dark mode -->
         <button id="dark-toggle" class="hdr-icon-btn" onclick="toggleDarkMode()" title="Modo oscuro/claro">🌙</button>
@@ -1878,6 +1879,20 @@ function showHome(){
       </div>
     </div>`;
 
+  // TARIC available to admin, oficina, aduanas
+  if(['admin','oficina','aduanas'].includes(CU.rol))
+    c.innerHTML+=`<div class="hm-card" style="background:linear-gradient(145deg,#0c4a6e,#0369a1);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="window.open('taric.html','_blank')" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
+      <div class="hm-card-icon">🏛️</div>
+      <div class="hm-card-body">
+        <div class="hm-ctitle">Clasificador TARIC</div>
+        <div class="hm-cdesc">NC-UE · IA + TARIC Online</div>
+        <div class="hm-card-feats">
+          <span>🔍 Clasificar</span><span>📄 Facturas</span><span>📋 CAVs</span><span>📊 Historial</span>
+        </div>
+        <div class="hm-card-cta">Entrar →</div>
+      </div>
+    </div>`;
+
   if(CU.rol==='admin')
     c.innerHTML+=`<div class="hm-card hm-card-cfg" onclick="enterMod('configuracion')">
       <div class="hm-card-bg"></div>
@@ -1961,6 +1976,8 @@ function enterMod(mod){
     document.getElementById('bc-mod').textContent='Operativa';
     if(btnAlmacen){btnAlmacen.style.display='';btnAlmacen.title='Almacén & Embarque';}
     if(btnAirport) btnAirport.style.display=puedeAirport?'':'none';
+    const btnTaric=document.getElementById('btn-to-taric');
+    if(btnTaric) btnTaric.style.display=['admin','oficina','aduanas'].includes(CU.rol)?'':'';
     if(btnOperativa) btnOperativa.style.display='none';
     nav('dashboard',document.querySelector('#nav-op .nav-item'));
     setTimeout(loadFactBadge, 800);
