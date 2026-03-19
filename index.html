@@ -116,7 +116,7 @@ self.addEventListener('fetch',function(e){
   --f:'Inter',sans-serif;--mono:'DM Mono',monospace;
   --r:8px;--rl:12px;--rxl:16px;
   --sh0:0 1px 3px rgba(0,0,0,.08);--sh:0 2px 8px rgba(0,0,0,.10);--shl:0 8px 24px rgba(0,0,0,.12);
-  --sw:240px;--hh:56px;
+  --sw:240px;--sw-collapsed:64px;--hh:56px;
 }
 html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
 /* App screens use overflow:hidden individually, but body must allow scroll for home */
@@ -152,13 +152,29 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .hm-user{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--g600)}
 .hm-av{width:30px;height:30px;border-radius:50%;background:var(--b600);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--w)}
 .hm-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:32px 16px 48px}
-.hm-title{font-size:26px;font-weight:700;text-align:center;margin-bottom:6px;margin-top:24px}
+.hm-greeting{font-size:14px;color:var(--b600);font-weight:600;text-align:center;margin-top:8px;letter-spacing:.02em}
+.hm-title{font-size:28px;font-weight:800;text-align:center;margin-bottom:4px;margin-top:4px;color:var(--g900);letter-spacing:-.5px}
+
 .hm-sub{font-size:15px;color:var(--g500);text-align:center;margin-bottom:36px}
 .hm-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;width:100%;max-width:720px}
-.hm-card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:32px;cursor:pointer;transition:all .2s;box-shadow:var(--sh0)}
-.hm-card:hover{border-color:var(--b500);box-shadow:var(--shl);transform:translateY(-2px)}
-.hm-icon{width:56px;height:56px;border-radius:var(--rl);display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:16px}
-.hm-icon.blue{background:var(--b50)}.hm-icon.teal{background:#f0fdfa}
+.hm-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;width:100%;max-width:960px;margin-top:8px}
+.hm-card{position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s cubic-bezier(.4,0,.2,1),box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden;display:flex;flex-direction:column}
+.hm-card:hover{transform:translateY(-4px);box-shadow:0 12px 36px rgba(0,0,0,.15)}
+.hm-card:active{transform:translateY(-2px)}
+.hm-card-bg{position:absolute;inset:0;opacity:.08;pointer-events:none}
+.hm-card-op{background:linear-gradient(145deg,#1e40af,#3b82f6)}
+.hm-card-op .hm-card-bg{background:url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='80' cy='20' r='40' fill='white'/%3E%3C/svg%3E") no-repeat right -10px top -10px}
+.hm-card-alm{background:linear-gradient(145deg,#0f766e,#14b8a6)}
+.hm-card-air{background:linear-gradient(145deg,#1d4ed8,#6366f1)}
+.hm-card-cfg{background:linear-gradient(145deg,#4b5563,#6b7280)}
+.hm-card-icon{font-size:36px;padding:24px 24px 8px;position:relative;z-index:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.2))}
+.hm-card-body{padding:0 24px 24px;position:relative;z-index:1;flex:1;display:flex;flex-direction:column}
+.hm-card .hm-ctitle{font-size:20px;font-weight:700;color:#fff;margin-bottom:4px}
+.hm-card .hm-cdesc{font-size:13px;color:rgba(255,255,255,.75);margin-bottom:16px}
+.hm-card-feats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px}
+.hm-card-feats span{background:rgba(255,255,255,.18);color:#fff;font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.2)}
+.hm-card-cta{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.2);color:#fff;font-size:13px;font-weight:600;padding:8px 18px;border-radius:10px;border:1px solid rgba(255,255,255,.3);transition:background .15s;margin-top:auto;align-self:flex-start;backdrop-filter:blur(4px)}
+.hm-card:hover .hm-card-cta{background:rgba(255,255,255,.3)}
 .hm-ctitle{font-size:18px;font-weight:700;margin-bottom:6px}
 .hm-cdesc{font-size:13px;color:var(--g500);line-height:1.6;margin-bottom:14px}
 .hm-feat{font-size:12px;color:var(--g600);display:flex;align-items:center;gap:6px;margin-bottom:5px}
@@ -168,10 +184,40 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 
 /* ── APP LAYOUT ── */
 #app{display:none;height:100vh;flex-direction:column;overflow:hidden}
-#app-hdr{background:var(--w);border-bottom:1px solid var(--g200);display:flex;align-items:center;padding:0;flex-shrink:0;box-shadow:var(--sh0);overflow:hidden}
+#app-hdr{background:var(--w);border-bottom:1px solid var(--g100);display:flex;align-items:center;padding:0;flex-shrink:0;box-shadow:0 1px 0 var(--g100);overflow:hidden;position:sticky;top:0;z-index:100}
+.hdr-top{display:flex;align-items:center;gap:12px;padding:0 16px;height:var(--hh);width:100%;min-width:0}
+.hdr-breadcrumb{display:flex;align-items:center;gap:6px;flex:1;min-width:0;overflow:hidden}
+.hdr-bc-mod{font-size:13px;color:var(--g400);font-weight:500;white-space:nowrap;transition:color .15s}
+.hdr-bc-mod:hover{color:var(--b600)}
+.hdr-bc-sep{color:var(--g300);font-size:14px}
+.hdr-bc-cur{font-size:13px;color:var(--g800);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdr-search{width:220px;padding:6px 12px;font-size:12px;border-radius:20px;border:1px solid var(--g200);background:var(--g50)}
+.hdr-search:focus{width:280px;border-color:var(--b400);background:var(--w);transition:width .2s}
+.hdr-icon-btn{width:34px;height:34px;border-radius:9px;border:1px solid var(--g200);background:var(--w);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;color:var(--g600);transition:all .15s;flex-shrink:0}
+.hdr-icon-btn:hover{background:var(--g100);border-color:var(--g300);color:var(--g900);transform:translateY(-1px)}
+.hdr-logout:hover{background:var(--rd50);border-color:var(--rd500);color:var(--rd600)}
+.hdr-user{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:10px;cursor:pointer;border:1px solid var(--g200);background:var(--w);transition:all .15s;flex-shrink:0}
+.hdr-user:hover{background:var(--g50);border-color:var(--b300)}
+.hdr-av{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--b600),#6366f1);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
+.hdr-user-info{display:flex;flex-direction:column;min-width:0}
+.hdr-user-name{font-size:12px;font-weight:600;color:var(--g800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px}
+.hdr-user-role{font-size:10px;color:var(--g400);white-space:nowrap;text-transform:capitalize}
 .hdr-top{width:100%;display:flex;align-items:center;padding:0 16px;min-height:var(--hh);gap:10px}
 #app-body{flex:1;display:flex;overflow:hidden}
-#sidebar{width:var(--sw);background:var(--w);border-right:1px solid var(--g200);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;transition:transform .25s;z-index:50}
+#sidebar{width:var(--sw);background:var(--w);border-right:1px solid var(--g200);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;transition:width .25s cubic-bezier(.4,0,.2,1),transform .25s;z-index:50}
+#sidebar.collapsed{width:var(--sw-collapsed)}
+#sidebar.collapsed .nav-item-txt{opacity:0;width:0;overflow:hidden;white-space:nowrap;display:inline-block;transition:opacity .15s,width .2s}
+#sidebar.collapsed .nav-item{justify-content:center;padding:10px 0;margin:2px 8px}
+#sidebar.collapsed .nav-item .ni{margin:0;font-size:18px}
+#sidebar.collapsed .sb-sec{opacity:0;height:0;overflow:hidden;margin:0;padding:0}
+#sidebar.collapsed .sb-user .sb-name,#sidebar.collapsed .sb-user .sb-role{opacity:0;width:0;overflow:hidden;display:inline-block}
+#sidebar.collapsed .sb-av{margin:0 auto}
+#sidebar.collapsed .sb-user{justify-content:center;padding:12px 8px}
+#sidebar.collapsed .nb{display:none!important}
+#sidebar.collapsed .sidebar-toggle-btn .ti-expand{display:none}
+#sidebar.collapsed .sidebar-toggle-btn .ti-collapse{display:block}
+.sidebar-toggle-btn .ti-collapse{display:none}
+.nav-item-txt{transition:opacity .2s,width .2s;white-space:nowrap}
 #content{flex:1;overflow-y:auto;background:var(--g50)}
 
 /* ── HEADER ── */
@@ -241,10 +287,13 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 
 /* ── SIDEBAR ── */
 .sb-sec{padding:16px 12px 4px;font-size:10px;font-weight:600;color:var(--g400);text-transform:uppercase;letter-spacing:.8px}
-.nav-item{display:flex;align-items:center;gap:9px;padding:8px 12px;border-radius:var(--r);margin:1px 8px;cursor:pointer;color:var(--g600);font-size:13px;font-weight:500;transition:all .12s;user-select:none}
-.nav-item:hover{background:var(--g100);color:var(--g900)}
-.nav-item.active{background:var(--b50);color:var(--b700)}
-.nav-item .ni{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;margin:2px 8px;cursor:pointer;color:var(--g500);font-size:13px;font-weight:500;transition:all .15s cubic-bezier(.4,0,.2,1);user-select:none;position:relative}
+.nav-item:hover{background:var(--g100);color:var(--g900);transform:translateX(2px)}
+.nav-item.active{background:linear-gradient(135deg,var(--b600),#6366f1);color:#fff;box-shadow:0 4px 12px rgba(37,99,235,.35)}
+.nav-item.active:hover{transform:none}
+.nav-item .ni{font-size:16px;width:22px;text-align:center;flex-shrink:0;transition:transform .15s}
+.nav-item:hover .ni{transform:scale(1.15)}
+.nav-item.active .ni{filter:brightness(1.3)}
 .nb{margin-left:auto;background:var(--rd500);color:var(--w);font-size:10px;font-weight:600;padding:1px 6px;border-radius:10px}
 .sb-bot{margin-top:auto;padding:12px;border-top:1px solid var(--g200)}
 .sb-user{display:flex;align-items:center;gap:9px;padding:8px;border-radius:var(--r);cursor:pointer;transition:background .15s}
@@ -510,6 +559,26 @@ textarea.fi{resize:vertical;min-height:72px}
   .mf{padding-bottom:max(14px,env(safe-area-inset-bottom));}
 }
 
+
+/* ── Sidebar toggle button ── */
+.sidebar-toggle-btn{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;border:1px solid var(--g200);background:var(--w);cursor:pointer;color:var(--g500);font-size:14px;transition:all .15s;flex-shrink:0}
+.sidebar-toggle-btn:hover{background:var(--g100);color:var(--b600);border-color:var(--b200)}
+#sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:16px 14px 12px;border-bottom:1px solid var(--g100);flex-shrink:0}
+#sidebar-logo{display:flex;align-items:center;gap:10px;cursor:pointer;min-width:0;overflow:hidden}
+#sidebar-logo-mark{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--b600),#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;flex-shrink:0;letter-spacing:-.5px}
+#sidebar-logo-txt{font-weight:700;font-size:14px;color:var(--g900);white-space:nowrap;overflow:hidden;transition:opacity .2s,width .2s}
+#sidebar.collapsed #sidebar-logo-txt{opacity:0;width:0}
+#sidebar.collapsed #sidebar-header{justify-content:center}
+#sidebar.collapsed .sidebar-toggle-btn{margin:0}
+
+/* ── sb-user mejorado ── */
+.sb-bot{border-top:1px solid var(--g100);padding:10px;flex-shrink:0;margin-top:auto}
+.sb-user{display:flex;align-items:center;gap:10px;padding:10px;border-radius:10px;cursor:pointer;transition:background .15s;overflow:hidden}
+.sb-user:hover{background:var(--g100)}
+.sb-av{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--b600),#6366f1);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+.sb-name{font-size:13px;font-weight:600;color:var(--g800);white-space:nowrap;overflow:hidden;transition:opacity .2s}
+.sb-role{font-size:11px;color:var(--g400);white-space:nowrap;overflow:hidden;transition:opacity .2s}
+
 /* ── Modo oscuro ─────────────────────────────────────────────── */
 /* ── Modo oscuro ─────────────────────────────────────────────── */
 /* ── Modo oscuro ─────────────────────────────────────────────── */
@@ -526,7 +595,17 @@ textarea.fi{resize:vertical;min-height:72px}
 /* ── Cabecera real: #app-hdr ── */
 :root.dark #app-hdr { background:#12122a !important; border-bottom:1px solid #1e1e3f !important; }
 :root.dark .hm-hdr  { background:#12122a !important; border-bottom:1px solid #1e1e3f !important; }
-:root.dark .hdr-top { background:#12122a !important; border-bottom:1px solid #1e1e3f !important; }
+:root.dark .hdr-top { background:#12122a !important; }
+:root.dark .hdr-icon-btn { background:#1e1e3f !important; border-color:#2d2d5e !important; color:#9aa5b4 !important; }
+:root.dark .hdr-user { background:#1e1e3f !important; border-color:#2d2d5e !important; }
+:root.dark .hdr-user-name { color:#e8eaf0 !important; }
+:root.dark .hdr-bc-mod { color:#6b7280 !important; }
+:root.dark .hdr-bc-cur { color:#c8d0da !important; }
+:root.dark .hdr-bc-sep { color:#2d2d5e !important; }
+:root.dark #sidebar { background:#12122a !important; }
+:root.dark #sidebar-header { border-bottom-color:#1e1e3f !important; background:#12122a !important; }
+:root.dark #sidebar-logo-txt { color:#e8eaf0 !important; }
+:root.dark .sidebar-toggle-btn { background:#1e1e3f !important; border-color:#2d2d5e !important; color:#9aa5b4 !important; }
 :root.dark .hdr-cert { color:#6b7280 !important; border-color:#2d2d5e !important; }
 :root.dark .hm-contact,
 :root.dark .hm-contact span { color:#6b7280 !important; }
@@ -693,8 +772,7 @@ textarea.fi{resize:vertical;min-height:72px}
 .kpi{transition:box-shadow .15s;}
 .kpi:hover{box-shadow:0 4px 14px rgba(0,0,0,.08);}
 .ll-row{transition:background .1s;}
-.hm-card{transition:box-shadow .15s,transform .15s;}
-.hm-card:hover{box-shadow:0 6px 20px rgba(37,99,235,.13);transform:translateY(-2px);}
+/* hm-card transitions handled in main CSS */
 
 /* Mobile tap feedback */
 @media(max-width:768px){
@@ -759,8 +837,9 @@ textarea.fi{resize:vertical;min-height:72px}
     </div>
   </div>
   <div class="hm-body">
-    <div class="hm-title">Bienvenido al Portal ALS</div><div style="font-size:11px;color:var(--g400);font-family:var(--mono);text-align:center;margin-bottom:16px">v2.18.0 · 18 marzo 2026</div>
-    <div class="hm-sub">Selecciona el área de trabajo para continuar</div>
+    <div class="hm-greeting" id="hm-greeting">Buenos días</div>
+    <div class="hm-title" id="hm-name-big">Portal ALS</div>
+    <div class="hm-sub">Selecciona el área de trabajo</div>
     <div class="hm-cards" id="hm-cards"></div>
   </div>
 </div>
@@ -769,78 +848,110 @@ textarea.fi{resize:vertical;min-height:72px}
 <div id="app">
   <header id="app-hdr">
     <div class="hdr-top">
+      <!-- Hamburger solo en móvil -->
       <button class="hamburger" onclick="toggleSB()">☰</button>
-      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;cursor:pointer" onclick="volverHome()" title="Volver al inicio">
-        <div class="app-mark">ALS</div>
-        <div class="app-ltxt">Portal ALS</div>
+
+      <!-- Breadcrumb sección actual -->
+      <div class="hdr-breadcrumb">
+        <span class="hdr-bc-mod" id="bc-mod" onclick="volverHome()" style="cursor:pointer">Inicio</span>
+        <span class="hdr-bc-sep">›</span>
+        <span class="hdr-bc-cur" id="bc-page">—</span>
       </div>
-      <div class="app-contact">
-        <a href="tel:+34956581316">📞 +34 956 58 13 16</a>
-        <a href="mailto:als@alsalgeciras.com">✉️ als@alsalgeciras.com</a>
-        <span>📍 Algeciras</span>
-      </div>
-      <div class="bc" style="flex:1;min-width:0;padding:0 8px">
-        <span style="cursor:pointer;color:var(--g500);white-space:nowrap" onclick="volverHome()" id="bc-mod">Inicio</span>
-        <span class="bc-sep">/</span>
-        <span class="bc-cur" id="bc-page" style="white-space:nowrap">—</span>
-      </div>
+
       <div class="h-right">
+        <!-- Búsqueda global -->
         <div id="global-search-wrap" style="position:relative;display:none">
-          <input id="global-search" class="fi" type="text" placeholder="🔍 Buscar..." 
-            style="width:180px;padding:5px 10px;font-size:12px;border-radius:20px"
+          <input id="global-search" class="fi hdr-search" type="text" placeholder="🔍 Buscar expedición, buque..."
             oninput="busquedaGlobal(this.value)" onblur="setTimeout(()=>cerrarBusqueda(),200)">
-          <div id="global-results" style="display:none;position:absolute;top:36px;right:0;width:320px;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);box-shadow:var(--shl);z-index:200;max-height:320px;overflow-y:auto"></div>
+          <div id="global-results" style="display:none;position:absolute;top:40px;right:0;width:340px;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);box-shadow:var(--shl);z-index:200;max-height:320px;overflow-y:auto"></div>
         </div>
+
+        <!-- ISO certs -->
         <div class="hdr-cert">ISO 9001<br>ISO 14001</div>
-        
-        <button id="btn-to-operativa" class="btn btn-s btn-sm nav-mod-btn" onclick="irAOperativa()" style="display:none" title="Ir a Operativa"><span class="mod-btn-icon">🏢</span><span class="mod-btn-txt">Operativa</span></button>
-        <button id="btn-to-almacen" class="btn btn-s btn-sm nav-mod-btn" onclick="irAAlmacen()" style="display:none" title="Ir a Almacén & Embarque"><span class="mod-btn-icon">📦</span><span class="mod-btn-txt">Almacén</span></button>
-        <button id="btn-to-airport" class="btn btn-s btn-sm nav-mod-btn" onclick="window.open('airport_cargo.html','_blank')" style="display:none" title="Ir a Airport Cargo"><span class="mod-btn-icon">✈️</span><span class="mod-btn-txt">Airport</span></button>
-        <button id="dark-toggle" onclick="toggleDarkMode()" class="btn btn-s btn-sm nav-mod-btn" title="Modo oscuro/claro"><span class="mod-btn-icon">🌙</span></button>
-        <button class="btn btn-s btn-sm nav-mod-btn" onclick="volverHome()" title="Menú principal"><span class="mod-btn-icon">🏠</span><span class="mod-btn-txt">Inicio</span></button>
-        <button class="btn btn-d btn-sm nav-mod-btn" onclick="doLogout()" title="Cerrar sesión"><span class="mod-btn-icon">🚪</span><span class="mod-btn-txt">Salir</span></button>
+
+        <!-- Cambiar módulo -->
+        <button id="btn-to-operativa" class="hdr-icon-btn" onclick="irAOperativa()" style="display:none" title="Operativa">🏢</button>
+        <button id="btn-to-almacen" class="hdr-icon-btn" onclick="irAAlmacen()" style="display:none" title="Almacén">📦</button>
+        <button id="btn-to-airport" class="hdr-icon-btn" onclick="window.open('airport_cargo.html','_blank')" style="display:none" title="Airport Cargo">✈️</button>
+
+        <!-- Dark mode -->
+        <button id="dark-toggle" class="hdr-icon-btn" onclick="toggleDarkMode()" title="Modo oscuro/claro">🌙</button>
+
+        <!-- Acciones rápidas -->
         <button class="btn btn-p btn-sm" id="btn-nb" onclick="openModal('nuevo-buque')" style="display:none">+ Buque</button>
         <button class="btn btn-s btn-sm" id="btn-ne" onclick="openModal('nueva-expedicion')" style="display:none">+ Expedición</button>
+
+        <!-- Usuario -->
+        <div class="hdr-user" id="hdr-user-btn" onclick="volverHome()" title="Inicio">
+          <div class="hdr-av" id="hdr-av">?</div>
+          <div class="hdr-user-info">
+            <div class="hdr-user-name" id="hdr-user-name">—</div>
+            <div class="hdr-user-role" id="hdr-user-role">—</div>
+          </div>
+        </div>
+
+        <!-- Salir -->
+        <button class="hdr-icon-btn hdr-logout" onclick="doLogout()" title="Cerrar sesión">🚪</button>
       </div>
     </div>
   </header>
   <div id="app-body">
     <nav id="sidebar">
-      <div id="nav-op" style="display:none">
+      <!-- Header del sidebar -->
+      <div id="sidebar-header">
+        <div id="sidebar-logo" onclick="volverHome()" title="Inicio">
+          <div id="sidebar-logo-mark">ALS</div>
+          <span id="sidebar-logo-txt">Portal ALS</span>
+        </div>
+        <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Colapsar sidebar">
+          <span class="ti-expand">◀</span>
+          <span class="ti-collapse">▶</span>
+        </button>
+      </div>
+
+      <!-- Navegación Operativa -->
+      <div id="nav-op" style="display:none;flex:1;overflow-y:auto">
         <div class="sb-sec">Operaciones</div>
-        <div class="nav-item" onclick="nav('dashboard',this)"><span class="ni">🏠</span>Dashboard</div>
-        <div class="nav-item" onclick="nav('flota',this)"><span class="ni">🛳</span>Flota en vivo</div>
-        <div class="nav-item" onclick="nav('calendario',this)"><span class="ni">📅</span>Calendario</div>
-        <div class="nav-item" onclick="nav('timeline',this)"><span class="ni">📊</span>Timeline</div>
+        <div class="nav-item" onclick="nav('dashboard',this)"><span class="ni">🏠</span><span class="nav-item-txt">Dashboard</span></div>
+        <div class="nav-item" onclick="nav('flota',this)"><span class="ni">🛳</span><span class="nav-item-txt">Flota en vivo</span></div>
+        <div class="nav-item" onclick="nav('calendario',this)"><span class="ni">📅</span><span class="nav-item-txt">Calendario</span></div>
+        <div class="nav-item" onclick="nav('timeline',this)"><span class="ni">📊</span><span class="nav-item-txt">Timeline</span></div>
         <div class="sb-sec">Gestión operativa</div>
-        <div class="nav-item" onclick="nav('buques',this)"><span class="ni">⚓</span>Buques</div>
-        <div class="nav-item" onclick="nav('expediciones',this)"><span class="ni">📦</span>Expediciones</div>
-        <div class="nav-item" onclick="nav('kanban',this)"><span class="ni">🎛</span>Panel Kanban</div>
-        <div class="nav-item" id="nav-al" onclick="nav('alertas',this)"><span class="ni">🔔</span>Alertas<span class="nb" id="badge-al" style="display:none">0</span></div>
-        <div class="nav-item" onclick="nav('incidencias',this)"><span class="ni">⚠️</span>Incidencias</div>
-        <div class="nav-item" onclick="nav('empresas',this)"><span class="ni">🏢</span>Empresas</div>
-        <div class="nav-item" onclick="nav('estadisticas',this)"><span class="ni">📈</span>Estadísticas</div>
+        <div class="nav-item" onclick="nav('buques',this)"><span class="ni">⚓</span><span class="nav-item-txt">Buques</span></div>
+        <div class="nav-item" onclick="nav('expediciones',this)"><span class="ni">📦</span><span class="nav-item-txt">Expediciones</span></div>
+        <div class="nav-item" onclick="nav('kanban',this)"><span class="ni">🎛</span><span class="nav-item-txt">Panel Kanban</span></div>
+        <div class="nav-item" id="nav-al" onclick="nav('alertas',this)"><span class="ni">🔔</span><span class="nav-item-txt">Alertas<span class="nb" id="badge-al" style="display:none">0</span></span></div>
+        <div class="nav-item" onclick="nav('incidencias',this)"><span class="ni">⚠️</span><span class="nav-item-txt">Incidencias</span></div>
+        <div class="nav-item" onclick="nav('empresas',this)"><span class="ni">🏢</span><span class="nav-item-txt">Empresas</span></div>
+        <div class="nav-item" onclick="nav('estadisticas',this)"><span class="ni">📈</span><span class="nav-item-txt">Estadísticas</span></div>
         <div id="nav-adm" style="display:none">
           <div class="sb-sec">Configuración</div>
-          <div class="nav-item" onclick="nav('versiones',this)"><span class="ni">🏷️</span>Versiones</div>
-        <div class="nav-item" onclick="nav('log',this)"><span class="ni">📋</span>Log actividad</div>
-          <div class="nav-item" onclick="abrirEditorPlantillas()"><span class="ni">📝</span>Plantillas email</div>
-          <div class="nav-item" onclick="nav('usuarios',this)"><span class="ni">👥</span>Usuarios</div>
-          <div class="nav-item" onclick="openModal('cambiar-password')"><span class="ni">🔑</span>Cambiar contraseña</div>
+          <div class="nav-item" onclick="nav('versiones',this)"><span class="ni">🏷️</span><span class="nav-item-txt">Versiones</span></div>
+          <div class="nav-item" onclick="nav('log',this)"><span class="ni">📋</span><span class="nav-item-txt">Log actividad</span></div>
+          <div class="nav-item" onclick="abrirEditorPlantillas()"><span class="ni">📝</span><span class="nav-item-txt">Plantillas email</span></div>
+          <div class="nav-item" onclick="nav('usuarios',this)"><span class="ni">👥</span><span class="nav-item-txt">Usuarios</span></div>
+          <div class="nav-item" onclick="openModal('cambiar-password')"><span class="ni">🔑</span><span class="nav-item-txt">Cambiar contraseña</span></div>
         </div>
       </div>
-      <div id="nav-alm" style="display:none">
+
+      <!-- Navegación Almacén -->
+      <div id="nav-alm" style="display:none;flex:1;overflow-y:auto">
         <div class="sb-sec">Almacén & Embarque</div>
-        <div class="nav-item" onclick="nav('alm-dashboard',this)"><span class="ni">🏠</span>Dashboard</div>
-        <div class="nav-item" onclick="nav('alm-fotos',this)"><span class="ni">📸</span>Fotos & Confirmar</div>
-        <div class="nav-item" onclick="nav('alm-exp-buque',this)"><span class="ni">📦</span>Expediciones por buque</div>
-        <div class="nav-item" onclick="nav('flota',this)"><span class="ni">🛳</span>Flota en vivo</div>
-        <div class="nav-item" onclick="nav('timeline',this)"><span class="ni">📊</span>Timeline</div>
+        <div class="nav-item" onclick="nav('alm-dashboard',this)"><span class="ni">🏠</span><span class="nav-item-txt">Dashboard</span></div>
+        <div class="nav-item" onclick="nav('alm-fotos',this)"><span class="ni">📸</span><span class="nav-item-txt">Fotos & Confirmar</span></div>
+        <div class="nav-item" onclick="nav('alm-exp-buque',this)"><span class="ni">📦</span><span class="nav-item-txt">Expediciones por buque</span></div>
+        <div class="nav-item" onclick="nav('flota',this)"><span class="ni">🛳</span><span class="nav-item-txt">Flota en vivo</span></div>
+        <div class="nav-item" onclick="nav('timeline',this)"><span class="ni">📊</span><span class="nav-item-txt">Timeline</span></div>
       </div>
+
+      <!-- Footer del sidebar -->
       <div class="sb-bot">
-        <div class="sb-user" onclick="volverHome()">
+        <div class="sb-user" onclick="volverHome()" title="Volver al inicio">
           <div class="sb-av" id="sb-av">?</div>
-          <div><div class="sb-name" id="sb-name">—</div><div class="sb-role" id="sb-role">← Volver al inicio</div></div>
+          <div style="min-width:0;overflow:hidden">
+            <div class="sb-name" id="sb-name">—</div>
+            <div class="sb-role" id="sb-role">← Inicio</div>
+          </div>
         </div>
       </div>
     </nav>
@@ -1644,53 +1755,80 @@ function showHome(){
   const gsw=document.getElementById('global-search-wrap');
   if(gsw) gsw.style.display='none';
   const init=(CU.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-  document.getElementById('hm-av').textContent=init;
-  document.getElementById('hm-name').textContent=CU.nombre||CU.email;
+  // Update home screen user info
+  const hmAv=document.getElementById('hm-av'); if(hmAv) hmAv.textContent=init;
+  const hmName=document.getElementById('hm-name'); if(hmName) hmName.textContent=CU.nombre||CU.email;
+  // Personalizar saludo
+  const hour=new Date().getHours();
+  const greet=hour<12?'Buenos días':hour<19?'Buenas tardes':'Buenas noches';
+  const firstName=(CU.nombre||'').split(' ')[0];
+  const hmGreet=document.getElementById('hm-greeting'); if(hmGreet) hmGreet.textContent=(hour<12?'Buenos días':hour<19?'Buenas tardes':'Buenas noches')+', '+firstName+' 👋';
+  const hmNameBig=document.getElementById('hm-name-big'); if(hmNameBig) hmNameBig.textContent='Portal ALS';
+  // Update app header user info
+  const hdrAv=document.getElementById('hdr-av'); if(hdrAv) hdrAv.textContent=init;
+  const hdrName=document.getElementById('hdr-user-name'); if(hdrName) hdrName.textContent=(CU.nombre||'').split(' ').slice(0,2).join(' ');
+  const hdrRole=document.getElementById('hdr-user-role'); if(hdrRole) hdrRole.textContent=CU.rol||'';
+  // Update sidebar user info
+  const sbAv=document.getElementById('sb-av'); if(sbAv) sbAv.textContent=init;
+  const sbName=document.getElementById('sb-name'); if(sbName) sbName.textContent=(CU.nombre||'').split(' ').slice(0,2).join(' ');
+  const sbRole=document.getElementById('sb-role'); if(sbRole) sbRole.textContent=CU.rol||'';
   const c=document.getElementById('hm-cards');
   c.innerHTML='';
 
   if(['admin','oficina','aduanas'].includes(CU.rol))
-    c.innerHTML+=`<div class="hm-card" onclick="enterMod('operativa')">
-      <div class="hm-icon blue">🏢</div>
-      <div class="hm-ctitle">Operativa</div>
-      <div class="hm-cdesc">Gestión completa de buques, expediciones, documentación aduanera y seguimiento operativo.</div>
-      <div class="hm-feat">Dashboard y KPIs en tiempo real</div>
-      <div class="hm-feat">Buques, expediciones y flota</div>
-      <div class="hm-feat">Kanban, calendario y timeline</div>
-      <div class="hm-feat">Alertas, estadísticas y log</div>
+    c.innerHTML+=`<div class="hm-card hm-card-op" onclick="enterMod('operativa')">
+      <div class="hm-card-bg"></div>
+      <div class="hm-card-icon">🏢</div>
+      <div class="hm-card-body">
+        <div class="hm-ctitle">Operativa</div>
+        <div class="hm-cdesc">Buques · Expediciones · Aduana</div>
+        <div class="hm-card-feats">
+          <span>📊 Dashboard</span><span>⚓ Buques</span><span>📦 Expediciones</span><span>📅 Calendario</span>
+        </div>
+        <div class="hm-card-cta">Entrar →</div>
+      </div>
     </div>`;
 
   if(['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol))
-    c.innerHTML+=`<div class="hm-card" onclick="enterMod('almacen')">
-      <div class="hm-icon teal">📦</div>
-      <div class="hm-ctitle">Almacén &amp; Embarque</div>
-      <div class="hm-cdesc">Operaciones de almacén, confirmación de llegadas, gestión de ubicaciones y control de embarques.</div>
-      <div class="hm-feat">Confirmar llegadas y fotos</div>
-      <div class="hm-feat">Carga camión y albaranes</div>
-      <div class="hm-feat">Control de ubicaciones</div>
-      <div class="hm-feat">Buques listos para embarcar</div>
+    c.innerHTML+=`<div class="hm-card hm-card-alm" onclick="enterMod('almacen')">
+      <div class="hm-card-bg"></div>
+      <div class="hm-card-icon">📦</div>
+      <div class="hm-card-body">
+        <div class="hm-ctitle">Almacén & Embarque</div>
+        <div class="hm-cdesc">Llegadas · Fotos · Embarque</div>
+        <div class="hm-card-feats">
+          <span>📸 Fotos</span><span>🚛 Carga</span><span>🚢 Embarque</span><span>⚓ Landed</span>
+        </div>
+        <div class="hm-card-cta">Entrar →</div>
+      </div>
     </div>`;
 
   if(['admin','oficina','aduanas'].includes(CU.rol))
-    c.innerHTML+=`<div class="hm-card" onclick="window.location.href='airport_cargo.html'" style="border-left:3px solid #1565c0">
-      <div class="hm-icon" style="background:#e3f2fd">✈️</div>
-      <div class="hm-ctitle">Airport Cargo</div>
-      <div class="hm-cdesc">Gestión de entradas de aeropuerto con cálculo automático de handling (Swissport / Groundforce).</div>
-      <div class="hm-feat">Cálculo automático de tarifas</div>
-      <div class="hm-feat">Almacenaje, gestión documental, tasa recinto</div>
-      <div class="hm-feat">Resumen mensual y anual</div>
-      <div class="hm-feat">Gestión de carga aérea AGP</div>
+    c.innerHTML+=`<div class="hm-card hm-card-air" onclick="window.location.href='airport_cargo.html'">
+      <div class="hm-card-bg"></div>
+      <div class="hm-card-icon">✈️</div>
+      <div class="hm-card-body">
+        <div class="hm-ctitle">Airport Cargo</div>
+        <div class="hm-cdesc">AGP · Swissport · Groundforce</div>
+        <div class="hm-card-feats">
+          <span>📋 Entradas</span><span>💰 Tarifas</span><span>📧 Notificar</span><span>📊 Resumen</span>
+        </div>
+        <div class="hm-card-cta">Entrar →</div>
+      </div>
     </div>`;
 
   if(CU.rol==='admin')
-    c.innerHTML+=`<div class="hm-card" onclick="enterMod('configuracion')" style="border-left:3px solid var(--g400)">
-      <div class="hm-icon" style="background:var(--g100)">⚙️</div>
-      <div class="hm-ctitle">Configuración</div>
-      <div class="hm-cdesc">Administración del sistema, gestión de usuarios, log de actividad y ajustes del portal.</div>
-      <div class="hm-feat">Gestión de usuarios y roles</div>
-      <div class="hm-feat">Log de actividad completo</div>
-      <div class="hm-feat">Cambiar contraseña</div>
-      <div class="hm-feat">Solo accesible para administradores</div>
+    c.innerHTML+=`<div class="hm-card hm-card-cfg" onclick="enterMod('configuracion')">
+      <div class="hm-card-bg"></div>
+      <div class="hm-card-icon">⚙️</div>
+      <div class="hm-card-body">
+        <div class="hm-ctitle">Configuración</div>
+        <div class="hm-cdesc">Admin · Usuarios · Log</div>
+        <div class="hm-card-feats">
+          <span>👥 Usuarios</span><span>📋 Log</span><span>🏷️ Versiones</span><span>🔑 Accesos</span>
+        </div>
+        <div class="hm-card-cta">Entrar →</div>
+      </div>
     </div>`;
 }
 
@@ -2372,6 +2510,15 @@ function nav(view,el){
   loadView(view);
 }
 function toggleSB(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('mob-ov').classList.toggle('show');}
+function toggleSidebar(){
+  var sb=document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  localStorage.setItem('als_sb_collapsed', sb.classList.contains('collapsed')?'1':'0');
+}
+function initSidebar(){
+  var sb=document.getElementById('sidebar');
+  if(localStorage.getItem('als_sb_collapsed')==='1') sb.classList.add('collapsed');
+}
 
 // ── HELPERS ──
 function bdg(s){const m={'✅ AUTORIZADO':'bg','🚛 CARGADO CAMIÓN':'bg','🚢 EMBARCADO':'bg','⏳ EN TRÁNSITO':'bb','⌛ ESPERANDO ALMACÉN':'bb','📦 UBICADA':'bt','🚨 EN ALMACÉN - REVISAR':'br','⚓ Landed':'ba'};return`<span class="badge ${m[s]||'bgr'}">${s||'—'}</span>`;}
