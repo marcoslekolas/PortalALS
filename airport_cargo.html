@@ -398,22 +398,21 @@ function initDarkMode(){
 }
 
 function goTo(mod){
-  // Navegar al Portal ALS principal (menu inicio)
-  // Simple y sin depender de window.opener
+  // Navegar al Portal ALS — funciona siempre
   try {
-    localStorage.removeItem('als_goto_mod');
-    // Intentar con opener si existe
-    try {
-      var op = window.opener;
-      if(op && !op.closed && typeof op.showHome === 'function'){
-        op.showHome(); op.focus(); return;
-      }
-    } catch(oe){}
-    // Fallback: abrir index.html en esta pestaña
-    var base = window.location.href.replace(/airport_cargo\.html.*$/, '');
-    window.location.href = base + 'index.html';
+    var base = window.location.href.replace(/\/airport_cargo\.html.*$/, '');
+    var target = base + '/index.html';
+    // Si fue abierto como popup, usar el opener
+    if(window.opener && !window.opener.closed){
+      try {
+        if(typeof window.opener.showHome==='function'){ window.opener.showHome(); window.opener.focus(); return; }
+        if(typeof window.opener.volverHome==='function'){ window.opener.volverHome(); window.opener.focus(); return; }
+      } catch(e){}
+    }
+    // Navegar en esta misma pestaña
+    window.location.href = target;
   } catch(e){
-    window.location.href = 'index.html';
+    window.location.href = '../index.html';
   }
 }
 
