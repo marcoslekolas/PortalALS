@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*.supabase.co blob:; connect-src 'self' https://*.supabase.co; font-src https://fonts.gstatic.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src https://fonts.gstatic.com; worker-src blob:; manifest-src 'self' blob:;">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
 <meta name="theme-color" content="#2563eb">
 <meta name="mobile-web-app-capable" content="yes">
@@ -602,7 +602,7 @@ textarea.fi{resize:vertical;min-height:72px}
     <div class="li-title">Portal Operativo</div><div style="font-size:10px;color:var(--g400);font-family:var(--mono);margin-bottom:4px">v2.18.0</div>
     <div class="li-sub">Sistema de gestión logística portuaria</div>
     <div class="li-card">
-      <div class="fg2"><label class="fl2">Usuario</label><input id="li-email" class="fi" type="text" placeholder="Nombre y apellidos" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="fg2"><label class="fl2">Usuario</label><input id="li-email" class="fi" type="text" placeholder="Nombre o email" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"></div>
       <div class="fg2" style="margin-bottom:8px"><label class="fl2">Contraseña</label><input id="li-pass" class="fi" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
       <div class="li-err" id="li-err"></div>
       <button class="btn btn-p btn-full" style="margin-top:16px" onclick="doLogin()">Entrar al sistema →</button>
@@ -1339,7 +1339,9 @@ async function doLogin(){
     let rows=null;
 
     // 1. Intentar con función segura verificar_password (bcrypt)
+    // Intentar con nombre y también con email (el usuario puede escribir cualquiera)
     try{
+      // Intento 1a: buscar por nombre
       const rpcR=await fetch(SB_URL+'/rest/v1/rpc/verificar_password',{
         method:'POST',
         headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Accept:'application/json'},
@@ -1348,6 +1350,18 @@ async function doLogin(){
       if(rpcR.ok){
         const data=await rpcR.json();
         if(data&&data.length>0) rows=data;
+      }
+      // Intento 1b: si no encontró por nombre, buscar por email exacto
+      if(!rows||!rows.length){
+        const rpcR2=await fetch(SB_URL+'/rest/v1/rpc/verificar_password_email',{
+          method:'POST',
+          headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Accept:'application/json'},
+          body:JSON.stringify({p_email:email,p_password:pass})
+        });
+        if(rpcR2.ok){
+          const data2=await rpcR2.json();
+          if(data2&&data2.length>0) rows=data2;
+        }
       }
     }catch(rpcErr){console.warn('RPC no disponible, usando fallback:',rpcErr.message);}
 
@@ -4060,7 +4074,7 @@ async function editUser(id){
     <div class="fr2">
       <div class="fg2">
         <label class="fl2">Nombre completo</label>
-        <input id="eu-n" class="fi" value="${u.nombre||''}" placeholder="Nombre y apellidos">
+        <input id="eu-n" class="fi" value="${u.nombre||''}" placeholder="Nombre o email">
       </div>
       <div class="fg2">
         <label class="fl2">Email</label>
@@ -4256,11 +4270,11 @@ const MODALS={
   after:()=>setTimeout(()=>setupFotos('gl-fi','gl-fpv','gl-fst'),100)
 },
 'nuevo-usuario':{t:'👤 Nuevo usuario',btn:'👤 Crear usuario',
-  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre y apellidos"></div><div class="fg2"><label class="fl2">Email <span style="font-weight:400;color:var(--g400)">(opcional)</span></label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="oficina">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
+  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre o email"></div><div class="fg2"><label class="fl2">Email <span style="font-weight:400;color:var(--g400)">(opcional)</span></label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="oficina">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
   action:async()=>{const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');if(!n||!p){alert('Nombre y contraseña son obligatorios');return;}const obj={nombre:n,rol:r,password_hash:p,must_change_password:true};if(e)obj.email=e;const {error}=await sb.from('usuarios').insert(obj);if(error){alert('Error: '+error.message);return;}showToast('Usuario creado — deberá cambiar su contraseña al primer inicio de sesión');closeModal();loadView(CV);}
 },
 'nueva-empresa':{t:'🏢 Nueva empresa',btn:'🏢 Crear empresa',
-  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="nmp-n" class="fi" placeholder="Nombre empresa"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="nmp-p" class="fi" placeholder="Nombre y apellidos"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="nmp-e" class="fi" type="email" placeholder="email@empresa.com"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="nmp-t" class="fi" placeholder="+34 956…"></div></div><div class="fg2"><label class="fl2">Otros emails <span style="color:var(--g400);font-weight:400">(separados por coma)</span></label><input id="nmp-o" class="fi" placeholder="email2@, email3@…"></div><div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="nmp-r-${r}" style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>`,
+  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="nmp-n" class="fi" placeholder="Nombre empresa"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="nmp-p" class="fi" placeholder="Nombre o email"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="nmp-e" class="fi" type="email" placeholder="email@empresa.com"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="nmp-t" class="fi" placeholder="+34 956…"></div></div><div class="fg2"><label class="fl2">Otros emails <span style="color:var(--g400);font-weight:400">(separados por coma)</span></label><input id="nmp-o" class="fi" placeholder="email2@, email3@…"></div><div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="nmp-r-${r}" style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>`,
   action:async()=>{const nombre=gv('nmp-n');if(!nombre){alert('El nombre es obligatorio');return;}const roles=['Cliente','Consignatario','Transportista'].filter(r=>document.getElementById('nmp-r-'+r)?.checked);const otros=gv('nmp-o').split(',').map(s=>s.trim()).filter(Boolean);const {error}=await sb.from('empresas').insert({nombre,persona_contacto:gv('nmp-p')||null,email_confronta:gv('nmp-e')||null,telefono:gv('nmp-t')||null,otros_emails:otros,rol:roles});if(error){alert('Error: '+error.message);return;}showToast('Empresa creada');closeModal();
     // Si venía desde nuevo-buque, volver a esa modal
     if(document.getElementById('mbox').dataset.fromBuque==='1'){delete document.getElementById('mbox').dataset.fromBuque;setTimeout(()=>openModal('nuevo-buque'),60);}else{loadView(CV);}}
@@ -4808,7 +4822,7 @@ function htmlAlb(b, exps, expsLanded){
   const tb=normal.reduce((a,e)=>a+e.bultos,0), tk=normal.reduce((a,e)=>a+e.kilos,0);
   const tlb=landed.reduce((a,e)=>a+e.bultos,0), tlk=landed.reduce((a,e)=>a+e.kilos,0);
   return`<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*.supabase.co blob:; connect-src 'self' https://*.supabase.co; font-src https://fonts.gstatic.com;"><title>Albarán — ${b.nombre||''}</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src https://fonts.gstatic.com; worker-src blob:; manifest-src 'self' blob:;"><title>Albarán — ${b.nombre||''}</title>
   <style>
   body{font-family:Arial,sans-serif;font-size:12px;padding:30px;max-width:780px;margin:0 auto;color:#000}
   .hd{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid #000}
