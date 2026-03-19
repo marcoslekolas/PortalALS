@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
-<title>ALS · Clasificador TARIC</title>
+<title>Customs Way · Clasificador TARIC</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>
 (function(){
@@ -440,8 +440,13 @@ textarea.fi{resize:vertical;min-height:80px}
     <div class="hdr-mark">ALS</div>
     <div class="hdr-divider"></div>
     <div class="hdr-title-wrap">
-      <div class="hdr-title">Clasificador TARIC</div>
-      <div class="hdr-subtitle">Nomenclatura Combinada · UE</div>
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:7px;padding:2px 7px;font-size:10px;font-weight:800;letter-spacing:.3px;color:rgba(255,255,255,.9);font-family:monospace">CW</div>
+          <div class="hdr-title">Customs Way · Clasificador TARIC</div>
+        </div>
+        <div class="hdr-subtitle">Representación Aduanera UE · Algeciras Marítima · La Línea</div>
+      </div>
     </div>
     <div class="hdr-spacer"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -483,6 +488,10 @@ textarea.fi{resize:vertical;min-height:80px}
         <div class="nav-item" onclick="nav('cav',this)">
           <span class="ni">📋</span>
           <span class="nav-item-txt">Base CAV</span>
+        </div>
+        <div class="nav-item" onclick="nav('dua',this)">
+          <span class="ni">📝</span>
+          <span class="nav-item-txt">Borrador DUA</span>
         </div>
 
         <div class="sb-sec">Referencias</div>
@@ -628,6 +637,63 @@ textarea.fi{resize:vertical;min-height:80px}
           <div id="hist-list">
             <div class="loading-wrap"><div class="spinner"></div><span>Cargando historial...</span></div>
           </div>
+        </div>
+      </div>
+
+      <!-- VISTA: BORRADOR DUA -->
+      <div class="view" id="view-dua">
+        <div class="ph">
+          <div>
+            <div class="pt">📝 Borrador DUA</div>
+            <div class="ps">Extracción automática de datos de factura → borrador DUA con todas las casillas · Compatible Visual Trans</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-g btn-sm" onclick="exportarDUA()" id="btn-exp-dua" style="display:none">⬇️ JSON/CSV</button>
+            <button class="btn btn-s btn-sm" onclick="limpiarDUA()">Limpiar</button>
+          </div>
+        </div>
+        <div class="view-body">
+
+          <!-- Info sobre integración VT -->
+          <div class="card" style="margin-bottom:16px;border-left:3px solid var(--b600);padding:14px 16px">
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <span style="font-size:20px;flex-shrink:0">⚡</span>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--g900);margin-bottom:4px">Integración con Visual Trans</div>
+                <div style="font-size:12px;color:var(--g600);line-height:1.6">
+                  Este módulo genera un <strong>borrador completo del DUA</strong> con todas las casillas numeradas según la resolución AEAT vigente.
+                  La IA extrae e infiere automáticamente los datos de la factura: TARIC, valor aduanero, origen, régimen, casillas 31, 40, 44, 47, S29, S32 y más.
+                  Para importar directamente a Visual Trans se requiere el schema XML de importación de dossiers de VT — consultar soporte VT o
+                  <a href="https://wiki.bytemaster.es/aduanas-despachos/" target="_blank" style="color:var(--b600)">wiki de configuración</a>.
+                </div>
+                <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+                  <span class="badge badge-blue">DUA Importación H1</span>
+                  <span class="badge badge-blue">DUA Exportación EX-A</span>
+                  <span class="badge badge-teal">Tránsito T1/T2</span>
+                  <span class="badge badge-grey">Visual Trans compatible</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="dua-upload-area">
+            <div class="drop-zone" id="dua-drop-zone" onclick="document.getElementById('dua-file-input').click()">
+              <input type="file" id="dua-file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="handleDUAFile(this.files[0])">
+              <div class="drop-zone-icon">📄</div>
+              <div class="drop-zone-title">Arrastra la factura comercial</div>
+              <div class="drop-zone-sub">PDF, JPG, PNG · La IA extraerá todos los datos para el DUA</div>
+              <div style="margin-top:10px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+                <span class="badge badge-blue">Casilla 1 · Régimen</span>
+                <span class="badge badge-blue">Casilla 31 · Mercancía</span>
+                <span class="badge badge-blue">Casilla 33 · TARIC</span>
+                <span class="badge badge-blue">Casilla 44 · Docs.</span>
+                <span class="badge badge-blue">Casilla 47 · Liquidación</span>
+              </div>
+            </div>
+          </div>
+
+          <div id="dua-result" style="display:none"></div>
+
         </div>
       </div>
 
@@ -1500,6 +1566,382 @@ function downloadCSV(csv, filename){
   URL.revokeObjectURL(url);
   showToast('✅ CSV descargado');
 }
+
+
+// ══════════════════════════════════════════════════════════════
+// MÓDULO BORRADOR DUA — Generador conforme resolución AEAT
+// Compatible con estructura de dossier Visual Trans
+// ══════════════════════════════════════════════════════════════
+
+function setupDUADropZone(){
+  const dz = document.getElementById('dua-drop-zone');
+  if(!dz) return;
+  dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('dragover');});
+  dz.addEventListener('dragleave', ()=>dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e=>{
+    e.preventDefault();dz.classList.remove('dragover');
+    const f=e.dataTransfer.files[0]; if(f) handleDUAFile(f);
+  });
+}
+
+async function handleDUAFile(file){
+  if(!file) return;
+  if(file.size > 20*1024*1024){ showToast('❌ Archivo demasiado grande'); return; }
+
+  document.getElementById('dua-upload-area').style.display='none';
+  const resultEl = document.getElementById('dua-result');
+  resultEl.style.display='block';
+  resultEl.innerHTML = '<div class="loading-wrap" style="padding:32px;justify-content:center"><div class="spinner"></div><span>IA elaborando borrador DUA... Extrayendo datos de la factura...</span></div>';
+  document.getElementById('btn-exp-dua').style.display='none';
+
+  try {
+    const base64 = await fileToBase64(file);
+    const mediaType = getMediaType(file.type, file.name);
+    const dua = await generarBorradorDUA(base64, mediaType);
+    if(dua){
+      renderBorradorDUA(dua, resultEl, file.name);
+      document.getElementById('btn-exp-dua').style.display='';
+      window._ultimoDUA = dua;
+    } else {
+      resultEl.innerHTML = '<div style="padding:24px;color:var(--rd600);text-align:center">❌ No se pudieron extraer los datos suficientes de la factura.</div>';
+    }
+  } catch(e){
+    console.error(e);
+    resultEl.innerHTML = `<div style="padding:24px;color:var(--rd600)">❌ Error: ${e.message}</div>`;
+  }
+}
+
+async function generarBorradorDUA(base64, mediaType){
+  const prompt = `Eres un experto representante aduanero en España con 20 años de experiencia elaborando DUAs para las aduanas de Algeciras Marítima y La Línea. Analiza esta factura comercial y elabora un borrador completo del DUA conforme a la resolución del DUA vigente de la AEAT.
+
+INSTRUCCIONES:
+- Clasifica TARIC a 10 dígitos para cada mercancía
+- Aplica el régimen correcto (IM para importación, EX para exportación)
+- Infiere el valor aduanero (método del valor de transacción, artículo 70 CAU)
+- Determina el código de procedimiento (casilla 1): régimen solicitado + régimen precedente
+- Identifica documentos necesarios (casilla 44): facturas, certificados origen, licencias
+- Calcula la liquidación estimada (casilla 47): arancel + IVA a la importación
+- Para cada partida, completa la casilla 31 (descripción mercancía) en formato DUA
+
+Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
+{
+  "tipo_dua": "H1-IMPORTACION|EX-A-EXPORTACION|T1-TRANSITO|T2-TRANSITO",
+  "aduana": "ES003000 Algeciras Marítima",
+  "casilla_1_regimen": {"solicitado": "40|42|53|71|78|91", "precedente": "00|71|91", "descripcion": "Despacho a libre práctica"},
+  "casilla_2_expedidor": {"nombre": "", "direccion": "", "pais": "", "eori": ""},
+  "casilla_8_importador": {"nombre": "", "nif": "", "direccion": "", "pais": "ES", "eori": ""},
+  "casilla_14_declarante": {"nombre": "Customs Way", "eori": "ES-DECLARANTE"},
+  "casilla_15_pais_expedicion": "",
+  "casilla_16_pais_origen": "",
+  "casilla_17_pais_destino": "ES",
+  "casilla_20_condiciones_entrega": {"incoterm": "FOB|CIF|EXW|DAP", "lugar": ""},
+  "casilla_21_transporte_frontera": {"modo": "1-Mar|2-Tren|3-Carr|4-Aer|8-Nav", "id": "", "bandera": ""},
+  "casilla_22_moneda_importe_total": {"moneda": "EUR|USD|GBP|CNY", "importe": 0},
+  "casilla_23_tipo_cambio": 1.0,
+  "casilla_24_naturaleza_transaccion": "11",
+  "casilla_25_modo_transporte": "1",
+  "casilla_26_modo_transporte_interior": "3",
+  "casilla_29_aduana_salida": "",
+  "casilla_30_localizacion": "",
+  "casilla_31_bultos_descripcion": "",
+  "casilla_32_numero_partida": 1,
+  "casilla_33_codigo_taric": "",
+  "casilla_34_codigo_pais_origen": "",
+  "casilla_35_masa_bruta": 0,
+  "casilla_37_regimen": "",
+  "casilla_38_masa_neta": 0,
+  "casilla_40_declaracion_anterior": "Sumaria/Partida o vacío",
+  "casilla_41_unidad_suplementaria": {"cantidad": 0, "unidad": ""},
+  "casilla_44_documentos": [
+    {"codigo": "N380", "referencia": "Núm. factura", "descripcion": "Factura comercial"},
+    {"codigo": "N954", "referencia": "", "descripcion": "Certificado de origen EUR.1 o REX"}
+  ],
+  "casilla_45_ajuste": {"codigo": "AB|AC|AD", "importe": 0},
+  "casilla_46_valor_estadistico": 0,
+  "casilla_47_liquidacion": [
+    {"tipo_impuesto": "A00-Arancel", "base": 0, "tipo": "0.00%", "importe": 0, "mp": "E"},
+    {"tipo_impuesto": "B00-IVA importacion", "base": 0, "tipo": "21.00%", "importe": 0, "mp": "E"}
+  ],
+  "casilla_54_lugar_fecha": "Algeciras",
+  "s29_metodo_pago_flete": "Z",
+  "s32_circunstancias_especiales": "",
+  "partidas": [
+    {
+      "num": 1,
+      "descripcion_factura": "",
+      "taric": "",
+      "descripcion_nc": "",
+      "cantidad": 0,
+      "unidad": "piezas|kg|l|m2",
+      "masa_bruta_kg": 0,
+      "masa_neta_kg": 0,
+      "valor_factura": 0,
+      "valor_aduanero": 0,
+      "arancel_porcentaje": "0%",
+      "arancel_importe": 0,
+      "iva_base": 0,
+      "iva_porcentaje": "21%",
+      "iva_importe": 0,
+      "pais_origen": "",
+      "codigo_preferencia": "100|200|300|400",
+      "documentos_especificos": []
+    }
+  ],
+  "observaciones_importantes": ["nota1"],
+  "datos_extraidos_factura": {
+    "numero_factura": "",
+    "fecha_factura": "",
+    "proveedor": "",
+    "comprador": "",
+    "incoterm": "",
+    "moneda": "",
+    "valor_total": 0,
+    "num_bultos": 0,
+    "descripcion_general": ""
+  },
+  "advertencias": ["advertencia sobre datos que no se han podido inferir"]
+}`;
+
+  const messages = [{
+    role: 'user',
+    content: [
+      {
+        type: mediaType === 'application/pdf' ? 'document' : 'image',
+        source: { type: 'base64', media_type: mediaType, data: base64 }
+      },
+      { type: 'text', text: prompt }
+    ]
+  }];
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1000, messages })
+  });
+  if(!resp.ok) throw new Error('API error '+resp.status);
+  const data = await resp.json();
+  const text = data.content.map(b=>b.text||'').join('');
+  return parseClaudeResponse(text);
+}
+
+function renderBorradorDUA(d, container, filename){
+  if(!d){ container.innerHTML='<div style="padding:24px;color:var(--rd600)">Error al procesar</div>'; return; }
+
+  const tipoBadge = {
+    'H1-IMPORTACION':'badge-blue',
+    'EX-A-EXPORTACION':'badge-green',
+    'T1-TRANSITO':'badge-amber',
+    'T2-TRANSITO':'badge-teal'
+  }[d.tipo_dua] || 'badge-grey';
+
+  const liquidHtml = (d.casilla_47_liquidacion||[]).map(l=>`
+    <tr>
+      <td style="font-family:var(--mono);font-size:12px">${l.tipo_impuesto||'—'}</td>
+      <td style="font-family:var(--mono);text-align:right">${Number(l.base||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</td>
+      <td style="text-align:right;font-weight:600">${l.tipo||'—'}</td>
+      <td style="font-family:var(--mono);text-align:right;font-weight:700;color:var(--b700)">${Number(l.importe||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</td>
+    </tr>
+  `).join('');
+
+  const docsHtml = (d.casilla_44_documentos||[]).map(doc=>`
+    <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--g100)">
+      <span class="badge badge-grey" style="font-family:var(--mono);font-size:11px">${doc.codigo||'—'}</span>
+      <span style="font-size:12px;color:var(--g600)">${doc.descripcion||'—'}</span>
+      ${doc.referencia?`<span style="font-family:var(--mono);font-size:11px;color:var(--b700);margin-left:auto">${doc.referencia}</span>`:''}
+    </div>
+  `).join('');
+
+  const advertHtml = (d.advertencias||[]).filter(a=>a).map(a=>
+    `<div style="display:flex;gap:6px;align-items:flex-start;padding:4px 0"><span style="color:var(--am600);flex-shrink:0">⚠️</span><span style="font-size:12px;color:var(--g600)">${a}</span></div>`
+  ).join('');
+
+  const partHtml = (d.partidas||[]).map(p=>`
+    <div class="card" style="margin-bottom:12px;padding:16px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <div style="background:var(--g900);color:#fff;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700">Partida ${p.num}</div>
+        <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">${(p.taric||'').match(/.{2}/g)?.join(' ')||'—'}</div>
+        <div style="font-size:12px;color:var(--g600)">${p.descripcion_nc||'—'}</div>
+      </div>
+      <div style="font-size:13px;color:var(--g500);margin-bottom:10px;padding:8px;background:var(--g50);border-radius:6px;font-style:italic">"${p.descripcion_factura||'—'}"</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Cantidad</div><div style="font-size:13px;font-weight:600">${p.cantidad||0} ${p.unidad||''}</div></div>
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Masa bruta</div><div style="font-size:13px;font-weight:600">${Number(p.masa_bruta_kg||0).toLocaleString('es-ES')} kg</div></div>
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Valor aduanero</div><div style="font-size:13px;font-weight:700;color:var(--g900)">${Number(p.valor_aduanero||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Arancel</div><div style="font-size:13px;font-weight:600;color:var(--rd600)">${p.arancel_porcentaje||'—'} · ${Number(p.arancel_importe||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">IVA import.</div><div style="font-size:13px;font-weight:600;color:var(--am600)">${p.iva_porcentaje||'—'} · ${Number(p.iva_importe||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">País origen</div><div style="font-size:13px;font-weight:600">${p.pais_origen||'—'}</div></div>
+      </div>
+    </div>
+  `).join('');
+
+  const df = d.datos_extraidos_factura||{};
+
+  container.innerHTML = `
+    <div style="animation:slideUp .3s cubic-bezier(.16,1,.3,1)">
+      <!-- Header DUA -->
+      <div class="card" style="margin-bottom:16px;padding:0;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#0f2d6e,#312e81);padding:16px 20px;color:#fff">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:18px;font-weight:800;letter-spacing:.02em">BORRADOR DUA</div>
+              <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px">Conforme resolución AEAT · No válido para presentación sin revisión del declarante</div>
+            </div>
+            <span class="badge ${tipoBadge}" style="margin-left:auto;font-size:13px;padding:6px 14px">${d.tipo_dua||'—'}</span>
+          </div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px">
+            <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em">Aduana</div><div style="font-size:13px;font-weight:600">${d.aduana||'—'}</div></div>
+            <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em">Factura</div><div style="font-size:13px;font-weight:600">${df.numero_factura||filename}</div></div>
+            <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em">Proveedor</div><div style="font-size:13px;font-weight:600">${df.proveedor||'—'}</div></div>
+            <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em">Incoterm</div><div style="font-size:13px;font-weight:600">${df.incoterm||d.casilla_20_condiciones_entrega?.incoterm||'—'}</div></div>
+            <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em">Valor total</div><div style="font-size:14px;font-weight:800">${Number(df.valor_total||0).toLocaleString('es-ES',{minimumFractionDigits:2})} ${df.moneda||'€'}</div></div>
+          </div>
+        </div>
+
+        <!-- Casillas principales -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0;border-top:1px solid var(--g200)">
+          ${[
+            ['C.1 Régimen', `${d.casilla_1_regimen?.solicitado||'—'}/${d.casilla_1_regimen?.precedente||'—'} · ${d.casilla_1_regimen?.descripcion||''}`],
+            ['C.2 Expedidor', `${d.casilla_2_expedidor?.nombre||'—'} · ${d.casilla_2_expedidor?.pais||''}`],
+            ['C.8 Importador', `${d.casilla_8_importador?.nombre||'—'} · ${d.casilla_8_importador?.nif||''}`],
+            ['C.14 Declarante', `${d.casilla_14_declarante?.nombre||'Customs Way'} · ${d.casilla_14_declarante?.eori||''}`],
+            ['C.15 País expedición', d.casilla_15_pais_expedicion||'—'],
+            ['C.16 País origen', d.casilla_16_pais_origen||'—'],
+            ['C.20 Entrega', `${d.casilla_20_condiciones_entrega?.incoterm||'—'} · ${d.casilla_20_condiciones_entrega?.lugar||''}`],
+            ['C.21 Transporte', `Modo ${d.casilla_21_transporte_frontera?.modo||'—'} · ${d.casilla_21_transporte_frontera?.id||''}`],
+            ['C.22 Divisa/Importe', `${d.casilla_22_moneda_importe_total?.moneda||'—'} ${Number(d.casilla_22_moneda_importe_total?.importe||0).toLocaleString('es-ES',{minimumFractionDigits:2})}`],
+            ['C.23 Tipo cambio', d.casilla_23_tipo_cambio||'—'],
+            ['C.25 Modo transporte', d.casilla_25_modo_transporte||'—'],
+            ['C.30 Localización', d.casilla_30_localizacion||'—'],
+          ].map(([k,v])=>`
+            <div style="padding:10px 14px;border-right:1px solid var(--g100);border-bottom:1px solid var(--g100)">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--g400);margin-bottom:2px">${k}</div>
+              <div style="font-size:12px;color:var(--g700)">${v||'—'}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Advertencias -->
+      ${advertHtml ? `<div style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--rl);padding:12px 16px;margin-bottom:16px">${advertHtml}</div>` : ''}
+
+      <!-- Partidas -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:10px">📦 Partidas arancelarias</div>
+        ${partHtml}
+      </div>
+
+      <!-- Casilla 44 documentos -->
+      <div class="card" style="margin-bottom:16px;padding:16px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:10px">📋 Casilla 44 — Documentos e información</div>
+        ${docsHtml || '<div style="color:var(--g400);font-size:12px">Sin documentos identificados</div>'}
+      </div>
+
+      <!-- Casilla 47 liquidación -->
+      <div class="card" style="margin-bottom:16px;padding:16px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:10px">💶 Casilla 47 — Cálculo de liquidación (estimado)</div>
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr><th>Concepto</th><th style="text-align:right">Base</th><th style="text-align:right">Tipo</th><th style="text-align:right">Cuota estimada</th></tr></thead>
+            <tbody>${liquidHtml||'<tr><td colspan="4" style="color:var(--g400)">Sin datos de liquidación</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Visual Trans info -->
+      <div class="card" style="margin-bottom:16px;padding:16px;border:1px dashed var(--b200);background:var(--b50)">
+        <div style="font-size:12px;font-weight:700;color:var(--b700);margin-bottom:8px">🔗 Próximo paso: Visual Trans</div>
+        <div style="font-size:12px;color:var(--g600);line-height:1.6">
+          Con estos datos puedes crear el dossier en Visual Trans: <strong>Nuevo dossier → Importación H1 → Introducir datos manualmente</strong> usando las casillas del borrador anterior.
+          Para automatizar la importación, consulta en VT: <em>Menú Archivo → Importar dossier</em> o contacta el soporte técnico de Visual Trans para obtener el schema XML de importación.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn btn-p btn-sm" onclick="exportarDUA()">⬇️ Exportar JSON (datos estructurados)</button>
+          <button class="btn btn-s btn-sm" onclick="exportarDUACSV()">📊 Exportar CSV (casillas)</button>
+          <a href="https://wiki.bytemaster.es/aduanas-despachos/" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📚 Wiki Visual Trans</a>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+function limpiarDUA(){
+  document.getElementById('dua-upload-area').style.display='';
+  document.getElementById('dua-result').style.display='none';
+  document.getElementById('btn-exp-dua').style.display='none';
+  document.getElementById('dua-file-input').value='';
+  window._ultimoDUA=null;
+}
+
+function exportarDUA(){
+  const d=window._ultimoDUA; if(!d){showToast('Sin datos');return;}
+  const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='borrador_dua.json';a.click();
+  URL.revokeObjectURL(url);showToast('✅ JSON descargado');
+}
+
+function exportarDUACSV(){
+  const d=window._ultimoDUA; if(!d){showToast('Sin datos');return;}
+  const rows=[
+    ['Casilla','Descripción','Valor'],
+    ['1','Régimen (solicitado/precedente)',`${d.casilla_1_regimen?.solicitado||''}/${d.casilla_1_regimen?.precedente||''}`],
+    ['1','Descripción régimen',d.casilla_1_regimen?.descripcion||''],
+    ['2','Expedidor - Nombre',d.casilla_2_expedidor?.nombre||''],
+    ['2','Expedidor - País',d.casilla_2_expedidor?.pais||''],
+    ['8','Importador - Nombre',d.casilla_8_importador?.nombre||''],
+    ['8','Importador - NIF',d.casilla_8_importador?.nif||''],
+    ['14','Declarante',d.casilla_14_declarante?.nombre||'Customs Way'],
+    ['15','País de expedición',d.casilla_15_pais_expedicion||''],
+    ['16','País de origen',d.casilla_16_pais_origen||''],
+    ['20','Condiciones entrega (Incoterm)',d.casilla_20_condiciones_entrega?.incoterm||''],
+    ['20','Lugar entrega',d.casilla_20_condiciones_entrega?.lugar||''],
+    ['21','Modo transporte frontera',d.casilla_21_transporte_frontera?.modo||''],
+    ['21','ID medio transporte',d.casilla_21_transporte_frontera?.id||''],
+    ['22','Moneda',d.casilla_22_moneda_importe_total?.moneda||''],
+    ['22','Importe total factura',d.casilla_22_moneda_importe_total?.importe||0],
+    ['23','Tipo de cambio',d.casilla_23_tipo_cambio||1],
+    ['24','Naturaleza transacción',d.casilla_24_naturaleza_transaccion||''],
+    ['25','Modo transporte',d.casilla_25_modo_transporte||''],
+    ['30','Localización mercancías',d.casilla_30_localizacion||''],
+    ['31','Descripción mercancía',d.casilla_31_bultos_descripcion||''],
+    ['40','Declaración anterior / Sumaria',d.casilla_40_declaracion_anterior||''],
+    ['54','Lugar y fecha',d.casilla_54_lugar_fecha||'Algeciras'],
+    ['S29','Método pago flete',d.s29_metodo_pago_flete||''],
+    ['S32','Circunstancias especiales',d.s32_circunstancias_especiales||''],
+    ['','',''],
+    ['','=== PARTIDAS ===',''],
+  ];
+  (d.partidas||[]).forEach(p=>{
+    rows.push(['','--- Partida '+p.num+' ---','']);
+    rows.push(['33','Código TARIC',p.taric||'']);
+    rows.push(['33','Descripción NC',p.descripcion_nc||'']);
+    rows.push(['31','Descripción en factura',p.descripcion_factura||'']);
+    rows.push(['','Cantidad',`${p.cantidad||0} ${p.unidad||''}`]);
+    rows.push(['35','Masa bruta (kg)',p.masa_bruta_kg||0]);
+    rows.push(['38','Masa neta (kg)',p.masa_neta_kg||0]);
+    rows.push(['42','Valor factura',p.valor_factura||0]);
+    rows.push(['46','Valor aduanero',p.valor_aduanero||0]);
+    rows.push(['47','Arancel %',p.arancel_porcentaje||'']);
+    rows.push(['47','Arancel importe',p.arancel_importe||0]);
+    rows.push(['47','IVA importación %',p.iva_porcentaje||'21%']);
+    rows.push(['47','IVA importación importe',p.iva_importe||0]);
+    rows.push(['34','País de origen',p.pais_origen||'']);
+    rows.push(['36','Código preferencia',p.codigo_preferencia||'100']);
+  });
+  const csv=rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\n');
+  downloadCSV(csv,'borrador_dua_casillas.csv');
+}
+
+// ── Init DUA drop zone al cargar ─────────────────────────────────
+window.addEventListener('load', function(){
+  setTimeout(setupDUADropZone, 500);
+});
+
+// ── Override nav to include 'dua' ────────────────────────────────
+const _navOriginal = nav;
+// nav already handles all views generically
+
 </script>
 </head>
 </body>
