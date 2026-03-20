@@ -522,8 +522,16 @@ textarea.fi{resize:vertical;min-height:80px}
             <div id="sb-apikey-status" style="width:22px;height:22px;border-radius:6px;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;align-self:center">?</div>
           </div>
           <div style="font-size:10px;color:var(--g400);margin-top:4px" class="nav-item-txt">
-            <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--b600);text-decoration:none">Obtener key gratis ↗</a> · 500 req/día
+            <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--b600);text-decoration:none">Obtener key gratis ↗</a>
           </div>
+          <!-- Selector de modelo -->
+          <select id="sb-model-select" class="fi" style="font-size:11px;padding:4px 6px;margin-top:6px;width:100%" class="nav-item-txt"
+            onchange="localStorage.setItem('als_gemini_model',this.value);showToast('Modelo: '+this.value)">
+            <option value="gemini-2.0-flash">2.0 Flash (recomendado)</option>
+            <option value="gemini-1.5-flash">1.5 Flash (alternativo)</option>
+            <option value="gemini-1.5-flash-8b">1.5 Flash 8B (más límites)</option>
+            <option value="gemini-2.0-flash-lite">2.0 Flash Lite</option>
+          </select>
         </div>
         <!-- User -->
         <div class="sb-user" onclick="goHome()">
@@ -762,7 +770,12 @@ const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 // ── Configuración IA ─────────────────────────────────────────
 // Usando Google Gemini API (plan gratuito: 500 req/día sin tarjeta)
 // Obtén tu API key gratis en: https://aistudio.google.com/apikey
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL_DEFAULT = 'gemini-2.0-flash';
+// Usar el modelo guardado por el usuario o el por defecto
+function getGeminiModel(){
+  return localStorage.getItem('als_gemini_model') || GEMINI_MODEL_DEFAULT;
+}
+const GEMINI_MODEL = 'gemini-2.0-flash'; // Usado como fallback
 // La API key se guarda en localStorage para que el usuario la configure
 // NOTA: Gemini sí permite llamadas directas desde el navegador (CORS abierto)
 // La API key se guarda en Supabase para acceso multi-dispositivo
@@ -861,6 +874,12 @@ async function saveGeminiKey(val){
   }
 }
 async function initApiKeyUI(){
+  // Restaurar modelo seleccionado
+  const savedModel = localStorage.getItem('als_gemini_model');
+  const sel = document.getElementById('sb-model-select');
+  if(sel && savedModel){
+    for(const opt of sel.options) if(opt.value === savedModel) opt.selected = true;
+  }
   // Primero cargar desde localStorage (rápido)
   const localKey = localStorage.getItem('als_gemini_key');
   const inp = document.getElementById('sb-apikey-input');
@@ -981,12 +1000,13 @@ async function clasificar(){
   btn.innerHTML = 'Clasificar';
 }
 
-async function llamarGeminiAPI(prompt){
+async function llamarGeminiAPI(prompt, modelOverride){
   const key = getGeminiKey();
-  if(!key) throw new Error('🔑 Configura tu API key de Gemini en el panel de configuración (⚙️ abajo en el sidebar)');
+  if(!key) throw new Error('🔑 Configura tu API key de Gemini en el panel ⚙️ del sidebar izquierdo');
 
+  const modelo = modelOverride || getGeminiModel();
   // Gemini API — llamada directa desde navegador (CORS abierto, sin proxy)
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${key}`;
 
   const resp = await fetch(url, {
     method: 'POST',
@@ -1004,12 +1024,17 @@ async function llamarGeminiAPI(prompt){
   const data = await resp.json();
 
   if(!resp.ok || data.error) {
-    const msg = data?.error?.message || 'Error desconocido';
-    if(msg.includes('API_KEY_INVALID') || msg.includes('API key not valid'))
-      throw new Error('🔑 API key de Gemini no válida. Compruébala en aistudio.google.com/apikey');
-    if(msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota'))
-      throw new Error('⏳ Límite diario de Gemini alcanzado (500 req/día gratis). Reinicia mañana o usa otra key.');
-    throw new Error('Error Gemini API: ' + msg);
+    const _m = data?.error?.message || 'Error desconocido';
+    const _s = data?.error?.status || '';
+    if(_s === 'RESOURCE_EXHAUSTED' || _m.includes('RESOURCE_EXHAUSTED')){
+      if(_m.includes('minute')) throw new Error('⏳ Límite por minuto Gemini. Espera 60s e inténtalo de nuevo.');
+      throw new Error('⏳ Cuota Gemini agotada. Detalle: '+_m.substring(0,120)+'. Cambia modelo en ⚙️ sidebar o espera mañana.');
+    }
+    if(_s === 'PERMISSION_DENIED' || _m.includes('API_KEY_INVALID') || _m.includes('not valid'))
+      throw new Error('🔑 API key de Gemini no válida. Ve a aistudio.google.com/apikey');
+    if(_s === 'NOT_FOUND')
+      throw new Error('❌ Modelo Gemini no encontrado: '+_m.substring(0,80));
+    throw new Error('Error Gemini ['+_s+']: '+_m.substring(0,150));
   }
 
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -1363,7 +1388,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
   // Gemini API — llamada directa desde navegador sin proxy
   const _gkey = getGeminiKey();
   if(!_gkey) throw new Error('🔑 Configura tu API key de Gemini en ⚙️ Configuración API del sidebar');
-  const _gurl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${_gkey}`;
+  const _gurl = `https://generativelanguage.googleapis.com/v1beta/models/${getGeminiModel()}:generateContent?key=${_gkey}`;
   // Convertir messages Anthropic → parts Gemini
   const _parts = [];
   for(const m of messages){
@@ -1836,7 +1861,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
   // Gemini API — llamada directa desde navegador sin proxy
   const _gkey = getGeminiKey();
   if(!_gkey) throw new Error('🔑 Configura tu API key de Gemini en ⚙️ Configuración API del sidebar');
-  const _gurl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${_gkey}`;
+  const _gurl = `https://generativelanguage.googleapis.com/v1beta/models/${getGeminiModel()}:generateContent?key=${_gkey}`;
   // Convertir messages Anthropic → parts Gemini
   const _parts = [];
   for(const m of messages){
