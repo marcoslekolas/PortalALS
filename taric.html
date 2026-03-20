@@ -762,11 +762,40 @@ const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 // ── Configuración IA ─────────────────────────────────────────
 // Usando Google Gemini API (plan gratuito: 500 req/día sin tarjeta)
 // Obtén tu API key gratis en: https://aistudio.google.com/apikey
-const GEMINI_MODEL = 'gemini-2.5-flash-preview-05-20';
+const GEMINI_MODEL = 'gemini-2.0-flash';
 // La API key se guarda en localStorage para que el usuario la configure
 // NOTA: Gemini sí permite llamadas directas desde el navegador (CORS abierto)
+// La API key se guarda en Supabase para acceso multi-dispositivo
+// Y también en localStorage como caché rápido
+let _geminiKeyCache = null;
+
 function getGeminiKey(){
-  return localStorage.getItem('als_gemini_key') || '';
+  return _geminiKeyCache || localStorage.getItem('als_gemini_key') || '';
+}
+
+async function loadGeminiKeyFromSupabase(){
+  if(!sb) return;
+  try {
+    const {data} = await sb.from('als_config')
+      .select('valor').eq('clave','gemini_api_key').single();
+    if(data?.valor){
+      _geminiKeyCache = data.valor;
+      localStorage.setItem('als_gemini_key', data.valor);
+      // Actualizar UI
+      const inp = document.getElementById('sb-apikey-input');
+      const st = document.getElementById('sb-apikey-status');
+      if(inp) inp.value = data.valor;
+      if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
+    }
+  } catch(e){ /* tabla puede no existir aún */ }
+}
+
+async function saveGeminiKeyToSupabase(key){
+  if(!sb || !key) return;
+  try {
+    // Upsert en tabla de config
+    await sb.from('als_config').upsert({clave:'gemini_api_key', valor:key}, {onConflict:'clave'});
+  } catch(e){ console.warn('No se pudo guardar en Supabase:', e.message); }
 }
 
 let sb = null;
@@ -815,26 +844,34 @@ function nav(view, el){
 }
 
 // ── Dark mode ─────────────────────────────────────────────────
-function saveGeminiKey(val){
+async function saveGeminiKey(val){
   if(val && val.length > 10){
+    _geminiKeyCache = val;
     localStorage.setItem('als_gemini_key', val);
+    // Guardar en Supabase para acceso multi-dispositivo
+    await saveGeminiKeyToSupabase(val);
     const st = document.getElementById('sb-apikey-status');
     if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
-    showToast('✅ API key Gemini guardada');
-  } else {
+    showToast('✅ API key guardada — disponible en todos los dispositivos');
+  } else if(val === '') {
+    _geminiKeyCache = null;
     localStorage.removeItem('als_gemini_key');
     const st = document.getElementById('sb-apikey-status');
     if(st){ st.textContent='?'; st.style.background='var(--g100)'; }
   }
 }
-function initApiKeyUI(){
-  const key = getGeminiKey();
+async function initApiKeyUI(){
+  // Primero cargar desde localStorage (rápido)
+  const localKey = localStorage.getItem('als_gemini_key');
   const inp = document.getElementById('sb-apikey-input');
   const st = document.getElementById('sb-apikey-status');
-  if(inp && key){
-    inp.value = key;
+  if(inp && localKey){
+    inp.value = localKey;
+    _geminiKeyCache = localKey;
     if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
   }
+  // Luego sincronizar desde Supabase (puede tener una key más reciente)
+  await loadGeminiKeyFromSupabase();
 }
 
 function toggleDarkMode(){
