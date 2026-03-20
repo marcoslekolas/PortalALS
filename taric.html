@@ -510,6 +510,22 @@ textarea.fi{resize:vertical;min-height:80px}
       </div>
 
       <div class="sb-bot">
+        <!-- Config Gemini API Key -->
+        <div id="sb-apikey-wrap" style="padding:8px 10px;border-bottom:1px solid var(--g100)">
+          <div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;display:flex;align-items:center;gap:4px">⚙️ <span class="nav-item-txt">Gemini API Key</span></div>
+          <div style="display:flex;gap:4px" class="nav-item-txt">
+            <input id="sb-apikey-input" class="fi" type="password"
+              placeholder="AIza..."
+              style="font-size:11px;padding:5px 8px;flex:1;min-width:0"
+              oninput="saveGeminiKey(this.value)"
+              title="Obtén tu API key gratis en aistudio.google.com/apikey">
+            <div id="sb-apikey-status" style="width:22px;height:22px;border-radius:6px;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;align-self:center">?</div>
+          </div>
+          <div style="font-size:10px;color:var(--g400);margin-top:4px" class="nav-item-txt">
+            <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--b600);text-decoration:none">Obtener key gratis ↗</a> · 500 req/día
+          </div>
+        </div>
+        <!-- User -->
         <div class="sb-user" onclick="goHome()">
           <div class="sb-av" id="sb-av" style="background:linear-gradient(135deg,#0f2d6e,#312e81);font-family:monospace;font-size:10px;letter-spacing:.5px">CW</div>
           <div style="min-width:0;overflow:hidden">
@@ -743,10 +759,15 @@ textarea.fi{resize:vertical;min-height:80px}
 // ── Config ────────────────────────────────────────────────────
 const SB_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
-const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
-// Proxy Supabase Edge Function para evitar CORS (api.anthropic.com no permite
-// llamadas directas desde navegador). El proxy reenvía a Anthropic server-side.
-const CLAUDE_PROXY = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/claude-proxy';
+// ── Configuración IA ─────────────────────────────────────────
+// Usando Google Gemini API (plan gratuito: 500 req/día sin tarjeta)
+// Obtén tu API key gratis en: https://aistudio.google.com/apikey
+const GEMINI_MODEL = 'gemini-2.5-flash-preview-05-20';
+// La API key se guarda en localStorage para que el usuario la configure
+// NOTA: Gemini sí permite llamadas directas desde el navegador (CORS abierto)
+function getGeminiKey(){
+  return localStorage.getItem('als_gemini_key') || '';
+}
 
 let sb = null;
 let CV = 'busqueda';
@@ -757,6 +778,7 @@ let ultimaClasificacion = null;
 window.addEventListener('load', function(){
   initDarkMode();
   initSidebar();
+  initApiKeyUI();
   try { sb = supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:false}}); } catch(e){}
   initUser();
   setupDropZone();
@@ -793,6 +815,28 @@ function nav(view, el){
 }
 
 // ── Dark mode ─────────────────────────────────────────────────
+function saveGeminiKey(val){
+  if(val && val.length > 10){
+    localStorage.setItem('als_gemini_key', val);
+    const st = document.getElementById('sb-apikey-status');
+    if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
+    showToast('✅ API key Gemini guardada');
+  } else {
+    localStorage.removeItem('als_gemini_key');
+    const st = document.getElementById('sb-apikey-status');
+    if(st){ st.textContent='?'; st.style.background='var(--g100)'; }
+  }
+}
+function initApiKeyUI(){
+  const key = getGeminiKey();
+  const inp = document.getElementById('sb-apikey-input');
+  const st = document.getElementById('sb-apikey-status');
+  if(inp && key){
+    inp.value = key;
+    if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
+  }
+}
+
 function toggleDarkMode(){
   const isDark = document.documentElement.classList.toggle('dark');
   localStorage.setItem('als_dark', isDark ? '1' : '0');
@@ -900,35 +944,45 @@ async function clasificar(){
   btn.innerHTML = 'Clasificar';
 }
 
-async function llamarClaudeAPI(descripcion){
-  const prompt = buildPromptClasificacion(descripcion);
+async function llamarGeminiAPI(prompt){
+  const key = getGeminiKey();
+  if(!key) throw new Error('🔑 Configura tu API key de Gemini en el panel de configuración (⚙️ abajo en el sidebar)');
 
-  const resp = await fetch(CLAUDE_PROXY, {
+  // Gemini API — llamada directa desde navegador (CORS abierto, sin proxy)
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+
+  const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }]
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 2048,
+        responseMimeType: 'application/json'
+      }
     })
   });
 
   const data = await resp.json();
 
-  // Manejar errores de Anthropic con mensajes claros
-  if(!resp.ok || data.type === 'error') {
-    const msg = data?.error?.message || data?.message || 'Error desconocido';
-    if(msg.includes('credit balance') || msg.includes('too low')) {
-      throw new Error('💳 Saldo insuficiente en la cuenta Anthropic API. Recarga créditos en console.anthropic.com/settings/billing');
-    }
-    if(msg.includes('API key') || msg.includes('authentication')) {
-      throw new Error('🔑 API key de Anthropic no válida o no configurada en el proxy');
-    }
-    throw new Error('Error Anthropic API: ' + msg);
+  if(!resp.ok || data.error) {
+    const msg = data?.error?.message || 'Error desconocido';
+    if(msg.includes('API_KEY_INVALID') || msg.includes('API key not valid'))
+      throw new Error('🔑 API key de Gemini no válida. Compruébala en aistudio.google.com/apikey');
+    if(msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota'))
+      throw new Error('⏳ Límite diario de Gemini alcanzado (500 req/día gratis). Reinicia mañana o usa otra key.');
+    throw new Error('Error Gemini API: ' + msg);
   }
 
-  const text = data.content.map(b => b.text || '').join('');
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if(!text) throw new Error('Gemini no devolvió respuesta. Intenta de nuevo.');
   return parseClaudeResponse(text);
+}
+
+// Mantener nombre para compatibilidad
+async function llamarClaudeAPI(descripcion){
+  return llamarGeminiAPI(buildPromptClasificacion(descripcion));
 }
 
 function buildPromptClasificacion(descripcion){
@@ -1269,24 +1323,33 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
     ]
   }];
 
-  const resp = await fetch(CLAUDE_PROXY, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 1000,
-      messages
-    })
-  });
-
-  const data = await resp.json();
-  if(!resp.ok || data.type === 'error') {
-    const msg = data?.error?.message || data?.message || 'Error';
-    if(msg.includes('credit balance') || msg.includes('too low'))
-      throw new Error('💳 Saldo insuficiente en la cuenta Anthropic API');
-    throw new Error('Error API: ' + msg);
+  // Gemini API — llamada directa desde navegador sin proxy
+  const _gkey = getGeminiKey();
+  if(!_gkey) throw new Error('🔑 Configura tu API key de Gemini en ⚙️ Configuración API del sidebar');
+  const _gurl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${_gkey}`;
+  // Convertir messages Anthropic → parts Gemini
+  const _parts = [];
+  for(const m of messages){
+    if(Array.isArray(m.content)){
+      for(const p of m.content){
+        if(p.type==='document'||p.type==='image') _parts.push({inlineData:{mimeType:p.source.media_type,data:p.source.data}});
+        else if(p.type==='text') _parts.push({text:p.text});
+      }
+    } else _parts.push({text:String(m.content)});
   }
-  const text = data.content.map(b=>b.text||'').join('');
+  const resp = await fetch(_gurl, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({contents:[{parts:_parts}],generationConfig:{temperature:0.1,maxOutputTokens:2048,responseMimeType:'application/json'}})
+  });
+  const data = await resp.json();
+  if(!resp.ok || data.error){
+    const _em = data?.error?.message||'Error';
+    if(_em.includes('RESOURCE_EXHAUSTED')) throw new Error('⏳ Límite diario Gemini alcanzado (500/día gratis). Reinicia mañana.');
+    if(_em.includes('API_KEY_INVALID')||_em.includes('API key')) throw new Error('🔑 API key Gemini no válida. Compruébala en aistudio.google.com');
+    throw new Error('Error Gemini API: '+_em);
+  }
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
   const parsed = parseClaudeResponse(text);
   return parsed;
 }
@@ -1733,19 +1796,33 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
     ]
   }];
 
-  const resp = await fetch(CLAUDE_PROXY, {
+  // Gemini API — llamada directa desde navegador sin proxy
+  const _gkey = getGeminiKey();
+  if(!_gkey) throw new Error('🔑 Configura tu API key de Gemini en ⚙️ Configuración API del sidebar');
+  const _gurl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${_gkey}`;
+  // Convertir messages Anthropic → parts Gemini
+  const _parts = [];
+  for(const m of messages){
+    if(Array.isArray(m.content)){
+      for(const p of m.content){
+        if(p.type==='document'||p.type==='image') _parts.push({inlineData:{mimeType:p.source.media_type,data:p.source.data}});
+        else if(p.type==='text') _parts.push({text:p.text});
+      }
+    } else _parts.push({text:String(m.content)});
+  }
+  const resp = await fetch(_gurl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1000, messages })
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({contents:[{parts:_parts}],generationConfig:{temperature:0.1,maxOutputTokens:2048,responseMimeType:'application/json'}})
   });
   const data = await resp.json();
-  if(!resp.ok || data.type === 'error') {
-    const msg = data?.error?.message || data?.message || 'Error';
-    if(msg.includes('credit balance') || msg.includes('too low'))
-      throw new Error('💳 Saldo insuficiente en la cuenta Anthropic API');
-    throw new Error('Error API: ' + msg);
+  if(!resp.ok || data.error){
+    const _em = data?.error?.message||'Error';
+    if(_em.includes('RESOURCE_EXHAUSTED')) throw new Error('⏳ Límite diario Gemini alcanzado (500/día gratis). Reinicia mañana.');
+    if(_em.includes('API_KEY_INVALID')||_em.includes('API key')) throw new Error('🔑 API key Gemini no válida. Compruébala en aistudio.google.com');
+    throw new Error('Error Gemini API: '+_em);
   }
-  const text = data.content.map(b=>b.text||'').join('');
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
   return parseClaudeResponse(text);
 }
 
