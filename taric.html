@@ -913,10 +913,21 @@ async function llamarClaudeAPI(descripcion){
     })
   });
 
-  if(!resp.ok) throw new Error('API error: ' + resp.status);
   const data = await resp.json();
-  const text = data.content.map(b => b.text || '').join('');
 
+  // Manejar errores de Anthropic con mensajes claros
+  if(!resp.ok || data.type === 'error') {
+    const msg = data?.error?.message || data?.message || 'Error desconocido';
+    if(msg.includes('credit balance') || msg.includes('too low')) {
+      throw new Error('💳 Saldo insuficiente en la cuenta Anthropic API. Recarga créditos en console.anthropic.com/settings/billing');
+    }
+    if(msg.includes('API key') || msg.includes('authentication')) {
+      throw new Error('🔑 API key de Anthropic no válida o no configurada en el proxy');
+    }
+    throw new Error('Error Anthropic API: ' + msg);
+  }
+
+  const text = data.content.map(b => b.text || '').join('');
   return parseClaudeResponse(text);
 }
 
@@ -1268,8 +1279,13 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
     })
   });
 
-  if(!resp.ok) throw new Error('API error ' + resp.status);
   const data = await resp.json();
+  if(!resp.ok || data.type === 'error') {
+    const msg = data?.error?.message || data?.message || 'Error';
+    if(msg.includes('credit balance') || msg.includes('too low'))
+      throw new Error('💳 Saldo insuficiente en la cuenta Anthropic API');
+    throw new Error('Error API: ' + msg);
+  }
   const text = data.content.map(b=>b.text||'').join('');
   const parsed = parseClaudeResponse(text);
   return parsed;
@@ -1722,8 +1738,13 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1000, messages })
   });
-  if(!resp.ok) throw new Error('API error '+resp.status);
   const data = await resp.json();
+  if(!resp.ok || data.type === 'error') {
+    const msg = data?.error?.message || data?.message || 'Error';
+    if(msg.includes('credit balance') || msg.includes('too low'))
+      throw new Error('💳 Saldo insuficiente en la cuenta Anthropic API');
+    throw new Error('Error API: ' + msg);
+  }
   const text = data.content.map(b=>b.text||'').join('');
   return parseClaudeResponse(text);
 }
