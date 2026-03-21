@@ -510,27 +510,29 @@ textarea.fi{resize:vertical;min-height:80px}
       </div>
 
       <div class="sb-bot">
-        <!-- Config Gemini API Key -->
+        <!-- Config OpenRouter API Key -->
         <div id="sb-apikey-wrap" style="padding:8px 10px;border-bottom:1px solid var(--g100)">
-          <div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;display:flex;align-items:center;gap:4px">⚙️ <span class="nav-item-txt">Gemini API Key</span></div>
+          <div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;display:flex;align-items:center;gap:4px">⚙️ <span class="nav-item-txt">OpenRouter API Key</span></div>
           <div style="display:flex;gap:4px" class="nav-item-txt">
             <input id="sb-apikey-input" class="fi" type="password"
-              placeholder="AIza..."
+              placeholder="sk-or-v1-..."
               style="font-size:11px;padding:5px 8px;flex:1;min-width:0"
               oninput="saveGeminiKey(this.value)"
-              title="Obtén tu API key gratis en aistudio.google.com/apikey">
+              title="Obtén tu API key gratis en openrouter.ai/keys">
             <div id="sb-apikey-status" style="width:22px;height:22px;border-radius:6px;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;align-self:center">?</div>
           </div>
           <div style="font-size:10px;color:var(--g400);margin-top:4px" class="nav-item-txt">
-            <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--b600);text-decoration:none">Obtener key gratis ↗</a>
+            <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--b600);text-decoration:none">Obtener key gratis ↗</a>
+            <span style="margin-left:4px;color:var(--gr600)">· Qwen gratis, sin límite diario</span>
           </div>
           <!-- Selector de modelo -->
           <select id="sb-model-select" class="fi" style="font-size:11px;padding:4px 6px;margin-top:6px;width:100%" class="nav-item-txt"
-            onchange="localStorage.setItem('als_gemini_model',this.value);showToast('Modelo: '+this.value)">
-            <option value="gemini-2.5-flash">2.5 Flash ✅ (recomendado)</option>
-            <option value="gemini-flash-latest">Flash Latest ✅</option>
-            <option value="gemini-2.5-flash-lite">2.5 Flash Lite ✅</option>
-            <option value="gemini-2.0-flash">2.0 Flash (cuota limitada)</option>
+            onchange="guardarModeloSupabase(this.value);localStorage.setItem('als_gemini_model',this.value);showToast('Modelo: '+this.value.split('/').pop())">
+            <option value="qwen/qwen2.5-vl-72b-instruct:free">Qwen2.5-VL 72B 🏆 (recomendado)</option>
+            <option value="qwen/qwen2.5-vl-32b-instruct:free">Qwen2.5-VL 32B ✅</option>
+            <option value="qwen/qwen3-32b:free">Qwen3 32B (solo texto)</option>
+            <option value="qwen/qwen3-235b-a22b:free">Qwen3 235B MoE ✅</option>
+            <option value="meta-llama/llama-4-maverick:free">Llama 4 Maverick ✅</option>
           </select>
         </div>
         <!-- User -->
@@ -798,18 +800,21 @@ textarea.fi{resize:vertical;min-height:80px}
 const SB_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 // ── Configuración IA ─────────────────────────────────────────
-// Usando Google Gemini API (plan gratuito: 500 req/día sin tarjeta)
-// Obtén tu API key gratis en: https://aistudio.google.com/apikey
-const GEMINI_MODEL_DEFAULT = 'gemini-2.5-flash'; // Verificado funcional
-// Usar el modelo guardado por el usuario o el por defecto
+// Usando OpenRouter — gateway gratuito para modelos Qwen, Llama, etc.
+// API compatible con OpenAI. CORS abierto desde navegador.
+// Obtén tu API key gratis en: https://openrouter.ai/keys
+// Modelos Qwen VL (visión+OCR) totalmente gratuitos sin límite diario absurdo
+const OR_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+const OR_MODEL_DEFAULT = 'qwen/qwen2.5-vl-72b-instruct:free';
+// Modelo de fallback para visión si el principal tiene rate limit
+const OR_MODEL_VISION_FALLBACK = 'qwen/qwen2.5-vl-32b-instruct:free';
+// Modelo para texto puro (clasificación TARIC sin imagen)
+const OR_MODEL_TEXT = 'qwen/qwen3-32b:free';
+
 function getGeminiModel(){
-  return localStorage.getItem('als_gemini_model') || GEMINI_MODEL_DEFAULT;
+  return localStorage.getItem('als_gemini_model') || OR_MODEL_DEFAULT;
 }
-const GEMINI_MODEL = 'gemini-2.5-flash'; // Fallback
-// La API key se guarda en localStorage para que el usuario la configure
-// NOTA: Gemini sí permite llamadas directas desde el navegador (CORS abierto)
-// La API key se guarda en Supabase para acceso multi-dispositivo
-// Y también en localStorage como caché rápido
+const GEMINI_MODEL = OR_MODEL_DEFAULT; // alias legacy
 let _geminiKeyCache = null;
 
 function getGeminiKey(){
@@ -819,7 +824,6 @@ function getGeminiKey(){
 async function loadGeminiKeyFromSupabase(){
   if(!sb) return;
   try {
-    // Cargar key y modelo en paralelo
     const [{data:dk},{data:dm}] = await Promise.all([
       sb.from('als_config').select('valor').eq('clave','gemini_api_key').single(),
       sb.from('als_config').select('valor').eq('clave','gemini_model').single()
@@ -848,9 +852,82 @@ async function guardarModeloSupabase(model){
 async function saveGeminiKeyToSupabase(key){
   if(!sb || !key) return;
   try {
-    // Upsert en tabla de config
     await sb.from('als_config').upsert({clave:'gemini_api_key', valor:key}, {onConflict:'clave'});
   } catch(e){ console.warn('No se pudo guardar en Supabase:', e.message); }
+}
+
+// ── Función central OpenRouter ────────────────────────────────
+// Reemplaza a Gemini. Misma firma, compatible OpenAI.
+async function _callOpenRouter(messages, modelOverride, forceJson){
+  const key = getGeminiKey();
+  if(!key) throw new Error('🔑 Configura tu API key de OpenRouter en ⚙️ del sidebar izquierdo. Gratis en openrouter.ai/keys');
+
+  const model = modelOverride || getGeminiModel();
+  const body = {
+    model,
+    messages,
+    temperature: 0.1,
+    max_tokens: 8192,
+  };
+  if(forceJson) body.response_format = { type: 'json_object' };
+
+  const resp = await fetch(OR_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+      'HTTP-Referer': 'https://marcoslekolas.github.io/PortalALS/',
+      'X-Title': 'Customs Way TARIC'
+    },
+    body: JSON.stringify(body)
+  });
+
+  const data = await resp.json();
+
+  if(!resp.ok || data.error){
+    const _m = data?.error?.message || JSON.stringify(data?.error) || 'Error desconocido';
+    const _code = data?.error?.code || resp.status;
+    if(_code === 429 || _m.includes('rate') || _m.includes('quota') || _m.includes('limit')){
+      throw new Error('RATE_LIMIT:' + model + ':' + _m.substring(0,100));
+    }
+    if(_code === 401 || _m.includes('key') || _m.includes('auth') || _m.includes('401')){
+      throw new Error('🔑 API key de OpenRouter no válida. Compruébala en openrouter.ai/keys');
+    }
+    if(_m.includes('credit') || _m.includes('balance')){
+      throw new Error('💳 Sin créditos en OpenRouter. Los modelos :free son gratuitos, verifica que usas uno de ellos.');
+    }
+    throw new Error('Error OpenRouter [' + _code + ']: ' + _m.substring(0,150));
+  }
+
+  const text = data?.choices?.[0]?.message?.content || '';
+  if(!text) throw new Error('OpenRouter no devolvió respuesta. Intenta de nuevo.');
+  return text;
+}
+
+// ── Llamada con fallback automático de modelo ─────────────────
+async function _callOpenRouterWithFallback(messages, preferVision){
+  const primary = getGeminiModel();
+  const fallbacks = preferVision
+    ? [primary, OR_MODEL_VISION_FALLBACK, 'meta-llama/llama-4-maverick:free']
+    : [primary, OR_MODEL_TEXT, 'qwen/qwen3-235b-a22b:free'];
+
+  const tried = new Set();
+  for(const model of fallbacks){
+    if(tried.has(model)) continue;
+    tried.add(model);
+    try {
+      const result = await _callOpenRouter(messages, model, true);
+      if(model !== primary) showToast('⚡ Usando modelo alternativo: ' + model.split('/').pop());
+      return result;
+    } catch(e){
+      if(e.message.startsWith('RATE_LIMIT:')){
+        console.warn('Rate limit en', model, '— probando siguiente...');
+        continue; // intenta el siguiente
+      }
+      throw e; // error real, no rate limit
+    }
+  }
+  throw new Error('⏳ Todos los modelos tienen rate limit ahora mismo. Espera unos segundos e inténtalo de nuevo.');
 }
 
 let sb = null;
@@ -1050,44 +1127,19 @@ async function clasificar(){
 
 async function llamarGeminiAPI(prompt, modelOverride){
   const key = getGeminiKey();
-  if(!key) throw new Error('🔑 Configura tu API key de Gemini en el panel ⚙️ del sidebar izquierdo');
+  if(!key) throw new Error('🔑 Configura tu API key de OpenRouter en el panel ⚙️ del sidebar izquierdo. Gratis en openrouter.ai/keys');
 
-  const modelo = modelOverride || getGeminiModel();
-  // Gemini API — llamada directa desde navegador (CORS abierto, sin proxy)
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${key}`;
-
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 8192,
-        responseMimeType: 'application/json'
-      }
-    })
-  });
-
-  const data = await resp.json();
-
-  if(!resp.ok || data.error) {
-    const _m = data?.error?.message || 'Error desconocido';
-    const _s = data?.error?.status || '';
-    if(_s === 'RESOURCE_EXHAUSTED' || _m.includes('RESOURCE_EXHAUSTED')){
-      if(_m.includes('minute')) throw new Error('⏳ Límite por minuto Gemini. Espera 60s e inténtalo de nuevo.');
-      throw new Error('⏳ Cuota Gemini agotada. Detalle: '+_m.substring(0,120)+'. Cambia modelo en ⚙️ sidebar o espera mañana.');
+  const messages = [{ role: 'user', content: prompt }];
+  try {
+    const text = await _callOpenRouterWithFallback(messages, false);
+    return parseClaudeResponse(text);
+  } catch(e) {
+    // Mensajes de error amigables
+    if(e.message.includes('rate') || e.message.includes('limit') || e.message.includes('RATE')){
+      throw new Error('⏳ Rate limit temporal. Espera unos segundos e inténtalo de nuevo.');
     }
-    if(_s === 'PERMISSION_DENIED' || _m.includes('API_KEY_INVALID') || _m.includes('not valid'))
-      throw new Error('🔑 API key de Gemini no válida. Ve a aistudio.google.com/apikey');
-    if(_s === 'NOT_FOUND')
-      throw new Error('❌ Modelo Gemini no encontrado: '+_m.substring(0,80));
-    throw new Error('Error Gemini ['+_s+']: '+_m.substring(0,150));
+    throw e;
   }
-
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  if(!text) throw new Error('Gemini no devolvió respuesta. Intenta de nuevo.');
-  return parseClaudeResponse(text);
 }
 
 // Mantener nombre para compatibilidad
@@ -1482,71 +1534,67 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
   ]
 }`;
 
-  // Construir mensaje para Gemini:
-  // - Si tenemos base64 de imagen (PDF renderizado o imagen directa): Vision OCR
-  // - Si solo tenemos texto: modo texto
+  // Construir mensaje OpenAI-compatible con imagen base64
   let messages;
   if(base64 && base64.length > 100){
-    // Modo Vision: imagen JPEG → Gemini OCR + clasificación
-    // Funciona para PDFs escaneados, fotografías, todo tipo de documentos
+    // Modo Vision: imagen JPEG → Qwen-VL OCR + clasificación
     const imgType = (mediaType === 'application/pdf') ? 'image/jpeg' : (mediaType || 'image/jpeg');
+    const cleanType = imgType.startsWith('image/') ? imgType : 'image/jpeg';
     messages = [{
       role: 'user',
       content: [
-        { inlineData: { mimeType: imgType.startsWith('image/') ? imgType : 'image/jpeg', data: base64 } },
-        { text: prompt + '\n\nANALIZA la imagen adjunta con OCR meticuloso. Lee TODOS los artículos/líneas de la factura aunque la imagen sea de baja calidad o escaneo. Extrae cada producto con su descripción EXACTA, cantidad y precio.' }
+        {
+          type: 'image_url',
+          image_url: { url: `data:${cleanType};base64,${base64}` }
+        },
+        {
+          type: 'text',
+          text: prompt + '\n\nANALIZA la imagen adjunta con OCR meticuloso. Lee TODOS los artículos/líneas de la factura aunque la imagen sea de baja calidad o escaneo. Extrae cada producto con su descripción EXACTA, cantidad y precio.'
+        }
       ]
     }];
   } else if(textoPlano && textoPlano.length > 50){
-    // Fallback texto
-    messages = [{
-      role: 'user',
-      content: [{ text: prompt + '\n\nCONTENIDO:\n' + textoPlano }]
-    }];
+    // Fallback texto puro
+    messages = [{ role: 'user', content: prompt + '\n\nCONTENIDO DEL DOCUMENTO:\n' + textoPlano }];
   } else {
     throw new Error('No se pudo procesar el documento. Prueba a subir como imagen JPG/PNG.');
   }
 
-  // Gemini API — llamada directa desde navegador sin proxy
-  const _gkey = getGeminiKey();
-  if(!_gkey) throw new Error('🔑 Configura tu API key de Gemini en ⚙️ Configuración API del sidebar');
-  const _gurl = `https://generativelanguage.googleapis.com/v1beta/models/${getGeminiModel()}:generateContent?key=${_gkey}`;
-  // Convertir messages → parts Gemini
-  // Soporta: formato Anthropic (type+source), formato Gemini nativo (inlineData/text), texto plano
-  const _parts = [];
-  for(const m of messages){
-    const content = m.content || m;
-    const items = Array.isArray(content) ? content : [content];
-    for(const p of items){
-      if(p.inlineData){
-        // Ya es formato Gemini nativo (imagen renderizada de PDF)
-        _parts.push(p);
-      } else if(p.text !== undefined){
-        // Texto plano formato Gemini
-        _parts.push({text: p.text});
-      } else if(p.type === 'document' || p.type === 'image'){
-        // Formato Anthropic legacy
-        _parts.push({inlineData:{mimeType:p.source.media_type, data:p.source.data}});
-      } else if(typeof p === 'string'){
-        _parts.push({text: p});
+  // Llamar OpenRouter con fallback automático
+  // Si el modelo principal no soporta visión (texto-only), usa modelo VL
+  const primaryModel = getGeminiModel();
+  const isVisionModel = primaryModel.includes('vl') || primaryModel.includes('vision') ||
+    primaryModel.includes('maverick') || primaryModel.includes('scout') ||
+    primaryModel.includes('llama-4') || primaryModel.includes('mistral-small-3');
+
+  // Si el modelo seleccionado no es VL y tenemos imagen, forzar modelo VL
+  const modelToUse = (base64 && !isVisionModel) ? OR_MODEL_VISION_FALLBACK : primaryModel;
+  if(base64 && !isVisionModel){
+    showToast('ℹ️ Usando Qwen-VL para OCR (el modelo seleccionado no soporta visión)');
+  }
+
+  const visionFallbacks = [modelToUse, OR_MODEL_VISION_FALLBACK, 'meta-llama/llama-4-maverick:free'];
+  const tried = new Set();
+  let lastErr;
+  for(const model of visionFallbacks){
+    if(tried.has(model)) continue;
+    tried.add(model);
+    try {
+      const key = getGeminiKey();
+      if(!key) throw new Error('🔑 Configura tu API key de OpenRouter en ⚙️ del sidebar. Gratis en openrouter.ai/keys');
+      const text = await _callOpenRouter(messages, model, true);
+      if(model !== primaryModel) showToast('⚡ OCR con: ' + model.split('/').pop());
+      return parseClaudeResponse(text);
+    } catch(e){
+      if(e.message.startsWith('RATE_LIMIT:')){
+        lastErr = e;
+        console.warn('Rate limit OCR en', model);
+        continue;
       }
+      throw e;
     }
   }
-  const resp = await fetch(_gurl, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({contents:[{parts:_parts}],generationConfig:{temperature:0.1,maxOutputTokens:8192,responseMimeType:'application/json'}})
-  });
-  const data = await resp.json();
-  if(!resp.ok || data.error){
-    const _em = data?.error?.message||'Error';
-    if(_em.includes('RESOURCE_EXHAUSTED')) throw new Error('⏳ Límite diario Gemini alcanzado (500/día gratis). Reinicia mañana.');
-    if(_em.includes('API_KEY_INVALID')||_em.includes('API key')) throw new Error('🔑 API key Gemini no válida. Compruébala en aistudio.google.com');
-    throw new Error('Error Gemini API: '+_em);
-  }
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  const parsed = parseClaudeResponse(text);
-  return parsed;
+  throw lastErr || new Error('⏳ Rate limit en todos los modelos VL. Espera unos segundos.');
 }
 
 async function renderLineasFactura(data, filename){
@@ -2236,56 +2284,44 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
   "advertencias": ["advertencia sobre datos que no se han podido inferir"]
 }`;
 
+  // Construir mensaje OpenAI-compatible con visión
+  const imgType = (mediaType === 'application/pdf') ? 'image/jpeg' : (mediaType || 'image/jpeg');
+  const cleanType = imgType.startsWith('image/') ? imgType : 'image/jpeg';
   const messages = [{
     role: 'user',
     content: [
       {
-        type: mediaType === 'application/pdf' ? 'document' : 'image',
-        source: { type: 'base64', media_type: mediaType, data: base64 }
+        type: 'image_url',
+        image_url: { url: `data:${cleanType};base64,${base64}` }
       },
       { type: 'text', text: prompt }
     ]
   }];
 
-  // Gemini API — llamada directa desde navegador sin proxy
-  const _gkey = getGeminiKey();
-  if(!_gkey) throw new Error('🔑 Configura tu API key de Gemini en ⚙️ Configuración API del sidebar');
-  const _gurl = `https://generativelanguage.googleapis.com/v1beta/models/${getGeminiModel()}:generateContent?key=${_gkey}`;
-  // Convertir messages → parts Gemini
-  // Soporta: formato Anthropic (type+source), formato Gemini nativo (inlineData/text), texto plano
-  const _parts = [];
-  for(const m of messages){
-    const content = m.content || m;
-    const items = Array.isArray(content) ? content : [content];
-    for(const p of items){
-      if(p.inlineData){
-        // Ya es formato Gemini nativo (imagen renderizada de PDF)
-        _parts.push(p);
-      } else if(p.text !== undefined){
-        // Texto plano formato Gemini
-        _parts.push({text: p.text});
-      } else if(p.type === 'document' || p.type === 'image'){
-        // Formato Anthropic legacy
-        _parts.push({inlineData:{mimeType:p.source.media_type, data:p.source.data}});
-      } else if(typeof p === 'string'){
-        _parts.push({text: p});
+  // OpenRouter con fallback automático (Qwen-VL preferido para OCR)
+  const primaryModel = getGeminiModel();
+  const isVision = primaryModel.includes('vl') || primaryModel.includes('vision') ||
+    primaryModel.includes('maverick') || primaryModel.includes('llama-4');
+  const modelToUse = isVision ? primaryModel : OR_MODEL_VISION_FALLBACK;
+
+  const visionFallbacks = [modelToUse, OR_MODEL_VISION_FALLBACK, 'meta-llama/llama-4-maverick:free'];
+  const tried = new Set();
+  let lastErr;
+  for(const model of visionFallbacks){
+    if(tried.has(model)) continue;
+    tried.add(model);
+    try {
+      const text = await _callOpenRouter(messages, model, true);
+      if(model !== primaryModel) showToast('⚡ DUA con: ' + model.split('/').pop());
+      return parseClaudeResponse(text);
+    } catch(e){
+      if(e.message.startsWith('RATE_LIMIT:')){
+        lastErr = e; continue;
       }
+      throw e;
     }
   }
-  const resp = await fetch(_gurl, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({contents:[{parts:_parts}],generationConfig:{temperature:0.1,maxOutputTokens:8192,responseMimeType:'application/json'}})
-  });
-  const data = await resp.json();
-  if(!resp.ok || data.error){
-    const _em = data?.error?.message||'Error';
-    if(_em.includes('RESOURCE_EXHAUSTED')) throw new Error('⏳ Límite diario Gemini alcanzado (500/día gratis). Reinicia mañana.');
-    if(_em.includes('API_KEY_INVALID')||_em.includes('API key')) throw new Error('🔑 API key Gemini no válida. Compruébala en aistudio.google.com');
-    throw new Error('Error Gemini API: '+_em);
-  }
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  return parseClaudeResponse(text);
+  throw lastErr || new Error('⏳ Rate limit en todos los modelos. Espera unos segundos.');
 }
 
 function renderBorradorDUA(d, container, filename){
