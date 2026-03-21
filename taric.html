@@ -527,10 +527,10 @@ textarea.fi{resize:vertical;min-height:80px}
           <!-- Selector de modelo -->
           <select id="sb-model-select" class="fi" style="font-size:11px;padding:4px 6px;margin-top:6px;width:100%" class="nav-item-txt"
             onchange="localStorage.setItem('als_gemini_model',this.value);showToast('Modelo: '+this.value)">
-            <option value="gemini-2.0-flash">2.0 Flash (recomendado)</option>
-            <option value="gemini-1.5-flash">1.5 Flash (alternativo)</option>
-            <option value="gemini-1.5-flash-8b">1.5 Flash 8B (más límites)</option>
-            <option value="gemini-2.0-flash-lite">2.0 Flash Lite</option>
+            <option value="gemini-2.5-flash">2.5 Flash ✅ (recomendado)</option>
+            <option value="gemini-flash-latest">Flash Latest ✅</option>
+            <option value="gemini-2.5-flash-lite">2.5 Flash Lite ✅</option>
+            <option value="gemini-2.0-flash">2.0 Flash (cuota limitada)</option>
           </select>
         </div>
         <!-- User -->
@@ -770,12 +770,12 @@ const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 // ── Configuración IA ─────────────────────────────────────────
 // Usando Google Gemini API (plan gratuito: 500 req/día sin tarjeta)
 // Obtén tu API key gratis en: https://aistudio.google.com/apikey
-const GEMINI_MODEL_DEFAULT = 'gemini-2.0-flash';
+const GEMINI_MODEL_DEFAULT = 'gemini-2.5-flash'; // Verificado funcional
 // Usar el modelo guardado por el usuario o el por defecto
 function getGeminiModel(){
   return localStorage.getItem('als_gemini_model') || GEMINI_MODEL_DEFAULT;
 }
-const GEMINI_MODEL = 'gemini-2.0-flash'; // Usado como fallback
+const GEMINI_MODEL = 'gemini-2.5-flash'; // Fallback
 // La API key se guarda en localStorage para que el usuario la configure
 // NOTA: Gemini sí permite llamadas directas desde el navegador (CORS abierto)
 // La API key se guarda en Supabase para acceso multi-dispositivo
@@ -789,18 +789,30 @@ function getGeminiKey(){
 async function loadGeminiKeyFromSupabase(){
   if(!sb) return;
   try {
-    const {data} = await sb.from('als_config')
-      .select('valor').eq('clave','gemini_api_key').single();
-    if(data?.valor){
-      _geminiKeyCache = data.valor;
-      localStorage.setItem('als_gemini_key', data.valor);
-      // Actualizar UI
+    // Cargar key y modelo en paralelo
+    const [{data:dk},{data:dm}] = await Promise.all([
+      sb.from('als_config').select('valor').eq('clave','gemini_api_key').single(),
+      sb.from('als_config').select('valor').eq('clave','gemini_model').single()
+    ]);
+    if(dk?.valor){
+      _geminiKeyCache = dk.valor;
+      localStorage.setItem('als_gemini_key', dk.valor);
       const inp = document.getElementById('sb-apikey-input');
       const st = document.getElementById('sb-apikey-status');
-      if(inp) inp.value = data.valor;
+      if(inp) inp.value = dk.valor;
       if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
     }
-  } catch(e){ /* tabla puede no existir aún */ }
+    if(dm?.valor){
+      localStorage.setItem('als_gemini_model', dm.valor);
+      const sel = document.getElementById('sb-model-select');
+      if(sel){ for(const o of sel.options) if(o.value===dm.valor) o.selected=true; }
+    }
+  } catch(e){}
+}
+
+async function guardarModeloSupabase(model){
+  if(!sb || !model) return;
+  try { await sb.from('als_config').upsert({clave:'gemini_model',valor:model},{onConflict:'clave'}); } catch(e){}
 }
 
 async function saveGeminiKeyToSupabase(key){
@@ -1015,7 +1027,7 @@ async function llamarGeminiAPI(prompt, modelOverride){
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 8192,
         responseMimeType: 'application/json'
       }
     })
@@ -1402,7 +1414,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
   const resp = await fetch(_gurl, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({contents:[{parts:_parts}],generationConfig:{temperature:0.1,maxOutputTokens:2048,responseMimeType:'application/json'}})
+    body: JSON.stringify({contents:[{parts:_parts}],generationConfig:{temperature:0.1,maxOutputTokens:8192,responseMimeType:'application/json'}})
   });
   const data = await resp.json();
   if(!resp.ok || data.error){
@@ -1875,7 +1887,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
   const resp = await fetch(_gurl, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({contents:[{parts:_parts}],generationConfig:{temperature:0.1,maxOutputTokens:2048,responseMimeType:'application/json'}})
+    body: JSON.stringify({contents:[{parts:_parts}],generationConfig:{temperature:0.1,maxOutputTokens:8192,responseMimeType:'application/json'}})
   });
   const data = await resp.json();
   if(!resp.ok || data.error){
