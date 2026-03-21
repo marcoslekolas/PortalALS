@@ -746,7 +746,7 @@ textarea.fi{resize:vertical;min-height:80px}
 
           <div id="dua-upload-area">
             <div class="drop-zone" id="dua-drop-zone" onclick="document.getElementById('dua-file-input').click()">
-              <input type="file" id="dua-file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="handleDUAFile(this.files[0])">
+              <input type="file" id="dua-file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="abrirModalConfigDUA(this.files[0])">
               <div class="drop-zone-icon">📄</div>
               <div class="drop-zone-title">Arrastra la factura comercial</div>
               <div class="drop-zone-sub">PDF, JPG, PNG · La IA extraerá todos los datos para el DUA</div>
@@ -799,6 +799,194 @@ textarea.fi{resize:vertical;min-height:80px}
     </div>
     <div class="mb" id="m-body"></div>
     <div class="mf" id="m-foot"></div>
+  </div>
+</div>
+
+<!-- MODAL CONFIGURACIÓN PREVIA DUA -->
+<div id="dua-config-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--w);border-radius:var(--rxl);max-width:640px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:var(--shxl)">
+    <!-- Header -->
+    <div style="padding:18px 22px 14px;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:12px;position:sticky;top:0;background:var(--w);z-index:1">
+      <span style="font-size:22px">📝</span>
+      <div style="flex:1">
+        <div style="font-size:15px;font-weight:700;color:var(--g900)">Configurar Borrador DUA</div>
+        <div style="font-size:12px;color:var(--g400)" id="dua-cfg-filename">Indica los parámetros antes de procesar</div>
+      </div>
+      <button onclick="cerrarModalConfigDUA()" style="background:none;border:none;cursor:pointer;color:var(--g400);font-size:22px;line-height:1;padding:0 4px">×</button>
+    </div>
+    <!-- Body -->
+    <div style="padding:18px 22px;display:flex;flex-direction:column;gap:14px">
+
+      <!-- Fila 1: Tipo DUA + Aduana -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Tipo de DUA *</label>
+          <select id="dcfg-tipo" class="fi" style="width:100%">
+            <option value="H1-IMPORTACION">H1 — Importación (despacho libre práctica)</option>
+            <option value="H4-IMPORTACION-REGIMEN-ESPECIAL">H4 — Importación régimen especial</option>
+            <option value="EX-A-EXPORTACION">EX-A — Exportación definitiva</option>
+            <option value="EX-B-EXPORTACION-SIMPLIFICADA">EX-B — Exportación simplificada</option>
+            <option value="T1-TRANSITO">T1 — Tránsito externo (mercancía no comunitaria)</option>
+            <option value="T2-TRANSITO">T2 — Tránsito interno (mercancía comunitaria)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Aduana de despacho *</label>
+          <select id="dcfg-aduana" class="fi" style="width:100%">
+            <option value="ES003000 — Algeciras Marítima">ES003000 — Algeciras Marítima</option>
+            <option value="ES003001 — La Línea de la Concepción">ES003001 — La Línea de la Concepción</option>
+            <option value="ES003002 — Algeciras — Recinto Portuario">ES003002 — Algeciras Puerto</option>
+            <option value="ES006000 — Málaga">ES006000 — Málaga</option>
+            <option value="ES007000 — Sevilla">ES007000 — Sevilla</option>
+            <option value="ES010000 — Madrid-Barajas">ES010000 — Madrid-Barajas</option>
+            <option value="ES028000 — Valencia">ES028000 — Valencia</option>
+            <option value="ES008000 — Barcelona">ES008000 — Barcelona</option>
+            <option value="otra">Otra (especificar abajo)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Fila 2: Régimen solicitado + precedente -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Régimen solicitado (C.1)</label>
+          <select id="dcfg-regimen" class="fi" style="width:100%">
+            <option value="40">40 — Despacho a libre práctica</option>
+            <option value="42">42 — Libre práctica + régimen especial simultáneo</option>
+            <option value="61">61 — Reimportación en libre práctica</option>
+            <option value="10">10 — Exportación definitiva</option>
+            <option value="11">11 — Exportación definitiva tras perfeccionamiento activo</option>
+            <option value="51">51 — Perfeccionamiento activo</option>
+            <option value="53">53 — Importación temporal</option>
+            <option value="71">71 — Depósito aduanero</option>
+            <option value="78">78 — Introducción en zona franca</option>
+            <option value="T1">T1 — Tránsito externo</option>
+            <option value="T2">T2 — Tránsito interno comunitario</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Régimen precedente (C.1)</label>
+          <select id="dcfg-regimen-prev" class="fi" style="width:100%">
+            <option value="00">00 — Sin régimen precedente</option>
+            <option value="71">71 — Depósito aduanero</option>
+            <option value="51">51 — Perfeccionamiento activo</option>
+            <option value="53">53 — Importación temporal</option>
+            <option value="91">91 — Control aduanero uso final</option>
+            <option value="T1">T1 — Tránsito externo</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Fila 3: Ubicación de la mercancía -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Ubicación / Localización de la mercancía (C.30)</label>
+        <select id="dcfg-ubicacion" class="fi" style="width:100%;margin-bottom:6px" onchange="toggleUbicacionOtra()">
+          <option value="PUERTO DE ALGECIRAS — Muelle Juan Carlos I">Puerto de Algeciras — Muelle Juan Carlos I</option>
+          <option value="PUERTO DE ALGECIRAS — APM Terminals">Puerto de Algeciras — APM Terminals</option>
+          <option value="PUERTO DE ALGECIRAS — TTI Algeciras">Puerto de Algeciras — TTI Algeciras</option>
+          <option value="PUERTO DE ALGECIRAS — Maersk Algeciras">Puerto de Algeciras — Maersk Algeciras</option>
+          <option value="ALMACÉN — Algeciras Logistic Solutions">Almacén — ALS Algeciras</option>
+          <option value="DEPÓSITO ADUANERO — Algeciras">Depósito Aduanero Algeciras</option>
+          <option value="AEROPUERTO — Málaga AGP">Aeropuerto Málaga AGP</option>
+          <option value="otra">Otra (especificar)</option>
+        </select>
+        <input id="dcfg-ubicacion-otra" class="fi" placeholder="Especifica la ubicación..." style="width:100%;display:none">
+      </div>
+
+      <!-- Fila 4: Modo de transporte -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Modo transporte frontera (C.25)</label>
+          <select id="dcfg-transporte" class="fi" style="width:100%">
+            <option value="1">1 — Marítimo</option>
+            <option value="2">2 — Ferroviario</option>
+            <option value="3">3 — Carretera</option>
+            <option value="4">4 — Aéreo</option>
+            <option value="7">7 — Oleoducto/Gasoducto</option>
+            <option value="8">8 — Navegación interior</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Incoterm (C.20)</label>
+          <select id="dcfg-incoterm" class="fi" style="width:100%">
+            <option value="">— IA infiere de la factura —</option>
+            <option value="FOB">FOB — Free On Board</option>
+            <option value="CIF">CIF — Cost, Insurance, Freight</option>
+            <option value="CFR">CFR — Cost and Freight</option>
+            <option value="EXW">EXW — Ex Works</option>
+            <option value="DAP">DAP — Delivered At Place</option>
+            <option value="DDP">DDP — Delivered Duty Paid</option>
+            <option value="FCA">FCA — Free Carrier</option>
+            <option value="CPT">CPT — Carriage Paid To</option>
+            <option value="CIP">CIP — Carriage and Insurance Paid</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Fila 5: Documentos de apoyo (Casilla 44) -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Documentos de apoyo — Casilla 44 (Supporting Documents)</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-N380" checked style="accent-color:var(--b600)">N380 — Factura comercial</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-N271" style="accent-color:var(--b600)">N271 — Packing list</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-N703" style="accent-color:var(--b600)">N703 — Conocimiento de embarque B/L</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-N954" style="accent-color:var(--b600)">N954 — Certificado de origen EUR.1</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-C019" style="accent-color:var(--b600)">C019 — Declaración REX / origen preferencial</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-N935" style="accent-color:var(--b600)">N935 — Certificado sanitario/fitosanitario</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-N941" style="accent-color:var(--b600)">N941 — Licencia de importación</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-N748" style="accent-color:var(--b600)">N748 — Certificado CE / conformidad</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-N704" style="accent-color:var(--b600)">N704 — Carta de porte CMR/CIM</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-N785" style="accent-color:var(--b600)">N785 — Autorización OEA</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-N770" style="accent-color:var(--b600)">N770 — Declaración de valor D.V.1</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="doc-1001" style="accent-color:var(--b600)">1001 — Código nacional: IVA diferido (SII)</label>
+        </div>
+      </div>
+
+      <!-- Fila 6: Códigos nacionales adicionales -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Códigos nacionales adicionales (C.44 España)</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="cod-ES1" style="accent-color:var(--b600)">ES1 — Aplazamiento pago IVA importación</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="cod-ES2" style="accent-color:var(--b600)">ES2 — Exención IVA (art. 27 LIVA)</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="cod-Y903" style="accent-color:var(--b600)">Y903 — Declaración no sujeto restricción CITES</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="cod-Y040" style="accent-color:var(--b600)">Y040 — Uso final exento de derechos</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="cod-Y041" style="accent-color:var(--b600)">Y041 — Bien de uso personal/traslado residencia</label>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border:1px solid var(--g200);border-radius:6px;background:var(--g50)">
+            <input type="checkbox" id="cod-AEOC" style="accent-color:var(--b600)">AEOC — Operador Económico Autorizado (AEOC)</label>
+        </div>
+      </div>
+
+      <!-- Fila 7: Observaciones -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Observaciones / instrucciones adicionales para la IA</label>
+        <textarea id="dcfg-obs" class="fi" rows="2" placeholder="Ej: mercancía en zona franca, cliente con OEA, aplicar preferencia SGP..." style="width:100%;resize:vertical;font-size:12px"></textarea>
+      </div>
+
+    </div>
+    <!-- Footer -->
+    <div style="padding:14px 22px;border-top:1px solid var(--g100);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--w)">
+      <button onclick="cerrarModalConfigDUA()" class="btn btn-s btn-sm">Cancelar</button>
+      <button onclick="confirmarConfigDUA()" class="btn btn-p" style="padding:8px 24px;font-size:13px">
+        🚀 Generar Borrador DUA
+      </button>
+    </div>
   </div>
 </div>
 
@@ -2228,11 +2416,88 @@ function setupDUADropZone(){
   dz.addEventListener('dragleave', ()=>dz.classList.remove('dragover'));
   dz.addEventListener('drop', e=>{
     e.preventDefault();dz.classList.remove('dragover');
-    const f=e.dataTransfer.files[0]; if(f) handleDUAFile(f);
+    const f=e.dataTransfer.files[0]; if(f) abrirModalConfigDUA(f);
   });
 }
 
-async function handleDUAFile(file){
+// ── Modal configuración previa DUA ───────────────────────────
+let _duaPendingFile = null;
+
+function abrirModalConfigDUA(file){
+  if(!file) return;
+  _duaPendingFile = file;
+  // Mostrar nombre de archivo
+  const fnEl = document.getElementById('dua-cfg-filename');
+  if(fnEl) fnEl.textContent = file.name + ' · ' + (file.size/1024).toFixed(0) + ' KB';
+  // Ajustar defaults según tipo detectado por nombre
+  const nombre = file.name.toLowerCase();
+  // Mostrar modal
+  const modal = document.getElementById('dua-config-modal');
+  if(modal) modal.style.display = 'flex';
+}
+
+function cerrarModalConfigDUA(){
+  const modal = document.getElementById('dua-config-modal');
+  if(modal) modal.style.display = 'none';
+  _duaPendingFile = null;
+  // Resetear el input file para permitir volver a seleccionar el mismo archivo
+  const inp = document.getElementById('dua-file-input');
+  if(inp) inp.value = '';
+}
+
+function toggleUbicacionOtra(){
+  const sel = document.getElementById('dcfg-ubicacion');
+  const otra = document.getElementById('dcfg-ubicacion-otra');
+  if(otra) otra.style.display = sel.value === 'otra' ? '' : 'none';
+}
+
+function confirmarConfigDUA(){
+  if(!_duaPendingFile) return;
+  // Recoger configuración
+  const cfg = {
+    tipo: document.getElementById('dcfg-tipo')?.value || 'H1-IMPORTACION',
+    aduana: document.getElementById('dcfg-aduana')?.value || 'ES003000 — Algeciras Marítima',
+    regimen: document.getElementById('dcfg-regimen')?.value || '40',
+    regimenPrev: document.getElementById('dcfg-regimen-prev')?.value || '00',
+    transporte: document.getElementById('dcfg-transporte')?.value || '1',
+    incoterm: document.getElementById('dcfg-incoterm')?.value || '',
+    ubicacion: document.getElementById('dcfg-ubicacion')?.value === 'otra'
+      ? (document.getElementById('dcfg-ubicacion-otra')?.value || '')
+      : (document.getElementById('dcfg-ubicacion')?.value || ''),
+    observaciones: document.getElementById('dcfg-obs')?.value?.trim() || '',
+    // Documentos de apoyo seleccionados
+    documentos: [
+      {id:'N380', desc:'Factura comercial'},
+      {id:'N271', desc:'Packing list'},
+      {id:'N703', desc:'Conocimiento de embarque B/L'},
+      {id:'N954', desc:'Certificado de origen EUR.1'},
+      {id:'C019', desc:'Declaración REX / origen preferencial'},
+      {id:'N935', desc:'Certificado sanitario/fitosanitario'},
+      {id:'N941', desc:'Licencia de importación'},
+      {id:'N748', desc:'Certificado CE / conformidad'},
+      {id:'N704', desc:'Carta de porte CMR/CIM'},
+      {id:'N785', desc:'Autorización OEA'},
+      {id:'N770', desc:'Declaración de valor D.V.1'},
+      {id:'1001', desc:'Código nacional: IVA diferido (SII)'},
+    ].filter(d => document.getElementById('doc-'+d.id)?.checked),
+    // Códigos nacionales adicionales
+    codigosNacionales: [
+      {id:'ES1', desc:'Aplazamiento pago IVA importación'},
+      {id:'ES2', desc:'Exención IVA (art. 27 LIVA)'},
+      {id:'Y903', desc:'Declaración no sujeto restricción CITES'},
+      {id:'Y040', desc:'Uso final exento de derechos'},
+      {id:'Y041', desc:'Bien de uso personal/traslado residencia'},
+      {id:'AEOC', desc:'Operador Económico Autorizado'},
+    ].filter(d => document.getElementById('cod-'+d.id)?.checked),
+  };
+  // Cerrar modal y procesar
+  const modal = document.getElementById('dua-config-modal');
+  if(modal) modal.style.display = 'none';
+  handleDUAFile(_duaPendingFile, cfg);
+  _duaPendingFile = null;
+}
+
+async function handleDUAFile(file, cfg){
   if(!file) return;
   if(file.size > 20*1024*1024){ showToast('❌ Archivo demasiado grande'); return; }
 
@@ -2257,7 +2522,7 @@ async function handleDUAFile(file){
       imageMediaType = mediaType;
     }
 
-    const dua = await generarBorradorDUA(base64, imageMediaType);
+    const dua = await generarBorradorDUA(base64, imageMediaType, cfg);
     if(dua){
       renderBorradorDUA(dua, resultEl, file.name);
       document.getElementById('btn-exp-dua').style.display='';
@@ -2271,15 +2536,30 @@ async function handleDUAFile(file){
   }
 }
 
-async function generarBorradorDUA(base64, mediaType){
-  const prompt = `Eres un experto representante aduanero en España con 20 años de experiencia elaborando DUAs para las aduanas de Algeciras Marítima y La Línea. Analiza esta factura comercial y elabora un borrador completo del DUA conforme a la resolución del DUA vigente de la AEAT.
+async function generarBorradorDUA(base64, mediaType, cfg){
+  // Construir instrucciones previas con la configuración del usuario
+  const cfgInstrucciones = cfg ? `
+CONFIGURACIÓN PREVIA INDICADA POR EL DECLARANTE:
+- Tipo de DUA: ${cfg.tipo}
+- Aduana de despacho: ${cfg.aduana}
+- Casilla 1 — Régimen solicitado: ${cfg.regimen} / Régimen precedente: ${cfg.regimenPrev}
+- Casilla 25 — Modo de transporte en frontera: ${cfg.transporte}
+${cfg.incoterm ? `- Casilla 20 — Incoterm: ${cfg.incoterm}` : '- Casilla 20 — Incoterm: inferir de la factura'}
+- Casilla 30 — Ubicación/localización de la mercancía: ${cfg.ubicacion}
+${cfg.documentos?.length ? `- Casilla 44 — Documentos de apoyo confirmados: ${cfg.documentos.map(d=>`${d.id} (${d.desc})`).join(', ')}` : ''}
+${cfg.codigosNacionales?.length ? `- Casilla 44 — Códigos nacionales adicionales: ${cfg.codigosNacionales.map(d=>`${d.id} (${d.desc})`).join(', ')}` : ''}
+${cfg.observaciones ? `- Instrucciones adicionales: ${cfg.observaciones}` : ''}
 
+APLICA EXACTAMENTE esta configuración en el borrador. No infiereas el tipo de DUA ni el régimen — usa los valores indicados arriba.
+` : '';
+
+  const prompt = `Eres un experto representante aduanero en España con 20 años de experiencia elaborando DUAs para las aduanas de Algeciras Marítima y La Línea. Analiza esta factura comercial y elabora un borrador completo del DUA conforme a la resolución del DUA vigente de la AEAT.
+${cfgInstrucciones}
 INSTRUCCIONES:
 - Clasifica TARIC a 10 dígitos para cada mercancía
-- Aplica el régimen correcto (IM para importación, EX para exportación)
+- Aplica el régimen indicado en la configuración (NO lo infiereas de la factura)
 - Infiere el valor aduanero (método del valor de transacción, artículo 70 CAU)
-- Determina el código de procedimiento (casilla 1): régimen solicitado + régimen precedente
-- Identifica documentos necesarios (casilla 44): facturas, certificados origen, licencias
+- Incluye TODOS los documentos de apoyo indicados en casilla 44 con sus códigos correctos
 - Calcula la liquidación estimada (casilla 47): arancel + IVA a la importación
 - Para cada partida, completa la casilla 31 (descripción mercancía) en formato DUA
 
