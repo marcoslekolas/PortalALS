@@ -1349,21 +1349,58 @@ async function handleFile(file){
   if(!file) return;
   if(file.size > 20*1024*1024){ showToast('❌ Archivo demasiado grande (máx 20MB)'); return; }
 
-  showToast('📄 Leyendo factura...');
+  const mediaType = getMediaType(file.type, file.name);
+
   document.getElementById('factura-upload-area').style.display='none';
   document.getElementById('factura-result').style.display='block';
+  document.getElementById('factura-info').innerHTML = `
+    <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:24px">${mediaType==='application/pdf'?'📄':'🖼️'}</span>
+      <div>
+        <div style="font-size:13px;font-weight:600">${file.name}</div>
+        <div style="font-size:11px;color:var(--g400)" id="factura-status-txt">
+          ${mediaType==='application/pdf'?'Renderizando PDF como imagen para OCR...':'Procesando imagen con OCR...'}
+        </div>
+      </div>
+      <div class="spinner" style="margin-left:auto" id="factura-spinner"></div>
+    </div>`;
+  document.getElementById('factura-tbody').innerHTML = `
+    <tr><td colspan="7" style="padding:32px;text-align:center">
+      <div class="loading-wrap" style="justify-content:center">
+        <div class="spinner"></div>
+        <span id="factura-ocr-status">Iniciando OCR con Gemini Vision...</span>
+      </div>
+    </td></tr>`;
 
-  const mediaType = getMediaType(file.type, file.name);
-  let base64 = null;
-  let textoExtraido = null;
+  let imageBase64 = null;
+  let imageType = 'image/jpeg';
+  let textoPlano = null;
 
-  // Para PDFs: intentar extraer texto plano (más fiable con Gemini)
-  if(mediaType === 'application/pdf'){
-    try { textoExtraido = await extraerTextoPDF(file); } catch(e){ console.warn('PDF text extract failed:', e); }
+  try {
+    if(mediaType === 'application/pdf'){
+      // PDF → renderizar en canvas con PDF.js → JPEG alta resolución
+      _setFacturaStatus('Cargando PDF.js para renderizado...');
+      imageBase64 = await renderPDFaImagen(file);
+      if(!imageBase64){
+        // Fallback: enviar como texto si PDF.js falla
+        _setFacturaStatus('Extrayendo texto del PDF...');
+        textoPlano = await extraerTextoPDF(file);
+      } else {
+        _setFacturaStatus('PDF renderizado. Enviando a Gemini Vision OCR...');
+      }
+    } else {
+      // Imagen directa: convertir a JPEG comprimido para mejor compatibilidad
+      _setFacturaStatus('Optimizando imagen para OCR...');
+      imageBase64 = await comprimirImagenParaOCR(file);
+      _setFacturaStatus('Imagen lista. Enviando a Gemini Vision OCR...');
+    }
+  } catch(e){
+    console.warn('Preparación imagen/PDF falló:', e);
+    // Último recurso: base64 raw
+    imageBase64 = await fileToBase64(file);
   }
 
-  // Siempre extraer base64 como fallback
-  base64 = await fileToBase64(file);
+  const base64 = imageBase64;
 
   document.getElementById('factura-info').innerHTML = `
     <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
@@ -1383,7 +1420,7 @@ async function handleFile(file){
   `;
 
   try {
-    const lineas = await leerFacturaConIA(base64, mediaType, textoExtraido);
+    const lineas = await leerFacturaConIA(base64, imageType, textoPlano);
     if(!lineas || !lineas.length){
       document.getElementById('factura-info').innerHTML = '<div style="padding:12px;color:var(--rd600)">❌ No se encontraron líneas de mercancía en el documento.</div>';
       document.getElementById('factura-tbody').innerHTML = '';
@@ -1401,16 +1438,21 @@ async function handleFile(file){
 }
 
 async function leerFacturaConIA(base64, mediaType, textoPlano){
-  const prompt = `Eres un experto aduanero TARIC de la UE. Analiza esta factura comercial y extrae TODAS las líneas de mercancía.
+  const prompt = `Eres un experto aduanero TARIC de la UE con capacidad OCR avanzada. Tu tarea es:
+1. LEER la imagen de la factura con máximo detalle (aunque sea escaneada, fotografia o baja resolución)
+2. EXTRAER absolutamente TODAS las líneas de artículos/mercancía
+3. CLASIFICAR cada artículo en el código TARIC correcto de 10 dígitos
 
-Para cada línea proporciona:
-1. Descripción exacta de la mercancía tal como aparece en la factura
-2. Cantidad y unidad
-3. Código TARIC de 10 dígitos
-4. Arancel Erga Omnes estimado
-5. Medidas adicionales (antidumping, contingentes, etc.) si las conoces
+Para cada línea de la factura:
+- Descripción EXACTA tal como aparece en el documento (sin modificar)
+- Cantidad y unidad de medida
+- Precio unitario y total si figuran
+- Código TARIC 10 dígitos (NC 8 + subdivisión TARIC 2)
+- Arancel Erga Omnes (tipo NMF para importación UE desde terceros países)
+- Medidas adicionales: antidumping, contingentes, licencias, vigilancia si las conoces
 
-Si la factura está en otro idioma, extrae y traduce la descripción.
+Si el documento está en otro idioma, mantén la descripción original Y añade traducción al español.
+NO omitas ninguna línea aunque la imagen no sea perfecta — infiere lo que puedas.
 
 Responde ÚNICAMENTE con este JSON (sin backticks):
 {
@@ -1434,42 +1476,55 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
   ]
 }`;
 
-  // Si tenemos texto extraído del PDF, usarlo directamente (más fiable)
-  // Si es imagen, usar inlineData
+  // Construir mensaje para Gemini:
+  // - Si tenemos base64 de imagen (PDF renderizado o imagen directa): Vision OCR
+  // - Si solo tenemos texto: modo texto
   let messages;
-  if(textoPlano && textoPlano.length > 50){
-    // Modo texto: enviar contenido del PDF como texto + prompt
-    messages = [{
-      role: 'user',
-      content: [{ type: 'text', text: prompt + '\n\nCONTENIDO DE LA FACTURA:\n' + textoPlano }]
-    }];
-  } else {
-    // Modo binario: enviar imagen/PDF como inlineData
+  if(base64 && base64.length > 100){
+    // Modo Vision: imagen JPEG → Gemini OCR + clasificación
+    // Funciona para PDFs escaneados, fotografías, todo tipo de documentos
+    const imgType = (mediaType === 'application/pdf') ? 'image/jpeg' : (mediaType || 'image/jpeg');
     messages = [{
       role: 'user',
       content: [
-        {
-          type: mediaType === 'application/pdf' ? 'document' : 'image',
-          source: { type: 'base64', media_type: mediaType, data: base64 }
-        },
-        { type: 'text', text: prompt }
+        { inlineData: { mimeType: imgType.startsWith('image/') ? imgType : 'image/jpeg', data: base64 } },
+        { text: prompt + '\n\nANALIZA la imagen adjunta con OCR meticuloso. Lee TODOS los artículos/líneas de la factura aunque la imagen sea de baja calidad o escaneo. Extrae cada producto con su descripción EXACTA, cantidad y precio.' }
       ]
     }];
+  } else if(textoPlano && textoPlano.length > 50){
+    // Fallback texto
+    messages = [{
+      role: 'user',
+      content: [{ text: prompt + '\n\nCONTENIDO:\n' + textoPlano }]
+    }];
+  } else {
+    throw new Error('No se pudo procesar el documento. Prueba a subir como imagen JPG/PNG.');
   }
 
   // Gemini API — llamada directa desde navegador sin proxy
   const _gkey = getGeminiKey();
   if(!_gkey) throw new Error('🔑 Configura tu API key de Gemini en ⚙️ Configuración API del sidebar');
   const _gurl = `https://generativelanguage.googleapis.com/v1beta/models/${getGeminiModel()}:generateContent?key=${_gkey}`;
-  // Convertir messages Anthropic → parts Gemini
+  // Convertir messages → parts Gemini
+  // Soporta: formato Anthropic (type+source), formato Gemini nativo (inlineData/text), texto plano
   const _parts = [];
   for(const m of messages){
-    if(Array.isArray(m.content)){
-      for(const p of m.content){
-        if(p.type==='document'||p.type==='image') _parts.push({inlineData:{mimeType:p.source.media_type,data:p.source.data}});
-        else if(p.type==='text') _parts.push({text:p.text});
+    const content = m.content || m;
+    const items = Array.isArray(content) ? content : [content];
+    for(const p of items){
+      if(p.inlineData){
+        // Ya es formato Gemini nativo (imagen renderizada de PDF)
+        _parts.push(p);
+      } else if(p.text !== undefined){
+        // Texto plano formato Gemini
+        _parts.push({text: p.text});
+      } else if(p.type === 'document' || p.type === 'image'){
+        // Formato Anthropic legacy
+        _parts.push({inlineData:{mimeType:p.source.media_type, data:p.source.data}});
+      } else if(typeof p === 'string'){
+        _parts.push({text: p});
       }
-    } else _parts.push({text:String(m.content)});
+    }
   }
   const resp = await fetch(_gurl, {
     method: 'POST',
@@ -1811,6 +1866,111 @@ async function loadCAVs(){
 // UTILS
 // ══════════════════════════════════════════════════════════════
 // Extraer texto de PDF usando PDF.js (cargado dinámicamente)
+// ── Helper: actualizar estado en UI ─────────────────────────────
+function _setFacturaStatus(msg){
+  const el = document.getElementById('factura-status-txt');
+  if(el) el.textContent = msg;
+  const el2 = document.getElementById('factura-ocr-status');
+  if(el2) el2.textContent = msg;
+}
+
+// ── Renderizar PDF como imagen JPEG de alta resolución ───────────
+// Usa PDF.js para renderizar cada página en canvas y exportar como JPEG
+// Esto es el OCR real: Gemini recibe la imagen y lee el texto visualmente
+async function renderPDFaImagen(file){
+  // Cargar PDF.js si no está disponible
+  if(!window.pdfjsLib){
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.id = 'pdfjs-umd';
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+      s.onload = () => {
+        if(window.pdfjsLib){
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        }
+        resolve();
+      };
+      s.onerror = () => reject(new Error('PDF.js CDN no disponible'));
+      document.head.appendChild(s);
+    });
+  }
+
+  if(!window.pdfjsLib) return null;
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({data: arrayBuffer}).promise;
+  const numPages = pdf.numPages;
+
+  // Si el PDF tiene varias páginas, renderizar todas y combinar verticalmente
+  const pageImages = [];
+  for(let pageNum = 1; pageNum <= Math.min(numPages, 4); pageNum++){
+    _setFacturaStatus(`Renderizando página ${pageNum}/${numPages}...`);
+    const page = await pdf.getPage(pageNum);
+    // Escala 2.0 = alta resolución para OCR (equivale a ~150 DPI)
+    const scale = 2.0;
+    const viewport = page.getViewport({scale});
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({canvasContext: ctx, viewport}).promise;
+    pageImages.push({canvas, width: viewport.width, height: viewport.height});
+  }
+
+  if(pageImages.length === 0) return null;
+
+  // Si solo hay una página, exportar directamente
+  if(pageImages.length === 1){
+    return pageImages[0].canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+  }
+
+  // Combinar múltiples páginas verticalmente
+  const totalHeight = pageImages.reduce((sum, p) => sum + p.height + 20, 0);
+  const maxWidth = Math.max(...pageImages.map(p => p.width));
+  const combined = document.createElement('canvas');
+  combined.width = maxWidth;
+  combined.height = totalHeight;
+  const combCtx = combined.getContext('2d');
+  combCtx.fillStyle = '#f0f0f0';
+  combCtx.fillRect(0, 0, maxWidth, totalHeight);
+  let y = 0;
+  for(const {canvas, width, height} of pageImages){
+    const x = Math.floor((maxWidth - width) / 2);
+    combCtx.drawImage(canvas, x, y);
+    y += height + 20;
+  }
+  return combined.toDataURL('image/jpeg', 0.90).split(',')[1];
+}
+
+// ── Comprimir imagen para OCR (máx 4000px, JPEG 0.95) ───────────
+async function comprimirImagenParaOCR(file){
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      const MAX = 4000;
+      if(w > MAX || h > MAX){
+        if(w > h){ h = Math.round(h * MAX/w); w = MAX; }
+        else { w = Math.round(w * MAX/h); h = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.95).split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
 // Extraer texto de PDF — múltiples estrategias
 async function extraerTextoPDF(file){
   // Estrategia 1: PDF.js desde CDN (más fiable para PDFs complejos)
@@ -2075,15 +2235,26 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
   const _gkey = getGeminiKey();
   if(!_gkey) throw new Error('🔑 Configura tu API key de Gemini en ⚙️ Configuración API del sidebar');
   const _gurl = `https://generativelanguage.googleapis.com/v1beta/models/${getGeminiModel()}:generateContent?key=${_gkey}`;
-  // Convertir messages Anthropic → parts Gemini
+  // Convertir messages → parts Gemini
+  // Soporta: formato Anthropic (type+source), formato Gemini nativo (inlineData/text), texto plano
   const _parts = [];
   for(const m of messages){
-    if(Array.isArray(m.content)){
-      for(const p of m.content){
-        if(p.type==='document'||p.type==='image') _parts.push({inlineData:{mimeType:p.source.media_type,data:p.source.data}});
-        else if(p.type==='text') _parts.push({text:p.text});
+    const content = m.content || m;
+    const items = Array.isArray(content) ? content : [content];
+    for(const p of items){
+      if(p.inlineData){
+        // Ya es formato Gemini nativo (imagen renderizada de PDF)
+        _parts.push(p);
+      } else if(p.text !== undefined){
+        // Texto plano formato Gemini
+        _parts.push({text: p.text});
+      } else if(p.type === 'document' || p.type === 'image'){
+        // Formato Anthropic legacy
+        _parts.push({inlineData:{mimeType:p.source.media_type, data:p.source.data}});
+      } else if(typeof p === 'string'){
+        _parts.push({text: p});
       }
-    } else _parts.push({text:String(m.content)});
+    }
   }
   const resp = await fetch(_gurl, {
     method: 'POST',
