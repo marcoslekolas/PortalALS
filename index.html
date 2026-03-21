@@ -2971,62 +2971,84 @@ async function buscarEORI(){
 
   const query = _eoriMode==='codigo' ? raw.toUpperCase().replace(/\s/g,'') : raw;
 
-  const sysPrompt = 'Eres un asistente experto en aduanas y comercio exterior de la UE. Proporciona datos precisos y verificados sobre empresas y números EORI. Usa toda tu base de conocimiento para dar la información más completa posible.';
-  const prompt = _eoriMode==='empresa'
-    ? `Busca información oficial sobre la empresa "${query}" en la Unión Europea.
-Necesito:
-1. Su número EORI (Economic Operators Registration and Identification).
-2. Su NIF/CIF o número fiscal.
-3. Su dirección fiscal completa.
-4. País de registro.
-5. Estado del operador (activo/inactivo si se puede verificar).
-Busca en la base de datos EORI de la Comisión Europea y registros mercantiles oficiales.
-Si no encuentras EORI exacto, indica el enlace directo para consultar en TAXUD.
-Responde en Español con formato claro y estructurado.`
-    : `Busca información sobre el número EORI "${query}".
-Necesito:
-1. Nombre legal completo de la empresa u operador.
-2. Dirección completa registrada.
-3. País de registro y tipo de operador.
-4. Estado de validez del EORI.
-Busca en la base de datos oficial TAXUD: https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp
-Responde en Español con formato claro.`;
+  const sysPrompt = `Eres un experto en aduanas de la UE especializado en números EORI. 
+REGLAS IMPORTANTES:
+- El EORI español = "ES" + CIF/NIF de la empresa (ej: empresa con CIF B72049117 → EORI: ESB72049117)
+- Para empresas españolas: busca el CIF en tu conocimiento y construye el EORI
+- Si conoces la empresa, indica su EORI, NIF, dirección y estado
+- Si no la conoces exactamente, indica cómo construir el EORI y dónde verificarlo
+- NUNCA digas "no se puede obtener públicamente" sin intentar razonarlo primero
+- Sé directo y concreto. Si tienes el dato, dalo.`;
 
-  const OR_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-  // Modelos con fallback: preferir modelos con web search si disponibles
+  const prompt = _eoriMode==='empresa'
+    ? `Empresa a buscar: "${query}"
+Proporciona:
+1. EORI (si es española: ES + CIF de la empresa)
+2. CIF/NIF fiscal
+3. Dirección fiscal
+4. Estado activo/inactivo si lo sabes
+5. Si no tienes el dato exacto, indica cómo calcularlo o dónde verificarlo en TAXUD
+
+Responde en español de forma directa y concisa. Si la empresa es española y conoces su CIF, calcula el EORI directamente.`
+    : `Número EORI a verificar: "${query}"
+Proporciona:
+1. Nombre legal de la empresa/operador
+2. País (primeras 2 letras del EORI)
+3. NIF/identificador nacional (resto del código)
+4. Tipo de operador probable
+5. Enlace directo de verificación en TAXUD
+
+Responde en español de forma directa.`;
+
+  const OR_ENDPOINT_EORI = 'https://openrouter.ai/api/v1/chat/completions';
+  // Modelos con timeout 20s y fallback — probados hoy 21-03-2026
   const eoriModels = [
-    localStorage.getItem('als_gemini_model') || 'mistralai/mistral-small-3.1-24b-instruct:free',
+    'mistralai/mistral-small-2603',            // con crédito — mejor calidad
+    localStorage.getItem('als_gemini_model') || 'google/gemma-3-12b-it:free',
+    'google/gemma-3-12b-it:free',
+    'google/gemma-3-27b-it:free',
+    'google/gemma-3-4b-it:free',
     'meta-llama/llama-3.3-70b-instruct:free',
-    'google/gemma-3-27b-it:free'
-  ];
+  ].filter((v,i,a) => a.indexOf(v)===i); // deduplicar
 
   try {
     let text = '';
     let lastErr = null;
     for(const eoriModel of eoriModels){
       try {
-        const r = await fetch(OR_ENDPOINT, {
-          method:'POST',
-          headers:{
-            'Content-Type':'application/json',
-            'Authorization': `Bearer ${key}`,
-            'HTTP-Referer': 'https://marcoslekolas.github.io/PortalALS/',
-            'X-Title': 'Customs Way EORI'
-          },
-          body: JSON.stringify({
-            model: eoriModel,
-            messages:[
-              {role:'system', content: sysPrompt},
-              {role:'user', content: prompt}
-            ],
-            temperature:0.2,
-            max_tokens:1500
-          })
-        });
-        const d = await r.json();
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 20000);
+        let r, d;
+        try {
+          r = await fetch(OR_ENDPOINT_EORI, {
+            method:'POST',
+            signal: ctrl.signal,
+            headers:{
+              'Content-Type':'application/json',
+              'Authorization': `Bearer ${key}`,
+              'HTTP-Referer': 'https://marcoslekolas.github.io/PortalALS/',
+              'X-Title': 'Customs Way EORI'
+            },
+            body: JSON.stringify({
+              model: eoriModel,
+              messages:[
+                {role:'system', content: sysPrompt},
+                {role:'user', content: prompt}
+              ],
+              temperature:0.2,
+              max_tokens:1500
+            })
+          });
+          d = await r.json();
+        } catch(fe){
+          clearTimeout(tid);
+          lastErr = new Error('rate_limit'); continue;
+        }
+        clearTimeout(tid);
         if(!r.ok || d.error){
           const em = d?.error?.message||'';
-          if(d?.error?.code===429 || em.includes('rate') || em.includes('limit')){
+          if(r.status===429 || r.status===502 || r.status===503 ||
+             em.includes('rate') || em.includes('limit') || em.includes('Network')){
             lastErr = new Error('rate_limit'); continue;
           }
           throw new Error(em || 'Error '+r.status);

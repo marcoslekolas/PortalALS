@@ -528,14 +528,14 @@ textarea.fi{resize:vertical;min-height:80px}
           <!-- Selector de modelo -->
           <select id="sb-model-select" class="fi" style="font-size:11px;padding:4px 6px;margin-top:6px;width:100%" class="nav-item-txt"
             onchange="guardarModeloSupabase(this.value);localStorage.setItem('als_gemini_model',this.value);showToast('Modelo: '+this.value.split('/').pop())">
-            <option value="nvidia/nemotron-nano-12b-v2-vl:free">NVIDIA Nemotron VL 12B 🏆 (recomendado)</option>
-            <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B ✅</option>
-            <option value="google/gemma-3-27b-it:free">Gemma 3 27B ✅</option>
-            <option value="google/gemma-3-12b-it:free">Gemma 3 12B ✅</option>
-            <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (solo texto)</option>
+            <option value="mistralai/mistral-small-2603">Mistral Small 4 💳 (con crédito, recomendado)</option>
+            <option value="google/gemma-3-12b-it:free">Gemma 3 12B 🆓 (gratis, fiable)</option>
+            <option value="google/gemma-3-27b-it:free">Gemma 3 27B 🆓 (gratis, vision)</option>
+            <option value="google/gemma-3-4b-it:free">Gemma 3 4B 🆓 (gratis, rápido)</option>
+            <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B 🆓 (solo texto)</option>
           </select>
           <div style="font-size:10px;color:var(--am600);margin-top:5px;line-height:1.5" class="nav-item-txt">
-            ⚠️ Modelos :free = 200 req/día compartidos. Para uso sin límite añade crédito en <a href="https://openrouter.ai/credits" target="_blank" style="color:var(--b600);text-decoration:none">openrouter.ai/credits ↗</a>
+            💳 Con crédito: ~4.000 ops por 5$. Sin crédito: fallback automático a modelos gratis. <a href="https://openrouter.ai/credits" target="_blank" style="color:var(--b600);text-decoration:none">Añadir crédito ↗</a>
           </div>
         </div>
         <!-- User -->
@@ -805,29 +805,34 @@ const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 // ── Configuración IA ─────────────────────────────────────────
 // Usando OpenRouter — gateway gratuito para modelos Qwen, Llama, etc.
 // API compatible con OpenAI. CORS abierto desde navegador.
-// Obtén tu API key gratis en: https://openrouter.ai/keys
-// OpenRouter — lista completa de fallbacks ordenada por disponibilidad real (marzo 2026)
+// Obtén tu API key en: https://openrouter.ai/keys
+// ESTRATEGIA DE MODELOS (probada en vivo 21-03-2026):
+//   Capa 1 — con crédito: mistral-small-4 ($0.15/M input, vision, rápido, fiable)
+//   Capa 2 — gratis fallback: gemma-3-12b (5s respuesta, clasificación correcta, estable)
+//   Resto — gratis extra: gemma-3-27b, gemma-3-4b (si las anteriores tienen rate limit)
+//   EVITADO: nemotron (127s timeout), llama-3.3 (429 frecuente), mistral-3.1-24b (429 frecuente)
 const OR_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-const OR_MODEL_DEFAULT = 'nvidia/nemotron-nano-12b-v2-vl:free';   // Vision+Tools — más estable
-const OR_MODEL_VISION_FALLBACK  = 'mistralai/mistral-small-3.1-24b-instruct:free';
-const OR_MODEL_VISION_FALLBACK2 = 'google/gemma-3-27b-it:free';
-// Lista completa para iterar hasta encontrar uno disponible
+// Modelo por defecto — con crédito usa mistral-small-4; sin crédito usa gemma-3-12b
+const OR_MODEL_DEFAULT = 'mistralai/mistral-small-2603';  // $0.15/$0.60 por M tokens, vision ✅
+const OR_MODEL_VISION_FALLBACK  = 'google/gemma-3-12b-it:free';   // gratuito, 5s, vision ✅
+const OR_MODEL_VISION_FALLBACK2 = 'google/gemma-3-27b-it:free';   // gratuito, vision ✅
+// Lista completa — primero el de pago, luego los gratuitos fiables
 const OR_VISION_MODELS = [
-  'nvidia/nemotron-nano-12b-v2-vl:free',
-  'mistralai/mistral-small-3.1-24b-instruct:free',
-  'google/gemma-3-27b-it:free',
-  'google/gemma-3-12b-it:free',
-  'meta-llama/llama-3.2-3b-instruct:free',
-  'google/gemma-3-4b-it:free',
+  'mistralai/mistral-small-2603',            // con crédito: rápido, preciso, vision
+  'google/gemma-3-12b-it:free',              // gratis: 5s, fiable ✅
+  'google/gemma-3-27b-it:free',              // gratis: vision ✅
+  'google/gemma-3-4b-it:free',               // gratis: ligero ✅
+  'mistralai/mistral-small-3.1-24b-instruct:free', // gratis: cuando hay disponibilidad
+  'meta-llama/llama-3.3-70b-instruct:free',  // gratis: texto, sin vision
 ];
 const OR_TEXT_MODELS = [
-  'nvidia/nemotron-nano-12b-v2-vl:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'mistralai/mistral-small-3.1-24b-instruct:free',
-  'qwen/qwen3-4b:free',
+  'mistralai/mistral-small-2603',            // con crédito
+  'google/gemma-3-12b-it:free',              // gratis fiable
   'google/gemma-3-27b-it:free',
+  'google/gemma-3-4b-it:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
 ];
-const OR_MODEL_TEXT = 'meta-llama/llama-3.3-70b-instruct:free';
+const OR_MODEL_TEXT = 'google/gemma-3-12b-it:free';
 
 function getGeminiModel(){
   return localStorage.getItem('als_gemini_model') || OR_MODEL_DEFAULT;
@@ -875,44 +880,54 @@ async function saveGeminiKeyToSupabase(key){
 }
 
 // ── Función central OpenRouter ────────────────────────────────
-// Reemplaza a Gemini. Misma firma, compatible OpenAI.
 async function _callOpenRouter(messages, modelOverride, forceJson){
   const key = getGeminiKey();
   if(!key) throw new Error('🔑 Configura tu API key de OpenRouter en ⚙️ del sidebar izquierdo. Gratis en openrouter.ai/keys');
 
   const model = modelOverride || getGeminiModel();
-  const body = {
-    model,
-    messages,
-    temperature: 0.1,
-    max_tokens: 8192,
-  };
+  const body = { model, messages, temperature: 0.1, max_tokens: 8192 };
   if(forceJson) body.response_format = { type: 'json_object' };
 
-  const resp = await fetch(OR_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`,
-      'HTTP-Referer': 'https://marcoslekolas.github.io/PortalALS/',
-      'X-Title': 'Customs Way TARIC'
-    },
-    body: JSON.stringify(body)
-  });
+  // Timeout de 25s — evita que modelos lentos bloqueen el fallback automático
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-  const data = await resp.json();
+  let resp, data;
+  try {
+    resp = await fetch(OR_ENDPOINT, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${key}`,
+        'HTTP-Referer': 'https://marcoslekolas.github.io/PortalALS/',
+        'X-Title': 'Customs Way TARIC'
+      },
+      body: JSON.stringify(body)
+    });
+    data = await resp.json();
+  } catch(fetchErr) {
+    clearTimeout(timeoutId);
+    if(fetchErr.name === 'AbortError'){
+      throw new Error('RATE_LIMIT:' + model + ':timeout 25s — modelo demasiado lento');
+    }
+    throw new Error('RATE_LIMIT:' + model + ':' + (fetchErr.message||'network error'));
+  }
+  clearTimeout(timeoutId);
 
   if(!resp.ok || data.error){
     const _m = data?.error?.message || JSON.stringify(data?.error) || 'Error desconocido';
     const _code = data?.error?.code || resp.status;
-    if(_code === 429 || _m.includes('rate') || _m.includes('quota') || _m.includes('limit')){
+    if(_code === 429 || resp.status === 502 || resp.status === 503 ||
+       _m.includes('rate') || _m.includes('quota') || _m.includes('limit') ||
+       _m.includes('Network connection') || _m.includes('overloaded')){
       throw new Error('RATE_LIMIT:' + model + ':' + _m.substring(0,100));
     }
-    if(_code === 401 || _m.includes('key') || _m.includes('auth') || _m.includes('401')){
+    if(_code === 401 || _m.includes('API key') || _m.includes('auth')){
       throw new Error('🔑 API key de OpenRouter no válida. Compruébala en openrouter.ai/keys');
     }
     if(_m.includes('credit') || _m.includes('balance')){
-      throw new Error('💳 Sin créditos en OpenRouter. Los modelos :free son gratuitos, verifica que usas uno de ellos.');
+      throw new Error('💳 Sin créditos en OpenRouter. Añade crédito en openrouter.ai/credits');
     }
     throw new Error('Error OpenRouter [' + _code + ']: ' + _m.substring(0,150));
   }
@@ -1011,9 +1026,10 @@ async function saveGeminiKey(val){
   }
 }
 async function initApiKeyUI(){
-  // Limpiar modelos obsoletos de Gemini que pudieran quedar en localStorage
+  // Limpiar modelos obsoletos que pudieran quedar en localStorage
   const savedModel = localStorage.getItem('als_gemini_model');
-  if(savedModel && (savedModel.startsWith('gemini') || savedModel.includes('gemini'))){
+  const modelosObsoletos = ['gemini', 'qwen2.5-vl', 'nemotron', 'llama-4-maverick'];
+  if(savedModel && modelosObsoletos.some(o => savedModel.includes(o))){
     localStorage.removeItem('als_gemini_model');
   }
   // Restaurar modelo seleccionado
@@ -1587,7 +1603,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
   // Si el modelo principal no soporta visión (texto-only), usa modelo VL
   const primaryModel = getGeminiModel();
   const isVisionModel = primaryModel.includes('vl') || primaryModel.includes('vision') ||
-    primaryModel.includes('mistral-small') || primaryModel.includes('nemotron') ||
+    primaryModel.includes('mistral-small') || primaryModel.includes('gemma') ||
     primaryModel.includes('gemma') || primaryModel.includes('llama-3.2');
 
   // Si el modelo seleccionado no soporta visión, empezar con el primero de la lista VL
@@ -2325,7 +2341,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
   // OpenRouter con fallback automático — lista completa de modelos visión
   const primaryModel = getGeminiModel();
   const isVision = primaryModel.includes('vl') || primaryModel.includes('vision') ||
-    primaryModel.includes('mistral-small') || primaryModel.includes('nemotron') ||
+    primaryModel.includes('mistral-small') || primaryModel.includes('gemma') ||
     primaryModel.includes('gemma') || primaryModel.includes('llama-3.2');
   const modelToUse = isVision ? primaryModel : OR_VISION_MODELS[0];
 
