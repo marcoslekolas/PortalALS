@@ -528,11 +528,11 @@ textarea.fi{resize:vertical;min-height:80px}
           <!-- Selector de modelo -->
           <select id="sb-model-select" class="fi" style="font-size:11px;padding:4px 6px;margin-top:6px;width:100%" class="nav-item-txt"
             onchange="guardarModeloSupabase(this.value);localStorage.setItem('als_gemini_model',this.value);showToast('Modelo: '+this.value.split('/').pop())">
-            <option value="qwen/qwen2.5-vl-72b-instruct:free">Qwen2.5-VL 72B 🏆 (recomendado)</option>
-            <option value="qwen/qwen2.5-vl-32b-instruct:free">Qwen2.5-VL 32B ✅</option>
-            <option value="qwen/qwen3-32b:free">Qwen3 32B (solo texto)</option>
-            <option value="qwen/qwen3-235b-a22b:free">Qwen3 235B MoE ✅</option>
-            <option value="meta-llama/llama-4-maverick:free">Llama 4 Maverick ✅</option>
+            <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B 🏆 (recomendado)</option>
+            <option value="nvidia/nemotron-nano-12b-v2-vl:free">NVIDIA Nemotron VL 12B ✅</option>
+            <option value="google/gemma-3-27b-it:free">Gemma 3 27B ✅</option>
+            <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (solo texto)</option>
+            <option value="qwen/qwen3-4b:free">Qwen3 4B (solo texto, rápido)</option>
           </select>
         </div>
         <!-- User -->
@@ -805,11 +805,13 @@ const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 // Obtén tu API key gratis en: https://openrouter.ai/keys
 // Modelos Qwen VL (visión+OCR) totalmente gratuitos sin límite diario absurdo
 const OR_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-const OR_MODEL_DEFAULT = 'qwen/qwen2.5-vl-72b-instruct:free';
-// Modelo de fallback para visión si el principal tiene rate limit
-const OR_MODEL_VISION_FALLBACK = 'qwen/qwen2.5-vl-32b-instruct:free';
+// Modelos visión gratuitos verificados marzo 2026 (openrouter.ai/collections/free-models)
+const OR_MODEL_DEFAULT = 'mistralai/mistral-small-3.1-24b-instruct:free'; // 128K ctx, Vision+Tools
+// Fallbacks de visión gratuitos
+const OR_MODEL_VISION_FALLBACK = 'nvidia/nemotron-nano-12b-v2-vl:free';   // 128K ctx, Vision+Tools
+const OR_MODEL_VISION_FALLBACK2 = 'google/gemma-3-27b-it:free';           // 131K ctx, Vision
 // Modelo para texto puro (clasificación TARIC sin imagen)
-const OR_MODEL_TEXT = 'qwen/qwen3-32b:free';
+const OR_MODEL_TEXT = 'meta-llama/llama-3.3-70b-instruct:free';
 
 function getGeminiModel(){
   return localStorage.getItem('als_gemini_model') || OR_MODEL_DEFAULT;
@@ -908,8 +910,8 @@ async function _callOpenRouter(messages, modelOverride, forceJson){
 async function _callOpenRouterWithFallback(messages, preferVision){
   const primary = getGeminiModel();
   const fallbacks = preferVision
-    ? [primary, OR_MODEL_VISION_FALLBACK, 'meta-llama/llama-4-maverick:free']
-    : [primary, OR_MODEL_TEXT, 'qwen/qwen3-235b-a22b:free'];
+    ? [primary, OR_MODEL_VISION_FALLBACK, OR_MODEL_VISION_FALLBACK2, 'google/gemma-3-12b-it:free']
+    : [primary, OR_MODEL_TEXT, 'meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-3-27b-it:free'];
 
   const tried = new Set();
   for(const model of fallbacks){
@@ -1564,16 +1566,16 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
   // Si el modelo principal no soporta visión (texto-only), usa modelo VL
   const primaryModel = getGeminiModel();
   const isVisionModel = primaryModel.includes('vl') || primaryModel.includes('vision') ||
-    primaryModel.includes('maverick') || primaryModel.includes('scout') ||
-    primaryModel.includes('llama-4') || primaryModel.includes('mistral-small-3');
+    primaryModel.includes('mistral-small') || primaryModel.includes('nemotron') ||
+    primaryModel.includes('gemma') || primaryModel.includes('llama-3.2');
 
   // Si el modelo seleccionado no es VL y tenemos imagen, forzar modelo VL
   const modelToUse = (base64 && !isVisionModel) ? OR_MODEL_VISION_FALLBACK : primaryModel;
   if(base64 && !isVisionModel){
-    showToast('ℹ️ Usando Qwen-VL para OCR (el modelo seleccionado no soporta visión)');
+    showToast('ℹ️ Usando modelo VL para OCR (el modelo seleccionado no soporta visión)');
   }
 
-  const visionFallbacks = [modelToUse, OR_MODEL_VISION_FALLBACK, 'meta-llama/llama-4-maverick:free'];
+  const visionFallbacks = [modelToUse, OR_MODEL_VISION_FALLBACK, OR_MODEL_VISION_FALLBACK2, 'google/gemma-3-12b-it:free'];
   const tried = new Set();
   let lastErr;
   for(const model of visionFallbacks){
@@ -2301,10 +2303,11 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
   // OpenRouter con fallback automático (Qwen-VL preferido para OCR)
   const primaryModel = getGeminiModel();
   const isVision = primaryModel.includes('vl') || primaryModel.includes('vision') ||
-    primaryModel.includes('maverick') || primaryModel.includes('llama-4');
+    primaryModel.includes('mistral-small') || primaryModel.includes('nemotron') ||
+    primaryModel.includes('gemma') || primaryModel.includes('llama-3.2');
   const modelToUse = isVision ? primaryModel : OR_MODEL_VISION_FALLBACK;
 
-  const visionFallbacks = [modelToUse, OR_MODEL_VISION_FALLBACK, 'meta-llama/llama-4-maverick:free'];
+  const visionFallbacks = [modelToUse, OR_MODEL_VISION_FALLBACK, OR_MODEL_VISION_FALLBACK2, 'google/gemma-3-12b-it:free'];
   const tried = new Set();
   let lastErr;
   for(const model of visionFallbacks){
