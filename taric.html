@@ -855,12 +855,19 @@ textarea.fi{resize:vertical;min-height:80px}
             <option value="40">40 — Despacho a libre práctica</option>
             <option value="42">42 — Libre práctica + régimen especial simultáneo</option>
             <option value="61">61 — Reimportación en libre práctica</option>
+            <option value="63">63 — Reimportación con despacho a consumo simultáneo</option>
             <option value="10">10 — Exportación definitiva</option>
             <option value="11">11 — Exportación definitiva tras perfeccionamiento activo</option>
+            <option value="21">21 — Exportación temporal (perfeccionamiento pasivo)</option>
+            <option value="23">23 — Exportación temporal para reimportación en el mismo estado</option>
+            <option value="31">31 — Reexportación</option>
             <option value="51">51 — Perfeccionamiento activo</option>
             <option value="53">53 — Importación temporal</option>
+            <option value="54">54 — Importación temporal en doble suspensión</option>
             <option value="71">71 — Depósito aduanero</option>
+            <option value="76">76 — Depósito aduanero + perfeccionamiento activo</option>
             <option value="78">78 — Introducción en zona franca</option>
+            <option value="91">91 — Control aduanero uso final</option>
             <option value="T1">T1 — Tránsito externo</option>
             <option value="T2">T2 — Tránsito interno comunitario</option>
           </select>
@@ -869,11 +876,16 @@ textarea.fi{resize:vertical;min-height:80px}
           <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Régimen precedente (C.1)</label>
           <select id="dcfg-regimen-prev" class="fi" style="width:100%">
             <option value="00">00 — Sin régimen precedente</option>
-            <option value="71">71 — Depósito aduanero</option>
+            <option value="10">10 — Exportación temporal previa</option>
+            <option value="21">21 — Exportación temporal (reimportación)</option>
+            <option value="23">23 — Exportación temporal en mismo estado</option>
             <option value="51">51 — Perfeccionamiento activo</option>
             <option value="53">53 — Importación temporal</option>
+            <option value="71">71 — Depósito aduanero</option>
+            <option value="78">78 — Zona franca</option>
             <option value="91">91 — Control aduanero uso final</option>
             <option value="T1">T1 — Tránsito externo</option>
+            <option value="T2">T2 — Tránsito interno</option>
           </select>
         </div>
       </div>
@@ -982,25 +994,25 @@ const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 //   Resto — gratis extra: gemma-3-27b, gemma-3-4b (si las anteriores tienen rate limit)
 //   EVITADO: nemotron (127s timeout), llama-3.3 (429 frecuente), mistral-3.1-24b (429 frecuente)
 const OR_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-// Modelo por defecto — con crédito usa mistral-small-4; sin crédito usa gemma-3-12b
+// Modelo por defecto — con crédito usa mistral-small-4 (vision); sin crédito usa gemma-3-12b
 const OR_MODEL_DEFAULT = 'mistralai/mistral-small-2603';  // $0.15/$0.60 por M tokens, vision ✅
-const OR_MODEL_VISION_FALLBACK  = 'google/gemma-3-12b-it:free';   // gratuito, 5s, vision ✅
-const OR_MODEL_VISION_FALLBACK2 = 'google/gemma-3-27b-it:free';   // gratuito, vision ✅
-// Lista completa — primero el de pago, luego los gratuitos fiables
+const OR_MODEL_VISION_FALLBACK  = 'google/gemma-3-12b-it:free';
+const OR_MODEL_VISION_FALLBACK2 = 'google/gemma-3-27b-it:free';
+// VISION MODELS — solo modelos que soportan imagen. Llama-3.3 NO está aquí (texto puro)
 const OR_VISION_MODELS = [
-  'mistralai/mistral-small-2603',            // con crédito: rápido, preciso, vision
-  'google/gemma-3-12b-it:free',              // gratis: 5s, fiable ✅
-  'google/gemma-3-27b-it:free',              // gratis: vision ✅
-  'google/gemma-3-4b-it:free',               // gratis: ligero ✅
-  'mistralai/mistral-small-3.1-24b-instruct:free', // gratis: cuando hay disponibilidad
-  'meta-llama/llama-3.3-70b-instruct:free',  // gratis: texto, sin vision
+  'mistralai/mistral-small-2603',                    // pago: vision ✅ rápido
+  'google/gemma-3-12b-it:free',                      // gratis: vision ✅
+  'google/gemma-3-27b-it:free',                      // gratis: vision ✅
+  'google/gemma-3-4b-it:free',                       // gratis: vision ✅
+  'mistralai/mistral-small-3.1-24b-instruct:free',   // gratis: vision ✅
+  // NO incluir llama-3.3-70b ni llama-3.2-3b — no soportan imágenes en OpenRouter
 ];
 const OR_TEXT_MODELS = [
-  'mistralai/mistral-small-2603',            // con crédito
-  'google/gemma-3-12b-it:free',              // gratis fiable
+  'mistralai/mistral-small-2603',
+  'google/gemma-3-12b-it:free',
   'google/gemma-3-27b-it:free',
   'google/gemma-3-4b-it:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
+  'meta-llama/llama-3.3-70b-instruct:free',          // texto puro OK
 ];
 const OR_MODEL_TEXT = 'google/gemma-3-12b-it:free';
 
@@ -1095,9 +1107,11 @@ async function _callOpenRouter(messages, modelOverride, forceJson){
     const _m = data?.error?.message || JSON.stringify(data?.error) || 'Error desconocido';
     const _code = data?.error?.code || resp.status;
     if(_code === 429 || resp.status === 502 || resp.status === 503 || resp.status === 400 ||
+       resp.status === 404 ||
        _m.includes('rate') || _m.includes('quota') || _m.includes('limit') ||
        _m.includes('Network connection') || _m.includes('overloaded') ||
-       _m.includes('Provider returned error')){
+       _m.includes('Provider returned error') || _m.includes('No endpoints') ||
+       _m.includes('image input') || _m.includes('not support')){
       throw new Error('RATE_LIMIT:' + model + ':' + _m.substring(0,100));
     }
     if(_code === 401 || _m.includes('API key') || _m.includes('auth')){
