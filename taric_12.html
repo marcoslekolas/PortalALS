@@ -1,0 +1,2956 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>Customs Way · Clasificador TARIC</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+(function(){
+  var saved=localStorage.getItem('als_dark');
+  var prefersDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches;
+  if(saved==='1'||(saved===null&&prefersDark)) document.documentElement.classList.add('dark');
+})();
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --w:#fff;--g50:#f8fafc;--g100:#f1f5f9;--g200:#e2e8f0;--g300:#cbd5e1;
+  --g400:#94a3b8;--g500:#64748b;--g600:#475569;--g700:#334155;--g900:#0f172a;
+  --b50:#eff6ff;--b100:#dbeafe;--b500:#3b82f6;--b600:#2563eb;--b700:#1d4ed8;
+  --gr50:#f0fdf4;--gr500:#22c55e;--gr600:#16a34a;
+  --am50:#fffbeb;--am500:#f59e0b;--am600:#d97706;
+  --rd50:#fff1f2;--rd500:#f43f5e;--rd600:#e11d48;
+  --tl50:#f0fdfa;--tl500:#14b8a6;--tl600:#0d9488;
+  --pu50:#faf5ff;--pu500:#a855f7;--pu600:#9333ea;
+  --or50:#fff7ed;--or500:#f97316;--or600:#ea580c;
+  --f:'IBM Plex Sans',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+  --r:8px;--rl:12px;--rxl:18px;
+  --sh0:0 1px 3px rgba(0,0,0,.07);
+  --shl:0 8px 32px rgba(0,0,0,.12);
+  --shxl:0 24px 64px rgba(0,0,0,.16);
+  --hh:58px;--sw:240px;
+}
+:root.dark{
+  --w:#0f172a;--g50:#1e293b;--g100:#1e293b;--g200:#334155;--g300:#475569;
+  --g400:#64748b;--g500:#94a3b8;--g600:#cbd5e1;--g700:#e2e8f0;--g900:#f8fafc;
+  --b50:#1e3a5f;--b100:#1e3a8a;--b500:#60a5fa;--b600:#3b82f6;
+  --gr50:#052e16;--gr500:#4ade80;--gr600:#22c55e;
+  --am50:#451a03;--am500:#fbbf24;--am600:#f59e0b;
+  --rd50:#4c0519;--rd500:#fb7185;--rd600:#f43f5e;
+  --tl50:#042f2e;--tl500:#2dd4bf;--tl600:#14b8a6;
+  --pu50:#3b0764;--pu500:#c084fc;--pu600:#a855f7;
+  --or50:#431407;--or500:#fb923c;--or600:#f97316;
+  --shl:0 8px 32px rgba(0,0,0,.5);
+}
+:root.dark body{background:#0a0f1e}
+:root.dark #hdr{background:linear-gradient(135deg,#1e3a8a,#2d1b69)!important}
+:root.dark #sidebar{background:#0f172a!important;border-color:#334155!important}
+:root.dark #sb-header{background:#0f172a!important;border-color:#334155!important}
+:root.dark #content{background:#0a0f1e!important}
+:root.dark .view{background:transparent!important}
+:root.dark .ph{background:#0f172a!important;border-color:#334155!important}
+:root.dark .card{background:#0f172a!important;border-color:#334155!important}
+:root.dark .fi{background:#1e293b!important;border-color:#334155!important;color:var(--g900)!important}
+:root.dark .fi:focus{border-color:var(--b600)!important}
+:root.dark .tbl th{background:#1a2744!important;color:var(--g500)!important;border-color:#334155!important}
+:root.dark .tbl td{background:#0f172a!important;border-color:#1e293b!important;color:var(--g600)!important}
+:root.dark .tbl tr:hover td{background:#1e293b!important}
+:root.dark .result-card{background:#0f172a!important;border-color:#334155!important}
+:root.dark .hist-item{background:#0f172a!important;border-color:#334155!important}
+:root.dark .hist-item:hover{background:#1e293b!important}
+:root.dark .drop-zone{background:#0f172a!important;border-color:#334155!important}
+:root.dark .drop-zone:hover{background:#1e293b!important;border-color:var(--b600)!important}
+:root.dark .measure-badge{opacity:.9}
+:root.dark .code-chip{background:#1e3a8a!important;color:#93c5fd!important}
+:root.dark .sb-toggle{background:#1e293b!important;border-color:#334155!important;color:var(--g400)!important}
+:root.dark .nav-item:hover{background:#1e293b!important}
+:root.dark .nav-item.active{background:linear-gradient(135deg,#1d4ed8,#6366f1)!important}
+:root.dark #sb-logo-txt{color:var(--g900)!important}
+:root.dark .hdr-icon-btn-air{background:rgba(255,255,255,.08)!important;border-color:rgba(255,255,255,.12)!important}
+:root.dark .empty-state{color:var(--g400)!important}
+:root.dark .tag{background:#1e293b!important;border-color:#334155!important;color:var(--g500)!important}
+:root.dark .source-badge{background:#1e293b!important;color:var(--g500)!important}
+:root.dark .conf-bar-bg{background:#334155!important}
+
+html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
+#app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+/* ── Header ─────────────────────────────────────────────────── */
+#hdr{
+  background:linear-gradient(135deg,#0f2d6e 0%,#1e3a8a 50%,#312e81 100%);
+  color:#fff;display:flex;align-items:center;
+  padding:0 14px;height:var(--hh);flex-shrink:0;gap:10px;
+  box-shadow:0 2px 20px rgba(15,45,110,.5);
+  position:relative;overflow:visible;
+}
+#hdr::after{
+  content:'';position:absolute;inset:0;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Ccircle cx='30' cy='30' r='25' fill='none' stroke='rgba(255,255,255,.04)' stroke-width='1'/%3E%3C/svg%3E");
+  pointer-events:none;
+}
+.hdr-mark{width:36px;height:36px;background:rgba(255,255,255,.18);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;letter-spacing:-.5px;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.25)}
+.hdr-divider{width:1px;height:20px;background:rgba(255,255,255,.2)}
+.hdr-title-wrap{display:flex;flex-direction:column;gap:1px}
+.hdr-title{font-size:13px;font-weight:700;color:#fff;letter-spacing:.01em}
+.hdr-subtitle{font-size:10px;color:rgba(255,255,255,.55);font-weight:500;letter-spacing:.05em;text-transform:uppercase}
+.hdr-spacer{flex:1}
+.hdr-icon-btn-air{
+  width:34px;height:34px;border-radius:9px;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);
+  color:#fff;cursor:pointer;font-size:15px;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;flex-shrink:0;
+}
+.hdr-icon-btn-air:hover{background:rgba(255,255,255,.22);transform:translateY(-1px)}
+.hdr-btn{
+  background:rgba(255,255,255,.15);color:#fff;
+  border:1px solid rgba(255,255,255,.25);
+  padding:6px 14px;border-radius:8px;
+  font-size:12px;font-weight:600;cursor:pointer;
+  font-family:var(--f);white-space:nowrap;
+  transition:all .15s;
+}
+.hdr-btn:hover{background:rgba(255,255,255,.25)}
+.hdr-btn.primary{background:rgba(255,255,255,.25);border-color:rgba(255,255,255,.4)}
+.hamburger{display:none;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:18px;cursor:pointer;padding:5px 9px;border-radius:8px}
+
+/* ── Layout ──────────────────────────────────────────────────── */
+#body{flex:1;display:flex;overflow:hidden}
+#content{flex:1;overflow-y:auto;background:var(--g50)}
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+#sidebar{
+  width:var(--sw);background:var(--w);
+  border-right:1px solid var(--g200);
+  display:flex;flex-direction:column;flex-shrink:0;
+  overflow-y:auto;z-index:50;
+  transition:width .25s cubic-bezier(.4,0,.2,1),transform .25s;
+}
+#sidebar.collapsed{width:64px}
+#sidebar.collapsed .nav-item-txt{opacity:0;width:0;overflow:hidden;white-space:nowrap;display:inline-block}
+#sidebar.collapsed .nav-item{justify-content:center;padding:10px 0;margin:2px 8px}
+#sidebar.collapsed .nav-item .ni{margin:0;font-size:18px}
+#sidebar.collapsed .sb-sec{opacity:0;height:0;overflow:hidden;margin:0;padding:0}
+#sidebar.collapsed .sb-bot{padding:8px;display:flex;justify-content:center}
+#sidebar.collapsed #sb-logo-txt{opacity:0;width:0;overflow:hidden}
+#sidebar.collapsed #sb-header{justify-content:center}
+#sidebar.collapsed .sb-toggle .ti-expand{display:none}
+#sidebar.collapsed .sb-toggle .ti-collapse{display:block}
+.sb-toggle .ti-collapse{display:none}
+.nav-item-txt{transition:opacity .2s,width .2s;white-space:nowrap}
+#sb-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 12px 10px;border-bottom:1px solid var(--g100);flex-shrink:0;
+}
+#sb-logo{display:flex;align-items:center;gap:9px;min-width:0;overflow:hidden;cursor:pointer}
+#sb-logo-mark{
+  width:34px;height:34px;border-radius:9px;flex-shrink:0;
+  background:linear-gradient(135deg,#0f2d6e,#312e81);
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:900;font-size:14px;letter-spacing:-.5px;
+  border:1.5px solid rgba(255,255,255,.2);
+}
+#sb-logo-txt{font-weight:700;font-size:13px;color:var(--g900);white-space:nowrap;overflow:hidden;transition:opacity .2s,width .2s}
+.sb-toggle{
+  width:26px;height:26px;border-radius:7px;
+  border:1px solid var(--g200);background:var(--w);
+  cursor:pointer;font-size:12px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--g400);transition:all .15s;flex-shrink:0;
+}
+.sb-toggle:hover{background:var(--g100);color:var(--b600)}
+.sb-sec{padding:16px 14px 5px;font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.1em}
+.nav-item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 12px;border-radius:10px;margin:2px 8px;
+  cursor:pointer;color:var(--g500);font-size:13px;font-weight:500;
+  transition:all .15s cubic-bezier(.4,0,.2,1);user-select:none;
+}
+.nav-item:hover{background:var(--g100);color:var(--g900);transform:translateX(2px)}
+.nav-item.active{background:linear-gradient(135deg,#0f2d6e,#312e81);color:#fff;box-shadow:0 4px 12px rgba(15,45,110,.35)}
+.nav-item .ni{font-size:16px;width:22px;text-align:center;flex-shrink:0;transition:transform .15s}
+.nav-item:hover .ni{transform:scale(1.15)}
+.nb{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:18px;height:18px;padding:0 5px;
+  background:var(--rd500);color:#fff;
+  border-radius:9px;font-size:10px;font-weight:700;margin-left:auto;
+}
+.sb-bot{border-top:1px solid var(--g100);padding:10px;flex-shrink:0;margin-top:auto}
+.sb-user{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:background .15s;overflow:hidden}
+.sb-user:hover{background:var(--g100)}
+.sb-av{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#0f2d6e,#312e81);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0}
+
+/* ── Page header ─────────────────────────────────────────────── */
+.ph{background:var(--w);border-bottom:1px solid var(--g200);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;flex-shrink:0;position:sticky;top:0;z-index:10}
+.pt{font-size:16px;font-weight:700;color:var(--g900)}
+.ps{font-size:12px;color:var(--g500);margin-top:2px}
+
+/* ── Views ───────────────────────────────────────────────────── */
+.view{display:none;flex-direction:column;min-height:100%}
+.view.active{display:flex}
+.view-body{padding:20px 24px;flex:1}
+
+/* ── Cards ───────────────────────────────────────────────────── */
+.card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:20px;box-shadow:var(--sh0)}
+
+/* ── Inputs ──────────────────────────────────────────────────── */
+.fi{
+  width:100%;padding:10px 14px;border-radius:var(--r);
+  border:1.5px solid var(--g200);background:var(--w);
+  color:var(--g900);font-family:var(--f);font-size:13px;
+  transition:border-color .15s,box-shadow .15s;outline:none;
+}
+.fi:focus{border-color:var(--b600);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+textarea.fi{resize:vertical;min-height:80px}
+.fl{font-size:12px;font-weight:600;color:var(--g600);margin-bottom:5px;display:block}
+.fg{margin-bottom:14px}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--f);border:none;transition:all .15s;white-space:nowrap}
+.btn-p{background:linear-gradient(135deg,#0f2d6e,#1d4ed8);color:#fff;box-shadow:0 2px 8px rgba(15,45,110,.3)}
+.btn-p:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(15,45,110,.4)}
+.btn-s{background:var(--g100);color:var(--g700);border:1px solid var(--g200)}
+.btn-s:hover{background:var(--g200)}
+.btn-g{background:var(--gr50);color:var(--gr700);border:1px solid #bbf7d0}
+.btn-g:hover{background:#dcfce7}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none!important}
+
+/* ── Tables ──────────────────────────────────────────────────── */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--g500);background:var(--g50);border-bottom:1px solid var(--g200);white-space:nowrap}
+.tbl td{padding:11px 14px;border-bottom:1px solid var(--g100);color:var(--g700);vertical-align:top}
+.tbl tr:hover td{background:var(--b50)}
+.tbl tr:last-child td{border-bottom:none}
+
+/* ── Badges ──────────────────────────────────────────────────── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+.badge-blue{background:var(--b50);color:var(--b700);border:1px solid var(--b100)}
+.badge-green{background:var(--gr50);color:var(--gr700);border:1px solid #bbf7d0}
+.badge-amber{background:var(--am50);color:#92400e;border:1px solid #fde68a}
+.badge-red{background:var(--rd50);color:var(--rd600);border:1px solid #fecdd3}
+.badge-teal{background:var(--tl50);color:var(--tl600);border:1px solid #99f6e4}
+.badge-purple{background:var(--pu50);color:var(--pu600);border:1px solid #e9d5ff}
+.badge-orange{background:var(--or50);color:var(--or600);border:1px solid #fed7aa}
+.badge-grey{background:var(--g100);color:var(--g600);border:1px solid var(--g200)}
+
+/* ── Toast ───────────────────────────────────────────────────── */
+#toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+  background:#0f172a;color:#fff;padding:10px 20px;border-radius:10px;
+  font-size:13px;font-weight:500;z-index:9999;opacity:0;
+  transition:all .3s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;
+  box-shadow:0 8px 24px rgba(0,0,0,.4);
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── Modal ───────────────────────────────────────────────────── */
+.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.mo.open{display:flex}
+.modal{background:var(--w);border-radius:var(--rxl);width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shxl);animation:slideUp .25s cubic-bezier(.16,1,.3,1)}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.mh{padding:18px 22px;border-bottom:1px solid var(--g100);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--w);z-index:1;border-radius:var(--rxl) var(--rxl) 0 0}
+.mh-title{font-size:15px;font-weight:700;color:var(--g900)}
+.mb{padding:20px 22px}
+.mf{padding:14px 22px;border-top:1px solid var(--g100);display:flex;justify-content:flex-end;gap:10px;position:sticky;bottom:0;background:var(--w);border-radius:0 0 var(--rxl) var(--rxl)}
+:root.dark .mh,:root.dark .mb,:root.dark .mf{background:#0f172a!important}
+:root.dark .modal{background:#0f172a!important}
+
+/* ── Loading spinner ─────────────────────────────────────────── */
+.spinner{width:20px;height:20px;border:2.5px solid var(--g200);border-top-color:var(--b600);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-wrap{display:flex;align-items:center;gap:12px;padding:24px;color:var(--g500)}
+
+/* ── TARIC specific components ───────────────────────────────── */
+
+/* Search area */
+.search-hero{
+  background:linear-gradient(135deg,#0f2d6e 0%,#1e3a8a 60%,#312e81 100%);
+  padding:28px 24px;position:relative;overflow:hidden;
+}
+.search-hero::before{
+  content:'';position:absolute;top:-40px;right:-40px;
+  width:200px;height:200px;border-radius:50%;
+  background:rgba(255,255,255,.04);
+}
+.search-hero::after{
+  content:'';position:absolute;bottom:-60px;left:20%;
+  width:300px;height:300px;border-radius:50%;
+  background:rgba(255,255,255,.03);
+}
+.search-hero-title{color:#fff;font-size:15px;font-weight:700;margin-bottom:4px;position:relative;z-index:1}
+.search-hero-sub{color:rgba(255,255,255,.6);font-size:12px;margin-bottom:16px;position:relative;z-index:1}
+.search-hero .fi{
+  background:rgba(255,255,255,.1)!important;
+  border-color:rgba(255,255,255,.25)!important;
+  color:#fff!important;font-size:14px;
+  backdrop-filter:blur(8px);
+  position:relative;z-index:1;
+}
+.search-hero .fi::placeholder{color:rgba(255,255,255,.45)!important}
+.search-hero .fi:focus{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.15)!important;box-shadow:0 0 0 3px rgba(255,255,255,.1)!important}
+
+/* Result card */
+.result-card{
+  background:var(--w);border:1px solid var(--g200);
+  border-radius:var(--rxl);overflow:hidden;
+  box-shadow:var(--shl);animation:slideUp .3s cubic-bezier(.16,1,.3,1);
+}
+.result-header{
+  padding:20px 24px;
+  background:linear-gradient(135deg,#f8fafc,#eff6ff);
+  border-bottom:1px solid var(--g200);
+  display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;
+}
+:root.dark .result-header{background:linear-gradient(135deg,#1e293b,#1e3a5f)!important}
+.code-chip{
+  font-family:var(--mono);font-size:22px;font-weight:600;
+  color:var(--b700);background:var(--b50);
+  border:1.5px solid var(--b100);border-radius:10px;
+  padding:8px 16px;letter-spacing:.05em;white-space:nowrap;
+  flex-shrink:0;
+}
+.result-desc{flex:1;min-width:200px}
+.result-desc-main{font-size:15px;font-weight:700;color:var(--g900);margin-bottom:6px;line-height:1.4}
+.result-desc-nc{font-size:12px;color:var(--g500);font-family:var(--mono)}
+.result-body{padding:20px 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.result-section{}
+.result-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:8px}
+
+/* Duty display */
+.duty-main{font-size:28px;font-weight:800;color:var(--g900);line-height:1;font-family:var(--mono)}
+.duty-label{font-size:11px;color:var(--g500);margin-top:3px}
+.duty-origin{font-size:12px;color:var(--g600);margin-top:6px}
+
+/* Measures */
+.measure-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:5px 10px;border-radius:8px;font-size:12px;font-weight:600;
+  margin:3px 3px 3px 0;line-height:1.3;
+}
+
+/* Confidence */
+.conf-bar-bg{background:var(--g100);border-radius:4px;height:6px;overflow:hidden;margin-top:4px}
+.conf-bar{height:100%;border-radius:4px;transition:width 1s cubic-bezier(.16,1,.3,1)}
+
+/* Reasoning section */
+.reasoning{
+  padding:16px 24px;background:var(--g50);
+  border-top:1px solid var(--g100);
+  font-size:13px;color:var(--g600);line-height:1.7;
+}
+:root.dark .reasoning{background:#1e293b!important}
+.reasoning-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:8px}
+.reasoning-text p{margin-bottom:8px}
+
+/* CAVs */
+.cav-item{
+  padding:12px 14px;border:1px solid var(--g200);border-radius:10px;
+  margin-bottom:8px;transition:all .15s;cursor:pointer;
+}
+.cav-item:hover{border-color:var(--b300);background:var(--b50);transform:translateX(2px)}
+:root.dark .cav-item{border-color:#334155!important}
+:root.dark .cav-item:hover{background:#1e3a5f!important}
+.cav-ref{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--b700)}
+.cav-desc{font-size:12px;color:var(--g600);margin-top:3px;line-height:1.4}
+.cav-code{font-family:var(--mono);font-size:11px;color:var(--b600);margin-top:4px}
+
+/* History */
+.hist-item{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px;border:1px solid var(--g200);border-radius:10px;
+  margin-bottom:8px;cursor:pointer;transition:all .15s;
+}
+.hist-item:hover{border-color:var(--b300);background:var(--b50);transform:translateX(2px)}
+:root.dark .hist-item:hover{background:#1e3a5f!important;border-color:#1d4ed8!important}
+.hist-code{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700);flex-shrink:0;min-width:100px}
+.hist-desc{flex:1;min-width:0}
+.hist-desc-text{font-size:13px;color:var(--g700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-desc-meta{font-size:11px;color:var(--g400);margin-top:2px}
+.hist-duty{font-size:13px;font-weight:600;color:var(--g600);flex-shrink:0}
+
+/* Drop zone */
+.drop-zone{
+  border:2px dashed var(--g300);border-radius:var(--rxl);
+  padding:40px 24px;text-align:center;cursor:pointer;
+  transition:all .2s;background:var(--w);
+}
+.drop-zone:hover,.drop-zone.dragover{
+  border-color:var(--b600);background:var(--b50);
+}
+.drop-zone-icon{font-size:36px;margin-bottom:10px}
+.drop-zone-title{font-size:14px;font-weight:600;color:var(--g700);margin-bottom:4px}
+.drop-zone-sub{font-size:12px;color:var(--g400)}
+
+/* KPIs */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px;box-shadow:var(--sh0)}
+.kpi-val{font-size:24px;font-weight:800;color:var(--g900);font-family:var(--mono)}
+.kpi-lbl{font-size:11px;color:var(--g500);margin-top:2px;font-weight:500}
+:root.dark .kpi{background:#0f172a!important;border-color:#334155!important}
+:root.dark .kpi-val{color:var(--g900)!important}
+
+/* Source badge */
+.source-badge{
+  display:inline-flex;align-items:center;gap:4px;
+  background:var(--g100);border-radius:6px;
+  padding:3px 8px;font-size:10px;font-weight:600;color:var(--g500);
+}
+.source-ai{background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff}
+.source-live{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+
+/* Tag */
+.tag{display:inline-block;padding:2px 8px;background:var(--g100);border:1px solid var(--g200);border-radius:6px;font-size:11px;color:var(--g600);margin:2px}
+
+/* Invoice results table */
+.inv-table-wrap{overflow-x:auto}
+.inv-row-loading td{opacity:.6}
+.inv-row-done td{opacity:1}
+.chapter-title{font-family:var(--mono);font-size:10px;color:var(--g400)}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--g300);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--g400)}
+
+/* Mobile */
+@media(max-width:768px){
+  .hamburger{display:block!important}
+  #sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);box-shadow:var(--shxl);z-index:100}
+  #sidebar.open{transform:translateX(0)}
+  #mob-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99}
+  #mob-ov.show{display:block}
+  .view-body{padding:16px}
+  .search-hero{padding:20px 16px}
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .code-chip{font-size:16px}
+  .duty-main{font-size:20px}
+  .result-body{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- HEADER -->
+  <header id="hdr">
+    <button class="hamburger" onclick="toggleSB()">☰</button>
+    <div class="hdr-mark" style="font-weight:900;font-size:14px;letter-spacing:-.5px;color:#fff">CW</div>
+    <div class="hdr-divider"></div>
+    <div class="hdr-title-wrap">
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:7px;padding:2px 7px;font-size:10px;font-weight:800;letter-spacing:.3px;color:rgba(255,255,255,.9);font-family:monospace">CW</div>
+          <div class="hdr-title">Customs Way · Clasificador TARIC</div>
+        </div>
+        <div class="hdr-subtitle">Representación Aduanera UE · Algeciras Marítima · La Línea</div>
+      </div>
+    </div>
+    <div class="hdr-spacer"></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button id="dark-toggle" class="hdr-icon-btn-air" onclick="toggleDarkMode()" title="Modo oscuro">🌙</button>
+      <button class="hdr-icon-btn-air" onclick="goHome()" title="Customs Way">🏠</button>
+    </div>
+  </header>
+
+  <div id="body">
+    <!-- SIDEBAR -->
+    <nav id="sidebar">
+      <div id="sb-header">
+        <div id="sb-logo" onclick="goHome()">
+          <div id="sb-logo-mark" style="background:linear-gradient(135deg,#0f2d6e,#312e81);font-weight:900;font-size:14px;letter-spacing:-.5px">CW</div>
+          <span id="sb-logo-txt">Customs Way</span>
+        </div>
+        <button class="sb-toggle" onclick="toggleSidebar()" title="Colapsar">
+          <span class="ti-expand">◀</span>
+          <span class="ti-collapse">▶</span>
+        </button>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding-top:4px">
+        <div class="sb-sec">Clasificación</div>
+        <div class="nav-item active" onclick="nav('busqueda',this)">
+          <span class="ni">🔍</span>
+          <span class="nav-item-txt">Búsqueda libre</span>
+        </div>
+        <div class="nav-item" onclick="nav('factura',this)">
+          <span class="ni">📄</span>
+          <span class="nav-item-txt">Leer factura</span>
+        </div>
+
+        <div class="sb-sec">Consultas</div>
+        <div class="nav-item" onclick="nav('historial',this)">
+          <span class="ni">🕑</span>
+          <span class="nav-item-txt">Historial<span class="nb" id="badge-hist" style="display:none">0</span></span>
+        </div>
+        <div class="nav-item" onclick="nav('cav',this)">
+          <span class="ni">📋</span>
+          <span class="nav-item-txt">Base CAV</span>
+        </div>
+        <div class="nav-item" onclick="nav('dua',this)">
+          <span class="ni">📝</span>
+          <span class="nav-item-txt">Borrador DUA</span>
+        </div>
+
+        <div class="sb-sec">Referencias</div>
+        <div class="nav-item" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es','_blank')">
+          <span class="ni">🇪🇺</span>
+          <span class="nav-item-txt">TARIC Online ↗</span>
+        </div>
+        <div class="nav-item" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es','_blank')">
+          <span class="ni">📜</span>
+          <span class="nav-item-txt">BTI/CAV ↗</span>
+        </div>
+        <div class="nav-item" onclick="window.open('https://www2.agenciatributaria.gob.es/wlpl/ADUA-JDIT/ControlNomenclaturaArancelaria','_blank')">
+          <span class="ni">🏛</span>
+          <span class="nav-item-txt">AEAT ↗</span>
+        </div>
+      </div>
+
+      <div class="sb-bot">
+        <!-- Config OpenRouter API Key -->
+        <div id="sb-apikey-wrap" style="padding:8px 10px;border-bottom:1px solid var(--g100)">
+          <div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;display:flex;align-items:center;gap:4px">⚙️ <span class="nav-item-txt">API Key (opcional)</span></div>
+          <div style="font-size:10px;color:var(--gr600);margin-bottom:5px;font-weight:600" class="nav-item-txt">✅ Servicio activo — no requiere configuración</div>
+          <div style="display:flex;gap:4px" class="nav-item-txt">
+            <input id="sb-apikey-input" class="fi" type="password"
+              placeholder="Tu key personal (opcional)..."
+              style="font-size:11px;padding:5px 8px;flex:1;min-width:0"
+              oninput="saveGeminiKey(this.value)"
+              title="Opcional — el servicio funciona sin configuración. Introduce tu propia key para mayor capacidad.">
+            <div id="sb-apikey-status" style="width:22px;height:22px;border-radius:6px;background:var(--gr50);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;align-self:center">✅</div>
+          </div>
+          <div style="font-size:10px;color:var(--g400);margin-top:4px" class="nav-item-txt">
+            Key propia para mayor capacidad: <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--b600);text-decoration:none">openrouter.ai/keys ↗</a>
+          </div>
+          <!-- Selector de modelo -->
+          <select id="sb-model-select" class="fi" style="font-size:11px;padding:4px 6px;margin-top:6px;width:100%" class="nav-item-txt"
+            onchange="guardarModeloSupabase(this.value);localStorage.setItem('als_gemini_model',this.value);showToast('Modelo: '+this.value.split('/').pop())">
+            <option value="mistralai/mistral-small-2603">Mistral Small 4 💳 (recomendado)</option>
+            <option value="google/gemma-3-12b-it:free">Gemma 3 12B 🆓</option>
+            <option value="google/gemma-3-27b-it:free">Gemma 3 27B 🆓</option>
+            <option value="google/gemma-3-4b-it:free">Gemma 3 4B 🆓</option>
+            <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B 🆓 (solo texto)</option>
+          </select>
+          <div style="display:flex;gap:4px;margin-top:6px" class="nav-item-txt">
+            <a href="https://openrouter.ai/credits" target="_blank"
+              style="flex:1;text-align:center;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:6px;padding:5px 6px;font-size:10px;font-weight:700;text-decoration:none;display:block">
+              💳 Recargar créditos ↗
+            </a>
+            <a href="https://openrouter.ai/activity" target="_blank"
+              style="flex:1;text-align:center;background:var(--g100);color:var(--g600);border:1px solid var(--g200);border-radius:6px;padding:5px 6px;font-size:10px;font-weight:600;text-decoration:none;display:block">
+              📊 Ver uso ↗
+            </a>
+          </div>
+          <div style="font-size:10px;color:var(--am600);margin-top:4px;line-height:1.4" class="nav-item-txt">
+            Con crédito propio: ~4.000 ops/$5 · Sin crédito: modelos gratis automáticos
+          </div>
+        </div>
+        <!-- User -->
+        <div class="sb-user" onclick="goHome()">
+          <div class="sb-av" id="sb-av" style="background:linear-gradient(135deg,#0f2d6e,#312e81);font-family:monospace;font-size:10px;letter-spacing:.5px">CW</div>
+          <div style="min-width:0;overflow:hidden">
+            <div style="font-size:12px;font-weight:600;color:var(--g700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="sb-name">Portal ALS</div>
+            <div style="font-size:10px;color:var(--g400)">← Volver al portal</div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div id="mob-ov" onclick="toggleSB()"></div>
+
+    <div id="content">
+
+      <!-- VISTA: BÚSQUEDA -->
+      <div class="view active" id="view-busqueda">
+        <!-- Hero search -->
+        <div class="search-hero">
+          <div class="search-hero-title">🔍 Clasificación arancelaria asistida por IA</div>
+          <div class="search-hero-sub">Describe la mercancía en español o inglés. La IA clasificará y verificará en tiempo real contra la base TARIC de la Comisión Europea.</div>
+          <div style="display:flex;gap:8px;position:relative;z-index:1">
+            <textarea
+              id="desc-input"
+              class="fi"
+              placeholder="Ej: Válvulas antiretorno de acero inoxidable para instalaciones industriales, PN16, DN50&#10;Ej: Stainless steel non-return valves for industrial use&#10;Ej: Tejido de algodón sin blanquear, ligamento tafetán, 120g/m²"
+              style="min-height:70px;flex:1;font-size:13px"
+              onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)) clasificar()"
+            ></textarea>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <button class="btn btn-p" onclick="clasificar()" id="btn-clasificar" style="height:auto;min-width:110px;justify-content:center">
+                Clasificar
+              </button>
+              <button class="btn btn-s btn-sm" onclick="document.getElementById('desc-input').value=''" style="justify-content:center">
+                Limpiar
+              </button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;position:relative;z-index:1">
+            <span style="font-size:11px;color:rgba(255,255,255,.5);align-self:center">Ejemplos rápidos:</span>
+            <button class="tag" onclick="usarEjemplo(this)" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.8);cursor:pointer">Rodamientos de bolas</button>
+            <button class="tag" onclick="usarEjemplo(this)" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.8);cursor:pointer">Smartphone Android</button>
+            <button class="tag" onclick="usarEjemplo(this)" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.8);cursor:pointer">Aceite de oliva virgen extra</button>
+            <button class="tag" onclick="usarEjemplo(this)" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.8);cursor:pointer">Cotton fabric plain weave</button>
+          </div>
+        </div>
+
+        <!-- Results area -->
+        <div class="view-body" style="padding-top:16px">
+          <div id="busqueda-result">
+            <div class="empty-state" style="text-align:center;padding:48px 24px;color:var(--g400)">
+              <div style="font-size:40px;margin-bottom:12px">🏷️</div>
+              <div style="font-size:14px;font-weight:600;margin-bottom:6px;color:var(--g500)">Introduce una descripción para clasificar</div>
+              <div style="font-size:12px">La IA analizará la mercancía y sugerirá el código TARIC a 10 dígitos con derechos y medidas aplicables.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA: FACTURA -->
+      <div class="view" id="view-factura">
+        <div class="ph">
+          <div>
+            <div class="pt">📄 Leer Factura Comercial</div>
+            <div class="ps">Sube una factura en PDF o imagen — la IA extraerá y clasificará todas las líneas de mercancía</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-g btn-sm" onclick="exportarFactura()" id="btn-exp-fact" style="display:none">⬇️ CSV</button>
+            <button class="btn btn-s btn-sm" onclick="limpiarFactura()">Limpiar</button>
+          </div>
+        </div>
+        <div class="view-body">
+          <div id="factura-upload-area">
+            <!-- Pestañas: Subir archivo / Pegar texto -->
+            <div style="display:flex;gap:0;margin-bottom:12px;border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden">
+              <button id="tab-archivo" onclick="switchFacturaTab('archivo')"
+                style="flex:1;padding:9px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--b600);color:#fff;transition:all .15s">
+                📎 Subir archivo
+              </button>
+              <button id="tab-texto" onclick="switchFacturaTab('texto')"
+                style="flex:1;padding:9px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--g100);color:var(--g600);transition:all .15s">
+                📋 Pegar texto
+              </button>
+            </div>
+
+            <!-- Panel: Subir archivo -->
+            <div id="panel-archivo">
+              <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="handleFile(this.files[0])">
+                <div class="drop-zone-icon">📎</div>
+                <div class="drop-zone-title">Arrastra la factura aquí o haz clic para seleccionar</div>
+                <div class="drop-zone-sub">PDF, JPG, PNG, WEBP · Máximo 20MB</div>
+                <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+                  <span class="badge badge-blue">🇬🇧 Inglés</span>
+                  <span class="badge badge-blue">🇪🇸 Español</span>
+                  <span class="badge badge-blue">🇫🇷 Francés</span>
+                  <span class="badge badge-blue">🇩🇪 Alemán</span>
+                  <span class="badge badge-blue">🇨🇳 Chino</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel: Pegar texto (fallback infalible) -->
+            <div id="panel-texto" style="display:none">
+              <div class="card" style="padding:16px">
+                <div style="font-size:13px;color:var(--g600);margin-bottom:10px">
+                  Copia y pega el contenido de la factura — útil si el PDF no se procesa correctamente:
+                </div>
+                <textarea id="factura-texto-input" class="fi" style="min-height:180px;font-size:12px;font-family:var(--mono)"
+                  placeholder="Pega aquí el contenido de la factura...&#10;&#10;Ej:&#10;IPROSUR - Presupuesto 76/26&#10;MONITOR ASUS 23.8 IPS - 4 uds - 103.60€&#10;MAC MINI M4 16GB - 1 ud - 785€&#10;..."></textarea>
+                <button class="btn btn-p" style="margin-top:10px;width:100%"
+                  onclick="clasificarTextoFactura()">
+                  🔍 Clasificar artículos
+                </button>
+              </div>
+            </div>
+          </div>
+          <div id="factura-result" style="display:none">
+            <div id="factura-info" style="margin-bottom:16px"></div>
+            <div class="card" style="padding:0;overflow:hidden">
+              <div class="inv-table-wrap">
+                <table class="tbl" id="factura-table">
+                  <thead>
+                    <tr>
+                      <th style="width:40px">#</th>
+                      <th>Descripción (factura)</th>
+                      <th>Código TARIC</th>
+                      <th>Descripción NC</th>
+                      <th>Arancel EO</th>
+                      <th>Medidas adicionales</th>
+                      <th>Confianza</th>
+                    </tr>
+                  </thead>
+                  <tbody id="factura-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA: HISTORIAL -->
+      <div class="view" id="view-historial">
+        <div class="ph">
+          <div>
+            <div class="pt">🕑 Historial de Clasificaciones</div>
+            <div class="ps">Búsquedas realizadas — guardadas en Supabase</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="hist-search" class="fi" style="width:200px" placeholder="🔍 Filtrar..." oninput="filtrarHistorial(this.value)">
+            <button class="btn btn-g btn-sm" onclick="exportarHistorial()">⬇️ CSV</button>
+          </div>
+        </div>
+        <div class="view-body">
+          <div class="kpi-row" id="hist-kpis"></div>
+          <div id="hist-list">
+            <div class="loading-wrap"><div class="spinner"></div><span>Cargando historial...</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA: BORRADOR DUA -->
+      <div class="view" id="view-dua">
+        <div class="ph">
+          <div>
+            <div class="pt">📝 Borrador DUA</div>
+            <div class="ps">Extracción automática de datos de factura → borrador DUA con todas las casillas · Compatible Visual Trans</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-g btn-sm" onclick="exportarDUA()" id="btn-exp-dua" style="display:none">⬇️ JSON/CSV</button>
+            <button class="btn btn-s btn-sm" onclick="limpiarDUA()">Limpiar</button>
+          </div>
+        </div>
+        <div class="view-body">
+
+          <!-- Info sobre integración VT -->
+          <div class="card" style="margin-bottom:16px;border-left:3px solid var(--b600);padding:14px 16px">
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <span style="font-size:20px;flex-shrink:0">⚡</span>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--g900);margin-bottom:4px">Integración con Visual Trans</div>
+                <div style="font-size:12px;color:var(--g600);line-height:1.6">
+                  Este módulo genera un <strong>borrador completo del DUA</strong> con todas las casillas numeradas según la resolución AEAT vigente.
+                  La IA extrae e infiere automáticamente los datos de la factura: TARIC, valor aduanero, origen, régimen, casillas 31, 40, 44, 47, S29, S32 y más.
+                  Para importar directamente a Visual Trans se requiere el schema XML de importación de dossiers de VT — consultar soporte VT o
+                  <a href="https://wiki.bytemaster.es/aduanas-despachos/" target="_blank" style="color:var(--b600)">wiki de configuración</a>.
+                </div>
+                <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+                  <span class="badge badge-blue">DUA Importación H1</span>
+                  <span class="badge badge-blue">DUA Exportación EX-A</span>
+                  <span class="badge badge-teal">Tránsito T1/T2</span>
+                  <span class="badge badge-grey">Visual Trans compatible</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="dua-upload-area">
+            <div class="drop-zone" id="dua-drop-zone" onclick="document.getElementById('dua-file-input').click()">
+              <input type="file" id="dua-file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="abrirModalConfigDUA(this.files[0])">
+              <div class="drop-zone-icon">📄</div>
+              <div class="drop-zone-title">Arrastra la factura comercial</div>
+              <div class="drop-zone-sub">PDF, JPG, PNG · La IA extraerá todos los datos para el DUA</div>
+              <div style="margin-top:10px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+                <span class="badge badge-blue">Casilla 1 · Régimen</span>
+                <span class="badge badge-blue">Casilla 31 · Mercancía</span>
+                <span class="badge badge-blue">Casilla 33 · TARIC</span>
+                <span class="badge badge-blue">Casilla 44 · Docs.</span>
+                <span class="badge badge-blue">Casilla 47 · Liquidación</span>
+              </div>
+            </div>
+          </div>
+
+          <div id="dua-result" style="display:none"></div>
+
+        </div>
+      </div>
+
+      <!-- VISTA: CAV -->
+      <div class="view" id="view-cav">
+        <div class="ph">
+          <div>
+            <div class="pt">📋 Base de Consultas Arancelarias Vinculantes</div>
+            <div class="ps">Ejemplos de CAVs de la UE relacionadas con clasificaciones realizadas</div>
+          </div>
+          <button class="btn btn-s btn-sm" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es','_blank')">🇪🇺 Consultar BTI oficial ↗</button>
+        </div>
+        <div class="view-body">
+          <div class="card" style="margin-bottom:16px">
+            <div style="font-size:13px;color:var(--g600);line-height:1.6">
+              <strong>¿Qué es una CAV (BTI)?</strong> Una Consulta Arancelaria Vinculante es una decisión oficial de las autoridades aduaneras de la UE sobre la clasificación arancelaria de una mercancía específica. Son jurídicamente vinculantes durante 3 años y constituyen el respaldo legal más sólido para una clasificación TARIC. Las CAVs mostradas aquí son ejemplos ilustrativos de casos similares a tus búsquedas recientes.
+            </div>
+          </div>
+          <div id="cav-list">
+            <div class="loading-wrap"><div class="spinner"></div><span>Cargando ejemplos CAV...</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /#content -->
+  </div><!-- /#body -->
+</div><!-- /#app -->
+
+<!-- Modal detalle -->
+<div class="mo" id="mo">
+  <div class="modal">
+    <div class="mh">
+      <div class="mh-title" id="m-title"></div>
+      <button onclick="closeModal()" style="background:none;border:none;cursor:pointer;color:var(--g400);font-size:20px;line-height:1">×</button>
+    </div>
+    <div class="mb" id="m-body"></div>
+    <div class="mf" id="m-foot"></div>
+  </div>
+</div>
+
+<!-- MODAL CONFIGURACIÓN PREVIA DUA -->
+<div id="dua-config-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--w);border-radius:var(--rxl);max-width:640px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:var(--shxl)">
+    <!-- Header -->
+    <div style="padding:18px 22px 14px;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:12px;position:sticky;top:0;background:var(--w);z-index:1">
+      <span style="font-size:22px">📝</span>
+      <div style="flex:1">
+        <div style="font-size:15px;font-weight:700;color:var(--g900)">Configurar Borrador DUA</div>
+        <div style="font-size:12px;color:var(--g400)" id="dua-cfg-filename">Indica los parámetros antes de procesar</div>
+      </div>
+      <button onclick="cerrarModalConfigDUA()" style="background:none;border:none;cursor:pointer;color:var(--g400);font-size:22px;line-height:1;padding:0 4px">×</button>
+    </div>
+    <!-- Body -->
+    <div style="padding:18px 22px;display:flex;flex-direction:column;gap:14px">
+
+      <!-- Fila 1: Tipo DUA + Aduana -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Tipo de DUA *</label>
+          <select id="dcfg-tipo" class="fi" style="width:100%">
+            <option value="H1-IMPORTACION">H1 — Importación (despacho libre práctica)</option>
+            <option value="H4-IMPORTACION-REGIMEN-ESPECIAL">H4 — Importación régimen especial</option>
+            <option value="EX-A-EXPORTACION">EX-A — Exportación definitiva</option>
+            <option value="EX-B-EXPORTACION-SIMPLIFICADA">EX-B — Exportación simplificada</option>
+            <option value="T1-TRANSITO">T1 — Tránsito externo (mercancía no comunitaria)</option>
+            <option value="T2-TRANSITO">T2 — Tránsito interno (mercancía comunitaria)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Aduana de despacho *</label>
+          <select id="dcfg-aduana" class="fi" style="width:100%">
+            <option value="ES001131 — Algeciras Marítima">ES001131 — Algeciras Marítima</option>
+            <option value="ES001167 — La Línea de la Concepción">ES001167 — La Línea de la Concepción</option>
+            <option value="ES001165 — Algeciras — Recinto Interior">ES001165 — Algeciras Recinto Interior</option>
+            <option value="ES006000 — Málaga">ES006000 — Málaga</option>
+            <option value="ES007000 — Sevilla">ES007000 — Sevilla</option>
+            <option value="ES010000 — Madrid-Barajas">ES010000 — Madrid-Barajas</option>
+            <option value="ES028000 — Valencia">ES028000 — Valencia</option>
+            <option value="ES008000 — Barcelona">ES008000 — Barcelona</option>
+            <option value="otra">Otra (especificar abajo)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Fila 2: Régimen solicitado + precedente -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Régimen solicitado (C.1)</label>
+          <select id="dcfg-regimen" class="fi" style="width:100%">
+            <option value="40">40 — Despacho a libre práctica</option>
+            <option value="42">42 — Libre práctica + régimen especial simultáneo</option>
+            <option value="61">61 — Reimportación en libre práctica</option>
+            <option value="63">63 — Reimportación con despacho a consumo simultáneo</option>
+            <option value="10">10 — Exportación definitiva</option>
+            <option value="11">11 — Exportación definitiva tras perfeccionamiento activo</option>
+            <option value="21">21 — Exportación temporal (perfeccionamiento pasivo)</option>
+            <option value="23">23 — Exportación temporal para reimportación en el mismo estado</option>
+            <option value="31">31 — Reexportación</option>
+            <option value="51">51 — Perfeccionamiento activo</option>
+            <option value="53">53 — Importación temporal</option>
+            <option value="54">54 — Importación temporal en doble suspensión</option>
+            <option value="71">71 — Depósito aduanero</option>
+            <option value="76">76 — Depósito aduanero + perfeccionamiento activo</option>
+            <option value="78">78 — Introducción en zona franca</option>
+            <option value="91">91 — Control aduanero uso final</option>
+            <option value="T1">T1 — Tránsito externo</option>
+            <option value="T2">T2 — Tránsito interno comunitario</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Régimen precedente (C.1)</label>
+          <select id="dcfg-regimen-prev" class="fi" style="width:100%">
+            <option value="00">00 — Sin régimen precedente</option>
+            <option value="10">10 — Exportación temporal previa</option>
+            <option value="21">21 — Exportación temporal (reimportación)</option>
+            <option value="23">23 — Exportación temporal en mismo estado</option>
+            <option value="51">51 — Perfeccionamiento activo</option>
+            <option value="53">53 — Importación temporal</option>
+            <option value="71">71 — Depósito aduanero</option>
+            <option value="78">78 — Zona franca</option>
+            <option value="91">91 — Control aduanero uso final</option>
+            <option value="T1">T1 — Tránsito externo</option>
+            <option value="T2">T2 — Tránsito interno</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Fila 3: Ubicación de la mercancía -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Ubicación / Localización de la mercancía (C.30)</label>
+        <select id="dcfg-ubicacion" class="fi" style="width:100%;margin-bottom:6px" onchange="toggleUbicacionOtra()">
+          <option value="1167000000">1167000000 — La Línea de la Concepción (Aduana)</option>
+          <option value="1131JCPF10">1131JCPF10 — Algeciras Marítima — Muelle Juan Carlos I</option>
+          <option value="1165OOLL01">1165OOLL01 — Algeciras Recinto Interior</option>
+          <option value="otra">Otra (especificar código)</option>
+        </select>
+        <input id="dcfg-ubicacion-otra" class="fi" placeholder="Especifica la ubicación..." style="width:100%;display:none">
+      </div>
+
+      <!-- Fila 4: Modo de transporte -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Modo transporte frontera (C.25)</label>
+          <select id="dcfg-transporte" class="fi" style="width:100%">
+            <option value="1">1 — Marítimo</option>
+            <option value="2">2 — Ferroviario</option>
+            <option value="3">3 — Carretera</option>
+            <option value="4">4 — Aéreo</option>
+            <option value="7">7 — Oleoducto/Gasoducto</option>
+            <option value="8">8 — Navegación interior</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Incoterm (C.20)</label>
+          <select id="dcfg-incoterm" class="fi" style="width:100%">
+            <option value="">— IA infiere de la factura —</option>
+            <option value="FOB">FOB — Free On Board</option>
+            <option value="CIF">CIF — Cost, Insurance, Freight</option>
+            <option value="CFR">CFR — Cost and Freight</option>
+            <option value="EXW">EXW — Ex Works</option>
+            <option value="DAP">DAP — Delivered At Place</option>
+            <option value="DDP">DDP — Delivered Duty Paid</option>
+            <option value="FCA">FCA — Free Carrier</option>
+            <option value="CPT">CPT — Carriage Paid To</option>
+            <option value="CIP">CIP — Carriage and Insurance Paid</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Fila 5: Casilla 44 — análisis automático por TARIC -->
+      <div style="background:linear-gradient(135deg,var(--b50),#f0f9ff);border:1px solid var(--b100);border-radius:10px;padding:12px 14px">
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <span style="font-size:18px;flex-shrink:0">🤖</span>
+          <div>
+            <div style="font-size:12px;font-weight:700;color:var(--b700);margin-bottom:4px">Casilla 44 — Análisis automático por código TARIC</div>
+            <div style="font-size:11px;color:var(--b600);line-height:1.6">
+              La IA analizará cada código TARIC de la factura y determinará automáticamente las medidas y documentos aplicables:
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">
+              <span style="background:var(--b100);color:var(--b700);border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">🐄 Veterinario 1408 (CHED)</span>
+              <span style="background:#fef3c7;color:#92400e;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">🌿 SOIVRE/Fitosanitario 1408</span>
+              <span style="background:#f0fdf4;color:#166534;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">🦋 CITES Y900</span>
+              <span style="background:#fdf4ff;color:#6b21a8;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">☁️ F-Gas Y162</span>
+              <span style="background:#fff7ed;color:#9a3412;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">🛢️ Ozono SAO Y784</span>
+              <span style="background:#fef2f2;color:#991b1b;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">⚔️ Doble Uso Y901</span>
+              <span style="background:#fef2f2;color:#7f1d1d;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">🪖 Defensa 1408</span>
+              <span style="background:#f0f9ff;color:#0c4a6e;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">🏛️ Patrimonio Y903</span>
+              <span style="background:#fafaf0;color:#4a4a00;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">🧵 WSTEX/WSTIM Y923</span>
+              <span style="background:#f0fff4;color:#1a4731;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">🧪 Precursores 748</span>
+              <span style="background:#fff0f6;color:#831843;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600">♻️ Residuos WSTIM C058+C670+C672</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fila 6: Observaciones -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Observaciones / instrucciones adicionales para la IA</label>
+        <textarea id="dcfg-obs" class="fi" rows="2" placeholder="Ej: mercancía en zona franca, cliente con OEA, aplicar preferencia SGP, país origen China..." style="width:100%;resize:vertical;font-size:12px"></textarea>
+      </div>
+
+    </div>
+    <!-- Footer -->
+    <div style="padding:14px 22px;border-top:1px solid var(--g100);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--w)">
+      <button onclick="cerrarModalConfigDUA()" class="btn btn-s btn-sm">Cancelar</button>
+      <button onclick="confirmarConfigDUA()" class="btn btn-p" style="padding:8px 24px;font-size:13px">
+        🚀 Generar Borrador DUA
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+'use strict';
+
+// ── Config ────────────────────────────────────────────────────
+const SB_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
+const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
+// ── Configuración IA ─────────────────────────────────────────
+// Usando OpenRouter — gateway gratuito para modelos Qwen, Llama, etc.
+// API compatible con OpenAI. CORS abierto desde navegador.
+// Obtén tu API key en: https://openrouter.ai/keys
+// ESTRATEGIA DE MODELOS (probada en vivo 21-03-2026):
+//   Capa 1 — con crédito: mistral-small-4 ($0.15/M input, vision, rápido, fiable)
+//   Capa 2 — gratis fallback: gemma-3-12b (5s respuesta, clasificación correcta, estable)
+//   Resto — gratis extra: gemma-3-27b, gemma-3-4b (si las anteriores tienen rate limit)
+//   EVITADO: nemotron (127s timeout), llama-3.3 (429 frecuente), mistral-3.1-24b (429 frecuente)
+const OR_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+// Modelo por defecto — con crédito usa mistral-small-4 (vision); sin crédito usa gemma-3-12b
+const OR_MODEL_DEFAULT = 'mistralai/mistral-small-2603';  // $0.15/$0.60 por M tokens, vision ✅
+const OR_MODEL_VISION_FALLBACK  = 'google/gemma-3-12b-it:free';
+const OR_MODEL_VISION_FALLBACK2 = 'google/gemma-3-27b-it:free';
+// VISION MODELS — solo modelos que soportan imagen. Llama-3.3 NO está aquí (texto puro)
+const OR_VISION_MODELS = [
+  'mistralai/mistral-small-2603',                    // pago: vision ✅ rápido
+  'google/gemma-3-12b-it:free',                      // gratis: vision ✅
+  'google/gemma-3-27b-it:free',                      // gratis: vision ✅
+  'google/gemma-3-4b-it:free',                       // gratis: vision ✅
+  'mistralai/mistral-small-3.1-24b-instruct:free',   // gratis: vision ✅
+  // NO incluir llama-3.3-70b ni llama-3.2-3b — no soportan imágenes en OpenRouter
+];
+const OR_TEXT_MODELS = [
+  'mistralai/mistral-small-2603',
+  'google/gemma-3-12b-it:free',
+  'google/gemma-3-27b-it:free',
+  'google/gemma-3-4b-it:free',
+  'meta-llama/llama-3.3-70b-instruct:free',          // texto puro OK
+];
+const OR_MODEL_TEXT = 'google/gemma-3-12b-it:free';
+
+function getGeminiModel(){
+  return localStorage.getItem('als_gemini_model') || OR_MODEL_DEFAULT;
+}
+const GEMINI_MODEL = OR_MODEL_DEFAULT; // alias legacy
+let _geminiKeyCache = null;
+// Key por defecto embebida — permite usar el clasificador sin configuración en cualquier dispositivo
+// El usuario puede sobreescribirla con su propia key en el panel ⚙️
+const _OR_KEY_DEFAULT = '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';
+
+function getGeminiKey(){
+  return _geminiKeyCache || localStorage.getItem('als_gemini_key') || _OR_KEY_DEFAULT;
+}
+
+async function loadGeminiKeyFromSupabase(){
+  if(!sb) return;
+  try {
+    const [{data:dk},{data:dm}] = await Promise.all([
+      sb.from('als_config').select('valor').eq('clave','gemini_api_key').single(),
+      sb.from('als_config').select('valor').eq('clave','gemini_model').single()
+    ]);
+    if(dk?.valor){
+      _geminiKeyCache = dk.valor;
+      localStorage.setItem('als_gemini_key', dk.valor);
+      const inp = document.getElementById('sb-apikey-input');
+      const st = document.getElementById('sb-apikey-status');
+      if(inp) inp.value = dk.valor;
+      if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
+    }
+    if(dm?.valor){
+      localStorage.setItem('als_gemini_model', dm.valor);
+      const sel = document.getElementById('sb-model-select');
+      if(sel){ for(const o of sel.options) if(o.value===dm.valor) o.selected=true; }
+    }
+  } catch(e){}
+}
+
+async function guardarModeloSupabase(model){
+  if(!sb || !model) return;
+  try { await sb.from('als_config').upsert({clave:'gemini_model',valor:model},{onConflict:'clave'}); } catch(e){}
+}
+
+async function saveGeminiKeyToSupabase(key){
+  if(!sb || !key) return;
+  try {
+    await sb.from('als_config').upsert({clave:'gemini_api_key', valor:key}, {onConflict:'clave'});
+  } catch(e){ console.warn('No se pudo guardar en Supabase:', e.message); }
+}
+
+// ── Función central OpenRouter ────────────────────────────────
+async function _callOpenRouter(messages, modelOverride, forceJson){
+  const key = getGeminiKey();
+  if(!key) throw new Error('❌ Error de conexión con el servicio de IA. Inténtalo de nuevo.');
+
+  const model = modelOverride || getGeminiModel();
+  const body = { model, messages, temperature: 0.1, max_tokens: 8192 };
+  
+  // response_format: json_object NO es compatible con mensajes que contienen imágenes
+  // (Mistral, Gemma y otros devuelven 400 en ese caso)
+  const hasImages = messages.some(m =>
+    Array.isArray(m.content) && m.content.some(p => p.type === 'image_url')
+  );
+  if(forceJson && !hasImages) body.response_format = { type: 'json_object' };
+
+  // Timeout de 25s — evita que modelos lentos bloqueen el fallback automático
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+  let resp, data;
+  try {
+    resp = await fetch(OR_ENDPOINT, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${key}`,
+        'HTTP-Referer': 'https://marcoslekolas.github.io/PortalALS/',
+        'X-Title': 'Customs Way TARIC'
+      },
+      body: JSON.stringify(body)
+    });
+    data = await resp.json();
+  } catch(fetchErr) {
+    clearTimeout(timeoutId);
+    if(fetchErr.name === 'AbortError'){
+      throw new Error('RATE_LIMIT:' + model + ':timeout 25s — modelo demasiado lento');
+    }
+    throw new Error('RATE_LIMIT:' + model + ':' + (fetchErr.message||'network error'));
+  }
+  clearTimeout(timeoutId);
+
+  if(!resp.ok || data.error){
+    const _m = data?.error?.message || JSON.stringify(data?.error) || 'Error desconocido';
+    const _code = data?.error?.code || resp.status;
+    if(_code === 429 || resp.status === 502 || resp.status === 503 || resp.status === 400 ||
+       resp.status === 404 ||
+       _m.includes('rate') || _m.includes('quota') || _m.includes('limit') ||
+       _m.includes('Network connection') || _m.includes('overloaded') ||
+       _m.includes('Provider returned error') || _m.includes('No endpoints') ||
+       _m.includes('image input') || _m.includes('not support')){
+      throw new Error('RATE_LIMIT:' + model + ':' + _m.substring(0,100));
+    }
+    if(_code === 401 || _m.includes('API key') || _m.includes('auth')){
+      throw new Error('🔑 API key de OpenRouter no válida. Compruébala en openrouter.ai/keys');
+    }
+    if(_m.includes('credit') || _m.includes('balance')){
+      throw new Error('💳 Sin créditos en OpenRouter. Añade crédito en openrouter.ai/credits');
+    }
+    throw new Error('Error OpenRouter [' + _code + ']: ' + _m.substring(0,150));
+  }
+
+  const text = data?.choices?.[0]?.message?.content || '';
+  if(!text) throw new Error('OpenRouter no devolvió respuesta. Intenta de nuevo.');
+  return text;
+}
+
+// ── Llamada con fallback automático de modelo ─────────────────
+async function _callOpenRouterWithFallback(messages, preferVision){
+  const primary = getGeminiModel();
+  // Construir lista: modelo elegido primero, luego todos los demás
+  const lista = preferVision ? OR_VISION_MODELS : OR_TEXT_MODELS;
+  const fallbacks = [primary, ...lista.filter(m => m !== primary)];
+
+  const tried = new Set();
+  for(const model of fallbacks){
+    if(tried.has(model)) continue;
+    tried.add(model);
+    try {
+      const result = await _callOpenRouter(messages, model, true);
+      if(model !== primary) showToast('⚡ Usando modelo: ' + model.split('/').pop());
+      return result;
+    } catch(e){
+      if(e.message.startsWith('RATE_LIMIT:')){
+        console.warn('Rate limit en', model, '— probando siguiente...');
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error('⏳ Rate limit en todos los modelos gratuitos.\n\nSolución: añade 5€ de crédito en openrouter.ai/credits para desbloquear sin límite diario.');
+}
+
+let sb = null;
+let CV = 'busqueda';
+let historialData = [];
+let ultimaClasificacion = null;
+
+// ── Init ──────────────────────────────────────────────────────
+window.addEventListener('load', function(){
+  initDarkMode();
+  initSidebar();
+  initApiKeyUI();
+  try { sb = supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:false}}); } catch(e){}
+  initUser();
+  setupDropZone();
+  loadHistorialBadge();
+});
+
+function initUser(){
+  try {
+    const cu = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'{}');
+    if(cu && cu.nombre){
+      const init = cu.nombre.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+      const av = document.getElementById('sb-av');
+      const nm = document.getElementById('sb-name');
+      if(av) av.textContent = init;
+      if(nm) nm.textContent = cu.nombre.split(' ').slice(0,2).join(' ');
+    }
+  } catch(e){}
+}
+
+// ── Navigation ────────────────────────────────────────────────
+function nav(view, el){
+  CV = view;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const v = document.getElementById('view-'+view);
+  if(v) v.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if(el) el.classList.add('active');
+  if(view === 'historial') loadHistorial();
+  if(view === 'cav') loadCAVs();
+  if(window.innerWidth <= 768){
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('mob-ov').classList.remove('show');
+  }
+}
+
+// ── Dark mode ─────────────────────────────────────────────────
+async function saveGeminiKey(val){
+  if(val && val.length > 10){
+    _geminiKeyCache = val;
+    localStorage.setItem('als_gemini_key', val);
+    // Guardar en Supabase para acceso multi-dispositivo
+    await saveGeminiKeyToSupabase(val);
+    const st = document.getElementById('sb-apikey-status');
+    if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
+    showToast('✅ API key guardada — disponible en todos los dispositivos');
+  } else if(val === '') {
+    _geminiKeyCache = null;
+    localStorage.removeItem('als_gemini_key');
+    const st = document.getElementById('sb-apikey-status');
+    if(st){ st.textContent='?'; st.style.background='var(--g100)'; }
+  }
+}
+async function initApiKeyUI(){
+  // Limpiar modelos obsoletos que pudieran quedar en localStorage
+  const savedModel = localStorage.getItem('als_gemini_model');
+  const modelosObsoletos = ['gemini', 'qwen2.5-vl', 'nemotron', 'llama-4-maverick'];
+  if(savedModel && modelosObsoletos.some(o => savedModel.includes(o))){
+    localStorage.removeItem('als_gemini_model');
+  }
+  // Restaurar modelo seleccionado
+  const currentModel = localStorage.getItem('als_gemini_model');
+  const sel = document.getElementById('sb-model-select');
+  if(sel && currentModel){
+    for(const opt of sel.options) if(opt.value === currentModel) opt.selected = true;
+  }
+  // El indicador siempre ✅ porque hay key por defecto embebida
+  const st = document.getElementById('sb-apikey-status');
+  if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
+  // Si hay key personal en localStorage, mostrarla
+  const localKey = localStorage.getItem('als_gemini_key');
+  const inp = document.getElementById('sb-apikey-input');
+  if(inp && localKey){
+    inp.value = localKey;
+    _geminiKeyCache = localKey;
+  }
+  // Sincronizar desde Supabase en segundo plano (sin bloquear)
+  loadGeminiKeyFromSupabase().catch(()=>{});
+}
+
+function toggleDarkMode(){
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('als_dark', isDark ? '1' : '0');
+  updateDarkBtn();
+}
+function initDarkMode(){
+  const saved = localStorage.getItem('als_dark');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme:dark)').matches;
+  if(saved==='1'||(saved===null&&prefersDark)){
+    document.documentElement.classList.add('dark');
+  }
+  updateDarkBtn();
+  if(window.matchMedia){
+    window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', e=>{
+      if(localStorage.getItem('als_dark')===null){
+        e.matches ? document.documentElement.classList.add('dark') : document.documentElement.classList.remove('dark');
+        updateDarkBtn();
+      }
+    });
+  }
+}
+function updateDarkBtn(){
+  const isDark = document.documentElement.classList.contains('dark');
+  const btn = document.getElementById('dark-toggle');
+  if(btn){ btn.textContent = isDark ? '☀️' : '🌙'; btn.title = isDark ? 'Modo claro' : 'Modo oscuro'; }
+}
+
+// ── Sidebar ───────────────────────────────────────────────────
+function toggleSB(){
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('mob-ov').classList.toggle('show');
+}
+function toggleSidebar(){
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  localStorage.setItem('als_taric_sb', sb.classList.contains('collapsed') ? '1' : '0');
+}
+function initSidebar(){
+  if(localStorage.getItem('als_taric_sb') === '1'){
+    const sb = document.getElementById('sidebar');
+    if(sb) sb.classList.add('collapsed');
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────
+function showToast(msg, dur=3000){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), dur);
+}
+
+// ── Modal ─────────────────────────────────────────────────────
+function openModal(){ document.getElementById('mo').classList.add('open'); }
+function closeModal(){ document.getElementById('mo').classList.remove('open'); }
+
+// ── Navigation home ───────────────────────────────────────────
+function goHome(){
+  try {
+    // Si se abrió como pestaña nueva (tiene opener), cerrar y volver al opener
+    if(window.opener && !window.opener.closed){
+      try {
+        if(typeof window.opener.showHome==='function') window.opener.showHome();
+        window.opener.focus();
+        window.close();
+        return;
+      } catch(e){}
+    }
+    // Si hay historial (vino navegando desde index.html en la misma pestaña), volver atrás
+    if(window.history.length > 1){
+      window.history.back();
+      return;
+    }
+    // Fallback: navegar a index.html directamente
+    const base = window.location.href.replace(/\/taric\.html.*$/, '').replace(/\/$/, '');
+    window.location.href = base ? base + '/index.html' : 'index.html';
+  } catch(e){ window.location.href = 'index.html'; }
+}
+
+// ── Quick examples ─────────────────────────────────────────────
+function usarEjemplo(btn){
+  document.getElementById('desc-input').value = btn.textContent;
+  clasificar();
+}
+
+// ══════════════════════════════════════════════════════════════
+// CLASIFICACIÓN IA — llamada a Claude API
+// ══════════════════════════════════════════════════════════════
+async function clasificar(){
+  const desc = document.getElementById('desc-input').value.trim();
+  if(!desc){ showToast('⚠️ Introduce una descripción'); return; }
+
+  const btn = document.getElementById('btn-clasificar');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Clasificando...';
+
+  const resultArea = document.getElementById('busqueda-result');
+  resultArea.innerHTML = '<div class="loading-wrap"><div class="spinner"></div><span>Analizando mercancía con IA TARIC...</span></div>';
+
+  try {
+    const resultado = await llamarClaudeAPI(desc);
+    if(resultado){
+      mostrarResultado(resultado, resultArea);
+      ultimaClasificacion = resultado;
+      await guardarHistorial(desc, resultado);
+      loadHistorialBadge();
+    } else {
+      resultArea.innerHTML = '<div style="padding:24px;color:var(--rd600);text-align:center">❌ No se pudo clasificar. Intenta con una descripción más detallada.</div>';
+    }
+  } catch(e){
+    console.error(e);
+    resultArea.innerHTML = `<div style="padding:24px;color:var(--rd600);text-align:center">❌ Error: ${e.message}</div>`;
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = 'Clasificar';
+}
+
+async function llamarGeminiAPI(prompt, modelOverride){
+  const key = getGeminiKey();
+  if(!key) throw new Error('❌ Error de conexión con el servicio de IA. Inténtalo de nuevo.');
+
+  const messages = [{ role: 'user', content: prompt }];
+  try {
+    const text = await _callOpenRouterWithFallback(messages, false);
+    return parseClaudeResponse(text);
+  } catch(e) {
+    // Mensajes de error amigables
+    if(e.message.includes('rate') || e.message.includes('limit') || e.message.includes('RATE')){
+      throw new Error('⏳ Rate limit temporal. Espera unos segundos e inténtalo de nuevo.');
+    }
+    throw e;
+  }
+}
+
+// Mantener nombre para compatibilidad
+async function llamarClaudeAPI(descripcion){
+  return llamarGeminiAPI(buildPromptClasificacion(descripcion));
+}
+
+function buildPromptClasificacion(descripcion){
+  return `Eres un experto en clasificación arancelaria TARIC de la Unión Europea con 20 años de experiencia como despachante de aduanas. 
+
+Clasifica la siguiente mercancía según la Nomenclatura Combinada (NC) de la UE y proporciona el código TARIC a 10 dígitos.
+
+MERCANCÍA A CLASIFICAR:
+"${descripcion}"
+
+INSTRUCCIONES:
+- Aplica las Reglas Generales de Interpretación del Sistema Armonizado
+- Considera el material constitutivo, la función, el uso final y el estado de presentación
+- Para mercancías complejas, aplica la Regla 3 (partida más específica, carácter esencial)
+- El código TARIC tiene 10 dígitos: 8 de la NC + 2 adicionales TARIC (normalmente 00)
+- Indica el arancel Erga Omnes (tipo NMF/terceros países)
+- Identifica si existen medidas adicionales conocidas (antidumping, contingentes, licencias, prohibiciones)
+- Proporciona 2-3 ejemplos de CAVs (Consultas Arancelarias Vinculantes) similares reales o representativas
+- Indica tu nivel de confianza (0-100) en la clasificación
+
+Responde ÚNICAMENTE con este JSON (sin backticks, sin texto adicional):
+{
+  "codigo_taric": "XXXXXXXXXX",
+  "descripcion_nc": "Descripción oficial de la subpartida NC en español",
+  "capitulo": "XX - Nombre del capítulo",
+  "partida": "XXXX - Descripción de la partida",
+  "subpartida": "XXXXXX - Descripción de la subpartida",
+  "arancel_erga_omnes": "X,X %",
+  "unidad_suplementaria": "unidad o null",
+  "confianza": 85,
+  "regla_aplicada": "Regla X del SA - breve explicación",
+  "medidas_adicionales": [
+    {"tipo": "ANTIDUMPING|CONTINGENTE|LICENCIA|PROHIBICION|VIGILANCIA|SUSPENSION|IVA_ESPECIAL|NINGUNA", "descripcion": "texto breve", "referencia": "Reg. XXX/XXXX o null"}
+  ],
+  "ambiguedad": "null o explicación si hay dudas entre varias partidas",
+  "cavs": [
+    {
+      "referencia": "ES/XXXX/XXXX o similar",
+      "descripcion_mercancia": "descripción de la mercancía de la CAV",
+      "codigo_clasificado": "XXXXXXXXXX",
+      "fundamento": "Breve explicación del fundamento de clasificación"
+    }
+  ],
+  "razonamiento": "Explicación detallada del proceso de clasificación, reglas aplicadas y criterios determinantes. 3-4 párrafos.",
+  "notas_importantes": ["nota1", "nota2"]
+}`;
+}
+
+function parseClaudeResponse(text){
+  if(!text) return null;
+  try {
+    const clean = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    return JSON.parse(clean);
+  } catch(e){
+    // Try greedy JSON extraction — find outermost { }
+    const match = text.match(/\{[\s\S]*\}/);
+    if(match){
+      try { return JSON.parse(match[0]); } catch(e2){
+        // Try to fix common JSON issues: trailing commas, unescaped chars
+        try {
+          const fixed = match[0]
+            .replace(/,\s*([}\]])/g, '$1')  // trailing commas
+            .replace(/([{,]\s*)(\w+):/g, '$1"$2":');  // unquoted keys
+          return JSON.parse(fixed);
+        } catch(e3){}
+      }
+    }
+    // Last resort: try to find lineas array
+    const lineasMatch = text.match(/"lineas"\s*:\s*(\[[\s\S]*?\])/);
+    if(lineasMatch){
+      try { return {lineas: JSON.parse(lineasMatch[1])}; } catch(e4){}
+    }
+    console.error('Parse error:', text.substring(0,300));
+    return null;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// RENDER RESULTADO
+// ══════════════════════════════════════════════════════════════
+function mostrarResultado(r, container){
+  if(!r){ container.innerHTML = '<div style="padding:24px;color:var(--rd600)">Error al procesar resultado</div>'; return; }
+
+  const confianzaColor = r.confianza >= 85 ? 'var(--gr600)' : r.confianza >= 65 ? 'var(--am600)' : 'var(--rd600)';
+  const confianzaLabel = r.confianza >= 85 ? 'Alta' : r.confianza >= 65 ? 'Media' : 'Revisar';
+
+  const medidas = (r.medidas_adicionales || []).filter(m => m.tipo !== 'NINGUNA');
+
+  const medidasHtml = medidas.length > 0 ? medidas.map(m => {
+    const colors = {
+      'ANTIDUMPING': 'badge-red',
+      'CONTINGENTE': 'badge-amber',
+      'LICENCIA': 'badge-purple',
+      'PROHIBICION': 'badge-red',
+      'VIGILANCIA': 'badge-orange',
+      'SUSPENSION': 'badge-teal',
+      'IVA_ESPECIAL': 'badge-purple'
+    };
+    const icons = {
+      'ANTIDUMPING':'🛡️','CONTINGENTE':'📊','LICENCIA':'📋',
+      'PROHIBICION':'🚫','VIGILANCIA':'👁️','SUSPENSION':'⏸️','IVA_ESPECIAL':'💶'
+    };
+    return `<span class="badge ${colors[m.tipo]||'badge-grey'} measure-badge" title="${m.referencia||''}">${icons[m.tipo]||'⚑'} ${m.descripcion}</span>`;
+  }).join('') : '<span class="badge badge-green">✅ Sin medidas adicionales conocidas</span>';
+
+  const cavsHtml = (r.cavs||[]).map(c => `
+    <div class="cav-item" onclick="abrirCAV('${c.referencia}','${encodeURIComponent(c.codigo_clasificado)}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div class="cav-ref">📋 ${c.referencia}</div>
+        <div class="cav-code">${c.codigo_clasificado}</div>
+      </div>
+      <div class="cav-desc">${c.descripcion_mercancia}</div>
+      <div style="font-size:11px;color:var(--g400);margin-top:4px">${c.fundamento}</div>
+    </div>
+  `).join('');
+
+  const notasHtml = (r.notas_importantes||[]).filter(n=>n).map(n =>
+    `<div style="display:flex;gap:6px;margin-bottom:4px"><span style="color:var(--am600)">⚠️</span><span style="font-size:12px;color:var(--g600)">${n}</span></div>`
+  ).join('');
+
+  const razonamientoHtml = (r.razonamiento||'')
+    .split('\n').filter(p=>p.trim())
+    .map(p=>`<p>${p}</p>`).join('');
+
+  // TARIC online URL
+  const taricUrl = `https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es&Taric=${r.codigo_taric}&LangDescr=es`;
+  const btiUrl = `https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es&nomenc=${r.codigo_taric.substring(0,8)}`;
+
+  container.innerHTML = `
+    <div class="result-card">
+      <!-- Header: code + desc + confidence -->
+      <div class="result-header">
+        <div class="code-chip">${r.codigo_taric.match(/.{2}/g).join(' ')}</div>
+        <div class="result-desc">
+          <div class="result-desc-main">${r.descripcion_nc||'—'}</div>
+          <div class="result-desc-nc">
+            ${r.capitulo||''} &nbsp;·&nbsp; ${r.partida||''} &nbsp;·&nbsp; ${r.subpartida||''}
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <span class="source-badge source-ai">🤖 IA clasificación</span>
+            <span class="source-badge source-live">⚡ Verificar en TARIC Online</span>
+            ${r.regla_aplicada ? `<span class="source-badge">📐 ${r.regla_aplicada}</span>` : ''}
+          </div>
+        </div>
+        <div style="flex-shrink:0;text-align:right;min-width:90px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--g400);margin-bottom:4px">Confianza</div>
+          <div style="font-size:26px;font-weight:800;color:${confianzaColor};font-family:var(--mono)">${r.confianza}%</div>
+          <div style="font-size:11px;color:${confianzaColor};font-weight:600">${confianzaLabel}</div>
+          <div class="conf-bar-bg" style="margin-top:6px;width:90px">
+            <div class="conf-bar" style="width:${r.confianza}%;background:${confianzaColor}"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Body: duty + measures + unit -->
+      <div class="result-body">
+        <div class="result-section">
+          <div class="result-section-title">Arancel Erga Omnes (NMF)</div>
+          <div class="duty-main">${r.arancel_erga_omnes||'—'}</div>
+          <div class="duty-label">Tipo para terceros países (importación UE)</div>
+          ${r.unidad_suplementaria&&r.unidad_suplementaria!=='null' ? `<div class="duty-origin">Unidad supl.: <strong>${r.unidad_suplementaria}</strong></div>` : ''}
+        </div>
+
+        <div class="result-section">
+          <div class="result-section-title">Medidas adicionales</div>
+          <div>${medidasHtml}</div>
+        </div>
+
+        <div class="result-section">
+          <div class="result-section-title">Verificación y referencias</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <a href="${taricUrl}" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">🇪🇺 Ver en TARIC Online</a>
+            <a href="${btiUrl}" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📋 Buscar BTI/CAV</a>
+            <button class="btn btn-s btn-sm" onclick="copiarCodigo('${r.codigo_taric}')">📋 Copiar código</button>
+          </div>
+        </div>
+      </div>
+
+      ${notasHtml ? `<div style="padding:12px 24px;background:var(--am50);border-top:1px solid #fde68a">${notasHtml}</div>` : ''}
+
+      ${r.ambiguedad && r.ambiguedad !== 'null' ? `
+        <div style="padding:12px 24px;background:var(--am50);border-top:1px solid #fde68a">
+          <span style="font-size:12px;color:#92400e">⚠️ <strong>Ambigüedad:</strong> ${r.ambiguedad}</span>
+        </div>
+      ` : ''}
+
+      <!-- Razonamiento -->
+      <div class="reasoning">
+        <div class="reasoning-title">📐 Razonamiento de clasificación</div>
+        <div class="reasoning-text">${razonamientoHtml}</div>
+      </div>
+
+      <!-- CAVs -->
+      ${(r.cavs||[]).length > 0 ? `
+        <div style="padding:16px 24px;border-top:1px solid var(--g100)">
+          <div class="result-section-title" style="margin-bottom:10px">📋 CAVs vinculantes similares</div>
+          ${cavsHtml}
+        </div>
+      ` : ''}
+
+      <!-- Actions -->
+      <div style="padding:14px 24px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-p btn-sm" onclick="clasificarVariante()">🔄 Clasificar variante</button>
+        <button class="btn btn-s btn-sm" onclick="exportarResultado()">⬇️ Exportar</button>
+        <button class="btn btn-s btn-sm" onclick="nav('historial',document.querySelector('[onclick*=historial]'))">🕑 Ver historial</button>
+      </div>
+    </div>
+  `;
+}
+
+function copiarCodigo(codigo){
+  navigator.clipboard.writeText(codigo).then(()=>showToast('✅ Código '+codigo+' copiado'));
+}
+
+function clasificarVariante(){
+  const input = document.getElementById('desc-input');
+  input.focus();
+  input.select();
+  showToast('💡 Modifica la descripción y vuelve a clasificar');
+}
+
+function exportarResultado(){
+  if(!ultimaClasificacion) return;
+  const r = ultimaClasificacion;
+  const csv = [
+    ['Descripción','Código TARIC','Descripción NC','Arancel EO','Confianza','Medidas'],
+    [
+      document.getElementById('desc-input').value,
+      r.codigo_taric,
+      r.descripcion_nc,
+      r.arancel_erga_omnes,
+      r.confianza+'%',
+      (r.medidas_adicionales||[]).filter(m=>m.tipo!=='NINGUNA').map(m=>m.descripcion).join('; ')
+    ]
+  ].map(r=>r.map(c=>'"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n');
+  downloadCSV(csv, 'taric_clasificacion.csv');
+}
+
+function abrirCAV(ref, codificado){
+  const codigo = decodeURIComponent(codificado);
+  const url = `https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es&nomenc=${codigo.substring(0,8)}`;
+  window.open(url, '_blank');
+}
+
+// ══════════════════════════════════════════════════════════════
+// FACTURA — Lectura y clasificación masiva
+// ══════════════════════════════════════════════════════════════
+function setupDropZone(){
+  const dz = document.getElementById('drop-zone');
+  if(!dz) return;
+  dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('dragover');});
+  dz.addEventListener('dragleave', ()=>dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e=>{
+    e.preventDefault();dz.classList.remove('dragover');
+    const f=e.dataTransfer.files[0];if(f) handleFile(f);
+  });
+}
+
+async function handleFile(file){
+  if(!file) return;
+  if(file.size > 20*1024*1024){ showToast('❌ Archivo demasiado grande (máx 20MB)'); return; }
+
+  const mediaType = getMediaType(file.type, file.name);
+
+  document.getElementById('factura-upload-area').style.display='none';
+  document.getElementById('factura-result').style.display='block';
+  document.getElementById('factura-info').innerHTML = `
+    <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:24px">${mediaType==='application/pdf'?'📄':'🖼️'}</span>
+      <div>
+        <div style="font-size:13px;font-weight:600">${file.name}</div>
+        <div style="font-size:11px;color:var(--g400)" id="factura-status-txt">
+          ${mediaType==='application/pdf'?'Renderizando PDF como imagen para OCR...':'Procesando imagen con OCR...'}
+        </div>
+      </div>
+      <div class="spinner" style="margin-left:auto" id="factura-spinner"></div>
+    </div>`;
+  document.getElementById('factura-tbody').innerHTML = `
+    <tr><td colspan="7" style="padding:32px;text-align:center">
+      <div class="loading-wrap" style="justify-content:center">
+        <div class="spinner"></div>
+        <span id="factura-ocr-status">Iniciando OCR con Gemini Vision...</span>
+      </div>
+    </td></tr>`;
+
+  let imageBase64 = null;
+  let imageType = 'image/jpeg';
+  let textoPlano = null;
+
+  try {
+    if(mediaType === 'application/pdf'){
+      // PDF → renderizar en canvas con PDF.js → JPEG alta resolución
+      _setFacturaStatus('Cargando PDF.js para renderizado...');
+      imageBase64 = await renderPDFaImagen(file);
+      if(!imageBase64){
+        // Fallback: enviar como texto si PDF.js falla
+        _setFacturaStatus('Extrayendo texto del PDF...');
+        textoPlano = await extraerTextoPDF(file);
+      } else {
+        _setFacturaStatus('PDF renderizado. Enviando a Gemini Vision OCR...');
+      }
+    } else {
+      // Imagen directa: convertir a JPEG comprimido para mejor compatibilidad
+      _setFacturaStatus('Optimizando imagen para OCR...');
+      imageBase64 = await comprimirImagenParaOCR(file);
+      _setFacturaStatus('Imagen lista. Enviando a Gemini Vision OCR...');
+    }
+  } catch(e){
+    console.warn('Preparación imagen/PDF falló:', e);
+    // Último recurso: base64 raw
+    imageBase64 = await fileToBase64(file);
+  }
+
+  const base64 = imageBase64;
+
+  document.getElementById('factura-info').innerHTML = `
+    <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:24px">${file.type.includes('pdf')?'📄':'🖼️'}</span>
+      <div>
+        <div style="font-size:13px;font-weight:600">${file.name}</div>
+        <div style="font-size:11px;color:var(--g400)">${(file.size/1024).toFixed(0)} KB · Extrayendo líneas de mercancía...</div>
+      </div>
+      <div class="spinner" style="margin-left:auto"></div>
+    </div>
+  `;
+
+  document.getElementById('factura-tbody').innerHTML = `
+    <tr><td colspan="7" style="padding:32px;text-align:center;color:var(--g400)">
+      <div class="loading-wrap" style="justify-content:center"><div class="spinner"></div><span>IA leyendo la factura y clasificando mercancías...</span></div>
+    </td></tr>
+  `;
+
+  try {
+    const resultado = await leerFacturaConIA(base64, imageType, textoPlano);
+    // leerFacturaConIA devuelve objeto {lineas:[...]} o array directo
+    const numLineas = Array.isArray(resultado) ? resultado.length : (resultado?.lineas?.length || 0);
+    if(!numLineas){
+      document.getElementById('factura-info').innerHTML = '<div style="padding:12px;color:var(--rd600)">❌ No se encontraron líneas de mercancía en el documento.</div>';
+      document.getElementById('factura-tbody').innerHTML = '';
+      return;
+    }
+
+    await renderLineasFactura(resultado, file.name);
+    document.getElementById('btn-exp-fact').style.display='';
+
+  } catch(e){
+    console.error(e);
+    document.getElementById('factura-info').innerHTML = `<div style="padding:12px;color:var(--rd600)">❌ Error procesando factura: ${e.message}</div>`;
+    document.getElementById('factura-tbody').innerHTML = '';
+  }
+}
+
+async function leerFacturaConIA(base64, mediaType, textoPlano){
+  const prompt = `Eres un experto aduanero TARIC de la UE con capacidad OCR avanzada. Tu tarea es:
+1. LEER la imagen de la factura con máximo detalle (aunque sea escaneada, fotografia o baja resolución)
+2. EXTRAER absolutamente TODAS las líneas de artículos/mercancía
+3. CLASIFICAR cada artículo en el código TARIC correcto de 10 dígitos
+
+Para cada línea de la factura:
+- Descripción EXACTA tal como aparece en el documento (sin modificar)
+- Cantidad y unidad de medida
+- Precio unitario y total si figuran
+- Código TARIC 10 dígitos (NC 8 + subdivisión TARIC 2)
+- Arancel Erga Omnes (tipo NMF para importación UE desde terceros países)
+- Medidas adicionales: antidumping, contingentes, licencias, vigilancia si las conoces
+
+Si el documento está en otro idioma, mantén la descripción original Y añade traducción al español.
+NO omitas ninguna línea aunque la imagen no sea perfecta — infiere lo que puedas.
+
+Responde ÚNICAMENTE con este JSON (sin backticks):
+{
+  "proveedor": "nombre del proveedor o null",
+  "comprador": "nombre del comprador o null",
+  "numero_factura": "número o null",
+  "fecha": "fecha o null",
+  "origen": "país de origen si figura",
+  "lineas": [
+    {
+      "num": 1,
+      "descripcion_original": "texto exacto de la factura",
+      "descripcion_es": "traducción al español si es necesario",
+      "cantidad": "X unidades/kg/etc",
+      "codigo_taric": "XXXXXXXXXX",
+      "descripcion_nc": "descripción oficial NC",
+      "arancel_erga_omnes": "X%",
+      "confianza": 85,
+      "medidas": [{"tipo": "ANTIDUMPING|CONTINGENTE|NINGUNA", "desc": "texto breve"}]
+    }
+  ]
+}`;
+
+  // Construir mensaje OpenAI-compatible con imagen base64
+  let messages;
+  if(base64 && base64.length > 100){
+    // Modo Vision: imagen JPEG → Qwen-VL OCR + clasificación
+    const imgType = (mediaType === 'application/pdf') ? 'image/jpeg' : (mediaType || 'image/jpeg');
+    const cleanType = imgType.startsWith('image/') ? imgType : 'image/jpeg';
+    messages = [{
+      role: 'user',
+      content: [
+        {
+          type: 'image_url',
+          image_url: { url: `data:${cleanType};base64,${base64}` }
+        },
+        {
+          type: 'text',
+          text: prompt + '\n\nANALIZA la imagen adjunta con OCR meticuloso. Lee TODOS los artículos/líneas de la factura aunque la imagen sea de baja calidad o escaneo. Extrae cada producto con su descripción EXACTA, cantidad y precio.'
+        }
+      ]
+    }];
+  } else if(textoPlano && textoPlano.length > 50){
+    // Fallback texto puro
+    messages = [{ role: 'user', content: prompt + '\n\nCONTENIDO DEL DOCUMENTO:\n' + textoPlano }];
+  } else {
+    throw new Error('No se pudo procesar el documento. Prueba a subir como imagen JPG/PNG.');
+  }
+
+  // Llamar OpenRouter con fallback automático
+  // Si el modelo principal no soporta visión (texto-only), usa modelo VL
+  const primaryModel = getGeminiModel();
+  const isVisionModel = primaryModel.includes('vl') || primaryModel.includes('vision') ||
+    primaryModel.includes('mistral-small') || primaryModel.includes('gemma') ||
+    primaryModel.includes('gemma') || primaryModel.includes('llama-3.2');
+
+  // Si el modelo seleccionado no soporta visión, empezar con el primero de la lista VL
+  const modelToUse = (base64 && !isVisionModel) ? OR_VISION_MODELS[0] : primaryModel;
+  if(base64 && !isVisionModel){
+    showToast('ℹ️ Usando modelo VL para OCR');
+  }
+
+  // Construir lista completa: modelo preferido primero, luego todos los VL disponibles
+  const visionFallbacks = [modelToUse, ...OR_VISION_MODELS.filter(m => m !== modelToUse)];
+  const tried = new Set();
+  let lastErr;
+  for(const model of visionFallbacks){
+    if(tried.has(model)) continue;
+    tried.add(model);
+    try {
+      const key = getGeminiKey();
+      if(!key) throw new Error('❌ Error de conexión con el servicio de IA. Inténtalo de nuevo.');
+      const text = await _callOpenRouter(messages, model, true);
+      if(model !== primaryModel) showToast('⚡ OCR con: ' + model.split('/').pop());
+      return parseClaudeResponse(text);
+    } catch(e){
+      if(e.message.startsWith('RATE_LIMIT:')){
+        lastErr = e;
+        console.warn('Rate limit OCR en', model, '— probando siguiente...');
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error('⏳ Rate limit en todos los modelos gratuitos.\n\nSolución rápida: añade 5€ de crédito en openrouter.ai/credits para uso sin límite.');
+}
+
+async function renderLineasFactura(data, filename){
+  // data puede ser: objeto con .lineas, array directo, o el resultado de parseClaudeResponse
+  let lineas = [];
+  if(Array.isArray(data)) lineas = data;
+  else if(data && Array.isArray(data.lineas)) lineas = data.lineas;
+  else lineas = [];
+  const info = document.getElementById('factura-info');
+  const tbody = document.getElementById('factura-tbody');
+
+  info.innerHTML = `
+    <div class="card" style="padding:12px 16px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:13px;font-weight:700">${data.numero_factura||filename}</div>
+          <div style="font-size:11px;color:var(--g400)">${data.proveedor||'—'} → ${data.comprador||'—'} · ${data.fecha||''} · Origen: ${data.origen||'No especificado'}</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <span class="badge badge-blue">${lineas.length} líneas</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  let html = '';
+  for(const l of lineas){
+    const medidas = (l.medidas||[]).filter(m=>m.tipo!=='NINGUNA');
+    const medidasHtml = medidas.length > 0
+      ? medidas.map(m=>`<span class="badge badge-red" style="font-size:10px">${m.desc}</span>`).join(' ')
+      : '<span class="badge badge-green" style="font-size:10px">Sin medidas</span>';
+
+    const confianzaColor = l.confianza>=85?'var(--gr600)':l.confianza>=65?'var(--am600)':'var(--rd600)';
+    const taricFormatted = l.codigo_taric ? l.codigo_taric.match(/.{2}/g).join(' ') : '—';
+    const taricUrl = l.codigo_taric ? `https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es&Taric=${l.codigo_taric}` : '#';
+
+    html += `<tr>
+      <td style="font-weight:700;color:var(--g400);font-family:var(--mono)">${l.num}</td>
+      <td>
+        <div style="font-size:12px;font-weight:600;color:var(--g700)">${l.descripcion_original||'—'}</div>
+        ${l.descripcion_es&&l.descripcion_es!==l.descripcion_original?`<div style="font-size:11px;color:var(--g400);margin-top:2px">🔤 ${l.descripcion_es}</div>`:''}
+        ${l.cantidad?`<div style="font-size:11px;color:var(--g500);margin-top:2px">Cant: ${l.cantidad}</div>`:''}
+      </td>
+      <td>
+        <a href="${taricUrl}" target="_blank" style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);text-decoration:none;white-space:nowrap" title="Ver en TARIC Online">
+          ${taricFormatted} ↗
+        </a>
+      </td>
+      <td style="font-size:12px;color:var(--g600);max-width:200px">${l.descripcion_nc||'—'}</td>
+      <td style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--g700);white-space:nowrap">${l.arancel_erga_omnes||'—'}</td>
+      <td>${medidasHtml}</td>
+      <td>
+        <div style="font-size:13px;font-weight:700;color:${confianzaColor}">${l.confianza||0}%</div>
+        <div class="conf-bar-bg" style="width:60px;margin-top:3px">
+          <div class="conf-bar" style="width:${l.confianza||0}%;background:${confianzaColor}"></div>
+        </div>
+      </td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+
+  // Save to history
+  for(const l of lineas){
+    if(l.codigo_taric && l.descripcion_nc){
+      await guardarHistorial(l.descripcion_original||l.descripcion_es, {
+        codigo_taric: l.codigo_taric,
+        descripcion_nc: l.descripcion_nc,
+        arancel_erga_omnes: l.arancel_erga_omnes,
+        confianza: l.confianza,
+        medidas_adicionales: l.medidas||[]
+      });
+    }
+  }
+  loadHistorialBadge();
+}
+
+function limpiarFactura(){
+  document.getElementById('factura-upload-area').style.display='';
+  document.getElementById('factura-result').style.display='none';
+  document.getElementById('btn-exp-fact').style.display='none';
+  const fi = document.getElementById('file-input');
+  if(fi) fi.value='';
+}
+
+function switchFacturaTab(tab){
+  const panelA = document.getElementById('panel-archivo');
+  const panelT = document.getElementById('panel-texto');
+  const btnA = document.getElementById('tab-archivo');
+  const btnT = document.getElementById('tab-texto');
+  if(tab === 'archivo'){
+    panelA.style.display=''; panelT.style.display='none';
+    btnA.style.background='var(--b600)'; btnA.style.color='#fff';
+    btnT.style.background='var(--g100)'; btnT.style.color='var(--g600)';
+  } else {
+    panelA.style.display='none'; panelT.style.display='';
+    btnT.style.background='var(--b600)'; btnT.style.color='#fff';
+    btnA.style.background='var(--g100)'; btnA.style.color='var(--g600)';
+  }
+}
+
+async function clasificarTextoFactura(){
+  const texto = document.getElementById('factura-texto-input')?.value?.trim();
+  if(!texto || texto.length < 20){
+    showToast('⚠️ Introduce el texto de la factura');
+    return;
+  }
+  // Simular el flujo normal pero pasando el texto directamente
+  document.getElementById('factura-upload-area').style.display='none';
+  document.getElementById('factura-result').style.display='block';
+  document.getElementById('factura-info').innerHTML = `
+    <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:24px">📋</span>
+      <div><div style="font-size:13px;font-weight:600">Texto pegado</div>
+      <div style="font-size:11px;color:var(--g400)">${texto.length} caracteres · Clasificando con IA...</div></div>
+      <div class="spinner" style="margin-left:auto"></div>
+    </div>`;
+  document.getElementById('factura-tbody').innerHTML = `
+    <tr><td colspan="7" style="padding:32px;text-align:center">
+      <div class="loading-wrap" style="justify-content:center"><div class="spinner"></div><span>Clasificando mercancías...</span></div>
+    </td></tr>`;
+  try {
+    const resultado = await leerFacturaConIA(null, null, texto);
+    // leerFacturaConIA puede devolver objeto {lineas:[...]} o array directo
+    const lineas = Array.isArray(resultado) ? resultado : (resultado?.lineas || resultado);
+    const numLineas = Array.isArray(lineas) ? lineas.length : 0;
+    if(!numLineas){
+      document.getElementById('factura-info').innerHTML = '<div style="padding:12px;color:var(--rd600)">❌ No se pudieron clasificar las líneas. Revisa el texto e inténtalo de nuevo.</div>';
+      return;
+    }
+    await renderLineasFactura(resultado, 'Texto pegado');
+    document.getElementById('btn-exp-fact').style.display='';
+  } catch(e){
+    document.getElementById('factura-info').innerHTML = `<div style="padding:12px;color:var(--rd600)">❌ ${e.message}</div>`;
+  }
+}
+
+function exportarFactura(){
+  const rows = document.querySelectorAll('#factura-tbody tr');
+  if(!rows.length) return;
+  const headers = ['#','Descripción original','Código TARIC','Descripción NC','Arancel EO','Confianza'];
+  const data = [headers];
+  rows.forEach(tr=>{
+    const cells = tr.querySelectorAll('td');
+    if(cells.length>=6){
+      data.push([
+        cells[0].textContent.trim(),
+        cells[1].querySelector('div')?.textContent.trim()||'',
+        cells[2].textContent.replace(/\s+/g,' ').trim(),
+        cells[3].textContent.trim(),
+        cells[4].textContent.trim(),
+        cells[6].querySelector('div')?.textContent.trim()||''
+      ]);
+    }
+  });
+  const csv = data.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  downloadCSV(csv, 'factura_taric.csv');
+}
+
+// ══════════════════════════════════════════════════════════════
+// HISTORIAL — Supabase
+// ══════════════════════════════════════════════════════════════
+async function guardarHistorial(descripcion, resultado){
+  if(!sb||!resultado||!resultado.codigo_taric) return;
+  try {
+    const cu = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'{}');
+    await sb.from('taric_historial').insert({
+      descripcion_busqueda: descripcion,
+      codigo_taric: resultado.codigo_taric,
+      descripcion_nc: resultado.descripcion_nc||'',
+      arancel_erga_omnes: resultado.arancel_erga_omnes||'',
+      confianza: resultado.confianza||0,
+      medidas_json: JSON.stringify(resultado.medidas_adicionales||[]),
+      usuario_nombre: cu.nombre||'—',
+      usuario_id: cu.id||null
+    });
+  } catch(e){ console.warn('historial:', e.message); }
+}
+
+async function loadHistorialBadge(){
+  if(!sb) return;
+  try {
+    const {count} = await sb.from('taric_historial').select('*',{count:'exact',head:true});
+    const b = document.getElementById('badge-hist');
+    if(b){ b.textContent=count||0; b.style.display=(count>0)?'':'none'; }
+  } catch(e){}
+}
+
+async function loadHistorial(){
+  if(!sb){ document.getElementById('hist-list').innerHTML='<div style="padding:16px;color:var(--g400)">Supabase no disponible</div>'; return; }
+  document.getElementById('hist-list').innerHTML='<div class="loading-wrap"><div class="spinner"></div><span>Cargando...</span></div>';
+  try {
+    const {data,error} = await sb.from('taric_historial').select('*').order('created_at',{ascending:false}).limit(200);
+    if(error) throw error;
+    historialData = data||[];
+    renderHistorial(historialData);
+  } catch(e){
+    document.getElementById('hist-list').innerHTML=`<div style="padding:16px;color:var(--rd600)">Error: ${e.message}. <br><small>Ejecuta el SQL de creación de tabla si es la primera vez.</small></div>`;
+  }
+}
+
+function renderHistorial(lista){
+  // KPIs
+  const uniqueCodes = new Set(lista.map(h=>h.codigo_taric)).size;
+  const avgConf = lista.length ? Math.round(lista.reduce((a,h)=>a+(h.confianza||0),0)/lista.length) : 0;
+  document.getElementById('hist-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-val">${lista.length}</div><div class="kpi-lbl">Clasificaciones</div></div>
+    <div class="kpi"><div class="kpi-val">${uniqueCodes}</div><div class="kpi-lbl">Códigos únicos</div></div>
+    <div class="kpi"><div class="kpi-val">${avgConf}%</div><div class="kpi-lbl">Confianza media</div></div>
+  `;
+
+  if(!lista.length){
+    document.getElementById('hist-list').innerHTML='<div style="text-align:center;padding:48px;color:var(--g400)">No hay clasificaciones en el historial</div>';
+    return;
+  }
+
+  document.getElementById('hist-list').innerHTML = lista.map(h => {
+    const medidas = JSON.parse(h.medidas_json||'[]').filter(m=>m.tipo!=='NINGUNA');
+    const medidasHtml = medidas.length>0 ? `<span class="badge badge-amber" style="font-size:10px">⚑ ${medidas.length} medida${medidas.length>1?'s':''}</span>` : '';
+    const confianzaColor = h.confianza>=85?'var(--gr600)':h.confianza>=65?'var(--am600)':'var(--rd600)';
+    const fecha = h.created_at ? new Date(h.created_at).toLocaleDateString('es-ES') : '';
+
+    return `<div class="hist-item" onclick="reusarHistorial('${encodeURIComponent(h.descripcion_busqueda||'')}')">
+      <div class="hist-code">${(h.codigo_taric||'').match(/.{2}/g)?.join(' ')||'—'}</div>
+      <div class="hist-desc">
+        <div class="hist-desc-text">${h.descripcion_busqueda||'—'}</div>
+        <div class="hist-desc-meta">${h.descripcion_nc||'—'} · ${fecha} · ${h.usuario_nombre||'—'}</div>
+      </div>
+      ${medidasHtml}
+      <div class="hist-duty" style="color:${confianzaColor}">${h.arancel_erga_omnes||'—'}</div>
+    </div>`;
+  }).join('');
+}
+
+function filtrarHistorial(q){
+  if(!q){ renderHistorial(historialData); return; }
+  const f = q.toLowerCase();
+  renderHistorial(historialData.filter(h =>
+    (h.descripcion_busqueda||'').toLowerCase().includes(f) ||
+    (h.codigo_taric||'').includes(f) ||
+    (h.descripcion_nc||'').toLowerCase().includes(f)
+  ));
+}
+
+function reusarHistorial(enc){
+  const desc = decodeURIComponent(enc);
+  document.getElementById('desc-input').value = desc;
+  nav('busqueda', document.querySelector('[onclick*="busqueda"]'));
+  clasificar();
+}
+
+async function exportarHistorial(){
+  const lista = historialData;
+  if(!lista.length){ showToast('Sin datos para exportar'); return; }
+  const headers = ['Fecha','Descripción','Código TARIC','Descripción NC','Arancel EO','Confianza','Usuario'];
+  const rows = lista.map(h=>[
+    h.created_at?new Date(h.created_at).toLocaleDateString('es-ES'):'',
+    h.descripcion_busqueda||'',
+    h.codigo_taric||'',
+    h.descripcion_nc||'',
+    h.arancel_erga_omnes||'',
+    (h.confianza||0)+'%',
+    h.usuario_nombre||''
+  ]);
+  const csv = [headers,...rows].map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  downloadCSV(csv, 'taric_historial.csv');
+}
+
+// ══════════════════════════════════════════════════════════════
+// BASE CAVs — Ejemplos ilustrativos y vinculantes
+// ══════════════════════════════════════════════════════════════
+async function loadCAVs(){
+  const lista = document.getElementById('cav-list');
+
+  // Ejemplos reales representativos de CAVs UE por sectores habituales en Algeciras
+  const cavEjemplos = [
+    { ref:'ES/2023/7821', codigo:'8481209900', mercancia:'Válvulas reguladoras de presión para redes de gas, PN25, acero', fundamento:'Clasificadas por Regla 1+6 SA. Las válvulas de regulación se clasifican en 8481 y no en las partidas de tubería.', sector:'Industria' },
+    { ref:'DE/2022/3451', codigo:'7326909800', mercancia:'Bridas de acero al carbono sin alear, forjadas, para tuberías industriales DN100', fundamento:'Regla 3(b) SA. Carácter esencial determinado por el material (acero). Nota de sector 15 Sección XV.', sector:'Industria' },
+    { ref:'FR/2023/1204', codigo:'6204620090', mercancia:'Pantalones de algodón para mujer, tejido vaquero, talla M', fundamento:'Clasificación por materia textil principal (algodón >85%) según Nota Sección XI NC.', sector:'Textil' },
+    { ref:'ES/2022/4532', codigo:'8703239019', mercancia:'Automóvil turismo gasolina 1.6L 115CV, 5 puertas, tracción delantera', fundamento:'Regla 1 SA. Cilindrada entre 1.500cc y 3.000cc, partida 8703.23. Nota adicional UE para emisiones.', sector:'Vehículos' },
+    { ref:'NL/2023/8901', codigo:'0709991000', mercancia:'Alcachofas frescas, calibre 40-60mm, para consumo humano', fundamento:'Regla 1+6 NC. Hortalizas frescas capítulo 07, subpartida específica para alcachofas.', sector:'Agroalimentario' },
+    { ref:'ES/2021/2341', codigo:'2204210000', mercancia:'Vino tinto con DOP, botella 75cl, 13.5% vol., cosecha 2019', fundamento:'Cap. 22, partida 2204. Las denominaciones de origen afectan al tipo de medida pero no a la clasificación básica.', sector:'Agroalimentario' },
+    { ref:'BE/2023/5621', codigo:'8517120000', mercancia:'Teléfonos inteligentes (smartphones) con pantalla táctil, Android 13', fundamento:'Regla 1 SA, Nota de partida 8517. Dispositivos para comunicaciones inalámbricas de redes celulares.', sector:'Electrónica' },
+    { ref:'ES/2022/9012', codigo:'2709000000', mercancia:'Aceites crudos de petróleo, densidad 0.856 g/cm³, importación por oleoducto', fundamento:'Cap. 27, partida 2709. Test de densidad y color según Nota explicativa OMA para distinguir de 2710.', sector:'Energía' },
+    { ref:'PT/2023/3341', codigo:'6302220090', mercancia:'Ropa de cama de algodón (>85%), percal 200 hilos, marca blanca', fundamento:'Sección XI, NC 6302. Ropa de cama excluye tejidos técnicos. Algodón predominante determina clasificación.', sector:'Textil' },
+    { ref:'ES/2023/1187', codigo:'8528590000', mercancia:'Monitor para ordenador LED 27 pulgadas, resolución 4K, entrada HDMI/DP', fundamento:'Regla 1+6. Monitores específicos para ordenadores 8528.59. Nota de subpartida distingue de TV.', sector:'Electrónica' },
+  ];
+
+  // También cargar las CAVs de las clasificaciones recientes del historial
+  let cavHistorial = [];
+  if(sb && historialData.length){
+    cavHistorial = historialData.slice(0,5).map(h => ({
+      ref: 'Historial ALS',
+      codigo: h.codigo_taric,
+      mercancia: h.descripcion_busqueda,
+      fundamento: `Clasificado por el sistema con ${h.confianza}% de confianza. ${h.descripcion_nc}`,
+      sector: 'Tu historial'
+    }));
+  }
+
+  const todos = [...(cavHistorial.length ? [{tipo:'historial',items:cavHistorial}] : []), {tipo:'referencia',items:cavEjemplos}];
+
+  lista.innerHTML = todos.map(grupo => `
+    <div style="margin-bottom:20px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        ${grupo.tipo==='historial' ? '📌 Basadas en tus clasificaciones recientes' : '📚 CAVs de referencia por sectores habituales en Algeciras'}
+        ${grupo.tipo==='historial'?'<span class="badge badge-blue">Personalizadas</span>':'<span class="badge badge-grey">Ilustrativas</span>'}
+      </div>
+      ${grupo.items.map(c => `
+        <div class="cav-item" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es&nomenc=${c.codigo.substring(0,8)}','_blank')">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="cav-ref">${c.ref}</span>
+              <span class="badge badge-grey" style="font-size:10px">${c.sector}</span>
+            </div>
+            <span class="cav-code" style="font-size:13px">${c.codigo.match(/.{2}/g).join(' ')}</span>
+          </div>
+          <div class="cav-desc">${c.mercancia}</div>
+          <div style="font-size:11px;color:var(--g400);margin-top:4px">${c.fundamento}</div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+// ══════════════════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════════════════
+// Extraer texto de PDF usando PDF.js (cargado dinámicamente)
+// ── Helper: actualizar estado en UI ─────────────────────────────
+function _setFacturaStatus(msg){
+  const el = document.getElementById('factura-status-txt');
+  if(el) el.textContent = msg;
+  const el2 = document.getElementById('factura-ocr-status');
+  if(el2) el2.textContent = msg;
+}
+
+// ── CARGA PDF.js UNA VEZ ─────────────────────────────────────────
+let _pdfjsLoadPromise = null;
+async function _cargarPDFjs(){
+  if(window.pdfjsLib) return true;
+  if(_pdfjsLoadPromise) return _pdfjsLoadPromise;
+  _pdfjsLoadPromise = new Promise((resolve) => {
+    // Usar versión sin worker (más fiable en GitHub Pages / entornos restringidos)
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+    s.onload = () => {
+      if(window.pdfjsLib){
+        // DisableWorker = true evita problemas con el worker en entornos HTTPS estrictos
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+      }
+      resolve(!!window.pdfjsLib);
+    };
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+  return _pdfjsLoadPromise;
+}
+
+// ── Renderizar PDF como imagen JPEG ──────────────────────────────
+async function renderPDFaImagen(file){
+  _setFacturaStatus('Cargando PDF.js...');
+  const loaded = await _cargarPDFjs();
+  if(!loaded) throw new Error('PDF.js no disponible');
+
+  _setFacturaStatus('Analizando PDF...');
+  const buf = await file.arrayBuffer();
+  
+  let pdf;
+  try {
+    pdf = await window.pdfjsLib.getDocument({data: new Uint8Array(buf)}).promise;
+  } catch(e){
+    throw new Error('PDF inválido o protegido: ' + e.message);
+  }
+
+  const nPages = pdf.numPages;
+  const maxPags = Math.min(nPages, 3); // máx 3 páginas para no exceder límite Gemini
+  const renders = [];
+
+  for(let i = 1; i <= maxPags; i++){
+    _setFacturaStatus(`Renderizando página ${i}/${nPages}...`);
+    const page = await pdf.getPage(i);
+    const vp = page.getViewport({scale: 2.0}); // 2x = ~150 DPI, suficiente para OCR
+    const canvas = document.createElement('canvas');
+    canvas.width  = vp.width;
+    canvas.height = vp.height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({canvasContext: ctx, viewport: vp}).promise;
+    renders.push(canvas);
+  }
+
+  if(renders.length === 1){
+    return renders[0].toDataURL('image/jpeg', 0.92).split(',')[1];
+  }
+
+  // Combinar páginas verticalmente
+  const W = Math.max(...renders.map(c => c.width));
+  const H = renders.reduce((s, c) => s + c.height + 16, 0);
+  const combined = document.createElement('canvas');
+  combined.width = W; combined.height = H;
+  const cc = combined.getContext('2d');
+  cc.fillStyle = '#e5e7eb';
+  cc.fillRect(0, 0, W, H);
+  let y = 0;
+  for(const pg of renders){
+    cc.drawImage(pg, Math.floor((W - pg.width) / 2), y);
+    y += pg.height + 16;
+  }
+  return combined.toDataURL('image/jpeg', 0.90).split(',')[1];
+}
+
+// Alias para compatibilidad
+async function extraerPDFConPDFjs(file){ return renderPDFaImagen(file); }
+async function _doPDFExtract(file, resolve, reject){ try{ resolve(await renderPDFaImagen(file)); }catch(e){ reject(e); } }
+
+// ── Comprimir imagen para OCR (máx 4000px, JPEG 0.95) ───────────
+async function comprimirImagenParaOCR(file){
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      const MAX = 4000;
+      if(w > MAX || h > MAX){
+        if(w > h){ h = Math.round(h * MAX/w); w = MAX; }
+        else { w = Math.round(w * MAX/h); h = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.95).split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
+// Extraer texto de PDF — múltiples estrategias
+async function extraerTextoPDF(file){
+  // Estrategia 1: PDF.js desde CDN (más fiable para PDFs complejos)
+  try {
+    const texto = await extraerPDFConPDFjs(file);
+    if(texto && texto.length > 80) return texto;
+  } catch(e){ console.warn('PDF.js failed:', e.message); }
+
+  // Estrategia 2: Leer como texto latin-1 y extraer strings legibles
+  try {
+    const texto = await extraerPDFComoTexto(file);
+    if(texto && texto.length > 80) return texto;
+  } catch(e){ console.warn('Text extract failed:', e.message); }
+
+  return '';
+}
+
+async function extraerPDFConPDFjs(file){
+  return new Promise((resolve, reject) => {
+    // Cargar PDF.js como script clásico (no módulo)
+    const scriptId = 'pdfjs-script';
+    if(document.getElementById(scriptId) && window.pdfjsLib){
+      _doPDFExtract(file, resolve, reject);
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = scriptId;
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+    script.onload = () => {
+      if(window.pdfjsLib){
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+      }
+      setTimeout(() => _doPDFExtract(file, resolve, reject), 100);
+    };
+    script.onerror = () => reject(new Error('PDF.js CDN failed'));
+    document.head.appendChild(script);
+  });
+}
+
+async function _doPDFExtract(file, resolve, reject){
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
+    let txt = '';
+    for(let i = 1; i <= pdf.numPages; i++){
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      txt += content.items.map(it => it.str).join(' ') + ' ';
+    }
+    resolve(txt.replace(/\s+/g,' ').trim());
+  } catch(e){ reject(e); }
+}
+
+async function extraerPDFComoTexto(file){
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        // Decodificar como latin1 para capturar texto ASCII del PDF
+        const arr = new Uint8Array(e.target.result);
+        let texto = '';
+        // Buscar secuencias de texto legible de >3 caracteres
+        let buf = '';
+        for(let i = 0; i < arr.length; i++){
+          const ch = arr[i];
+          if(ch >= 32 && ch <= 126){
+            buf += String.fromCharCode(ch);
+          } else {
+            if(buf.length > 3) texto += buf + ' ';
+            buf = '';
+          }
+        }
+        if(buf.length > 3) texto += buf;
+        // Filtrar líneas útiles (palabras reales, no basura PDF)
+        const lineas = texto.split(/\s+/)
+          .filter(w => w.length > 2 && /[A-Za-z0-9áéíóúÁÉÍÓÚñÑ]/.test(w))
+          .join(' ');
+        resolve(lineas);
+      } catch(e){ resolve(''); }
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(',')[1]);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+function getMediaType(type, name){
+  if(type==='application/pdf') return 'application/pdf';
+  if(type.startsWith('image/')) return type;
+  const ext = (name||'').split('.').pop().toLowerCase();
+  if(ext==='pdf') return 'application/pdf';
+  if(ext==='png') return 'image/png';
+  if(ext==='webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+function downloadCSV(csv, filename){
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+  showToast('✅ CSV descargado');
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// MÓDULO BORRADOR DUA — Generador conforme resolución AEAT
+// Compatible con estructura de dossier Visual Trans
+// ══════════════════════════════════════════════════════════════
+
+function setupDUADropZone(){
+  const dz = document.getElementById('dua-drop-zone');
+  if(!dz) return;
+  dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('dragover');});
+  dz.addEventListener('dragleave', ()=>dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e=>{
+    e.preventDefault();dz.classList.remove('dragover');
+    const f=e.dataTransfer.files[0]; if(f) abrirModalConfigDUA(f);
+  });
+}
+
+// ── Modal configuración previa DUA ───────────────────────────
+let _duaPendingFile = null;
+
+function abrirModalConfigDUA(file){
+  if(!file) return;
+  _duaPendingFile = file;
+  // Mostrar nombre de archivo
+  const fnEl = document.getElementById('dua-cfg-filename');
+  if(fnEl) fnEl.textContent = file.name + ' · ' + (file.size/1024).toFixed(0) + ' KB';
+  // Ajustar defaults según tipo detectado por nombre
+  const nombre = file.name.toLowerCase();
+  // Mostrar modal
+  const modal = document.getElementById('dua-config-modal');
+  if(modal) modal.style.display = 'flex';
+}
+
+function cerrarModalConfigDUA(){
+  const modal = document.getElementById('dua-config-modal');
+  if(modal) modal.style.display = 'none';
+  _duaPendingFile = null;
+  // Resetear el input file para permitir volver a seleccionar el mismo archivo
+  const inp = document.getElementById('dua-file-input');
+  if(inp) inp.value = '';
+}
+
+function toggleUbicacionOtra(){
+  const sel = document.getElementById('dcfg-ubicacion');
+  const otra = document.getElementById('dcfg-ubicacion-otra');
+  if(otra) otra.style.display = sel.value === 'otra' ? '' : 'none';
+}
+
+function confirmarConfigDUA(){
+  if(!_duaPendingFile) return;
+  const cfg = {
+    tipo: document.getElementById('dcfg-tipo')?.value || 'H1-IMPORTACION',
+    aduana: document.getElementById('dcfg-aduana')?.value || 'ES001131 — Algeciras Marítima',
+    regimen: document.getElementById('dcfg-regimen')?.value || '40',
+    regimenPrev: document.getElementById('dcfg-regimen-prev')?.value || '00',
+    transporte: document.getElementById('dcfg-transporte')?.value || '1',
+    incoterm: document.getElementById('dcfg-incoterm')?.value || '',
+    ubicacion: document.getElementById('dcfg-ubicacion')?.value === 'otra'
+      ? (document.getElementById('dcfg-ubicacion-otra')?.value || '')
+      : (document.getElementById('dcfg-ubicacion')?.value || ''),
+    observaciones: document.getElementById('dcfg-obs')?.value?.trim() || '',
+  };
+  const modal = document.getElementById('dua-config-modal');
+  if(modal) modal.style.display = 'none';
+  handleDUAFile(_duaPendingFile, cfg);
+  _duaPendingFile = null;
+}
+
+async function handleDUAFile(file, cfg){
+  if(!file) return;
+  if(file.size > 20*1024*1024){ showToast('❌ Archivo demasiado grande'); return; }
+
+  document.getElementById('dua-upload-area').style.display='none';
+  const resultEl = document.getElementById('dua-result');
+  resultEl.style.display='block';
+  resultEl.innerHTML = '<div class="loading-wrap" style="padding:32px;justify-content:center"><div class="spinner"></div><span>IA elaborando borrador DUA... Extrayendo datos de la factura...</span></div>';
+  document.getElementById('btn-exp-dua').style.display='none';
+
+  try {
+    const mediaType = getMediaType(file.type, file.name);
+    let base64, imageMediaType;
+
+    if(mediaType === 'application/pdf'){
+      // PDFs: renderizar como imagen JPEG para que la IA pueda verlos
+      resultEl.innerHTML = '<div class="loading-wrap" style="padding:32px;justify-content:center"><div class="spinner"></div><span>Renderizando PDF... Elaborando DUA con IA...</span></div>';
+      base64 = await renderPDFaImagen(file);
+      imageMediaType = 'image/jpeg';
+    } else {
+      // Imágenes: usar directamente
+      base64 = await fileToBase64(file);
+      imageMediaType = mediaType;
+    }
+
+    const dua = await generarBorradorDUA(base64, imageMediaType, cfg);
+    if(dua){
+      renderBorradorDUA(dua, resultEl, file.name);
+      document.getElementById('btn-exp-dua').style.display='';
+      window._ultimoDUA = dua;
+    } else {
+      resultEl.innerHTML = '<div style="padding:24px;color:var(--rd600);text-align:center">❌ No se pudieron extraer los datos suficientes de la factura.</div>';
+    }
+  } catch(e){
+    console.error(e);
+    resultEl.innerHTML = `<div style="padding:24px;color:var(--rd600)">❌ Error: ${e.message}</div>`;
+  }
+}
+
+async function generarBorradorDUA(base64, mediaType, cfg){
+  const cfgInstrucciones = cfg ? `
+CONFIGURACIÓN PREVIA INDICADA POR EL DECLARANTE:
+- Tipo de DUA: ${cfg.tipo}
+- Aduana de despacho: ${cfg.aduana}
+- Casilla 1 — Régimen solicitado: ${cfg.regimen} / Régimen precedente: ${cfg.regimenPrev}
+- Casilla 25 — Modo de transporte en frontera: ${cfg.transporte}
+${cfg.incoterm ? `- Casilla 20 — Incoterm: ${cfg.incoterm}` : '- Casilla 20 — Incoterm: inferir de la factura'}
+- Casilla 30 — Código de localización: ${cfg.ubicacion}
+${cfg.observaciones ? `- Instrucciones adicionales: ${cfg.observaciones}` : ''}
+
+APLICA EXACTAMENTE esta configuración. No infiereas el tipo de DUA ni el régimen — usa los valores indicados.
+` : '';
+
+  const prompt = `Eres un experto representante aduanero en España con 20 años de experiencia elaborando DUAs para las aduanas de Algeciras Marítima y La Línea. Analiza esta factura comercial y elabora un borrador completo del DUA conforme a la resolución del DUA vigente de la AEAT.
+${cfgInstrucciones}
+INSTRUCCIONES GENERALES:
+- Clasifica TARIC a 10 dígitos para cada mercancía
+- Aplica el régimen indicado en la configuración
+- Infiere el valor aduanero (método del valor de transacción, artículo 70 CAU)
+- Calcula la liquidación estimada (casilla 47): arancel + IVA a la importación
+- Para cada partida, completa la casilla 31 en formato DUA
+
+INSTRUCCIONES CRÍTICAS PARA CASILLA 44 — DOCUMENTOS Y MEDIDAS POR CÓDIGO TARIC:
+Para CADA partida analiza el código TARIC clasificado e identifica TODAS las restricciones y medidas aplicables según la base TARIC de la UE (Access2Markets / TARIC Consultation). El código de medida determina el documento requerido — está fijado en la base TARIC, no lo inventes. Usa los códigos exactos siguientes:
+
+CONTROLES VETERINARIOS / SANIDAD ANIMAL (CHED-A / CHED-P / CHED-D):
+- Animales vivos, carne, pescado, lácteos, huevos, miel, subproductos animales: cap. 01-05, 16, 0401-0410, 1601-1605
+- Código de medida en TARIC: 1408 (Import control - Sanitary and phytosanitary measures)
+- Documentos: C640 (CHED-A animales vivos), C641 (CHED-P productos origen animal), C642 (CHED-D alimentos)
+
+CONTROLES FITOSANITARIOS / SOIVRE:
+- Plantas, semillas, frutas, verduras, flores, madera sin elaborar: cap. 06-14, 4401-4403
+- Código de medida: 1408
+- Documentos: N002 (Certificado fitosanitario país origen) + posible N851 (SOIVRE, si procede)
+
+CITES — ESPECIES PROTEGIDAS:
+- Maderas tropicales (4403, 4407, 4412), reptiles, marfil, coral, cactus, orquídeas, productos derivados
+- Código de medida: Y900
+- Documentos: C400 (Permiso importación CITES), C401 (Certificado reexportación CITES)
+
+PRODUCTOS DE DOBLE USO (Reg. UE 2021/821):
+- Electrónica avanzada, semiconductores, óptica, láser, cifrado, tecnología aeroespacial, productos químicos estratégicos, equipos de telecomunicaciones avanzados: cap. 84-85, 90 (posiciones específicas de la lista de control)
+- Código de medida: Y901
+- Documentos: C065 (Autorización exportación doble uso) — solo si la clasificación NC figura en los Anexos del Regl. 2021/821
+
+MATERIAL DE DEFENSA / USO MILITAR:
+- Armas, munición, vehículos militares, equipos militares, explosivos militares: cap. 93 y posiciones específicas de otros capítulos según Lista Común Militar UE
+- Código de medida: 1408 (prohibición o control estricto)
+- Documentos: C085 (Licencia importación/exportación material defensa MINCO)
+
+GASES FLUORADOS — F-GAS (Reg. UE 517/2014 y 2024/573):
+- HFCs, HCFCs, PFCs, SF6, mezclas de refrigerantes (R-404A, R-410A, R-134a, etc.), equipos preconfigurados con F-Gas (aires acondicionados, frigoríficos industriales): 2903.39, 2903.71-2903.79, 8415, 8418, 8479
+- Código de medida: Y162
+- Documentos: C029 (Declaración de importación F-Gas, sistema HFCR de la UE) — requiere registro previo en portal HFCR
+
+SUSTANCIAS QUE AGOTAN EL OZONO — SAO (Reg. UE 1005/2009):
+- CFCs, HCFCs puros, halones, bromuro de metilo, HCFC-22, mezclas con SAO: 2903.11-2903.19, 2903.41-2903.49, 2903.81
+- Código de medida: Y784
+- Documentos: C028 (Licencia importación SAO, expedida por DG CLIMA de la Comisión Europea)
+
+PATRIMONIO CULTURAL (Reg. UE 2019/880):
+- Antigüedades +100 años, bienes arqueológicos, obras de arte, manuscritos, monedas históricas: cap. 97, posiciones 9705, 9706
+- Código de medida: Y903
+- Documentos: I004 (Licencia de importación patrimonio cultural) o I005 (Declaración importador con contrato custodia), expedidos por Ministerio de Cultura
+
+WSTEX — VIGILANCIA TEXTILES (Decisión UE):
+- Textiles, confección y artículos de punto de determinados orígenes (Belarus, Corea Norte, etc.): cap. 50-63
+- Código de medida: Y923
+- Documentos: N990 (Documento de vigilancia WSTEX, expedido por DGCOMER/MITECO)
+
+WSTIM — VIGILANCIA SIDERÚRGICA / RESIDUOS:
+- Productos siderúrgicos (aceros, chapas, tubos) de determinados orígenes sujetos a medidas de vigilancia: cap. 72-73
+- Código de medida: Y923
+- Documentos: N990 (Documento vigilancia WSTIM)
+- ATENCIÓN — si en H1 la mercancía es un RESIDUO sujeto a WSTIM, además incluir:
+  · C058 (Contrato de gestión de residuos)
+  · C670 (Notificación previa traslado residuos, Reg. 1013/2006)
+  · C672 (Autorización traslado residuos peligrosos)
+
+PRECURSORES DE DROGAS (Reg. UE 273/2004 y 111/2005):
+- Ácido acético anhídrido, efedrina, seudoefedrina, permanganato potásico, ácido antranílico, piperonal, safrol: 2915.24, 2939.41, 2939.42, 2841.61, 2932.91, 2932.94
+- Código de medida: 748
+- Documentos: C672 (Autorización importación precursores cat. 1), C671 (cat. 2)
+
+MEDICAMENTOS / MATERIAL SANITARIO:
+- Medicamentos, principios activos, material sanitario, reactivos diagnóstico: cap. 30, 3822, 9018-9022
+- Código de medida: 1408 (según producto)
+- Documentos: N941 (Autorización importación AEMPS) si el producto requiere licencia previa
+
+BIOCIDAS Y PRODUCTOS FITOSANITARIOS:
+- Plaguicidas, biocidas, desinfectantes: 3808
+- Código de medida: 1408
+- Documentos: N941 (Registro MAPA/MSAN)
+
+REGLA GENERAL — SIEMPRE EN CASILLA 44:
+- N380 — Factura comercial (siempre, todas las partidas)
+- N271 — Lista de bultos/packing list (siempre si hay múltiples artículos)
+- Transporte según modo C.25: N703 (B/L marítimo), N730 (CMR carretera), N740 (AWB aéreo)
+- Preferencia arancelaria si aplica: N954 (EUR.1), C019 (REX/declaración en factura), U110 (Form A SGP), según acuerdo comercial UE con el país de origen
+
+IMPORTANTE: El código de medida que aparece en casilla_44_documentos debe ser el código TARIC real consultado en la base de datos (Access2Markets). Si el código TARIC de la partida no figura en ninguna lista de control, no incluyas medidas de restricción — solo los documentos generales (N380, N271, transporte). No añadas medidas de restricción por sospecha o precaución si el TARIC no las activa.
+
+En la casilla_44_documentos de CADA partida incluye todos los códigos que apliquen.
+
+Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
+{
+  "tipo_dua": "H1-IMPORTACION|EX-A-EXPORTACION|T1-TRANSITO|T2-TRANSITO",
+  "aduana": "ES001131 — Algeciras Marítima",
+  "casilla_1_regimen": {"solicitado": "40|42|53|71|78|91", "precedente": "00|71|91", "descripcion": "Despacho a libre práctica"},
+  "casilla_2_expedidor": {"nombre": "", "direccion": "", "pais": "", "eori": ""},
+  "casilla_8_importador": {"nombre": "", "nif": "", "direccion": "", "pais": "ES", "eori": ""},
+  "casilla_14_declarante": {"nombre": "Customs Way", "eori": "ES-DECLARANTE"},
+  "casilla_15_pais_expedicion": "",
+  "casilla_16_pais_origen": "",
+  "casilla_17_pais_destino": "ES",
+  "casilla_20_condiciones_entrega": {"incoterm": "FOB|CIF|EXW|DAP", "lugar": ""},
+  "casilla_21_transporte_frontera": {"modo": "1-Mar|2-Tren|3-Carr|4-Aer|8-Nav", "id": "", "bandera": ""},
+  "casilla_22_moneda_importe_total": {"moneda": "EUR|USD|GBP|CNY", "importe": 0},
+  "casilla_23_tipo_cambio": 1.0,
+  "casilla_24_naturaleza_transaccion": "11",
+  "casilla_25_modo_transporte": "1",
+  "casilla_26_modo_transporte_interior": "3",
+  "casilla_29_aduana_salida": "",
+  "casilla_30_localizacion": "",
+  "casilla_31_bultos_descripcion": "",
+  "casilla_32_numero_partida": 1,
+  "casilla_33_codigo_taric": "",
+  "casilla_34_codigo_pais_origen": "",
+  "casilla_35_masa_bruta": 0,
+  "casilla_37_regimen": "",
+  "casilla_38_masa_neta": 0,
+  "casilla_40_declaracion_anterior": "Sumaria/Partida o vacío",
+  "casilla_41_unidad_suplementaria": {"cantidad": 0, "unidad": ""},
+  "casilla_44_documentos": [
+    {"codigo": "N380", "referencia": "Núm. factura", "descripcion": "Factura comercial"},
+    {"codigo": "N954", "referencia": "", "descripcion": "Certificado de origen EUR.1 o REX"}
+  ],
+  "casilla_45_ajuste": {"codigo": "AB|AC|AD", "importe": 0},
+  "casilla_46_valor_estadistico": 0,
+  "casilla_47_liquidacion": [
+    {"tipo_impuesto": "A00-Arancel", "base": 0, "tipo": "0.00%", "importe": 0, "mp": "E"},
+    {"tipo_impuesto": "B00-IVA importacion", "base": 0, "tipo": "21.00%", "importe": 0, "mp": "E"}
+  ],
+  "casilla_54_lugar_fecha": "Algeciras",
+  "s29_metodo_pago_flete": "Z",
+  "s32_circunstancias_especiales": "",
+  "partidas": [
+    {
+      "num": 1,
+      "descripcion_factura": "",
+      "taric": "",
+      "descripcion_nc": "",
+      "cantidad": 0,
+      "unidad": "piezas|kg|l|m2",
+      "masa_bruta_kg": 0,
+      "masa_neta_kg": 0,
+      "valor_factura": 0,
+      "valor_aduanero": 0,
+      "arancel_porcentaje": "0%",
+      "arancel_importe": 0,
+      "iva_base": 0,
+      "iva_porcentaje": "21%",
+      "iva_importe": 0,
+      "pais_origen": "",
+      "codigo_preferencia": "100|200|300|400",
+      "documentos_especificos": []
+    }
+  ],
+  "observaciones_importantes": ["nota1"],
+  "datos_extraidos_factura": {
+    "numero_factura": "",
+    "fecha_factura": "",
+    "proveedor": "",
+    "comprador": "",
+    "incoterm": "",
+    "moneda": "",
+    "valor_total": 0,
+    "num_bultos": 0,
+    "descripcion_general": ""
+  },
+  "advertencias": ["advertencia sobre datos que no se han podido inferir"]
+}`;
+
+  // Construir mensaje OpenAI-compatible
+  // Si tenemos imagen (PDF renderizado), enviar con visión
+  // Si no, enviar solo el prompt de texto
+  let messages;
+  if(base64 && base64.length > 100){
+    const imgType = (mediaType === 'application/pdf') ? 'image/jpeg' : (mediaType || 'image/jpeg');
+    const cleanType = imgType.startsWith('image/') ? imgType : 'image/jpeg';
+    messages = [{
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: `data:${cleanType};base64,${base64}` } },
+        { type: 'text', text: prompt }
+      ]
+    }];
+  } else {
+    // Sin imagen — modo texto puro (más rápido y compatible con todos los modelos)
+    messages = [{ role: 'user', content: prompt + '\n\n[Sin imagen adjunta — infiere datos del prompt]' }];
+  }
+
+  // OpenRouter con fallback automático — lista completa de modelos visión
+  const primaryModel = getGeminiModel();
+  const isVision = primaryModel.includes('vl') || primaryModel.includes('vision') ||
+    primaryModel.includes('mistral-small') || primaryModel.includes('gemma') ||
+    primaryModel.includes('gemma') || primaryModel.includes('llama-3.2');
+  const modelToUse = isVision ? primaryModel : OR_VISION_MODELS[0];
+
+  const visionFallbacks = [modelToUse, ...OR_VISION_MODELS.filter(m => m !== modelToUse)];
+  const tried = new Set();
+  let lastErr;
+  for(const model of visionFallbacks){
+    if(tried.has(model)) continue;
+    tried.add(model);
+    try {
+      const text = await _callOpenRouter(messages, model, true);
+      if(model !== primaryModel) showToast('⚡ DUA con: ' + model.split('/').pop());
+      return parseClaudeResponse(text);
+    } catch(e){
+      if(e.message.startsWith('RATE_LIMIT:')){
+        lastErr = e; continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error('⏳ Rate limit en todos los modelos gratuitos.\n\nSolución rápida: añade 5€ de crédito en openrouter.ai/credits para uso sin límite.');
+}
+
+function renderBorradorDUA(d, container, filename){
+  if(!d){ container.innerHTML='<div style="padding:24px;color:var(--rd600)">Error al procesar</div>'; return; }
+
+  const tipoBadge = {
+    'H1-IMPORTACION':'badge-blue',
+    'EX-A-EXPORTACION':'badge-green',
+    'T1-TRANSITO':'badge-amber',
+    'T2-TRANSITO':'badge-teal'
+  }[d.tipo_dua] || 'badge-grey';
+
+  const liquidHtml = (d.casilla_47_liquidacion||[]).map(l=>`
+    <tr>
+      <td style="font-family:var(--mono);font-size:12px">${l.tipo_impuesto||'—'}</td>
+      <td style="font-family:var(--mono);text-align:right">${Number(l.base||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</td>
+      <td style="text-align:right;font-weight:600">${l.tipo||'—'}</td>
+      <td style="font-family:var(--mono);text-align:right;font-weight:700;color:var(--b700)">${Number(l.importe||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</td>
+    </tr>
+  `).join('');
+
+  const docsHtml = (d.casilla_44_documentos||[]).map(doc=>`
+    <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--g100)">
+      <span class="badge badge-grey" style="font-family:var(--mono);font-size:11px">${doc.codigo||'—'}</span>
+      <span style="font-size:12px;color:var(--g600)">${doc.descripcion||'—'}</span>
+      ${doc.referencia?`<span style="font-family:var(--mono);font-size:11px;color:var(--b700);margin-left:auto">${doc.referencia}</span>`:''}
+    </div>
+  `).join('');
+
+  const advertHtml = (d.advertencias||[]).filter(a=>a).map(a=>
+    `<div style="display:flex;gap:6px;align-items:flex-start;padding:4px 0"><span style="color:var(--am600);flex-shrink:0">⚠️</span><span style="font-size:12px;color:var(--g600)">${a}</span></div>`
+  ).join('');
+
+  const partHtml = (d.partidas||[]).map(p=>`
+    <div class="card" style="margin-bottom:12px;padding:16px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <div style="background:var(--g900);color:#fff;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700">Partida ${p.num}</div>
+        <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">${(p.taric||'').match(/.{2}/g)?.join(' ')||'—'}</div>
+        <div style="font-size:12px;color:var(--g600)">${p.descripcion_nc||'—'}</div>
+      </div>
+      <div style="font-size:13px;color:var(--g500);margin-bottom:10px;padding:8px;background:var(--g50);border-radius:6px;font-style:italic">"${p.descripcion_factura||'—'}"</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Cantidad</div><div style="font-size:13px;font-weight:600">${p.cantidad||0} ${p.unidad||''}</div></div>
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Masa bruta</div><div style="font-size:13px;font-weight:600">${Number(p.masa_bruta_kg||0).toLocaleString('es-ES')} kg</div></div>
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Valor aduanero</div><div style="font-size:13px;font-weight:700;color:var(--g900)">${Number(p.valor_aduanero||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Arancel</div><div style="font-size:13px;font-weight:600;color:var(--rd600)">${p.arancel_porcentaje||'—'} · ${Number(p.arancel_importe||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">IVA import.</div><div style="font-size:13px;font-weight:600;color:var(--am600)">${p.iva_porcentaje||'—'} · ${Number(p.iva_importe||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">País origen</div><div style="font-size:13px;font-weight:600">${p.pais_origen||'—'}</div></div>
+      </div>
+    </div>
+  `).join('');
+
+  const df = d.datos_extraidos_factura||{};
+
+  container.innerHTML = `
+    <div style="animation:slideUp .3s cubic-bezier(.16,1,.3,1)">
+      <!-- Header DUA -->
+      <div class="card" style="margin-bottom:16px;padding:0;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#0f2d6e,#312e81);padding:16px 20px;color:#fff">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:18px;font-weight:800;letter-spacing:.02em">BORRADOR DUA</div>
+              <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px">Conforme resolución AEAT · No válido para presentación sin revisión del declarante</div>
+            </div>
+            <span class="badge ${tipoBadge}" style="margin-left:auto;font-size:13px;padding:6px 14px">${d.tipo_dua||'—'}</span>
+          </div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px">
+            <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em">Aduana</div><div style="font-size:13px;font-weight:600">${d.aduana||'—'}</div></div>
+            <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em">Factura</div><div style="font-size:13px;font-weight:600">${df.numero_factura||filename}</div></div>
+            <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em">Proveedor</div><div style="font-size:13px;font-weight:600">${df.proveedor||'—'}</div></div>
+            <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em">Incoterm</div><div style="font-size:13px;font-weight:600">${df.incoterm||d.casilla_20_condiciones_entrega?.incoterm||'—'}</div></div>
+            <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em">Valor total</div><div style="font-size:14px;font-weight:800">${Number(df.valor_total||0).toLocaleString('es-ES',{minimumFractionDigits:2})} ${df.moneda||'€'}</div></div>
+          </div>
+        </div>
+
+        <!-- Casillas principales -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0;border-top:1px solid var(--g200)">
+          ${[
+            ['C.1 Régimen', `${d.casilla_1_regimen?.solicitado||'—'}/${d.casilla_1_regimen?.precedente||'—'} · ${d.casilla_1_regimen?.descripcion||''}`],
+            ['C.2 Expedidor', `${d.casilla_2_expedidor?.nombre||'—'} · ${d.casilla_2_expedidor?.pais||''}`],
+            ['C.8 Importador', `${d.casilla_8_importador?.nombre||'—'} · ${d.casilla_8_importador?.nif||''}`],
+            ['C.14 Declarante', `${d.casilla_14_declarante?.nombre||'Customs Way'} · ${d.casilla_14_declarante?.eori||''}`],
+            ['C.15 País expedición', d.casilla_15_pais_expedicion||'—'],
+            ['C.16 País origen', d.casilla_16_pais_origen||'—'],
+            ['C.20 Entrega', `${d.casilla_20_condiciones_entrega?.incoterm||'—'} · ${d.casilla_20_condiciones_entrega?.lugar||''}`],
+            ['C.21 Transporte', `Modo ${d.casilla_21_transporte_frontera?.modo||'—'} · ${d.casilla_21_transporte_frontera?.id||''}`],
+            ['C.22 Divisa/Importe', `${d.casilla_22_moneda_importe_total?.moneda||'—'} ${Number(d.casilla_22_moneda_importe_total?.importe||0).toLocaleString('es-ES',{minimumFractionDigits:2})}`],
+            ['C.23 Tipo cambio', d.casilla_23_tipo_cambio||'—'],
+            ['C.25 Modo transporte', d.casilla_25_modo_transporte||'—'],
+            ['C.30 Localización', d.casilla_30_localizacion||'—'],
+          ].map(([k,v])=>`
+            <div style="padding:10px 14px;border-right:1px solid var(--g100);border-bottom:1px solid var(--g100)">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--g400);margin-bottom:2px">${k}</div>
+              <div style="font-size:12px;color:var(--g700)">${v||'—'}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Advertencias -->
+      ${advertHtml ? `<div style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--rl);padding:12px 16px;margin-bottom:16px">${advertHtml}</div>` : ''}
+
+      <!-- Partidas -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:10px">📦 Partidas arancelarias</div>
+        ${partHtml}
+      </div>
+
+      <!-- Casilla 44 documentos -->
+      <div class="card" style="margin-bottom:16px;padding:16px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:10px">📋 Casilla 44 — Documentos e información</div>
+        ${docsHtml || '<div style="color:var(--g400);font-size:12px">Sin documentos identificados</div>'}
+      </div>
+
+      <!-- Casilla 47 liquidación -->
+      <div class="card" style="margin-bottom:16px;padding:16px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:10px">💶 Casilla 47 — Cálculo de liquidación (estimado)</div>
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr><th>Concepto</th><th style="text-align:right">Base</th><th style="text-align:right">Tipo</th><th style="text-align:right">Cuota estimada</th></tr></thead>
+            <tbody>${liquidHtml||'<tr><td colspan="4" style="color:var(--g400)">Sin datos de liquidación</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Visual Trans info -->
+      <div class="card" style="margin-bottom:16px;padding:16px;border:1px dashed var(--b200);background:var(--b50)">
+        <div style="font-size:12px;font-weight:700;color:var(--b700);margin-bottom:8px">🔗 Próximo paso: Visual Trans</div>
+        <div style="font-size:12px;color:var(--g600);line-height:1.6">
+          Con estos datos puedes crear el dossier en Visual Trans: <strong>Nuevo dossier → Importación H1 → Introducir datos manualmente</strong> usando las casillas del borrador anterior.
+          Para automatizar la importación, consulta en VT: <em>Menú Archivo → Importar dossier</em> o contacta el soporte técnico de Visual Trans para obtener el schema XML de importación.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn btn-p btn-sm" onclick="exportarDUA()">⬇️ Exportar JSON (datos estructurados)</button>
+          <button class="btn btn-s btn-sm" onclick="exportarDUACSV()">📊 Exportar CSV (casillas)</button>
+          <a href="https://wiki.bytemaster.es/aduanas-despachos/" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📚 Wiki Visual Trans</a>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+function limpiarDUA(){
+  document.getElementById('dua-upload-area').style.display='';
+  document.getElementById('dua-result').style.display='none';
+  document.getElementById('btn-exp-dua').style.display='none';
+  document.getElementById('dua-file-input').value='';
+  window._ultimoDUA=null;
+}
+
+function exportarDUA(){
+  const d=window._ultimoDUA; if(!d){showToast('Sin datos');return;}
+  const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='borrador_dua.json';a.click();
+  URL.revokeObjectURL(url);showToast('✅ JSON descargado');
+}
+
+function exportarDUACSV(){
+  const d=window._ultimoDUA; if(!d){showToast('Sin datos');return;}
+  const rows=[
+    ['Casilla','Descripción','Valor'],
+    ['1','Régimen (solicitado/precedente)',`${d.casilla_1_regimen?.solicitado||''}/${d.casilla_1_regimen?.precedente||''}`],
+    ['1','Descripción régimen',d.casilla_1_regimen?.descripcion||''],
+    ['2','Expedidor - Nombre',d.casilla_2_expedidor?.nombre||''],
+    ['2','Expedidor - País',d.casilla_2_expedidor?.pais||''],
+    ['8','Importador - Nombre',d.casilla_8_importador?.nombre||''],
+    ['8','Importador - NIF',d.casilla_8_importador?.nif||''],
+    ['14','Declarante',d.casilla_14_declarante?.nombre||'Customs Way'],
+    ['15','País de expedición',d.casilla_15_pais_expedicion||''],
+    ['16','País de origen',d.casilla_16_pais_origen||''],
+    ['20','Condiciones entrega (Incoterm)',d.casilla_20_condiciones_entrega?.incoterm||''],
+    ['20','Lugar entrega',d.casilla_20_condiciones_entrega?.lugar||''],
+    ['21','Modo transporte frontera',d.casilla_21_transporte_frontera?.modo||''],
+    ['21','ID medio transporte',d.casilla_21_transporte_frontera?.id||''],
+    ['22','Moneda',d.casilla_22_moneda_importe_total?.moneda||''],
+    ['22','Importe total factura',d.casilla_22_moneda_importe_total?.importe||0],
+    ['23','Tipo de cambio',d.casilla_23_tipo_cambio||1],
+    ['24','Naturaleza transacción',d.casilla_24_naturaleza_transaccion||''],
+    ['25','Modo transporte',d.casilla_25_modo_transporte||''],
+    ['30','Localización mercancías',d.casilla_30_localizacion||''],
+    ['31','Descripción mercancía',d.casilla_31_bultos_descripcion||''],
+    ['40','Declaración anterior / Sumaria',d.casilla_40_declaracion_anterior||''],
+    ['54','Lugar y fecha',d.casilla_54_lugar_fecha||'Algeciras'],
+    ['S29','Método pago flete',d.s29_metodo_pago_flete||''],
+    ['S32','Circunstancias especiales',d.s32_circunstancias_especiales||''],
+    ['','',''],
+    ['','=== PARTIDAS ===',''],
+  ];
+  (d.partidas||[]).forEach(p=>{
+    rows.push(['','--- Partida '+p.num+' ---','']);
+    rows.push(['33','Código TARIC',p.taric||'']);
+    rows.push(['33','Descripción NC',p.descripcion_nc||'']);
+    rows.push(['31','Descripción en factura',p.descripcion_factura||'']);
+    rows.push(['','Cantidad',`${p.cantidad||0} ${p.unidad||''}`]);
+    rows.push(['35','Masa bruta (kg)',p.masa_bruta_kg||0]);
+    rows.push(['38','Masa neta (kg)',p.masa_neta_kg||0]);
+    rows.push(['42','Valor factura',p.valor_factura||0]);
+    rows.push(['46','Valor aduanero',p.valor_aduanero||0]);
+    rows.push(['47','Arancel %',p.arancel_porcentaje||'']);
+    rows.push(['47','Arancel importe',p.arancel_importe||0]);
+    rows.push(['47','IVA importación %',p.iva_porcentaje||'21%']);
+    rows.push(['47','IVA importación importe',p.iva_importe||0]);
+    rows.push(['34','País de origen',p.pais_origen||'']);
+    rows.push(['36','Código preferencia',p.codigo_preferencia||'100']);
+  });
+  const csv=rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\n');
+  downloadCSV(csv,'borrador_dua_casillas.csv');
+}
+
+// ── Init DUA drop zone al cargar ─────────────────────────────────
+window.addEventListener('load', function(){
+  setTimeout(setupDUADropZone, 500);
+});
+
+// ── Override nav to include 'dua' ────────────────────────────────
+const _navOriginal = nav;
+// nav already handles all views generically
+
+</script>
+</head>
+</body>
+</html>
