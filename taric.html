@@ -606,17 +606,47 @@ textarea.fi{resize:vertical;min-height:80px}
         </div>
         <div class="view-body">
           <div id="factura-upload-area">
-            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-              <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="handleFile(this.files[0])">
-              <div class="drop-zone-icon">📎</div>
-              <div class="drop-zone-title">Arrastra la factura aquí o haz clic para seleccionar</div>
-              <div class="drop-zone-sub">PDF, JPG, PNG, WEBP · Máximo 20MB</div>
-              <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-                <span class="badge badge-blue">🇬🇧 Inglés</span>
-                <span class="badge badge-blue">🇪🇸 Español</span>
-                <span class="badge badge-blue">🇫🇷 Francés</span>
-                <span class="badge badge-blue">🇩🇪 Alemán</span>
-                <span class="badge badge-blue">🇨🇳 Chino</span>
+            <!-- Pestañas: Subir archivo / Pegar texto -->
+            <div style="display:flex;gap:0;margin-bottom:12px;border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden">
+              <button id="tab-archivo" onclick="switchFacturaTab('archivo')"
+                style="flex:1;padding:9px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--b600);color:#fff;transition:all .15s">
+                📎 Subir archivo
+              </button>
+              <button id="tab-texto" onclick="switchFacturaTab('texto')"
+                style="flex:1;padding:9px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:var(--g100);color:var(--g600);transition:all .15s">
+                📋 Pegar texto
+              </button>
+            </div>
+
+            <!-- Panel: Subir archivo -->
+            <div id="panel-archivo">
+              <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="handleFile(this.files[0])">
+                <div class="drop-zone-icon">📎</div>
+                <div class="drop-zone-title">Arrastra la factura aquí o haz clic para seleccionar</div>
+                <div class="drop-zone-sub">PDF, JPG, PNG, WEBP · Máximo 20MB</div>
+                <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+                  <span class="badge badge-blue">🇬🇧 Inglés</span>
+                  <span class="badge badge-blue">🇪🇸 Español</span>
+                  <span class="badge badge-blue">🇫🇷 Francés</span>
+                  <span class="badge badge-blue">🇩🇪 Alemán</span>
+                  <span class="badge badge-blue">🇨🇳 Chino</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel: Pegar texto (fallback infalible) -->
+            <div id="panel-texto" style="display:none">
+              <div class="card" style="padding:16px">
+                <div style="font-size:13px;color:var(--g600);margin-bottom:10px">
+                  Copia y pega el contenido de la factura — útil si el PDF no se procesa correctamente:
+                </div>
+                <textarea id="factura-texto-input" class="fi" style="min-height:180px;font-size:12px;font-family:var(--mono)"
+                  placeholder="Pega aquí el contenido de la factura...&#10;&#10;Ej:&#10;IPROSUR - Presupuesto 76/26&#10;MONITOR ASUS 23.8 IPS - 4 uds - 103.60€&#10;MAC MINI M4 16GB - 1 ud - 785€&#10;..."></textarea>
+                <button class="btn btn-p" style="margin-top:10px;width:100%"
+                  onclick="clasificarTextoFactura()">
+                  🔍 Clasificar artículos
+                </button>
               </div>
             </div>
           </div>
@@ -1459,7 +1489,11 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
 }
 
 async function renderLineasFactura(data, filename){
-  const lineas = data.lineas || [];
+  // data puede ser: objeto con .lineas, array directo, o el resultado de parseClaudeResponse
+  let lineas = [];
+  if(Array.isArray(data)) lineas = data;
+  else if(data && Array.isArray(data.lineas)) lineas = data.lineas;
+  else lineas = [];
   const info = document.getElementById('factura-info');
   const tbody = document.getElementById('factura-tbody');
 
@@ -1532,7 +1566,57 @@ function limpiarFactura(){
   document.getElementById('factura-upload-area').style.display='';
   document.getElementById('factura-result').style.display='none';
   document.getElementById('btn-exp-fact').style.display='none';
-  document.getElementById('file-input').value='';
+  const fi = document.getElementById('file-input');
+  if(fi) fi.value='';
+}
+
+function switchFacturaTab(tab){
+  const panelA = document.getElementById('panel-archivo');
+  const panelT = document.getElementById('panel-texto');
+  const btnA = document.getElementById('tab-archivo');
+  const btnT = document.getElementById('tab-texto');
+  if(tab === 'archivo'){
+    panelA.style.display=''; panelT.style.display='none';
+    btnA.style.background='var(--b600)'; btnA.style.color='#fff';
+    btnT.style.background='var(--g100)'; btnT.style.color='var(--g600)';
+  } else {
+    panelA.style.display='none'; panelT.style.display='';
+    btnT.style.background='var(--b600)'; btnT.style.color='#fff';
+    btnA.style.background='var(--g100)'; btnA.style.color='var(--g600)';
+  }
+}
+
+async function clasificarTextoFactura(){
+  const texto = document.getElementById('factura-texto-input')?.value?.trim();
+  if(!texto || texto.length < 20){
+    showToast('⚠️ Introduce el texto de la factura');
+    return;
+  }
+  // Simular el flujo normal pero pasando el texto directamente
+  document.getElementById('factura-upload-area').style.display='none';
+  document.getElementById('factura-result').style.display='block';
+  document.getElementById('factura-info').innerHTML = `
+    <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:24px">📋</span>
+      <div><div style="font-size:13px;font-weight:600">Texto pegado</div>
+      <div style="font-size:11px;color:var(--g400)">${texto.length} caracteres · Clasificando con IA...</div></div>
+      <div class="spinner" style="margin-left:auto"></div>
+    </div>`;
+  document.getElementById('factura-tbody').innerHTML = `
+    <tr><td colspan="7" style="padding:32px;text-align:center">
+      <div class="loading-wrap" style="justify-content:center"><div class="spinner"></div><span>Clasificando mercancías...</span></div>
+    </td></tr>`;
+  try {
+    const lineas = await leerFacturaConIA(null, null, texto);
+    if(!lineas || !lineas.length){
+      document.getElementById('factura-info').innerHTML = '<div style="padding:12px;color:var(--rd600)">❌ No se pudieron clasificar las líneas. Revisa el texto e inténtalo de nuevo.</div>';
+      return;
+    }
+    await renderLineasFactura(lineas, 'Texto pegado');
+    document.getElementById('btn-exp-fact').style.display='';
+  } catch(e){
+    document.getElementById('factura-info').innerHTML = `<div style="padding:12px;color:var(--rd600)">❌ ${e.message}</div>`;
+  }
 }
 
 function exportarFactura(){
@@ -1727,42 +1811,90 @@ async function loadCAVs(){
 // UTILS
 // ══════════════════════════════════════════════════════════════
 // Extraer texto de PDF usando PDF.js (cargado dinámicamente)
-// Extraer texto de PDF usando PDF.js UMD build
+// Extraer texto de PDF — múltiples estrategias
 async function extraerTextoPDF(file){
-  // Cargar PDF.js UMD si no está cargado
-  if(!window.pdfjsLib){
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-      script.onload = () => {
-        if(window.pdfjsLib){
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        }
-        resolve();
-      };
-      script.onerror = reject;
-      document.head.appendChild(script);
-    }).catch(e => { console.warn('PDF.js load failed:', e); });
-  }
-
-  if(!window.pdfjsLib) return '';
-
+  // Estrategia 1: PDF.js desde CDN (más fiable para PDFs complejos)
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await window.pdfjsLib.getDocument({data: arrayBuffer}).promise;
-    let fullText = '';
+    const texto = await extraerPDFConPDFjs(file);
+    if(texto && texto.length > 80) return texto;
+  } catch(e){ console.warn('PDF.js failed:', e.message); }
+
+  // Estrategia 2: Leer como texto latin-1 y extraer strings legibles
+  try {
+    const texto = await extraerPDFComoTexto(file);
+    if(texto && texto.length > 80) return texto;
+  } catch(e){ console.warn('Text extract failed:', e.message); }
+
+  return '';
+}
+
+async function extraerPDFConPDFjs(file){
+  return new Promise((resolve, reject) => {
+    // Cargar PDF.js como script clásico (no módulo)
+    const scriptId = 'pdfjs-script';
+    if(document.getElementById(scriptId) && window.pdfjsLib){
+      _doPDFExtract(file, resolve, reject);
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = scriptId;
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+    script.onload = () => {
+      if(window.pdfjsLib){
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+      }
+      setTimeout(() => _doPDFExtract(file, resolve, reject), 100);
+    };
+    script.onerror = () => reject(new Error('PDF.js CDN failed'));
+    document.head.appendChild(script);
+  });
+}
+
+async function _doPDFExtract(file, resolve, reject){
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
+    let txt = '';
     for(let i = 1; i <= pdf.numPages; i++){
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items.map(item => item.str).join(' ');
-      fullText += pageText + ' ';
+      txt += content.items.map(it => it.str).join(' ') + ' ';
     }
-    return fullText.replace(/\s+/g, ' ').trim();
-  } catch(e){
-    console.warn('PDF text extraction error:', e);
-    return '';
-  }
+    resolve(txt.replace(/\s+/g,' ').trim());
+  } catch(e){ reject(e); }
+}
+
+async function extraerPDFComoTexto(file){
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        // Decodificar como latin1 para capturar texto ASCII del PDF
+        const arr = new Uint8Array(e.target.result);
+        let texto = '';
+        // Buscar secuencias de texto legible de >3 caracteres
+        let buf = '';
+        for(let i = 0; i < arr.length; i++){
+          const ch = arr[i];
+          if(ch >= 32 && ch <= 126){
+            buf += String.fromCharCode(ch);
+          } else {
+            if(buf.length > 3) texto += buf + ' ';
+            buf = '';
+          }
+        }
+        if(buf.length > 3) texto += buf;
+        // Filtrar líneas útiles (palabras reales, no basura PDF)
+        const lineas = texto.split(/\s+/)
+          .filter(w => w.length > 2 && /[A-Za-z0-9áéíóúÁÉÍÓÚñÑ]/.test(w))
+          .join(' ');
+        resolve(lineas);
+      } catch(e){ resolve(''); }
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 function fileToBase64(file){
