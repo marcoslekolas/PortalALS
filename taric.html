@@ -1106,16 +1106,30 @@ Responde ÚNICAMENTE con este JSON (sin backticks, sin texto adicional):
 }
 
 function parseClaudeResponse(text){
+  if(!text) return null;
   try {
-    const clean = text.replace(/```json|```/g, '').trim();
+    const clean = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     return JSON.parse(clean);
   } catch(e){
-    // Try to extract JSON
+    // Try greedy JSON extraction — find outermost { }
     const match = text.match(/\{[\s\S]*\}/);
     if(match){
-      try { return JSON.parse(match[0]); } catch(e2){}
+      try { return JSON.parse(match[0]); } catch(e2){
+        // Try to fix common JSON issues: trailing commas, unescaped chars
+        try {
+          const fixed = match[0]
+            .replace(/,\s*([}\]])/g, '$1')  // trailing commas
+            .replace(/([{,]\s*)(\w+):/g, '$1"$2":');  // unquoted keys
+          return JSON.parse(fixed);
+        } catch(e3){}
+      }
     }
-    console.error('Parse error:', text.substring(0,200));
+    // Last resort: try to find lineas array
+    const lineasMatch = text.match(/"lineas"\s*:\s*(\[[\s\S]*?\])/);
+    if(lineasMatch){
+      try { return {lineas: JSON.parse(lineasMatch[1])}; } catch(e4){}
+    }
+    console.error('Parse error:', text.substring(0,300));
     return null;
   }
 }
@@ -1309,9 +1323,17 @@ async function handleFile(file){
   document.getElementById('factura-upload-area').style.display='none';
   document.getElementById('factura-result').style.display='block';
 
-  // Read file as base64
-  const base64 = await fileToBase64(file);
   const mediaType = getMediaType(file.type, file.name);
+  let base64 = null;
+  let textoExtraido = null;
+
+  // Para PDFs: intentar extraer texto plano (más fiable con Gemini)
+  if(mediaType === 'application/pdf'){
+    try { textoExtraido = await extraerTextoPDF(file); } catch(e){ console.warn('PDF text extract failed:', e); }
+  }
+
+  // Siempre extraer base64 como fallback
+  base64 = await fileToBase64(file);
 
   document.getElementById('factura-info').innerHTML = `
     <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
@@ -1331,7 +1353,7 @@ async function handleFile(file){
   `;
 
   try {
-    const lineas = await leerFacturaConIA(base64, mediaType);
+    const lineas = await leerFacturaConIA(base64, mediaType, textoExtraido);
     if(!lineas || !lineas.length){
       document.getElementById('factura-info').innerHTML = '<div style="padding:12px;color:var(--rd600)">❌ No se encontraron líneas de mercancía en el documento.</div>';
       document.getElementById('factura-tbody').innerHTML = '';
@@ -1348,7 +1370,7 @@ async function handleFile(file){
   }
 }
 
-async function leerFacturaConIA(base64, mediaType){
+async function leerFacturaConIA(base64, mediaType, textoPlano){
   const prompt = `Eres un experto aduanero TARIC de la UE. Analiza esta factura comercial y extrae TODAS las líneas de mercancía.
 
 Para cada línea proporciona:
@@ -1382,20 +1404,28 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
   ]
 }`;
 
-  const messages = [{
-    role: 'user',
-    content: [
-      {
-        type: mediaType === 'application/pdf' ? 'document' : 'image',
-        source: {
-          type: 'base64',
-          media_type: mediaType,
-          data: base64
-        }
-      },
-      { type: 'text', text: prompt }
-    ]
-  }];
+  // Si tenemos texto extraído del PDF, usarlo directamente (más fiable)
+  // Si es imagen, usar inlineData
+  let messages;
+  if(textoPlano && textoPlano.length > 50){
+    // Modo texto: enviar contenido del PDF como texto + prompt
+    messages = [{
+      role: 'user',
+      content: [{ type: 'text', text: prompt + '\n\nCONTENIDO DE LA FACTURA:\n' + textoPlano }]
+    }];
+  } else {
+    // Modo binario: enviar imagen/PDF como inlineData
+    messages = [{
+      role: 'user',
+      content: [
+        {
+          type: mediaType === 'application/pdf' ? 'document' : 'image',
+          source: { type: 'base64', media_type: mediaType, data: base64 }
+        },
+        { type: 'text', text: prompt }
+      ]
+    }];
+  }
 
   // Gemini API — llamada directa desde navegador sin proxy
   const _gkey = getGeminiKey();
@@ -1696,6 +1726,45 @@ async function loadCAVs(){
 // ══════════════════════════════════════════════════════════════
 // UTILS
 // ══════════════════════════════════════════════════════════════
+// Extraer texto de PDF usando PDF.js (cargado dinámicamente)
+// Extraer texto de PDF usando PDF.js UMD build
+async function extraerTextoPDF(file){
+  // Cargar PDF.js UMD si no está cargado
+  if(!window.pdfjsLib){
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      script.onload = () => {
+        if(window.pdfjsLib){
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+        resolve();
+      };
+      script.onerror = reject;
+      document.head.appendChild(script);
+    }).catch(e => { console.warn('PDF.js load failed:', e); });
+  }
+
+  if(!window.pdfjsLib) return '';
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({data: arrayBuffer}).promise;
+    let fullText = '';
+    for(let i = 1; i <= pdf.numPages; i++){
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(item => item.str).join(' ');
+      fullText += pageText + ' ';
+    }
+    return fullText.replace(/\s+/g, ' ').trim();
+  } catch(e){
+    console.warn('PDF text extraction error:', e);
+    return '';
+  }
+}
+
 function fileToBase64(file){
   return new Promise((resolve,reject)=>{
     const r = new FileReader();
