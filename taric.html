@@ -2243,9 +2243,21 @@ async function handleDUAFile(file){
   document.getElementById('btn-exp-dua').style.display='none';
 
   try {
-    const base64 = await fileToBase64(file);
     const mediaType = getMediaType(file.type, file.name);
-    const dua = await generarBorradorDUA(base64, mediaType);
+    let base64, imageMediaType;
+
+    if(mediaType === 'application/pdf'){
+      // PDFs: renderizar como imagen JPEG para que la IA pueda verlos
+      resultEl.innerHTML = '<div class="loading-wrap" style="padding:32px;justify-content:center"><div class="spinner"></div><span>Renderizando PDF... Elaborando DUA con IA...</span></div>';
+      base64 = await renderPDFaImagen(file);
+      imageMediaType = 'image/jpeg';
+    } else {
+      // Imágenes: usar directamente
+      base64 = await fileToBase64(file);
+      imageMediaType = mediaType;
+    }
+
+    const dua = await generarBorradorDUA(base64, imageMediaType);
     if(dua){
       renderBorradorDUA(dua, resultEl, file.name);
       document.getElementById('btn-exp-dua').style.display='';
@@ -2350,19 +2362,24 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
   "advertencias": ["advertencia sobre datos que no se han podido inferir"]
 }`;
 
-  // Construir mensaje OpenAI-compatible con visión
-  const imgType = (mediaType === 'application/pdf') ? 'image/jpeg' : (mediaType || 'image/jpeg');
-  const cleanType = imgType.startsWith('image/') ? imgType : 'image/jpeg';
-  const messages = [{
-    role: 'user',
-    content: [
-      {
-        type: 'image_url',
-        image_url: { url: `data:${cleanType};base64,${base64}` }
-      },
-      { type: 'text', text: prompt }
-    ]
-  }];
+  // Construir mensaje OpenAI-compatible
+  // Si tenemos imagen (PDF renderizado), enviar con visión
+  // Si no, enviar solo el prompt de texto
+  let messages;
+  if(base64 && base64.length > 100){
+    const imgType = (mediaType === 'application/pdf') ? 'image/jpeg' : (mediaType || 'image/jpeg');
+    const cleanType = imgType.startsWith('image/') ? imgType : 'image/jpeg';
+    messages = [{
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: `data:${cleanType};base64,${base64}` } },
+        { type: 'text', text: prompt }
+      ]
+    }];
+  } else {
+    // Sin imagen — modo texto puro (más rápido y compatible con todos los modelos)
+    messages = [{ role: 'user', content: prompt + '\n\n[Sin imagen adjunta — infiere datos del prompt]' }];
+  }
 
   // OpenRouter con fallback automático — lista completa de modelos visión
   const primaryModel = getGeminiModel();
