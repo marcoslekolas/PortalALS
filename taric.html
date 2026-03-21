@@ -1035,7 +1035,7 @@ const _orKeyPromise = new Promise(res => { _orKeyResolve = res; });
 // Si ya hay key en localStorage, resolver inmediatamente
 if(localStorage.getItem('als_openrouter_key')) _orKeyResolve && _orKeyResolve();
 // Safety timeout: resolver aunque no haya key para no bloquear indefinidamente
-setTimeout(() => _orKeyResolve && _orKeyResolve(), 6000);
+setTimeout(() => _orKeyResolve && _orKeyResolve(), 3000);
 
 async function loadOpenRouterKeyFromSupabase(){
   if(!sb) return;
@@ -1075,9 +1075,16 @@ async function saveOpenRouterKeyToSupabase(key){
 
 // ── Función central OpenRouter ────────────────────────────────
 async function _callOpenRouter(messages, modelOverride, forceJson){
-  // Esperar a que la key esté disponible desde Supabase (máx 6s)
+  // Esperar a que la key esté disponible
   await _orKeyPromise;
-  const key = getOpenRouterKey();
+  let key = getOpenRouterKey();
+
+  // Si aún no hay key, intentar cargar de Supabase ahora mismo
+  if(!key){
+    await loadOpenRouterKeyFromSupabase();
+    key = getOpenRouterKey();
+  }
+
   if(!key) throw new Error('⚙️ API key no configurada. Introduce tu key de OpenRouter en el panel lateral.');
 
   const model = modelOverride || getOpenRouterModel();
@@ -1231,7 +1238,7 @@ async function saveOpenRouterKey(val){
   }
 }
 async function initOpenRouterUI(){
-  // Limpiar modelos obsoletos que pudieran quedar en localStorage
+  // Limpiar modelos obsoletos
   const savedModel = localStorage.getItem('als_or_model');
   const modelosObsoletos = ['gemini', 'qwen2.5-vl', 'nemotron', 'llama-4-maverick'];
   if(savedModel && modelosObsoletos.some(o => savedModel.includes(o))){
@@ -1243,18 +1250,22 @@ async function initOpenRouterUI(){
   if(sel && currentModel){
     for(const opt of sel.options) if(opt.value === currentModel) opt.selected = true;
   }
-  // El indicador siempre ✅ porque hay key por defecto embebida
-  const st = document.getElementById('sb-apikey-status');
-  if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
-  // Si hay key personal en localStorage, mostrarla
+  // Si hay key en localStorage, usarla inmediatamente
   const localKey = localStorage.getItem('als_openrouter_key');
   const inp = document.getElementById('sb-apikey-input');
-  if(inp && localKey){
-    inp.value = localKey;
+  if(localKey){
     _orKeyCache = localKey;
+    if(inp) inp.value = localKey;
   }
-  // Sincronizar desde Supabase en segundo plano (sin bloquear)
-  loadOpenRouterKeyFromSupabase().catch(()=>{});
+  // Cargar desde Supabase — SIEMPRE esperar (la key de Supabase es la fuente de verdad)
+  await loadOpenRouterKeyFromSupabase();
+  // Actualizar indicador según si tenemos key
+  const st = document.getElementById('sb-apikey-status');
+  if(getOpenRouterKey()){
+    if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
+  } else {
+    if(st){ st.textContent='⚠️'; st.style.background='var(--am50)'; }
+  }
 }
 
 function toggleDarkMode(){
