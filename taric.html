@@ -1111,9 +1111,10 @@ async function _callOpenRouter(messages, modelOverride, forceJson){
   );
   if(forceJson && !hasImages) body.response_format = { type: 'json_object' };
 
-  // Timeout de 25s — evita que modelos lentos bloqueen el fallback automático
+  // Timeout adaptativo: 90s con imagen (PDFs pesados), 30s sin imagen
+  const _timeout = hasImages ? 90000 : 30000;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  const timeoutId = setTimeout(() => controller.abort(), _timeout);
 
   let resp, data;
   try {
@@ -1132,7 +1133,7 @@ async function _callOpenRouter(messages, modelOverride, forceJson){
   } catch(fetchErr) {
     clearTimeout(timeoutId);
     if(fetchErr.name === 'AbortError'){
-      throw new Error('RATE_LIMIT:' + model + ':timeout 25s — modelo demasiado lento');
+      throw new Error('RATE_LIMIT:' + model + ':timeout — modelo tardó demasiado, probando siguiente...');
     }
     throw new Error('RATE_LIMIT:' + model + ':' + (fetchErr.message||'network error'));
   }
