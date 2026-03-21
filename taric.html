@@ -1039,24 +1039,38 @@ setTimeout(() => _orKeyResolve && _orKeyResolve(), 3000);
 
 async function loadOpenRouterKeyFromSupabase(){
   if(!sb) return;
+  // Cargar key — intentar con nombre nuevo y legacy por compatibilidad
   try {
-    const [{data:dk},{data:dm}] = await Promise.all([
-      sb.from('als_config').select('valor').eq('clave','openrouter_api_key').single(),
-      sb.from('als_config').select('valor').eq('clave','or_model').single()
-    ]);
-    if(dk?.valor){
-      _orKeyCache = dk.valor;
-      localStorage.setItem('als_openrouter_key', dk.valor);
+    let keyVal = null;
+    const {data:dk1} = await sb.from('als_config').select('valor').eq('clave','openrouter_api_key').single();
+    if(dk1?.valor) keyVal = dk1.valor;
+    if(!keyVal){
+      const {data:dk2} = await sb.from('als_config').select('valor').eq('clave','gemini_api_key').single();
+      if(dk2?.valor) keyVal = dk2.valor;
+    }
+    if(keyVal){
+      _orKeyCache = keyVal;
+      localStorage.setItem('als_openrouter_key', keyVal);
       const inp = document.getElementById('sb-apikey-input');
       const st = document.getElementById('sb-apikey-status');
-      if(inp) inp.value = dk.valor;
+      if(inp) inp.value = keyVal;
       if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
-      _orKeyResolve && _orKeyResolve(); // key lista
+      _orKeyResolve && _orKeyResolve();
     }
-    if(dm?.valor){
-      localStorage.setItem('als_or_model', dm.valor);
+  } catch(e){ console.warn('Error cargando key:', e.message); }
+  // Cargar modelo — separado para que un fallo no afecte la key
+  try {
+    let modelVal = null;
+    const {data:dm1} = await sb.from('als_config').select('valor').eq('clave','or_model').single();
+    if(dm1?.valor) modelVal = dm1.valor;
+    if(!modelVal){
+      const {data:dm2} = await sb.from('als_config').select('valor').eq('clave','gemini_model').single();
+      if(dm2?.valor) modelVal = dm2.valor;
+    }
+    if(modelVal){
+      localStorage.setItem('als_or_model', modelVal);
       const sel = document.getElementById('sb-model-select');
-      if(sel){ for(const o of sel.options) if(o.value===dm.valor) o.selected=true; }
+      if(sel){ for(const o of sel.options) if(o.value===modelVal) o.selected=true; }
     }
   } catch(e){}
 }
