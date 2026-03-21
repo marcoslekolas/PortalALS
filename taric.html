@@ -2525,87 +2525,29 @@ INSTRUCCIONES GENERALES:
 - Calcula la liquidación estimada (casilla 47): arancel + IVA a la importación
 - Para cada partida, completa la casilla 31 en formato DUA
 
-INSTRUCCIONES CRÍTICAS PARA CASILLA 44 — DOCUMENTOS Y MEDIDAS POR CÓDIGO TARIC:
-Para CADA partida analiza el código TARIC clasificado e identifica TODAS las restricciones y medidas aplicables según la base TARIC de la UE (Access2Markets / TARIC Consultation). El código de medida determina el documento requerido — está fijado en la base TARIC, no lo inventes. Usa los códigos exactos siguientes:
+INSTRUCCIONES CRÍTICAS PARA CASILLA 44 — MEDIDAS Y DOCUMENTOS POR CÓDIGO TARIC:
+⚠️ OBLIGATORIO: Para CADA partida en el array "partidas", rellena el campo "medidas_taric" con las medidas que activa su código TARIC en la base de datos TARIC de la UE (Access2Markets). Deja "medidas_taric" como array vacío [] SOLO si el TARIC no activa ninguna medida de control.
 
-CONTROLES VETERINARIOS / SANIDAD ANIMAL (CHED-A / CHED-P / CHED-D):
-- Animales vivos, carne, pescado, lácteos, huevos, miel, subproductos animales: cap. 01-05, 16, 0401-0410, 1601-1605
-- Código de medida en TARIC: 1408 (Import control - Sanitary and phytosanitary measures)
-- Documentos: C640 (CHED-A animales vivos), C641 (CHED-P productos origen animal), C642 (CHED-D alimentos)
+TABLA DE CÓDIGOS DE MEDIDA OFICIALES (usa estos exactos):
+- 1408 → Controles veterinarios CHED (animales cap.01-05, productos origen animal cap.16, lácteos, huevos, miel). Docs: C640/C641/C642
+- 1408 → Controles fitosanitarios SOIVRE (plantas, semillas, frutas, verduras, madera cap.06-14, 4401-4403). Docs: N002, N851
+- 1408 → Material de defensa/militar (cap.93, lista militar UE). Docs: C085
+- 1408 → Medicamentos/material sanitario con control previo (cap.30, 9018-9022). Docs: N941
+- Y900 → CITES — especies protegidas (maderas tropicales 4403/4407/4412, reptiles, marfil, coral, cactus, orquídeas). Docs: C400, C401
+- Y901 → Doble uso — tecnología estratégica (cap.84-85, 90 según Lista Control Reg.2021/821). Docs: C065
+- Y162 → Gases fluorados F-Gas (2903.39, 2903.71-79, 8415, 8418, 8479). Docs: C029
+- Y784 → Ozono/SAO (2903.11-19, 2903.41-49, 2903.81). Docs: C028
+- Y903 → Patrimonio cultural (cap.97, 9705, 9706). Docs: I004, I005
+- Y923 → WSTEX textiles vigilancia (cap.50-63 según origen). Docs: N990
+- Y923 → WSTIM siderúrgico vigilancia (cap.72-73 según origen). Docs: N990
+- Y923+C058+C670+C672 → WSTIM residuos en H1. Docs adicionales: C058, C670, C672
+- 748 → Precursores de drogas (2915.24, 2939.41-42, 2841.61, 2932.91). Docs: C671/C672
 
-CONTROLES FITOSANITARIOS / SOIVRE:
-- Plantas, semillas, frutas, verduras, flores, madera sin elaborar: cap. 06-14, 4401-4403
-- Código de medida: 1408
-- Documentos: N002 (Certificado fitosanitario país origen) + posible N851 (SOIVRE, si procede)
+DOCUMENTOS COMUNES EN "documentos_especificos" DE CADA PARTIDA:
+- Siempre incluir los documentos de transporte y comerciales en cada partida
+- Si la partida tiene código de preferencia arancelaria, incluir: N954 (EUR.1), C019 (REX), U110 (Form A SGP)
 
-CITES — ESPECIES PROTEGIDAS:
-- Maderas tropicales (4403, 4407, 4412), reptiles, marfil, coral, cactus, orquídeas, productos derivados
-- Código de medida: Y900
-- Documentos: C400 (Permiso importación CITES), C401 (Certificado reexportación CITES)
-
-PRODUCTOS DE DOBLE USO (Reg. UE 2021/821):
-- Electrónica avanzada, semiconductores, óptica, láser, cifrado, tecnología aeroespacial, productos químicos estratégicos, equipos de telecomunicaciones avanzados: cap. 84-85, 90 (posiciones específicas de la lista de control)
-- Código de medida: Y901
-- Documentos: C065 (Autorización exportación doble uso) — solo si la clasificación NC figura en los Anexos del Regl. 2021/821
-
-MATERIAL DE DEFENSA / USO MILITAR:
-- Armas, munición, vehículos militares, equipos militares, explosivos militares: cap. 93 y posiciones específicas de otros capítulos según Lista Común Militar UE
-- Código de medida: 1408 (prohibición o control estricto)
-- Documentos: C085 (Licencia importación/exportación material defensa MINCO)
-
-GASES FLUORADOS — F-GAS (Reg. UE 517/2014 y 2024/573):
-- HFCs, HCFCs, PFCs, SF6, mezclas de refrigerantes (R-404A, R-410A, R-134a, etc.), equipos preconfigurados con F-Gas (aires acondicionados, frigoríficos industriales): 2903.39, 2903.71-2903.79, 8415, 8418, 8479
-- Código de medida: Y162
-- Documentos: C029 (Declaración de importación F-Gas, sistema HFCR de la UE) — requiere registro previo en portal HFCR
-
-SUSTANCIAS QUE AGOTAN EL OZONO — SAO (Reg. UE 1005/2009):
-- CFCs, HCFCs puros, halones, bromuro de metilo, HCFC-22, mezclas con SAO: 2903.11-2903.19, 2903.41-2903.49, 2903.81
-- Código de medida: Y784
-- Documentos: C028 (Licencia importación SAO, expedida por DG CLIMA de la Comisión Europea)
-
-PATRIMONIO CULTURAL (Reg. UE 2019/880):
-- Antigüedades +100 años, bienes arqueológicos, obras de arte, manuscritos, monedas históricas: cap. 97, posiciones 9705, 9706
-- Código de medida: Y903
-- Documentos: I004 (Licencia de importación patrimonio cultural) o I005 (Declaración importador con contrato custodia), expedidos por Ministerio de Cultura
-
-WSTEX — VIGILANCIA TEXTILES (Decisión UE):
-- Textiles, confección y artículos de punto de determinados orígenes (Belarus, Corea Norte, etc.): cap. 50-63
-- Código de medida: Y923
-- Documentos: N990 (Documento de vigilancia WSTEX, expedido por DGCOMER/MITECO)
-
-WSTIM — VIGILANCIA SIDERÚRGICA / RESIDUOS:
-- Productos siderúrgicos (aceros, chapas, tubos) de determinados orígenes sujetos a medidas de vigilancia: cap. 72-73
-- Código de medida: Y923
-- Documentos: N990 (Documento vigilancia WSTIM)
-- ATENCIÓN — si en H1 la mercancía es un RESIDUO sujeto a WSTIM, además incluir:
-  · C058 (Contrato de gestión de residuos)
-  · C670 (Notificación previa traslado residuos, Reg. 1013/2006)
-  · C672 (Autorización traslado residuos peligrosos)
-
-PRECURSORES DE DROGAS (Reg. UE 273/2004 y 111/2005):
-- Ácido acético anhídrido, efedrina, seudoefedrina, permanganato potásico, ácido antranílico, piperonal, safrol: 2915.24, 2939.41, 2939.42, 2841.61, 2932.91, 2932.94
-- Código de medida: 748
-- Documentos: C672 (Autorización importación precursores cat. 1), C671 (cat. 2)
-
-MEDICAMENTOS / MATERIAL SANITARIO:
-- Medicamentos, principios activos, material sanitario, reactivos diagnóstico: cap. 30, 3822, 9018-9022
-- Código de medida: 1408 (según producto)
-- Documentos: N941 (Autorización importación AEMPS) si el producto requiere licencia previa
-
-BIOCIDAS Y PRODUCTOS FITOSANITARIOS:
-- Plaguicidas, biocidas, desinfectantes: 3808
-- Código de medida: 1408
-- Documentos: N941 (Registro MAPA/MSAN)
-
-REGLA GENERAL — SIEMPRE EN CASILLA 44:
-- N380 — Factura comercial (siempre, todas las partidas)
-- N271 — Lista de bultos/packing list (siempre si hay múltiples artículos)
-- Transporte según modo C.25: N703 (B/L marítimo), N730 (CMR carretera), N740 (AWB aéreo)
-- Preferencia arancelaria si aplica: N954 (EUR.1), C019 (REX/declaración en factura), U110 (Form A SGP), según acuerdo comercial UE con el país de origen
-
-IMPORTANTE: El código de medida que aparece en casilla_44_documentos debe ser el código TARIC real consultado en la base de datos (Access2Markets). Si el código TARIC de la partida no figura en ninguna lista de control, no incluyas medidas de restricción — solo los documentos generales (N380, N271, transporte). No añadas medidas de restricción por sospecha o precaución si el TARIC no las activa.
-
-En la casilla_44_documentos de CADA partida incluye todos los códigos que apliquen.
+REGLA: Si el TARIC de la partida no aparece en ninguna lista de control → medidas_taric: [] y documentos_especificos solo con N380 y transporte.
 
 Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
 {
@@ -2638,7 +2580,8 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
   "casilla_41_unidad_suplementaria": {"cantidad": 0, "unidad": ""},
   "casilla_44_documentos": [
     {"codigo": "N380", "referencia": "Núm. factura", "descripcion": "Factura comercial"},
-    {"codigo": "N954", "referencia": "", "descripcion": "Certificado de origen EUR.1 o REX"}
+    {"codigo": "N271", "referencia": "", "descripcion": "Lista de bultos"},
+    {"codigo": "N703", "referencia": "", "descripcion": "Conocimiento de embarque B/L"}
   ],
   "casilla_45_ajuste": {"codigo": "AB|AC|AD", "importe": 0},
   "casilla_46_valor_estadistico": 0,
@@ -2653,7 +2596,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
     {
       "num": 1,
       "descripcion_factura": "",
-      "taric": "",
+      "taric": "XXXXXXXXXX",
       "descripcion_nc": "",
       "cantidad": 0,
       "unidad": "piezas|kg|l|m2",
@@ -2668,7 +2611,19 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
       "iva_importe": 0,
       "pais_origen": "",
       "codigo_preferencia": "100|200|300|400",
-      "documentos_especificos": []
+      "medidas_taric": [
+        {
+          "codigo_medida": "CODIGO_MEDIDA_TARIC",
+          "tipo": "CITES|DOBLE_USO|VETERINARIO|FITOSANITARIO|F-GAS|OZONO|PATRIMONIO|WSTEX|WSTIM|PRECURSORES|DEFENSA|NINGUNA",
+          "descripcion": "Descripción de la medida según TARIC",
+          "documentos_requeridos": [
+            {"codigo": "CODIGO_DOC", "descripcion": "Nombre del documento requerido"}
+          ]
+        }
+      ],
+      "documentos_especificos": [
+        {"codigo": "CODIGO_DOC", "referencia": "", "descripcion": "Documento específico de esta partida"}
+      ]
     }
   ],
   "observaciones_importantes": ["nota1"],
@@ -2763,7 +2718,24 @@ function renderBorradorDUA(d, container, filename){
     `<div style="display:flex;gap:6px;align-items:flex-start;padding:4px 0"><span style="color:var(--am600);flex-shrink:0">⚠️</span><span style="font-size:12px;color:var(--g600)">${a}</span></div>`
   ).join('');
 
-  const partHtml = (d.partidas||[]).map(p=>`
+  const partHtml = (d.partidas||[]).map(p=>{
+    // Medidas TARIC de esta partida
+    const medidasHtml = (p.medidas_taric||[]).filter(m => m.codigo_medida && m.codigo_medida !== 'NINGUNA' && !m.tipo?.includes('NINGUNA')).map(m => {
+      const docsStr = (m.documentos_requeridos||[]).map(doc => `<span style="background:var(--rd50);color:var(--rd600);border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;font-family:var(--mono);margin-right:3px">${doc.codigo}</span><span style="font-size:10px;color:var(--g500)">${doc.descripcion||''}</span>`).join(' · ');
+      return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;background:var(--am50);border:1px solid #fde68a;border-radius:6px;margin-bottom:4px">
+        <span style="background:var(--am600);color:#fff;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:800;font-family:var(--mono);flex-shrink:0">${m.codigo_medida}</span>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--g700)">${m.tipo||''} — ${m.descripcion||''}</div>
+          ${docsStr ? `<div style="margin-top:3px">${docsStr}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    // Documentos específicos de esta partida
+    const docsPartidaHtml = (p.documentos_especificos||[]).map(doc =>
+      `<span style="background:var(--b50);color:var(--b700);border:1px solid var(--b100);border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;margin-right:4px;margin-bottom:3px;display:inline-block;font-family:var(--mono)">${doc.codigo}</span>`
+    ).join('');
+
+    return `
     <div class="card" style="margin-bottom:12px;padding:16px">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
         <div style="background:var(--g900);color:#fff;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700">Partida ${p.num}</div>
@@ -2771,7 +2743,7 @@ function renderBorradorDUA(d, container, filename){
         <div style="font-size:12px;color:var(--g600)">${p.descripcion_nc||'—'}</div>
       </div>
       <div style="font-size:13px;color:var(--g500);margin-bottom:10px;padding:8px;background:var(--g50);border-radius:6px;font-style:italic">"${p.descripcion_factura||'—'}"</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:${medidasHtml||docsPartidaHtml?'12px':'0'}">
         <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Cantidad</div><div style="font-size:13px;font-weight:600">${p.cantidad||0} ${p.unidad||''}</div></div>
         <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Masa bruta</div><div style="font-size:13px;font-weight:600">${Number(p.masa_bruta_kg||0).toLocaleString('es-ES')} kg</div></div>
         <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">Valor aduanero</div><div style="font-size:13px;font-weight:700;color:var(--g900)">${Number(p.valor_aduanero||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
@@ -2779,8 +2751,18 @@ function renderBorradorDUA(d, container, filename){
         <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">IVA import.</div><div style="font-size:13px;font-weight:600;color:var(--am600)">${p.iva_porcentaje||'—'} · ${Number(p.iva_importe||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
         <div><div style="font-size:10px;color:var(--g400);font-weight:700;text-transform:uppercase;margin-bottom:2px">País origen</div><div style="font-size:13px;font-weight:600">${p.pais_origen||'—'}</div></div>
       </div>
-    </div>
-  `).join('');
+      ${medidasHtml ? `
+        <div style="margin-top:10px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--am600);margin-bottom:6px">⚠️ Medidas TARIC — Casilla 44</div>
+          ${medidasHtml}
+        </div>` : ''}
+      ${docsPartidaHtml ? `
+        <div style="margin-top:8px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--b600);margin-bottom:5px">📋 Documentos específicos</div>
+          <div style="flex-wrap:wrap;display:flex">${docsPartidaHtml}</div>
+        </div>` : ''}
+    </div>`;
+  }).join('');
 
   const df = d.datos_extraidos_factura||{};
 
