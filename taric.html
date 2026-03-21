@@ -513,25 +513,26 @@ textarea.fi{resize:vertical;min-height:80px}
       <div class="sb-bot">
         <!-- Config OpenRouter API Key -->
         <div id="sb-apikey-wrap" style="padding:8px 10px;border-bottom:1px solid var(--g100)">
-          <div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;display:flex;align-items:center;gap:4px">⚙️ <span class="nav-item-txt">OpenRouter API Key</span></div>
+          <div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;display:flex;align-items:center;gap:4px">⚙️ <span class="nav-item-txt">API Key (opcional)</span></div>
+          <div style="font-size:10px;color:var(--gr600);margin-bottom:5px;font-weight:600" class="nav-item-txt">✅ Servicio activo — no requiere configuración</div>
           <div style="display:flex;gap:4px" class="nav-item-txt">
             <input id="sb-apikey-input" class="fi" type="password"
-              placeholder="sk-or-v1-..."
+              placeholder="Tu key personal (opcional)..."
               style="font-size:11px;padding:5px 8px;flex:1;min-width:0"
               oninput="saveGeminiKey(this.value)"
-              title="Obtén tu API key gratis en openrouter.ai/keys">
-            <div id="sb-apikey-status" style="width:22px;height:22px;border-radius:6px;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;align-self:center">?</div>
+              title="Opcional — el servicio funciona sin configuración. Introduce tu propia key para mayor capacidad.">
+            <div id="sb-apikey-status" style="width:22px;height:22px;border-radius:6px;background:var(--gr50);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;align-self:center">✅</div>
           </div>
           <div style="font-size:10px;color:var(--g400);margin-top:4px" class="nav-item-txt">
-            <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--b600);text-decoration:none">Obtener key gratis ↗</a>
+            Key propia para mayor capacidad: <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--b600);text-decoration:none">openrouter.ai/keys ↗</a>
           </div>
           <!-- Selector de modelo -->
           <select id="sb-model-select" class="fi" style="font-size:11px;padding:4px 6px;margin-top:6px;width:100%" class="nav-item-txt"
             onchange="guardarModeloSupabase(this.value);localStorage.setItem('als_gemini_model',this.value);showToast('Modelo: '+this.value.split('/').pop())">
-            <option value="mistralai/mistral-small-2603">Mistral Small 4 💳 (con crédito, recomendado)</option>
-            <option value="google/gemma-3-12b-it:free">Gemma 3 12B 🆓 (gratis, fiable)</option>
-            <option value="google/gemma-3-27b-it:free">Gemma 3 27B 🆓 (gratis, vision)</option>
-            <option value="google/gemma-3-4b-it:free">Gemma 3 4B 🆓 (gratis, rápido)</option>
+            <option value="mistralai/mistral-small-2603">Mistral Small 4 💳 (recomendado)</option>
+            <option value="google/gemma-3-12b-it:free">Gemma 3 12B 🆓</option>
+            <option value="google/gemma-3-27b-it:free">Gemma 3 27B 🆓</option>
+            <option value="google/gemma-3-4b-it:free">Gemma 3 4B 🆓</option>
             <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B 🆓 (solo texto)</option>
           </select>
           <div style="display:flex;gap:4px;margin-top:6px" class="nav-item-txt">
@@ -545,7 +546,7 @@ textarea.fi{resize:vertical;min-height:80px}
             </a>
           </div>
           <div style="font-size:10px;color:var(--am600);margin-top:4px;line-height:1.4" class="nav-item-txt">
-            Con crédito: ~4.000 ops/$5 · Sin crédito: fallback gratis automático
+            Con crédito propio: ~4.000 ops/$5 · Sin crédito: modelos gratis automáticos
           </div>
         </div>
         <!-- User -->
@@ -1021,9 +1022,12 @@ function getGeminiModel(){
 }
 const GEMINI_MODEL = OR_MODEL_DEFAULT; // alias legacy
 let _geminiKeyCache = null;
+// Key por defecto embebida — permite usar el clasificador sin configuración en cualquier dispositivo
+// El usuario puede sobreescribirla con su propia key en el panel ⚙️
+const _OR_KEY_DEFAULT = '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';
 
 function getGeminiKey(){
-  return _geminiKeyCache || localStorage.getItem('als_gemini_key') || '';
+  return _geminiKeyCache || localStorage.getItem('als_gemini_key') || _OR_KEY_DEFAULT;
 }
 
 async function loadGeminiKeyFromSupabase(){
@@ -1064,7 +1068,7 @@ async function saveGeminiKeyToSupabase(key){
 // ── Función central OpenRouter ────────────────────────────────
 async function _callOpenRouter(messages, modelOverride, forceJson){
   const key = getGeminiKey();
-  if(!key) throw new Error('🔑 Configura tu API key de OpenRouter en ⚙️ del sidebar izquierdo. Gratis en openrouter.ai/keys');
+  if(!key) throw new Error('❌ Error de conexión con el servicio de IA. Inténtalo de nuevo.');
 
   const model = modelOverride || getGeminiModel();
   const body = { model, messages, temperature: 0.1, max_tokens: 8192 };
@@ -1229,17 +1233,18 @@ async function initApiKeyUI(){
   if(sel && currentModel){
     for(const opt of sel.options) if(opt.value === currentModel) opt.selected = true;
   }
-  // Primero cargar desde localStorage (rápido)
+  // El indicador siempre ✅ porque hay key por defecto embebida
+  const st = document.getElementById('sb-apikey-status');
+  if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
+  // Si hay key personal en localStorage, mostrarla
   const localKey = localStorage.getItem('als_gemini_key');
   const inp = document.getElementById('sb-apikey-input');
-  const st = document.getElementById('sb-apikey-status');
   if(inp && localKey){
     inp.value = localKey;
     _geminiKeyCache = localKey;
-    if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
   }
-  // Luego sincronizar desde Supabase (puede tener una key más reciente)
-  await loadGeminiKeyFromSupabase();
+  // Sincronizar desde Supabase en segundo plano (sin bloquear)
+  loadGeminiKeyFromSupabase().catch(()=>{});
 }
 
 function toggleDarkMode(){
@@ -1362,7 +1367,7 @@ async function clasificar(){
 
 async function llamarGeminiAPI(prompt, modelOverride){
   const key = getGeminiKey();
-  if(!key) throw new Error('🔑 Configura tu API key de OpenRouter en el panel ⚙️ del sidebar izquierdo. Gratis en openrouter.ai/keys');
+  if(!key) throw new Error('❌ Error de conexión con el servicio de IA. Inténtalo de nuevo.');
 
   const messages = [{ role: 'user', content: prompt }];
   try {
@@ -1819,7 +1824,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
     tried.add(model);
     try {
       const key = getGeminiKey();
-      if(!key) throw new Error('🔑 Configura tu API key de OpenRouter en ⚙️ del sidebar. Gratis en openrouter.ai/keys');
+      if(!key) throw new Error('❌ Error de conexión con el servicio de IA. Inténtalo de nuevo.');
       const text = await _callOpenRouter(messages, model, true);
       if(model !== primaryModel) showToast('⚡ OCR con: ' + model.split('/').pop());
       return parseClaudeResponse(text);
