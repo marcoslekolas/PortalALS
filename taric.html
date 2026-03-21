@@ -523,7 +523,6 @@ textarea.fi{resize:vertical;min-height:80px}
           </div>
           <div style="font-size:10px;color:var(--g400);margin-top:4px" class="nav-item-txt">
             <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--b600);text-decoration:none">Obtener key gratis ↗</a>
-            <span style="margin-left:4px;color:var(--gr600)">· Qwen gratis, sin límite diario</span>
           </div>
           <!-- Selector de modelo -->
           <select id="sb-model-select" class="fi" style="font-size:11px;padding:4px 6px;margin-top:6px;width:100%" class="nav-item-txt"
@@ -534,8 +533,18 @@ textarea.fi{resize:vertical;min-height:80px}
             <option value="google/gemma-3-4b-it:free">Gemma 3 4B 🆓 (gratis, rápido)</option>
             <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B 🆓 (solo texto)</option>
           </select>
-          <div style="font-size:10px;color:var(--am600);margin-top:5px;line-height:1.5" class="nav-item-txt">
-            💳 Con crédito: ~4.000 ops por 5$. Sin crédito: fallback automático a modelos gratis. <a href="https://openrouter.ai/credits" target="_blank" style="color:var(--b600);text-decoration:none">Añadir crédito ↗</a>
+          <div style="display:flex;gap:4px;margin-top:6px" class="nav-item-txt">
+            <a href="https://openrouter.ai/credits" target="_blank"
+              style="flex:1;text-align:center;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:6px;padding:5px 6px;font-size:10px;font-weight:700;text-decoration:none;display:block">
+              💳 Recargar créditos ↗
+            </a>
+            <a href="https://openrouter.ai/activity" target="_blank"
+              style="flex:1;text-align:center;background:var(--g100);color:var(--g600);border:1px solid var(--g200);border-radius:6px;padding:5px 6px;font-size:10px;font-weight:600;text-decoration:none;display:block">
+              📊 Ver uso ↗
+            </a>
+          </div>
+          <div style="font-size:10px;color:var(--am600);margin-top:4px;line-height:1.4" class="nav-item-txt">
+            Con crédito: ~4.000 ops/$5 · Sin crédito: fallback gratis automático
           </div>
         </div>
         <!-- User -->
@@ -1110,7 +1119,7 @@ function closeModal(){ document.getElementById('mo').classList.remove('open'); }
 // ── Navigation home ───────────────────────────────────────────
 function goHome(){
   try {
-    // Si se abrió con window.open, cerrar y volver al opener
+    // Si se abrió como pestaña nueva (tiene opener), cerrar y volver al opener
     if(window.opener && !window.opener.closed){
       try {
         if(typeof window.opener.showHome==='function') window.opener.showHome();
@@ -1119,7 +1128,12 @@ function goHome(){
         return;
       } catch(e){}
     }
-    // Navegación directa — funciona en móvil, PWA, y acceso directo
+    // Si hay historial (vino navegando desde index.html en la misma pestaña), volver atrás
+    if(window.history.length > 1){
+      window.history.back();
+      return;
+    }
+    // Fallback: navegar a index.html directamente
     const base = window.location.href.replace(/\/taric\.html.*$/, '').replace(/\/$/, '');
     window.location.href = base ? base + '/index.html' : 'index.html';
   } catch(e){ window.location.href = 'index.html'; }
