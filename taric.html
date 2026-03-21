@@ -895,7 +895,13 @@ async function _callOpenRouter(messages, modelOverride, forceJson){
 
   const model = modelOverride || getGeminiModel();
   const body = { model, messages, temperature: 0.1, max_tokens: 8192 };
-  if(forceJson) body.response_format = { type: 'json_object' };
+  
+  // response_format: json_object NO es compatible con mensajes que contienen imágenes
+  // (Mistral, Gemma y otros devuelven 400 en ese caso)
+  const hasImages = messages.some(m =>
+    Array.isArray(m.content) && m.content.some(p => p.type === 'image_url')
+  );
+  if(forceJson && !hasImages) body.response_format = { type: 'json_object' };
 
   // Timeout de 25s — evita que modelos lentos bloqueen el fallback automático
   const controller = new AbortController();
@@ -927,9 +933,10 @@ async function _callOpenRouter(messages, modelOverride, forceJson){
   if(!resp.ok || data.error){
     const _m = data?.error?.message || JSON.stringify(data?.error) || 'Error desconocido';
     const _code = data?.error?.code || resp.status;
-    if(_code === 429 || resp.status === 502 || resp.status === 503 ||
+    if(_code === 429 || resp.status === 502 || resp.status === 503 || resp.status === 400 ||
        _m.includes('rate') || _m.includes('quota') || _m.includes('limit') ||
-       _m.includes('Network connection') || _m.includes('overloaded')){
+       _m.includes('Network connection') || _m.includes('overloaded') ||
+       _m.includes('Provider returned error')){
       throw new Error('RATE_LIMIT:' + model + ':' + _m.substring(0,100));
     }
     if(_code === 401 || _m.includes('API key') || _m.includes('auth')){
