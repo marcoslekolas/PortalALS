@@ -2889,20 +2889,20 @@ let _eoriKeyLoaded = false;
 async function _loadEoriKey(){
   if(_eoriKeyLoaded) return;
   // Try localStorage first
-  if(localStorage.getItem('als_gemini_key')) { _eoriKeyLoaded = true; return; }
+  if(localStorage.getItem('als_openrouter_key')) { _eoriKeyLoaded = true; return; }
   // Load from Supabase
   try {
     const r = await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=eq.gemini_api_key&select=valor',{
       headers:{apikey:'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1',Authorization:'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'}
     });
     const d = await r.json();
-    if(d?.[0]?.valor){ localStorage.setItem('als_gemini_key', d[0].valor); _eoriKeyLoaded=true; }
+    if(d?.[0]?.valor){ localStorage.setItem('als_openrouter_key', d[0].valor); _eoriKeyLoaded=true; }
     // Also load model
     const r2 = await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=eq.gemini_model&select=valor',{
       headers:{apikey:'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1',Authorization:'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'}
     });
     const d2 = await r2.json();
-    if(d2?.[0]?.valor) localStorage.setItem('als_gemini_model', d2[0].valor);
+    if(d2?.[0]?.valor) localStorage.setItem('als_or_model', d2[0].valor);
   } catch(e){ console.warn('EORI key load:', e.message); }
 }
 
@@ -2957,7 +2957,7 @@ async function buscarEORI(){
 
   // Load key if needed
   await _loadEoriKey();
-  const key = localStorage.getItem('als_gemini_key')||'';
+  const key = localStorage.getItem('als_openrouter_key')||'';
   if(!key){
     if(resEl) resEl.innerHTML=`<div style="padding:14px;background:var(--am50);border:1px solid #fde68a;border-radius:var(--rl);color:#92400e">
       ⚠️ Configura la API key de <strong>OpenRouter</strong> en el módulo <strong>Aduanas → Clasificador TARIC</strong> (⚙️ en el sidebar). Gratis en <a href="https://openrouter.ai/keys" target="_blank" style="color:#1d4ed8">openrouter.ai/keys ↗</a>
@@ -3008,7 +3008,7 @@ Responde en español de forma directa.`;
   // Modelos con timeout 20s y fallback — probados hoy 21-03-2026
   const eoriModels = [
     'mistralai/mistral-small-2603',            // con crédito — mejor calidad
-    localStorage.getItem('als_gemini_model') || 'google/gemma-3-12b-it:free',
+    localStorage.getItem('als_or_model') || 'google/gemma-3-12b-it:free',
     'google/gemma-3-12b-it:free',
     'google/gemma-3-27b-it:free',
     'google/gemma-3-4b-it:free',
