@@ -1141,13 +1141,18 @@ async function _callOpenRouter(messages, modelOverride, forceJson){
   if(!resp.ok || data.error){
     const _m = data?.error?.message || JSON.stringify(data?.error) || 'Error desconocido';
     const _code = data?.error?.code || resp.status;
-    if(_code === 429 || resp.status === 502 || resp.status === 503 || resp.status === 400 ||
+    console.warn(`OpenRouter [${model}] HTTP ${resp.status} code=${_code}: ${_m.substring(0,120)}`);
+    if(_code === 429 || resp.status === 502 || resp.status === 503 ||
        resp.status === 404 ||
        _m.includes('rate') || _m.includes('quota') || _m.includes('limit') ||
        _m.includes('Network connection') || _m.includes('overloaded') ||
        _m.includes('Provider returned error') || _m.includes('No endpoints') ||
        _m.includes('image input') || _m.includes('not support')){
       throw new Error('RATE_LIMIT:' + model + ':' + _m.substring(0,100));
+    }
+    // 400 puede ser formato incorrecto — tratar como RATE_LIMIT para probar siguiente modelo
+    if(resp.status === 400){
+      throw new Error('RATE_LIMIT:' + model + ':400 bad request: ' + _m.substring(0,80));
     }
     if(_code === 401 || _m.includes('API key') || _m.includes('auth')){
       throw new Error('🔑 API key de OpenRouter no válida. Compruébala en openrouter.ai/keys');
@@ -1858,20 +1863,19 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
     if(tried.has(model)) continue;
     tried.add(model);
     try {
-      const key = getOpenRouterKey();
-      if(!key) throw new Error('❌ Error de conexión con el servicio de IA. Inténtalo de nuevo.');
       const text = await _callOpenRouter(messages, model, true);
       if(model !== primaryModel) showToast('⚡ OCR con: ' + model.split('/').pop());
       return parseClaudeResponse(text);
     } catch(e){
+      console.warn('Modelo OCR fallido:', model, '→', e.message.substring(0,100));
       if(e.message.startsWith('RATE_LIMIT:')){
         lastErr = e;
-        console.warn('Rate limit OCR en', model, '— probando siguiente...');
         continue;
       }
       throw e;
     }
   }
+  console.error('Todos los modelos OCR fallaron:', lastErr?.message);
   throw new Error('⏳ Servicio de IA temporalmente saturado. Espera unos minutos e inténtalo de nuevo, o recarga la página.');
 }
 
@@ -2713,12 +2717,14 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
       if(model !== primaryModel) showToast('⚡ DUA con: ' + model.split('/').pop());
       return parseClaudeResponse(text);
     } catch(e){
+      console.warn('Modelo fallido:', model, '→', e.message.substring(0, 120));
       if(e.message.startsWith('RATE_LIMIT:')){
         lastErr = e; continue;
       }
       throw e;
     }
   }
+  console.error('Todos los modelos fallaron. Último error:', lastErr?.message);
   throw new Error('⏳ Servicio de IA temporalmente saturado. Espera unos minutos e inténtalo de nuevo, o recarga la página.');
 }
 
