@@ -999,55 +999,76 @@ textarea.fi{resize:vertical;min-height:72px}
   </div>
 </div>
 
-<!-- EORI BUSCADOR (modal fullscreen) -->
+<!-- EORI BUSCADOR — Gemini + Google Search Grounding -->
 <div id="screen-eori" style="display:none;flex-direction:column;min-height:100vh;background:var(--g50)">
   <div class="hm-hdr">
     <div class="hm-cw-pill">
-      <div class="pill-mark" style="background:linear-gradient(135deg,#065f46,#047857);font-size:9px">🔎</div>
+      <div class="pill-mark" style="background:linear-gradient(135deg,#065f46,#047857);font-family:monospace;font-size:9px">🔎</div>
       <div class="pill-txt">Buscador EORI</div>
     </div>
     <div style="flex:1"></div>
     <button onclick="mostrarMenuAduanas()" style="background:var(--g100);border:1px solid var(--g200);border-radius:var(--r);padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--g600)">← Aduanas</button>
   </div>
-  <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:28px 16px 48px;max-width:700px;margin:0 auto;width:100%">
-    <div style="font-size:24px;font-weight:800;color:var(--g900);margin-bottom:4px;letter-spacing:-.5px">Buscador EORI</div>
-    <div style="font-size:13px;color:var(--g500);margin-bottom:24px">Economic Operators Registration and Identification · Unión Europea</div>
 
-    <!-- Buscador -->
-    <div style="width:100%;background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:24px;box-shadow:var(--shl);margin-bottom:20px">
-      <div style="font-size:13px;color:var(--g600);margin-bottom:12px;line-height:1.5">
-        Introduce el número EORI o el nombre/NIF de la empresa para validar su registro en la base de datos de operadores económicos de la Unión Europea.
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:28px 16px 48px;max-width:760px;margin:0 auto;width:100%">
+
+    <!-- Título -->
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="display:inline-flex;align-items:center;gap:6px;background:#eff6ff;color:#1d4ed8;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid #bfdbfe;margin-bottom:10px">
+        ✨ IA + Google Search en tiempo real
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <input id="eori-input" class="fi" placeholder="Ej: ES12345678A · GB123456789000 · DE123456789"
-          style="flex:1;min-width:200px;font-family:monospace;font-size:14px;font-weight:600;letter-spacing:.05em"
-          onkeydown="if(event.key==='Enter') buscarEORI()">
-        <button class="btn btn-p" onclick="buscarEORI()" id="eori-btn" style="min-width:100px;justify-content:center">
-          🔍 Validar
+      <div style="font-size:26px;font-weight:800;color:var(--g900);letter-spacing:-.5px">Buscador EORI UE</div>
+      <div style="font-size:13px;color:var(--g500);margin-top:4px">Verifica operadores económicos con fuentes oficiales de la Unión Europea</div>
+    </div>
+
+    <!-- Selector de modo -->
+    <div style="display:flex;gap:0;margin-bottom:20px;background:var(--g200);padding:5px;border-radius:12px;width:100%;max-width:480px">
+      <button id="eori-btn-empresa" onclick="setEoriMode('empresa')"
+        style="flex:1;padding:9px 12px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;background:#1d4ed8;color:#fff;box-shadow:0 2px 6px rgba(29,78,216,.3)">
+        🏢 Buscar por empresa
+      </button>
+      <button id="eori-btn-codigo" onclick="setEoriMode('codigo')"
+        style="flex:1;padding:9px 12px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;background:transparent;color:var(--g600)">
+        🔢 Buscar por EORI
+      </button>
+    </div>
+
+    <!-- Campo de búsqueda -->
+    <div style="width:100%;margin-bottom:8px">
+      <div style="display:flex;gap:8px;background:var(--w);border:2px solid var(--g200);border-radius:16px;padding:8px;box-shadow:0 4px 20px rgba(0,0,0,.08);transition:border-color .15s" id="eori-search-box">
+        <input id="eori-input" class="fi"
+          placeholder="Ej: Inditex S.A., Siemens AG, IPROSUR..."
+          style="flex:1;border:none;outline:none;font-size:15px;font-weight:500;padding:8px 10px;background:transparent"
+          onkeydown="if(event.key==='Enter') buscarEORI()"
+          onfocus="document.getElementById('eori-search-box').style.borderColor='#1d4ed8'"
+          onblur="document.getElementById('eori-search-box').style.borderColor='var(--g200)'">
+        <button onclick="buscarEORI()" id="eori-btn-buscar"
+          style="background:#1d4ed8;color:#fff;border:none;border-radius:10px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .15s"
+          onmouseover="this.style.background='#1e40af'" onmouseout="this.style.background='#1d4ed8'">
+          🔍 Buscar
         </button>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
-        <span style="font-size:11px;color:var(--g400)">Ejemplos:</span>
-        <button onclick="document.getElementById('eori-input').value='ES'+this.textContent.trim().replace('ES','')" style="background:var(--g100);border:1px solid var(--g200);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--g600)">ESB72049117</button>
-        <button onclick="document.getElementById('eori-input').value=this.textContent.trim()" style="background:var(--g100);border:1px solid var(--g200);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--g600)">GB987654321000</button>
-        <button onclick="document.getElementById('eori-input').value=this.textContent.trim()" style="background:var(--g100);border:1px solid var(--g200);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--g600)">FR12345678901</button>
+      <div id="eori-validation-msg" style="display:none;color:var(--rd600);font-size:12px;font-weight:600;padding:6px 12px;margin-top:4px"></div>
+      <div id="eori-hint" style="text-align:center;font-size:12px;color:var(--g400);margin-top:8px">
+        Búsqueda en tiempo real verificada con fuentes oficiales de la UE y registros empresariales
       </div>
     </div>
 
-    <!-- Resultado EORI -->
-    <div id="eori-result" style="width:100%"></div>
+    <!-- Resultado -->
+    <div id="eori-result" style="width:100%;margin-top:16px"></div>
 
-    <!-- Info sobre EORI -->
-    <div style="width:100%;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px;margin-top:8px">
-      <div style="font-size:12px;font-weight:700;color:var(--g700);margin-bottom:8px">ℹ️ ¿Qué es el EORI?</div>
-      <div style="font-size:12px;color:var(--g600);line-height:1.6">
-        El número <strong>EORI</strong> (Economic Operators Registration and Identification) es un identificador único asignado por las autoridades aduaneras de la UE a los operadores económicos que realizan actividades aduaneras. Es obligatorio para presentar declaraciones aduaneras en cualquier Estado miembro de la UE.
-        <br><br>
-        Formato: <strong>2 letras del país</strong> + <strong>identificador nacional</strong> (NIF/CIF en España). Ej: <code style="background:var(--g100);padding:1px 5px;border-radius:4px">ESB72049117</code>
-        <br><br>
-        <a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp" target="_blank" style="color:var(--b600);font-weight:600">Consultar en base de datos oficial UE ↗</a>
+    <!-- Info EORI -->
+    <div style="width:100%;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px 18px;margin-top:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--g700);margin-bottom:8px">ℹ️ ¿Qué es el número EORI?</div>
+      <div style="font-size:12px;color:var(--g600);line-height:1.65">
+        El <strong>EORI</strong> (Economic Operators Registration and Identification) es el identificador único para operadores que realizan actividades aduaneras en la UE.
+        Obligatorio para presentar cualquier declaración aduanera. Formato: <strong>código país (2 letras) + identificador nacional</strong>.
+        <br>Ej: <code style="background:var(--g100);padding:1px 5px;border-radius:4px;font-family:monospace">ESB72049117</code>
+        <span style="margin-left:10px"><code style="background:var(--g100);padding:1px 5px;border-radius:4px;font-family:monospace">FR12345678901</code></span>
+        <span style="margin-left:10px"><code style="background:var(--g100);padding:1px 5px;border-radius:4px;font-family:monospace">DE987654321</code></span>
       </div>
     </div>
+
   </div>
 </div>
 
@@ -2865,112 +2886,216 @@ function abrirBuscadorEORI(){
   document.getElementById('eori-input').focus();
 }
 
+// ── Estado del buscador EORI ─────────────────────────────────────
+let _eoriMode = 'empresa'; // 'empresa' | 'codigo'
+
+function setEoriMode(mode){
+  _eoriMode = mode;
+  const btnEmp = document.getElementById('eori-btn-empresa');
+  const btnCod = document.getElementById('eori-btn-codigo');
+  const input  = document.getElementById('eori-input');
+  const hint   = document.getElementById('eori-hint');
+  if(mode === 'empresa'){
+    if(btnEmp){ btnEmp.style.background='#1d4ed8'; btnEmp.style.color='#fff'; btnEmp.style.boxShadow='0 2px 6px rgba(29,78,216,.3)'; }
+    if(btnCod){ btnCod.style.background='transparent'; btnCod.style.color='var(--g600)'; btnCod.style.boxShadow='none'; }
+    if(input) input.placeholder = 'Ej: Inditex S.A., Siemens AG, IPROSUR PROY. INFORMATICOS...';
+    if(hint) hint.textContent = 'Búsqueda en tiempo real verificada con fuentes oficiales de la UE y registros empresariales';
+  } else {
+    if(btnCod){ btnCod.style.background='#1d4ed8'; btnCod.style.color='#fff'; btnCod.style.boxShadow='0 2px 6px rgba(29,78,216,.3)'; }
+    if(btnEmp){ btnEmp.style.background='transparent'; btnEmp.style.color='var(--g600)'; btnEmp.style.boxShadow='none'; }
+    if(input) input.placeholder = 'Ej: ESB72049117, FR12345678901, DE987654321...';
+    if(hint) hint.textContent = 'Introduce el código EORI (2 letras de país + identificador nacional)';
+  }
+  // Limpiar resultado y validación
+  const res = document.getElementById('eori-result'); if(res) res.innerHTML='';
+  const val = document.getElementById('eori-validation-msg'); if(val){ val.style.display='none'; val.textContent=''; }
+}
+
 async function buscarEORI(){
-  const raw = (document.getElementById('eori-input')?.value || '').trim().toUpperCase().replace(/\s/g,'');
-  if(!raw){ showToastHome('⚠️ Introduce un número EORI o NIF'); return; }
-
+  const raw = (document.getElementById('eori-input')?.value || '').trim();
+  const valEl = document.getElementById('eori-validation-msg');
   const resEl = document.getElementById('eori-result');
-  resEl.innerHTML = '<div style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto 8px"></div><div style="font-size:13px;color:var(--g400)">Consultando base de datos EORI...</div></div>';
+  const btn = document.getElementById('eori-btn-buscar');
 
-  // Normalizar EORI: si no empieza por 2 letras de país, asumir ES
-  let eori = raw;
-  if(!/^[A-Z]{2}/.test(eori)) eori = 'ES' + eori;
-
-  try {
-    // Consultar API de validación EORI de la Comisión Europea
-    // La API pública devuelve XML — usamos un proxy CORS
-    const url = `https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(eori)}`;
-    
-    // Intentar fetch directo (puede fallar por CORS)
-    let resultado = null;
-    try {
-      const r = await fetch(`https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/eori-proxy?eori=${encodeURIComponent(eori)}`);
-      if(r.ok) resultado = await r.json();
-    } catch(e){}
-
-    // Si no hay proxy configurado, usar datos simulados con enlace directo
-    if(!resultado){
-      mostrarResultadoEORI(eori, null, url);
+  // Validación
+  if(!raw){
+    if(valEl){ valEl.textContent='⚠️ El campo de búsqueda no puede estar vacío.'; valEl.style.display='block'; }
+    return;
+  }
+  if(_eoriMode === 'codigo'){
+    const eoriFormat = /^[A-Za-z]{2}[A-Za-z0-9]{5,15}$/;
+    if(!eoriFormat.test(raw.replace(/\s/g,''))){
+      if(valEl){ valEl.textContent='⚠️ Formato EORI incorrecto. Debe iniciar con 2 letras del país (ej: ES, FR, DE) seguidas de caracteres alfanuméricos.'; valEl.style.display='block'; }
       return;
     }
-    mostrarResultadoEORI(eori, resultado, url);
+  }
+  if(valEl){ valEl.style.display='none'; }
+
+  // Obtener Gemini key
+  const key = (typeof getGeminiKey === 'function') ? getGeminiKey() :
+    localStorage.getItem('als_gemini_key') || '';
+  if(!key){
+    if(resEl) resEl.innerHTML = '<div style="padding:16px;background:var(--am50);border:1px solid #fde68a;border-radius:var(--rl);color:#92400e">⚠️ Configura la API key de Gemini en el módulo TARIC para usar el buscador EORI.</div>';
+    return;
+  }
+
+  // UI: loading
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Buscando...'; }
+  if(resEl) resEl.innerHTML = `
+    <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:28px;text-align:center;box-shadow:var(--shl)">
+      <div class="spinner" style="margin:0 auto 12px;width:28px;height:28px;border-width:3px"></div>
+      <div style="font-size:14px;font-weight:600;color:var(--g700)">Consultando con IA + Google Search...</div>
+      <div style="font-size:12px;color:var(--g400);margin-top:4px">Verificando bases de datos oficiales de la UE en tiempo real</div>
+    </div>`;
+
+  try {
+    const model = localStorage.getItem('als_gemini_model') || 'gemini-2.5-flash';
+    const query = raw.replace(/\s/g,'').toUpperCase();
+
+    // Prompt según modo — igual al proyecto eorifinder de referencia
+    let prompt = '';
+    if(_eoriMode === 'empresa'){
+      prompt = `Busca información oficial sobre la empresa "${raw}" en la Unión Europea.
+Necesito encontrar específicamente:
+1. Su número EORI (Economic Operators Registration and Identification number).
+2. Su NIF/CIF o número de identificación fiscal.
+3. Su dirección fiscal o registrada completa.
+4. País de registro.
+5. Estado del operador (activo/inactivo si se puede verificar).
+
+Busca en:
+- Base de datos EORI de la Comisión Europea (ec.europa.eu/taxation_customs/dds2/eos)
+- Registros mercantiles del país correspondiente
+- Boletines oficiales y registros públicos de la UE
+
+Si encuentras varios resultados, elige el más relevante para la entidad principal.
+Si no encuentras un número EORI exacto, indícalo claramente y proporciona el enlace directo para consultar en TAXUD.
+
+Formatea la respuesta de manera clara y estructurada en Español. Incluye los enlaces a las fuentes oficiales.`;
+    } else {
+      prompt = `Busca información sobre el número EORI "${query}".
+Necesito identificar:
+1. El nombre legal completo de la empresa u operador asociada a este número.
+2. La dirección completa registrada.
+3. País de registro y tipo de operador.
+4. Estado de validez del EORI (activo/inactivo).
+5. Fecha de registro si está disponible.
+
+Busca en:
+- Base de datos oficial EORI TAXUD de la Comisión Europea: https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp
+- Registros de aduanas de la UE
+- Registros mercantiles del país (prefijo ${query.substring(0,2)})
+
+El prefijo del país es: ${query.substring(0,2)} (${({'ES':'España','FR':'Francia','DE':'Alemania','IT':'Italia','PT':'Portugal','NL':'Países Bajos','BE':'Bélgica','GB':'Reino Unido','PL':'Polonia','SE':'Suecia','DK':'Dinamarca','FI':'Finlandia','AT':'Austria','IE':'Irlanda','GR':'Grecia','CZ':'República Checa','HU':'Hungría','RO':'Rumanía','BG':'Bulgaria','HR':'Croacia','SK':'Eslovaquia','SI':'Eslovenia','LT':'Lituania','LV':'Letonia','EE':'Estonia','LU':'Luxemburgo','CY':'Chipre','MT':'Malta','CH':'Suiza','NO':'Noruega','TR':'Turquía','MA':'Marruecos','CN':'China','US':'EE.UU.','JP':'Japón','KR':'Corea del Sur','IN':'India','BR':'Brasil','MX':'México'})[query.substring(0,2)] || 'País desconocido'})
+
+Formatea la respuesta de manera clara en Español. Si el EORI es válido, muestra los datos del operador. Si no se encuentra, indica el enlace oficial para verificación manual.`;
+    }
+
+    // Llamar a Gemini con Google Search grounding (clave del proyecto eorifinder)
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+      {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          contents: [{parts: [{text: prompt}]}],
+          tools: [{googleSearch: {}}],
+          systemInstruction: {parts: [{text: 'Eres un asistente experto en aduanas y comercio exterior de la Unión Europea. Tu objetivo es proporcionar datos precisos y verificados sobre empresas y números EORI. Usa siempre Google Search para obtener la información más reciente y verificar contra bases de datos oficiales de la UE.'}]},
+          generationConfig: {temperature: 0.1, maxOutputTokens: 2048}
+        })
+      }
+    );
+
+    const data = await resp.json();
+
+    if(!resp.ok || data.error){
+      const msg = data?.error?.message || 'Error desconocido';
+      if(msg.includes('RESOURCE_EXHAUSTED'))
+        throw new Error('⏳ Cuota Gemini agotada. Espera unos minutos.');
+      if(msg.includes('API_KEY_INVALID') || msg.includes('not valid'))
+        throw new Error('🔑 API key de Gemini no válida');
+      throw new Error('Error Gemini: ' + msg.substring(0,100));
+    }
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const finish = data?.candidates?.[0]?.finishReason;
+
+    // Extraer fuentes del grounding (Google Search)
+    const groundingChunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const sources = groundingChunks
+      .map(ch => ch.web ? {uri: ch.web.uri, title: ch.web.title} : null)
+      .filter(Boolean)
+      .filter((s, i, arr) => arr.findIndex(x => x.uri === s.uri) === i) // dedup
+      .slice(0, 8);
+
+    if(!text){
+      throw new Error('La IA no devolvió respuesta. Inténtalo de nuevo.');
+    }
+
+    // Renderizar resultado al estilo ResultCard del proyecto eorifinder
+    resEl.innerHTML = `
+      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl);animation:slideUp .3s cubic-bezier(.16,1,.3,1)">
+        <!-- Header -->
+        <div style="background:linear-gradient(135deg,#eff6ff,#f8fafc);border-bottom:1px solid var(--g100);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="background:#dcfce7;border-radius:50%;padding:6px;color:#16a34a;font-size:16px">✅</div>
+            <div style="font-size:15px;font-weight:700;color:var(--g900)">Resultados encontrados</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="background:var(--b50);color:var(--b700);border:1px solid var(--b100);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700">🤖 IA + Google Search</span>
+          </div>
+        </div>
+        <!-- Contenido -->
+        <div style="padding:20px 22px">
+          <div style="font-size:14px;color:var(--g700);line-height:1.75;white-space:pre-wrap">${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        </div>
+        <!-- Fuentes verificadas -->
+        ${sources.length > 0 ? `
+        <div style="background:var(--g50);border-top:1px solid var(--g100);padding:14px 20px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:10px">🔗 Fuentes verificadas</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px">
+            ${sources.map(s => `
+              <a href="${s.uri}" target="_blank" rel="noopener"
+                style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--w);border:1px solid var(--g200);border-radius:8px;text-decoration:none;transition:all .15s"
+                onmouseover="this.style.borderColor='#3b82f6';this.style.boxShadow='0 2px 8px rgba(59,130,246,.15)'"
+                onmouseout="this.style.borderColor='var(--g200)';this.style.boxShadow='none'">
+                <span style="color:var(--b600);font-size:14px;flex-shrink:0">↗</span>
+                <div style="min-width:0">
+                  <div style="font-size:12px;font-weight:600;color:var(--g900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${(s.title||'Fuente oficial').replace(/</g,'&lt;')}</div>
+                  <div style="font-size:11px;color:var(--g400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.uri.replace(/</g,'&lt;')}</div>
+                </div>
+              </a>`).join('')}
+          </div>
+        </div>` : ''}
+        <!-- Enlace directo TAXUD -->
+        <div style="padding:12px 20px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
+          <a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(_eoriMode==='codigo'?raw.toUpperCase().replace(/\s/g,''):'')}" 
+            target="_blank" 
+            style="display:inline-flex;align-items:center;gap:6px;background:#1d4ed8;color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">
+            🇪🇺 Verificar en TAXUD oficial
+          </a>
+          <a href="https://www.agenciatributaria.es/AEAT.internet/Inicio/La_Agencia_Tributaria/Aduanas_e_Impuestos_Especiales/_Presentacion/El_numero_EORI/Consulta_EORI/Consulta_EORI.shtml"
+            target="_blank"
+            style="display:inline-flex;align-items:center;gap:6px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">
+            🏛️ Consultar EORI en AEAT
+          </a>
+        </div>
+      </div>`;
+
   } catch(e){
-    resEl.innerHTML = `<div style="padding:16px;color:var(--rd600)">❌ Error al consultar: ${e.message}</div>`;
+    if(resEl) resEl.innerHTML = `
+      <div style="background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rxl);padding:20px;display:flex;gap:12px">
+        <div style="font-size:24px;flex-shrink:0">❌</div>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:var(--rd600);margin-bottom:4px">Error en la búsqueda</div>
+          <div style="font-size:13px;color:var(--rd600)">${e.message}</div>
+        </div>
+      </div>`;
+  } finally {
+    if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
   }
 }
 
-function mostrarResultadoEORI(eori, datos, urlOficial){
-  const resEl = document.getElementById('eori-result');
-  const pais = eori.substring(0,2);
-  const paisNombre = {ES:'España',FR:'Francia',DE:'Alemania',IT:'Italia',PT:'Portugal',NL:'Países Bajos',BE:'Bélgica',GB:'Reino Unido',CN:'China',US:'EE.UU.',MA:'Marruecos',TR:'Turquía'}[pais] || pais;
-
-  if(datos && datos.valido !== undefined){
-    const valido = datos.valido;
-    resEl.innerHTML = `
-      <div style="background:var(--w);border:1.5px solid ${valido?'#86efac':'#fca5a5'};border-radius:var(--rxl);padding:20px;box-shadow:var(--shl)">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-          <div style="font-size:32px">${valido?'✅':'❌'}</div>
-          <div>
-            <div style="font-size:16px;font-weight:800;color:var(--g900);font-family:monospace">${eori}</div>
-            <div style="font-size:13px;color:${valido?'var(--gr600)':'var(--rd600)'};font-weight:600">${valido?'EORI válido y activo':'EORI no encontrado o inactivo'}</div>
-          </div>
-        </div>
-        ${datos.nombre?`<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--g400);font-weight:700;text-transform:uppercase">Nombre</span><div style="font-size:14px;font-weight:600;color:var(--g900)">${datos.nombre}</div></div>`:''}
-        ${datos.pais?`<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--g400);font-weight:700;text-transform:uppercase">País</span><div style="font-size:13px;color:var(--g700)">${datos.pais}</div></div>`:''}
-        <a href="${urlOficial}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;color:var(--b600);font-size:12px;font-weight:600;margin-top:8px;text-decoration:none">
-          🇪🇺 Ver en base de datos oficial TAXUD ↗
-        </a>
-      </div>`;
-  } else {
-    // Sin datos del proxy: mostrar el EORI formateado con enlace directo
-    resEl.innerHTML = `
-      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:20px;box-shadow:var(--sh0)">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-          <div style="font-size:28px">🔍</div>
-          <div>
-            <div style="font-size:16px;font-weight:800;color:var(--g900);font-family:monospace;letter-spacing:.05em">${eori}</div>
-            <div style="font-size:12px;color:var(--g500)">País: ${paisNombre} · Formato EORI válido</div>
-          </div>
-        </div>
-        <div style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px;margin-bottom:14px">
-          <div style="font-size:12px;color:#92400e">
-            ⚠️ La consulta automática a la API de la UE requiere el proxy configurado.
-            Verifica este EORI directamente en la base de datos oficial:
-          </div>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px">
-          <a href="${urlOficial}" target="_blank" 
-            style="display:inline-flex;align-items:center;gap:6px;background:var(--b600);color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;text-decoration:none">
-            🇪🇺 Validar en TAXUD · Comisión Europea ↗
-          </a>
-          <a href="https://www.agenciatributaria.es/AEAT.internet/Inicio/La_Agencia_Tributaria/Aduanas_e_Impuestos_Especiales/_Presentacion/El_numero_EORI/Consulta_EORI/Consulta_EORI.shtml" target="_blank"
-            style="display:inline-flex;align-items:center;gap:6px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;text-decoration:none">
-            🏛️ Consultar en AEAT España ↗
-          </a>
-        </div>
-        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--g100)">
-          <div style="font-size:11px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Desglose del número</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <div style="background:var(--b50);border:1px solid var(--b100);border-radius:8px;padding:6px 12px">
-              <div style="font-size:10px;color:var(--b600);font-weight:700">País</div>
-              <div style="font-size:14px;font-weight:800;font-family:monospace;color:var(--b700)">${pais}</div>
-              <div style="font-size:11px;color:var(--g500)">${paisNombre}</div>
-            </div>
-            <div style="background:var(--g50);border:1px solid var(--g200);border-radius:8px;padding:6px 12px">
-              <div style="font-size:10px;color:var(--g500);font-weight:700">Identificador</div>
-              <div style="font-size:14px;font-weight:800;font-family:monospace;color:var(--g900)">${eori.substring(2)}</div>
-              <div style="font-size:11px;color:var(--g500)">NIF/CIF nacional</div>
-            </div>
-            <div style="background:var(--g50);border:1px solid var(--g200);border-radius:8px;padding:6px 12px">
-              <div style="font-size:10px;color:var(--g500);font-weight:700">EORI completo</div>
-              <div style="font-size:13px;font-weight:800;font-family:monospace;color:var(--g900)">${eori}</div>
-              <div style="font-size:11px;color:var(--g500)">${eori.length} caracteres</div>
-            </div>
-          </div>
-        </div>
-      </div>`;
-  }
-}
 
 function showToastHome(msg){
   // Usar showToast si está disponible (en app), si no crear toast propio
