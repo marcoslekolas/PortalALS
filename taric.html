@@ -1531,14 +1531,16 @@ async function handleFile(file){
   `;
 
   try {
-    const lineas = await leerFacturaConIA(base64, imageType, textoPlano);
-    if(!lineas || !lineas.length){
+    const resultado = await leerFacturaConIA(base64, imageType, textoPlano);
+    // leerFacturaConIA devuelve objeto {lineas:[...]} o array directo
+    const numLineas = Array.isArray(resultado) ? resultado.length : (resultado?.lineas?.length || 0);
+    if(!numLineas){
       document.getElementById('factura-info').innerHTML = '<div style="padding:12px;color:var(--rd600)">❌ No se encontraron líneas de mercancía en el documento.</div>';
       document.getElementById('factura-tbody').innerHTML = '';
       return;
     }
 
-    await renderLineasFactura(lineas, file.name);
+    await renderLineasFactura(resultado, file.name);
     document.getElementById('btn-exp-fact').style.display='';
 
   } catch(e){
@@ -1770,12 +1772,15 @@ async function clasificarTextoFactura(){
       <div class="loading-wrap" style="justify-content:center"><div class="spinner"></div><span>Clasificando mercancías...</span></div>
     </td></tr>`;
   try {
-    const lineas = await leerFacturaConIA(null, null, texto);
-    if(!lineas || !lineas.length){
+    const resultado = await leerFacturaConIA(null, null, texto);
+    // leerFacturaConIA puede devolver objeto {lineas:[...]} o array directo
+    const lineas = Array.isArray(resultado) ? resultado : (resultado?.lineas || resultado);
+    const numLineas = Array.isArray(lineas) ? lineas.length : 0;
+    if(!numLineas){
       document.getElementById('factura-info').innerHTML = '<div style="padding:12px;color:var(--rd600)">❌ No se pudieron clasificar las líneas. Revisa el texto e inténtalo de nuevo.</div>';
       return;
     }
-    await renderLineasFactura(lineas, 'Texto pegado');
+    await renderLineasFactura(resultado, 'Texto pegado');
     document.getElementById('btn-exp-fact').style.display='';
   } catch(e){
     document.getElementById('factura-info').innerHTML = `<div style="padding:12px;color:var(--rd600)">❌ ${e.message}</div>`;
