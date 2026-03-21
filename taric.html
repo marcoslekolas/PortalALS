@@ -994,12 +994,18 @@ function closeModal(){ document.getElementById('mo').classList.remove('open'); }
 // ── Navigation home ───────────────────────────────────────────
 function goHome(){
   try {
-    if(window.opener && !window.opener.closed && typeof window.opener.showHome==='function'){
-      window.opener.showHome(); window.opener.focus(); return;
+    // Si se abrió con window.open, cerrar y volver al opener
+    if(window.opener && !window.opener.closed){
+      try {
+        if(typeof window.opener.showHome==='function') window.opener.showHome();
+        window.opener.focus();
+        window.close();
+        return;
+      } catch(e){}
     }
-    // Navigate back to ALS portal
-    const base = window.location.href.replace(/\/taric\.html.*$/, '');
-    window.location.href = base + '/index.html';
+    // Navegación directa — funciona en móvil, PWA, y acceso directo
+    const base = window.location.href.replace(/\/taric\.html.*$/, '').replace(/\/$/, '');
+    window.location.href = base ? base + '/index.html' : 'index.html';
   } catch(e){ window.location.href = 'index.html'; }
 }
 
@@ -1874,76 +1880,86 @@ function _setFacturaStatus(msg){
   if(el2) el2.textContent = msg;
 }
 
-// ── Renderizar PDF como imagen JPEG de alta resolución ───────────
-// Usa PDF.js para renderizar cada página en canvas y exportar como JPEG
-// Esto es el OCR real: Gemini recibe la imagen y lee el texto visualmente
+// ── CARGA PDF.js UNA VEZ ─────────────────────────────────────────
+let _pdfjsLoadPromise = null;
+async function _cargarPDFjs(){
+  if(window.pdfjsLib) return true;
+  if(_pdfjsLoadPromise) return _pdfjsLoadPromise;
+  _pdfjsLoadPromise = new Promise((resolve) => {
+    // Usar versión sin worker (más fiable en GitHub Pages / entornos restringidos)
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+    s.onload = () => {
+      if(window.pdfjsLib){
+        // DisableWorker = true evita problemas con el worker en entornos HTTPS estrictos
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+      }
+      resolve(!!window.pdfjsLib);
+    };
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+  return _pdfjsLoadPromise;
+}
+
+// ── Renderizar PDF como imagen JPEG ──────────────────────────────
 async function renderPDFaImagen(file){
-  // Cargar PDF.js si no está disponible
-  if(!window.pdfjsLib){
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.id = 'pdfjs-umd';
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
-      s.onload = () => {
-        if(window.pdfjsLib){
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-        }
-        resolve();
-      };
-      s.onerror = () => reject(new Error('PDF.js CDN no disponible'));
-      document.head.appendChild(s);
-    });
+  _setFacturaStatus('Cargando PDF.js...');
+  const loaded = await _cargarPDFjs();
+  if(!loaded) throw new Error('PDF.js no disponible');
+
+  _setFacturaStatus('Analizando PDF...');
+  const buf = await file.arrayBuffer();
+  
+  let pdf;
+  try {
+    pdf = await window.pdfjsLib.getDocument({data: new Uint8Array(buf)}).promise;
+  } catch(e){
+    throw new Error('PDF inválido o protegido: ' + e.message);
   }
 
-  if(!window.pdfjsLib) return null;
+  const nPages = pdf.numPages;
+  const maxPags = Math.min(nPages, 3); // máx 3 páginas para no exceder límite Gemini
+  const renders = [];
 
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await window.pdfjsLib.getDocument({data: arrayBuffer}).promise;
-  const numPages = pdf.numPages;
-
-  // Si el PDF tiene varias páginas, renderizar todas y combinar verticalmente
-  const pageImages = [];
-  for(let pageNum = 1; pageNum <= Math.min(numPages, 4); pageNum++){
-    _setFacturaStatus(`Renderizando página ${pageNum}/${numPages}...`);
-    const page = await pdf.getPage(pageNum);
-    // Escala 2.0 = alta resolución para OCR (equivale a ~150 DPI)
-    const scale = 2.0;
-    const viewport = page.getViewport({scale});
+  for(let i = 1; i <= maxPags; i++){
+    _setFacturaStatus(`Renderizando página ${i}/${nPages}...`);
+    const page = await pdf.getPage(i);
+    const vp = page.getViewport({scale: 2.0}); // 2x = ~150 DPI, suficiente para OCR
     const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+    canvas.width  = vp.width;
+    canvas.height = vp.height;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({canvasContext: ctx, viewport}).promise;
-    pageImages.push({canvas, width: viewport.width, height: viewport.height});
+    await page.render({canvasContext: ctx, viewport: vp}).promise;
+    renders.push(canvas);
   }
 
-  if(pageImages.length === 0) return null;
-
-  // Si solo hay una página, exportar directamente
-  if(pageImages.length === 1){
-    return pageImages[0].canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+  if(renders.length === 1){
+    return renders[0].toDataURL('image/jpeg', 0.92).split(',')[1];
   }
 
-  // Combinar múltiples páginas verticalmente
-  const totalHeight = pageImages.reduce((sum, p) => sum + p.height + 20, 0);
-  const maxWidth = Math.max(...pageImages.map(p => p.width));
+  // Combinar páginas verticalmente
+  const W = Math.max(...renders.map(c => c.width));
+  const H = renders.reduce((s, c) => s + c.height + 16, 0);
   const combined = document.createElement('canvas');
-  combined.width = maxWidth;
-  combined.height = totalHeight;
-  const combCtx = combined.getContext('2d');
-  combCtx.fillStyle = '#f0f0f0';
-  combCtx.fillRect(0, 0, maxWidth, totalHeight);
+  combined.width = W; combined.height = H;
+  const cc = combined.getContext('2d');
+  cc.fillStyle = '#e5e7eb';
+  cc.fillRect(0, 0, W, H);
   let y = 0;
-  for(const {canvas, width, height} of pageImages){
-    const x = Math.floor((maxWidth - width) / 2);
-    combCtx.drawImage(canvas, x, y);
-    y += height + 20;
+  for(const pg of renders){
+    cc.drawImage(pg, Math.floor((W - pg.width) / 2), y);
+    y += pg.height + 16;
   }
   return combined.toDataURL('image/jpeg', 0.90).split(',')[1];
 }
+
+// Alias para compatibilidad
+async function extraerPDFConPDFjs(file){ return renderPDFaImagen(file); }
+async function _doPDFExtract(file, resolve, reject){ try{ resolve(await renderPDFaImagen(file)); }catch(e){ reject(e); } }
 
 // ── Comprimir imagen para OCR (máx 4000px, JPEG 0.95) ───────────
 async function comprimirImagenParaOCR(file){
