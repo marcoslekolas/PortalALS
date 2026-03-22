@@ -2694,6 +2694,10 @@ async function handleDUAFile(file, cfg){
 }
 
 async function generarBorradorDUA(base64, mediaType, cfg){
+  // Calcular código de documento de transporte según modo C.25
+  const _codTransporte = cfg?.transporte === '3' ? 'N730' : cfg?.transporte === '4' ? 'N740' : cfg?.transporte === '2' ? 'N720' : 'N705';
+  const _descTransporte = cfg?.transporte === '3' ? 'Carta de porte CMR (carretera)' : cfg?.transporte === '4' ? 'Conocimiento aéreo AWB' : cfg?.transporte === '2' ? 'Carta porte ferroviario CIM' : 'Conocimiento de embarque marítimo B/L';
+
   const cfgInstrucciones = cfg ? `
 CONFIGURACIÓN PREVIA INDICADA POR EL DECLARANTE:
 - Tipo de DUA: ${cfg.tipo}
@@ -2774,7 +2778,8 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
   "casilla_40_declaracion_anterior": "Sumaria/Partida o vacío",
   "casilla_41_unidad_suplementaria": {"cantidad": 0, "unidad": ""},
   "casilla_44_documentos": [
-    {\"codigo\": \"N380\", \"referencia\": \"Núm. factura\", \"descripcion\": \"Factura comercial\"},\n    {\"codigo\": \"${cfg?.transporte === '3' ? 'N730' : cfg?.transporte === '4' ? 'N740' : cfg?.transporte === '2' ? 'N720' : 'N705'}\", \"referencia\": \"\", \"descripcion\": \"${cfg?.transporte === '3' ? 'Carta de porte CMR (carretera)' : cfg?.transporte === '4' ? 'Conocimiento aéreo AWB' : cfg?.transporte === '2' ? 'Carta porte ferroviario' : 'Conocimiento embarque marítimo'}\"}
+    {"codigo": "N380", "referencia": "Núm. factura", "descripcion": "Factura comercial"},
+    {"codigo": "${_codTransporte}", "referencia": "", "descripcion": "${_descTransporte}"}
   ],
   "casilla_45_ajuste": {"codigo": "AB|AC|AD", "importe": 0},
   "casilla_46_valor_estadistico": 0,
