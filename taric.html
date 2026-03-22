@@ -736,7 +736,7 @@ textarea.fi{resize:vertical;min-height:80px}
                   Este módulo genera un <strong>borrador completo del DUA</strong> con todas las casillas numeradas según la resolución AEAT vigente.
                   La IA extrae e infiere automáticamente los datos de la factura: TARIC, valor aduanero, origen, régimen, casillas 31, 40, 44, 47, S29, S32 y más.
                   Para importar directamente a Visual Trans se requiere el schema XML de importación de dossiers de VT — consultar soporte VT o
-                  <a href="https://wiki.bytemaster.es/aduanas-despachos/" target="_blank" style="color:var(--b600)">wiki de configuración</a>.
+                  <a href="https://visualtrans.com/" target="_blank" style="color:var(--b600)">visualtrans.com ↗</a>.
                 </div>
                 <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
                   <span class="badge badge-blue">DUA Importación H1</span>
@@ -850,47 +850,54 @@ textarea.fi{resize:vertical;min-height:80px}
         </div>
       </div>
 
-      <!-- Fila 2: Régimen solicitado + precedente -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div>
-          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Régimen solicitado (C.1)</label>
-          <select id="dcfg-regimen" class="fi" style="width:100%">
-            <option value="40">40 — Despacho a libre práctica</option>
-            <option value="42">42 — Libre práctica + régimen especial simultáneo</option>
-            <option value="61">61 — Reimportación en libre práctica</option>
-            <option value="63">63 — Reimportación con despacho a consumo simultáneo</option>
-            <option value="10">10 — Exportación definitiva</option>
-            <option value="11">11 — Exportación definitiva tras perfeccionamiento activo</option>
-            <option value="21">21 — Exportación temporal (perfeccionamiento pasivo)</option>
-            <option value="23">23 — Exportación temporal para reimportación en el mismo estado</option>
-            <option value="31">31 — Reexportación</option>
-            <option value="51">51 — Perfeccionamiento activo</option>
-            <option value="53">53 — Importación temporal</option>
-            <option value="54">54 — Importación temporal en doble suspensión</option>
-            <option value="71">71 — Depósito aduanero</option>
-            <option value="76">76 — Depósito aduanero + perfeccionamiento activo</option>
-            <option value="78">78 — Introducción en zona franca</option>
-            <option value="91">91 — Control aduanero uso final</option>
-            <option value="T1">T1 — Tránsito externo</option>
-            <option value="T2">T2 — Tránsito interno comunitario</option>
-          </select>
+      <!-- Fila 2: Régimen aduanero unificado -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Régimen aduanero (C.1) *</label>
+        <select id="dcfg-regimen-combo" class="fi" style="width:100%" onchange="aplicarRegimenCombo(this.value)">
+          <option value="40|00|H1">Importación libre práctica — 40/00</option>
+          <option value="42|00|H1">Importación libre práctica + ré. especial simultáneo — 42/00</option>
+          <option value="51|00|H1">Perfeccionamiento activo — 51/00</option>
+          <option value="53|00|H1">Importación temporal — 53/00</option>
+          <option value="71|00|H1">Depósito de aduana (DVA) — 71/00</option>
+          <option value="61|23|H1">Reimportación (tras exportación temporal) — 61/23</option>
+          <option value="10|00|AES">Exportación definitiva — 10/00</option>
+          <option value="21|00|AES">Exportación temporal (perfeccionamiento pasivo) — 21/00</option>
+          <option value="23|00|AES">Exportación temporal (reimportación en mismo estado) — 23/00</option>
+          <option value="31|51|AES">Reexportación tras perfeccionamiento activo — 31/51</option>
+          <option value="31|71|AES">Reexportación tras depósito aduanero — 31/71</option>
+          <option value="T1|00|NCTS">Tránsito externo T1 — mercancía no comunitaria</option>
+          <option value="T2|00|NCTS">Tránsito interno T2 — mercancía comunitaria</option>
+        </select>
+        <!-- Campos ocultos con valores reales -->
+        <input type="hidden" id="dcfg-regimen" value="40">
+        <input type="hidden" id="dcfg-regimen-prev" value="00">
+        <input type="hidden" id="dcfg-vt-ref" value="H1">
+        <div id="dcfg-regimen-info" style="margin-top:6px;font-size:11px;color:var(--g500);display:flex;gap:12px;flex-wrap:wrap">
+          <span>Solicitado: <strong id="dcfg-reg-sol">40</strong></span>
+          <span>Precedente: <strong id="dcfg-reg-prev">00</strong></span>
+          <span>Preferencia: <strong>100</strong></span>
+          <span style="color:var(--b600)">Ref. VT: <strong id="dcfg-reg-vt">H1</strong></span>
         </div>
-        <div>
-          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Régimen precedente (C.1)</label>
-          <select id="dcfg-regimen-prev" class="fi" style="width:100%">
-            <option value="00">00 — Sin régimen precedente</option>
-            <option value="10">10 — Exportación temporal previa</option>
-            <option value="21">21 — Exportación temporal (reimportación)</option>
-            <option value="23">23 — Exportación temporal en mismo estado</option>
-            <option value="51">51 — Perfeccionamiento activo</option>
-            <option value="53">53 — Importación temporal</option>
-            <option value="71">71 — Depósito aduanero</option>
-            <option value="78">78 — Zona franca</option>
-            <option value="91">91 — Control aduanero uso final</option>
-            <option value="T1">T1 — Tránsito externo</option>
-            <option value="T2">T2 — Tránsito interno</option>
-          </select>
-        </div>
+      </div>
+
+      <!-- Campo aduana destino tránsito (oculto por defecto) -->
+      <div id="dcfg-transito-destino-wrap" style="display:none">
+        <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Aduana de destino (Tránsito)</label>
+        <input id="dcfg-transito-destino" class="fi" placeholder="Ej: ES001131, FR001000, DETXXX..." style="width:100%" list="dcfg-aduana-destino-list">
+        <datalist id="dcfg-aduana-destino-list">
+          <option value="ES001131 — Algeciras Marítima">
+          <option value="ES001167 — La Línea de la Concepción">
+          <option value="ES001165 — Algeciras Recinto Interior">
+          <option value="ES006000 — Málaga">
+          <option value="ES007000 — Sevilla">
+          <option value="ES010000 — Madrid-Barajas">
+          <option value="ES028000 — Valencia">
+          <option value="ES008000 — Barcelona">
+          <option value="FR001000 — París">
+          <option value="DE0100 — Frankfurt">
+          <option value="GBBEL004 — Belfast">
+          <option value="MA010000 — Tánger MED">
+        </datalist>
       </div>
 
       <!-- Fila 3: Ubicación de la mercancía -->
@@ -2135,7 +2142,7 @@ async function clasificarTextoFactura(){
 function exportarFactura(){
   const rows = document.querySelectorAll('#factura-tbody tr');
   if(!rows.length) return;
-  const headers = ['#','Descripción original','Código TARIC','Descripción NC','Arancel EO','Confianza'];
+  const headers = ['#','Descripción original','Código TARIC','Descripción NC','Arancel EO','Confianza','Medidas TARIC'];
   const data = [headers];
   rows.forEach(tr=>{
     const cells = tr.querySelectorAll('td');
@@ -2146,7 +2153,8 @@ function exportarFactura(){
         cells[2].textContent.replace(/\s+/g,' ').trim(),
         cells[3].textContent.trim(),
         cells[4].textContent.trim(),
-        cells[6].querySelector('div')?.textContent.trim()||''
+        cells[6].querySelector('div')?.textContent.trim()||'',
+        cells[7]?.querySelector('.badge')?.textContent.trim()||cells[7]?.textContent.trim()||''
       ]);
     }
   });
@@ -2601,6 +2609,27 @@ function toggleUbicacionOtra(){
   if(otra) otra.style.display = sel.value === 'otra' ? '' : 'none';
 }
 
+function aplicarRegimenCombo(val){
+  if(!val) return;
+  const [sol, prev, vtRef] = val.split('|');
+  document.getElementById('dcfg-regimen').value = sol;
+  document.getElementById('dcfg-regimen-prev').value = prev;
+  document.getElementById('dcfg-vt-ref').value = vtRef;
+  document.getElementById('dcfg-reg-sol').textContent = sol;
+  document.getElementById('dcfg-reg-prev').textContent = prev;
+  document.getElementById('dcfg-reg-vt').textContent = vtRef;
+  // Mostrar campo aduana destino solo en tránsito
+  const esTransito = sol === 'T1' || sol === 'T2';
+  document.getElementById('dcfg-transito-destino-wrap').style.display = esTransito ? '' : 'none';
+  // Actualizar tipo DUA automáticamente según régimen
+  const tipSel = document.getElementById('dcfg-tipo');
+  if(tipSel){
+    if(vtRef === 'AES') tipSel.value = 'EX-A-EXPORTACION';
+    else if(vtRef === 'NCTS') tipSel.value = sol === 'T1' ? 'T1-TRANSITO' : 'T2-TRANSITO';
+    else if(['40','42','51','53','71','61'].includes(sol)) tipSel.value = 'H1-IMPORTACION';
+  }
+}
+
 function confirmarConfigDUA(){
   if(!_duaPendingFile) return;
   const cfg = {
@@ -2608,11 +2637,13 @@ function confirmarConfigDUA(){
     aduana: document.getElementById('dcfg-aduana')?.value || 'ES001131 — Algeciras Marítima',
     regimen: document.getElementById('dcfg-regimen')?.value || '40',
     regimenPrev: document.getElementById('dcfg-regimen-prev')?.value || '00',
+    vtRef: document.getElementById('dcfg-vt-ref')?.value || 'H1',
     transporte: document.getElementById('dcfg-transporte')?.value || '1',
     incoterm: document.getElementById('dcfg-incoterm')?.value || '',
     ubicacion: document.getElementById('dcfg-ubicacion')?.value === 'otra'
       ? (document.getElementById('dcfg-ubicacion-otra')?.value || '')
       : (document.getElementById('dcfg-ubicacion')?.value || ''),
+    aduanaDestino: document.getElementById('dcfg-transito-destino')?.value || '',
     observaciones: document.getElementById('dcfg-obs')?.value?.trim() || '',
   };
   const modal = document.getElementById('dua-config-modal');
@@ -2666,11 +2697,13 @@ async function generarBorradorDUA(base64, mediaType, cfg){
   const cfgInstrucciones = cfg ? `
 CONFIGURACIÓN PREVIA INDICADA POR EL DECLARANTE:
 - Tipo de DUA: ${cfg.tipo}
+- Referencia sistema declarante: ${cfg.vtRef || 'H1'} (AES=Exportación, H1=Importación, NCTS=Tránsito)
 - Aduana de despacho: ${cfg.aduana}
 - Casilla 1 — Régimen solicitado: ${cfg.regimen} / Régimen precedente: ${cfg.regimenPrev}
 - Casilla 25 — Modo de transporte en frontera: ${cfg.transporte}
 ${cfg.incoterm ? `- Casilla 20 — Incoterm: ${cfg.incoterm}` : '- Casilla 20 — Incoterm: inferir de la factura'}
 - Casilla 30 — Código de localización: ${cfg.ubicacion}
+${cfg.aduanaDestino ? `- Aduana de destino (tránsito C.53): ${cfg.aduanaDestino}` : ''}
 ${cfg.observaciones ? `- Instrucciones adicionales: ${cfg.observaciones}` : ''}
 
 APLICA EXACTAMENTE esta configuración. No infiereas el tipo de DUA ni el régimen — usa los valores indicados.
@@ -2740,8 +2773,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks ni texto adicional):
   "casilla_41_unidad_suplementaria": {"cantidad": 0, "unidad": ""},
   "casilla_44_documentos": [
     {"codigo": "N380", "referencia": "Núm. factura", "descripcion": "Factura comercial"},
-    {"codigo": "N271", "referencia": "", "descripcion": "Lista de bultos"},
-    {"codigo": "N703", "referencia": "", "descripcion": "Conocimiento de embarque B/L"}
+    {"codigo": "N705", "referencia": "", "descripcion": "Conocimiento de embarque marítimo N705"}
   ],
   "casilla_45_ajuste": {"codigo": "AB|AC|AD", "importe": 0},
   "casilla_46_valor_estadistico": 0,
@@ -3010,7 +3042,7 @@ function renderBorradorDUA(d, container, filename){
           <button class="btn btn-p btn-sm" onclick="exportarDUA()">⬇️ JSON</button>
           <button class="btn btn-s btn-sm" onclick="exportarDUACSV()">📊 CSV</button>
           <button class="btn btn-g btn-sm" onclick="exportarDUAExcel()">📊 Excel</button>
-          <a href="https://wiki.bytemaster.es/aduanas-despachos/" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📚 Wiki Visual Trans</a>
+          <a href="https://visualtrans.com/" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📚 Visual Trans ↗</a>
         </div>
       </div>
 
@@ -3117,39 +3149,49 @@ async function cargarHistorialDUA(){
 
 async function mostrarHistorialDUA(){
   const historial = await cargarHistorialDUA();
+  
+  document.getElementById('m-title').textContent = '📋 Historial de Borradores DUA';
+  
   if(!historial.length){
-    showToast('Sin borradores DUA guardados aún');
+    document.getElementById('m-body').innerHTML = `
+      <div style="padding:32px;text-align:center;color:var(--g400)">
+        <div style="font-size:32px;margin-bottom:8px">📄</div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">Sin borradores guardados</div>
+        <div style="font-size:12px">Los borradores DUA se guardan automáticamente al generarlos</div>
+      </div>`;
+    document.getElementById('m-foot').innerHTML = `<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>`;
+    document.getElementById('mo').classList.add('open');
     return;
   }
+
   const rows = historial.map(h => `
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--g100);font-size:12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--g100);font-size:12px;cursor:pointer" onclick="recuperarDUA(${h.id})" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background=''">
       <div>
         <div style="font-weight:700;color:var(--g900)">${h.num_factura||'—'}</div>
         <div style="color:var(--g400);font-size:11px">${h.proveedor||'—'}</div>
       </div>
       <div>
         <span class="badge badge-blue" style="font-size:10px">${h.tipo_dua||'—'}</span>
-        <div style="color:var(--g400);font-size:11px;margin-top:3px">${h.aduana||'—'}</div>
+        <div style="color:var(--g400);font-size:11px;margin-top:3px">${(h.aduana||'—').split('—').pop()?.trim()||'—'}</div>
       </div>
       <div>
         <div style="font-weight:600">${Number(h.valor_total||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</div>
         <div style="color:var(--g400);font-size:11px">${h.num_partidas||0} partidas · ${new Date(h.created_at).toLocaleDateString('es-ES')}</div>
       </div>
-      <button class="btn btn-s btn-sm" onclick="recuperarDUA(${h.id})" style="font-size:11px">Ver</button>
+      <button class="btn btn-s btn-sm" style="font-size:11px">Abrir</button>
     </div>
   `).join('');
 
-  document.getElementById('m-title').textContent = '📋 Historial de Borradores DUA';
   document.getElementById('m-body').innerHTML = `
-    <div style="font-size:12px;color:var(--g500);margin-bottom:10px">${historial.length} borradores guardados</div>
-    <div style="border:1px solid var(--g200);border-radius:8px;overflow:hidden">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;padding:8px 14px;background:var(--g50);font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase">
+    <div style="font-size:12px;color:var(--g500);margin-bottom:10px">${historial.length} borrador${historial.length>1?'es':''} guardado${historial.length>1?'s':''}</div>
+    <div style="border:1px solid var(--g200);border-radius:8px;overflow:hidden;max-height:400px;overflow-y:auto">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;padding:8px 14px;background:var(--g50);font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;position:sticky;top:0">
         <div>Factura / Proveedor</div><div>Tipo / Aduana</div><div>Valor</div><div></div>
       </div>
       ${rows}
     </div>`;
-  document.getElementById('m-foot').innerHTML = '';
-  document.getElementById('mo').style.display='flex';
+  document.getElementById('m-foot').innerHTML = `<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>`;
+  document.getElementById('mo').classList.add('open');
 }
 
 async function recuperarDUA(id){
