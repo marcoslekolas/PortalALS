@@ -997,6 +997,10 @@ const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 //   Resto — gratis extra: gemma-3-27b, gemma-3-4b (si las anteriores tienen rate limit)
 //   EVITADO: nemotron (127s timeout), llama-3.3 (429 frecuente), mistral-3.1-24b (429 frecuente)
 const OR_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+// Proxy seguro via Supabase Edge Function — la key nunca sale al cliente
+// Cuando esté desplegado, todas las llamadas van por aquí automáticamente
+const OR_PROXY_ENDPOINT = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/openrouter-proxy';
+let _proxyDisponible = null; // null=sin probar, true=funciona, false=no disponible
 // Modelo por defecto — con crédito usa mistral-small-4 (vision); sin crédito usa gemma-3-12b
 const OR_MODEL_DEFAULT = 'mistralai/mistral-small-2603';  // $0.15/$0.60 por M tokens, vision ✅
 const OR_MODEL_VISION_FALLBACK  = 'google/gemma-3-12b-it:free';
@@ -1078,46 +1082,59 @@ async function _callOpenRouter(messages, modelOverride, forceJson){
   // Esperar a que la key esté disponible
   await _orKeyPromise;
   let key = getOpenRouterKey();
-
-  // Si aún no hay key, intentar cargar de Supabase ahora mismo
   if(!key){
     await loadOpenRouterKeyFromSupabase();
     key = getOpenRouterKey();
   }
 
-  if(!key) throw new Error('⚙️ API key no configurada. Introduce tu key de OpenRouter en el panel lateral.');
-
   const model = modelOverride || getOpenRouterModel();
   const body = { model, messages, temperature: 0.1, max_tokens: 8192 };
-  
-  // response_format: json_object NO es compatible con mensajes que contienen imágenes
-  // (Mistral, Gemma y otros devuelven 400 en ese caso)
   const hasImages = messages.some(m =>
     Array.isArray(m.content) && m.content.some(p => p.type === 'image_url')
   );
   if(forceJson && !hasImages) body.response_format = { type: 'json_object' };
 
-  // Timeout adaptativo: 90s con imagen (PDFs pesados), 30s sin imagen
   const _timeout = hasImages ? 90000 : 30000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), _timeout);
 
+  // Intentar proxy seguro primero (si está desplegado), si no usar OpenRouter directo
+  // El proxy no requiere key en el cliente — la gestiona server-side
+  const usarProxy = _proxyDisponible !== false;
+  const endpoint = usarProxy ? OR_PROXY_ENDPOINT : OR_ENDPOINT;
+  const headers = { 'Content-Type': 'application/json' };
+  if(!usarProxy){
+    if(!key) throw new Error('⚙️ API key no configurada. Introduce tu key de OpenRouter en el panel lateral.');
+    headers['Authorization'] = `Bearer ${key}`;
+    headers['HTTP-Referer'] = 'https://marcoslekolas.github.io/PortalALS/';
+    headers['X-Title'] = 'Customs Way TARIC';
+  }
+
   let resp, data;
   try {
-    resp = await fetch(OR_ENDPOINT, {
+    resp = await fetch(endpoint, {
       method: 'POST',
       signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${key}`,
-        'HTTP-Referer': 'https://marcoslekolas.github.io/PortalALS/',
-        'X-Title': 'Customs Way TARIC'
-      },
+      headers,
       body: JSON.stringify(body)
     });
     data = await resp.json();
+
+    // Si el proxy da 404/503 (no desplegado aún), marcar como no disponible y reintentar directo
+    if(usarProxy && (resp.status === 404 || resp.status === 503) && _proxyDisponible === null){
+      _proxyDisponible = false;
+      clearTimeout(timeoutId);
+      return _callOpenRouter(messages, modelOverride, forceJson);
+    }
+    if(usarProxy && resp.ok) _proxyDisponible = true;
+
   } catch(fetchErr) {
     clearTimeout(timeoutId);
+    // Si el proxy falla con error de red, marcar como no disponible y reintentar
+    if(usarProxy && _proxyDisponible === null){
+      _proxyDisponible = false;
+      return _callOpenRouter(messages, modelOverride, forceJson);
+    }
     if(fetchErr.name === 'AbortError'){
       throw new Error('RATE_LIMIT:' + model + ':timeout — modelo tardó demasiado, probando siguiente...');
     }
@@ -3174,6 +3191,5 @@ const _navOriginal = nav;
 // nav already handles all views generically
 
 </script>
-</head>
 </body>
 </html>
