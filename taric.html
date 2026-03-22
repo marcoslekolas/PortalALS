@@ -445,6 +445,7 @@ textarea.fi{resize:vertical;min-height:80px}
         <div style="display:flex;align-items:center;gap:8px">
           <div style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:7px;padding:2px 7px;font-size:10px;font-weight:800;letter-spacing:.3px;color:rgba(255,255,255,.9);font-family:monospace">CW</div>
           <div class="hdr-title">Customs Way · Clasificador TARIC</div>
+          <div style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:1px 6px;font-size:9px;font-weight:700;color:rgba(255,255,255,.6);font-family:monospace">v3.1</div>
         </div>
         <div class="hdr-subtitle">Representación Aduanera UE · Algeciras Marítima · La Línea</div>
       </div>
@@ -699,7 +700,7 @@ textarea.fi{resize:vertical;min-height:80px}
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <input id="hist-search" class="fi" style="width:200px" placeholder="🔍 Filtrar..." oninput="filtrarHistorial(this.value)">
-            <button class="btn btn-g btn-sm" onclick="exportarHistorial()">⬇️ CSV</button>
+            <button class="btn btn-g btn-sm" onclick="exportarHistorial()">⬇️ CSV</button><button class="btn btn-g btn-sm" onclick="exportarHistorialExcel()">📊 Excel</button>
           </div>
         </div>
         <div class="view-body">
@@ -718,6 +719,7 @@ textarea.fi{resize:vertical;min-height:80px}
             <div class="ps">Extracción automática de datos de factura → borrador DUA con todas las casillas · Compatible Visual Trans</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-g btn-sm" onclick="mostrarHistorialDUA()" title="Ver borradores anteriores">📋 Historial</button>
             <button class="btn btn-g btn-sm" onclick="exportarDUA()" id="btn-exp-dua" style="display:none">⬇️ JSON/CSV</button>
             <button class="btn btn-s btn-sm" onclick="limpiarDUA()">Limpiar</button>
           </div>
@@ -1038,27 +1040,10 @@ if(localStorage.getItem('als_openrouter_key')) _orKeyResolve && _orKeyResolve();
 setTimeout(() => _orKeyResolve && _orKeyResolve(), 3000);
 
 async function loadOpenRouterKeyFromSupabase(){
+  // La key ya NO se guarda en Supabase (RLS la protege del lado servidor)
+  // La key vive en localStorage de cada dispositivo — introducida una vez por el admin
+  // Esta función solo carga configuración no sensible: modelo activo
   if(!sb) return;
-  // Cargar key — intentar con nombre nuevo y legacy por compatibilidad
-  try {
-    let keyVal = null;
-    const {data:dk1} = await sb.from('als_config').select('valor').eq('clave','openrouter_api_key').single();
-    if(dk1?.valor) keyVal = dk1.valor;
-    if(!keyVal){
-      const {data:dk2} = await sb.from('als_config').select('valor').eq('clave','gemini_api_key').single();
-      if(dk2?.valor) keyVal = dk2.valor;
-    }
-    if(keyVal){
-      _orKeyCache = keyVal;
-      localStorage.setItem('als_openrouter_key', keyVal);
-      const inp = document.getElementById('sb-apikey-input');
-      const st = document.getElementById('sb-apikey-status');
-      if(inp) inp.value = keyVal;
-      if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
-      _orKeyResolve && _orKeyResolve();
-    }
-  } catch(e){ console.warn('Error cargando key:', e.message); }
-  // Cargar modelo — separado para que un fallo no afecte la key
   try {
     let modelVal = null;
     const {data:dm1} = await sb.from('als_config').select('valor').eq('clave','or_model').single();
@@ -1073,6 +1058,8 @@ async function loadOpenRouterKeyFromSupabase(){
       if(sel){ for(const o of sel.options) if(o.value===modelVal) o.selected=true; }
     }
   } catch(e){}
+  // Resolver la promesa si la key ya está en localStorage
+  if(getOpenRouterKey()) _orKeyResolve && _orKeyResolve();
 }
 
 async function guardarModeloSupabase(model){
@@ -1081,10 +1068,9 @@ async function guardarModeloSupabase(model){
 }
 
 async function saveOpenRouterKeyToSupabase(key){
-  if(!sb || !key) return;
-  try {
-    await sb.from('als_config').upsert({clave:'openrouter_api_key', valor:key}, {onConflict:'clave'});
-  } catch(e){ console.warn('No se pudo guardar en Supabase:', e.message); }
+  // La key se guarda solo en localStorage del dispositivo (RLS protege Supabase)
+  // No se sube a Supabase para evitar exposición
+  if(key) localStorage.setItem('als_openrouter_key', key);
 }
 
 // ── Función central OpenRouter ────────────────────────────────
@@ -1209,6 +1195,11 @@ window.addEventListener('load', function(){
   initUser();
   setupDropZone();
   loadHistorialBadge();
+  // Registrar Service Worker para funcionamiento offline
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('./sw-taric.js', {scope:'./'})
+      .catch(()=>{}); // silencioso si falla (ej. en localhost)
+  }
 });
 
 function initUser(){
@@ -1270,22 +1261,22 @@ async function initOpenRouterUI(){
   if(sel && currentModel){
     for(const opt of sel.options) if(opt.value === currentModel) opt.selected = true;
   }
-  // Si hay key en localStorage, usarla inmediatamente
+  // Cargar key desde localStorage — fuente de verdad en este dispositivo
   const localKey = localStorage.getItem('als_openrouter_key');
   const inp = document.getElementById('sb-apikey-input');
+  const st = document.getElementById('sb-apikey-status');
   if(localKey){
     _orKeyCache = localKey;
     if(inp) inp.value = localKey;
-  }
-  // Cargar desde Supabase — SIEMPRE esperar (la key de Supabase es la fuente de verdad)
-  await loadOpenRouterKeyFromSupabase();
-  // Actualizar indicador según si tenemos key
-  const st = document.getElementById('sb-apikey-status');
-  if(getOpenRouterKey()){
     if(st){ st.textContent='✅'; st.style.background='var(--gr50)'; }
+    _orKeyResolve && _orKeyResolve(); // key disponible inmediatamente
   } else {
+    // Sin key en este dispositivo — pedir al usuario
     if(st){ st.textContent='⚠️'; st.style.background='var(--am50)'; }
+    console.warn('Sin API key en este dispositivo — introduce tu key de OpenRouter en el panel lateral');
   }
+  // Cargar config no sensible desde Supabase (modelo)
+  loadOpenRouterKeyFromSupabase().catch(()=>{});
 }
 
 function toggleDarkMode(){
@@ -1629,7 +1620,7 @@ function mostrarResultado(r, container){
       <!-- Actions -->
       <div style="padding:14px 24px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-p btn-sm" onclick="clasificarVariante()">🔄 Clasificar variante</button>
-        <button class="btn btn-s btn-sm" onclick="exportarResultado()">⬇️ Exportar</button>
+        <button class="btn btn-s btn-sm" onclick="exportarResultado()">⬇️ CSV</button><button class="btn btn-g btn-sm" onclick="exportarClasificacionExcel()">📊 Excel</button>
         <button class="btn btn-s btn-sm" onclick="nav('historial',document.querySelector('[onclick*=historial]'))">🕑 Ver historial</button>
       </div>
     </div>
@@ -1647,7 +1638,116 @@ function clasificarVariante(){
   showToast('💡 Modifica la descripción y vuelve a clasificar');
 }
 
-function exportarResultado(){
+// ── Exportación Excel con SheetJS (lazy-load) ─────────────────
+let _xlsxLoaded = false;
+async function loadXLSX(){
+  if(_xlsxLoaded || window.XLSX) return (_xlsxLoaded=true);
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = () => { _xlsxLoaded=true; res(); };
+    s.onerror = () => rej(new Error('No se pudo cargar SheetJS'));
+    document.head.appendChild(s);
+  });
+}
+
+async function exportarExcel(datos, nombreHoja, filename){
+  try {
+    await loadXLSX();
+    const wb = window.XLSX.utils.book_new();
+    const ws = window.XLSX.utils.aoa_to_sheet(datos);
+    // Ancho de columnas automático
+    const colWidths = datos[0].map((_,ci) =>
+      ({ wch: Math.min(50, Math.max(10, ...datos.map(row => String(row[ci]||'').length))) })
+    );
+    ws['!cols'] = colWidths;
+    window.XLSX.utils.book_append_sheet(wb, ws, nombreHoja);
+    window.XLSX.writeFile(wb, filename);
+    showToast('✅ Excel descargado');
+  } catch(e){
+    showToast('⚠️ Error Excel — descargando CSV');
+    // Fallback a CSV si SheetJS falla
+    const csv = datos.map(r => r.map(c => '"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n');
+    downloadCSV(csv, filename.replace('.xlsx','.csv'));
+  }
+}
+
+async function exportarClasificacionExcel(){
+  if(!ultimaClasificacion) return;
+  const r = ultimaClasificacion;
+  const desc = document.getElementById('desc-input')?.value || '';
+  const datos = [
+    ['Campo','Valor'],
+    ['Descripción buscada', desc],
+    ['Código TARIC (10 dígitos)', r.codigo_taric],
+    ['Descripción NC', r.descripcion_nc],
+    ['Arancel Erga Omnes', r.arancel_erga_omnes],
+    ['Confianza IA', r.confianza+'%'],
+    ['Unidad suplementaria', r.unidad_suplementaria||'—'],
+    ['',''],
+    ['MEDIDAS TARIC',''],
+    ...((r.medidas_adicionales||[]).filter(m=>m.tipo!=='NINGUNA').map(m=>[m.tipo, m.descripcion])),
+    ['',''],
+    ['Fecha clasificación', new Date().toLocaleString('es-ES')],
+    ['Clasificado con', 'Customs Way · IA OpenRouter'],
+  ];
+  await exportarExcel(datos, 'Clasificación TARIC', `TARIC_${r.codigo_taric}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+async function exportarHistorialExcel(){
+  if(!window._historialClasificaciones?.length){ showToast('Sin historial para exportar'); return; }
+  const headers = ['Descripción','Código TARIC','Descripción NC','Arancel EO','Confianza','Medidas','Fecha'];
+  const rows = window._historialClasificaciones.map(h => [
+    h.descripcion||'',
+    h.codigo_taric||'',
+    h.descripcion_nc||'',
+    h.arancel_erga_omnes||'',
+    (h.confianza||0)+'%',
+    (h.medidas_adicionales||[]).filter(m=>m.tipo!=='NINGUNA').map(m=>m.descripcion).join('; '),
+    h.fecha ? new Date(h.fecha).toLocaleString('es-ES') : '',
+  ]);
+  await exportarExcel([headers,...rows], 'Historial TARIC', `Historial_TARIC_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+async function exportarDUAExcel(){
+  const d = window._ultimoDUA;
+  if(!d){ showToast('Sin DUA para exportar'); return; }
+  const df = d.datos_extraidos_factura||{};
+  const cabecera = [
+    ['BORRADOR DUA — Customs Way','','',''],
+    ['','','',''],
+    ['DATOS GENERALES','','',''],
+    ['Tipo DUA', d.tipo_dua||'', 'Aduana', d.aduana||''],
+    ['Régimen', `${d.casilla_1_regimen?.solicitado||''}/${d.casilla_1_regimen?.precedente||''}`, 'Descripción', d.casilla_1_regimen?.descripcion||''],
+    ['Expedidor', d.casilla_2_expedidor?.nombre||'', 'País', d.casilla_2_expedidor?.pais||''],
+    ['Importador', d.casilla_8_importador?.nombre||'', 'NIF', d.casilla_8_importador?.nif||''],
+    ['Incoterm', d.casilla_20_condiciones_entrega?.incoterm||'', 'Lugar', d.casilla_20_condiciones_entrega?.lugar||''],
+    ['País expedición', d.casilla_15_pais_expedicion||'', 'País origen', d.casilla_16_pais_origen||''],
+    ['Localización C.30', d.casilla_30_localizacion||'', 'Transporte C.25', d.casilla_25_modo_transporte||''],
+    ['Factura nº', df.numero_factura||'', 'Fecha', df.fecha_factura||''],
+    ['Proveedor', df.proveedor||'', 'Valor total', `${df.valor_total||0} ${df.moneda||'€'}`],
+    ['','','',''],
+    ['PARTIDAS ARANCELARIAS','','',''],
+    ['Nº','TARIC','Descripción','Cantidad','Valor aduanero','Arancel %','Arancel €','IVA %','IVA €','País origen','Medidas TARIC'],
+  ];
+  const partidas = (d.partidas||[]).map(p => [
+    p.num||'',
+    p.taric||'',
+    p.descripcion_nc||p.descripcion_factura||'',
+    `${p.cantidad||0} ${p.unidad||''}`,
+    p.valor_aduanero||0,
+    p.arancel_porcentaje||'',
+    p.arancel_importe||0,
+    p.iva_porcentaje||'',
+    p.iva_importe||0,
+    p.pais_origen||'',
+    (p.medidas_taric||[]).filter(m=>m.tipo!=='NINGUNA').map(m=>`${m.codigo_medida} ${m.tipo}`).join('; '),
+  ]);
+  const todos = [...cabecera, ...partidas];
+  await exportarExcel(todos, 'Borrador DUA', `DUA_${df.numero_factura||'borrador'}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+
   if(!ultimaClasificacion) return;
   const r = ultimaClasificacion;
   const csv = [
@@ -1866,6 +1966,7 @@ Responde ÚNICAMENTE con este JSON (sin backticks):
     try {
       const text = await _callOpenRouter(messages, model, true);
       if(model !== primaryModel) showToast('⚡ OCR con: ' + model.split('/').pop());
+      logUsoIA('taric-ocr', model).catch(()=>{});
       return parseClaudeResponse(text);
     } catch(e){
       console.warn('Modelo OCR fallido:', model, '→', e.message.substring(0,100));
@@ -2533,6 +2634,8 @@ async function handleDUAFile(file, cfg){
       renderBorradorDUA(dua, resultEl, file.name);
       document.getElementById('btn-exp-dua').style.display='';
       window._ultimoDUA = dua;
+      // Guardar en historial Supabase automáticamente
+      guardarHistorialDUA(dua, file.name).catch(()=>{});
     } else {
       resultEl.innerHTML = '<div style="padding:24px;color:var(--rd600);text-align:center">❌ No se pudieron extraer los datos suficientes de la factura.</div>';
     }
@@ -2887,8 +2990,9 @@ function renderBorradorDUA(d, container, filename){
           Para automatizar la importación, consulta en VT: <em>Menú Archivo → Importar dossier</em> o contacta el soporte técnico de Visual Trans para obtener el schema XML de importación.
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-          <button class="btn btn-p btn-sm" onclick="exportarDUA()">⬇️ Exportar JSON (datos estructurados)</button>
-          <button class="btn btn-s btn-sm" onclick="exportarDUACSV()">📊 Exportar CSV (casillas)</button>
+          <button class="btn btn-p btn-sm" onclick="exportarDUA()">⬇️ JSON</button>
+          <button class="btn btn-s btn-sm" onclick="exportarDUACSV()">📊 CSV</button>
+          <button class="btn btn-g btn-sm" onclick="exportarDUAExcel()">📊 Excel</button>
           <a href="https://wiki.bytemaster.es/aduanas-despachos/" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📚 Wiki Visual Trans</a>
         </div>
       </div>
@@ -2963,6 +3067,101 @@ function exportarDUACSV(){
   });
   const csv=rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\n');
   downloadCSV(csv,'borrador_dua_casillas.csv');
+}
+
+// ── Historial DUA — guardar en Supabase ─────────────────────────
+async function guardarHistorialDUA(dua, filename){
+  if(!sb || !dua) return;
+  try {
+    const df = dua.datos_extraidos_factura || {};
+    await sb.from('als_historial_dua').insert({
+      filename: filename || 'sin_nombre',
+      tipo_dua: dua.tipo_dua || '',
+      aduana: dua.aduana || '',
+      num_factura: df.numero_factura || '',
+      proveedor: df.proveedor || '',
+      valor_total: parseFloat(df.valor_total) || 0,
+      num_partidas: (dua.partidas||[]).length,
+      dua_json: dua,
+    });
+  } catch(e){ console.warn('No se pudo guardar historial DUA:', e.message); }
+}
+
+async function cargarHistorialDUA(){
+  if(!sb) return [];
+  try {
+    const {data} = await sb.from('als_historial_dua')
+      .select('id,filename,tipo_dua,aduana,num_factura,proveedor,valor_total,num_partidas,created_at')
+      .order('created_at', {ascending:false})
+      .limit(50);
+    return data || [];
+  } catch(e){ return []; }
+}
+
+async function mostrarHistorialDUA(){
+  const historial = await cargarHistorialDUA();
+  if(!historial.length){
+    showToast('Sin borradores DUA guardados aún');
+    return;
+  }
+  const rows = historial.map(h => `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--g100);font-size:12px">
+      <div>
+        <div style="font-weight:700;color:var(--g900)">${h.num_factura||'—'}</div>
+        <div style="color:var(--g400);font-size:11px">${h.proveedor||'—'}</div>
+      </div>
+      <div>
+        <span class="badge badge-blue" style="font-size:10px">${h.tipo_dua||'—'}</span>
+        <div style="color:var(--g400);font-size:11px;margin-top:3px">${h.aduana||'—'}</div>
+      </div>
+      <div>
+        <div style="font-weight:600">${Number(h.valor_total||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</div>
+        <div style="color:var(--g400);font-size:11px">${h.num_partidas||0} partidas · ${new Date(h.created_at).toLocaleDateString('es-ES')}</div>
+      </div>
+      <button class="btn btn-s btn-sm" onclick="recuperarDUA(${h.id})" style="font-size:11px">Ver</button>
+    </div>
+  `).join('');
+
+  document.getElementById('m-title').textContent = '📋 Historial de Borradores DUA';
+  document.getElementById('m-body').innerHTML = `
+    <div style="font-size:12px;color:var(--g500);margin-bottom:10px">${historial.length} borradores guardados</div>
+    <div style="border:1px solid var(--g200);border-radius:8px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;padding:8px 14px;background:var(--g50);font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase">
+        <div>Factura / Proveedor</div><div>Tipo / Aduana</div><div>Valor</div><div></div>
+      </div>
+      ${rows}
+    </div>`;
+  document.getElementById('m-foot').innerHTML = '';
+  document.getElementById('mo').style.display='flex';
+}
+
+async function recuperarDUA(id){
+  if(!sb) return;
+  try {
+    const {data} = await sb.from('als_historial_dua').select('dua_json,filename').eq('id',id).single();
+    if(data?.dua_json){
+      closeModal();
+      nav('dua');
+      document.getElementById('dua-upload-area').style.display='none';
+      const resultEl = document.getElementById('dua-result');
+      resultEl.style.display='block';
+      renderBorradorDUA(data.dua_json, resultEl, data.filename||'historial');
+      document.getElementById('btn-exp-dua').style.display='';
+      window._ultimoDUA = data.dua_json;
+      showToast('✅ Borrador DUA recuperado del historial');
+    }
+  } catch(e){ showToast('❌ Error al recuperar: '+e.message); }
+}
+
+// ── Log de uso IA — auditoría ─────────────────────────────────────
+async function logUsoIA(modulo, modelo){
+  if(!sb) return;
+  try {
+    await sb.from('als_ai_usage_log').insert({
+      modulo, modelo,
+      usuario: localStorage.getItem('als_user') || 'anon',
+    });
+  } catch(e){} // silencioso
 }
 
 // ── Init DUA drop zone al cargar ─────────────────────────────────
