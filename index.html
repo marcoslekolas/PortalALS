@@ -2014,7 +2014,7 @@ async function doChangePwd(){
       'Content-Type':'application/json',
       Prefer:'return=representation'
     },
-    body:JSON.stringify({password_hash:p1,must_change_password:false})
+    body:JSON.stringify({password_hash:p1})
   });
   // Intentar también con la función segura bcrypt
   if(sb){
@@ -2023,7 +2023,11 @@ async function doChangePwd(){
     }catch(e2){
       // Fallback SDK
       if(!r.ok){
-        const {error}=await sb.from('usuarios').update({password_hash:p1,must_change_password:false}).eq('id',CU.id);
+        let {error}=await sb.from('usuarios').update({password_hash:p1,must_change_password:false}).eq('id',CU.id);
+      if(error && error.message && error.message.includes('must_change_password')){
+        const r2=await sb.from('usuarios').update({password_hash:p1}).eq('id',CU.id);
+        error=r2.error;
+      }
         if(error){err.textContent='Error al guardar: '+error.message;return;}
       }
     }
@@ -5318,7 +5322,11 @@ async function delExpedicion(id,ref){
 }
 
 async function loadUsuarios(){
-  const {data}=await sb.from('usuarios').select('*').order('rol');
+  const el=document.getElementById('users-list');
+  if(el) el.innerHTML='<div class="empty"><div class="empty-txt">Cargando usuarios...</div></div>';
+  const {data,error}=await sb.from('usuarios').select('*').order('rol');
+  if(error){ if(el) el.innerHTML=`<div class="empty"><div class="empty-txt">Error: ${error.message}</div></div>`; return; }
+  if(!data||!data.length){ if(el) el.innerHTML='<div class="empty"><div class="empty-txt">Sin usuarios encontrados</div></div>'; return; }
   const rC={admin:'br',oficina:'bb',almacen:'ba',aduanas:'bt',transportista:'bgr'};
   const rL={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
   document.getElementById('users-list').innerHTML=`<div class="tc">${(data||[]).map(u=>{
@@ -5394,11 +5402,19 @@ async function saveUser(id){
     nombre:nuevoNombre,
     email:gv('eu-e'),
     rol:gv('eu-r'),
-    must_change_password:document.getElementById('eu-mcp')?.checked||false
   };
   const p=gv('eu-p');
-  if(p){obj.password_hash=p;obj.must_change_password=true;}
-  await sb.from('usuarios').update(obj).eq('id',id);
+  if(p) obj.password_hash=p;
+  // must_change_password: solo añadir si la columna existe (evitar error de schema cache)
+  try {
+    const mcp = document.getElementById('eu-mcp');
+    if(mcp !== null){ obj.must_change_password = p ? true : (mcp.checked||false); }
+  } catch(e){}
+  let {error:saveErr}=await sb.from('usuarios').update(obj).eq('id',id);
+  if(saveErr && saveErr.message && saveErr.message.includes('must_change_password')){
+    delete obj.must_change_password;
+    await sb.from('usuarios').update(obj).eq('id',id);
+  }
   await logAct('usuarios',id,nuevoNombre,'editar','nombre/rol',null,`${nuevoNombre} · ${obj.rol}`);
   // Si el usuario editado es el propio admin logueado, actualizar CU en memoria
   if(id===CU?.id){
@@ -5661,7 +5677,23 @@ const MODALS={
 },
 'nuevo-usuario':{t:'👤 Nuevo usuario',btn:'👤 Crear usuario',
   body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre o email"></div><div class="fg2"><label class="fl2">Email <span style="font-weight:400;color:var(--g400)">(opcional)</span></label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="oficina">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
-  action:async()=>{const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');if(!n||!p){alert('Nombre y contraseña son obligatorios');return;}const obj={nombre:n,rol:r,password_hash:p,must_change_password:true};if(e)obj.email=e;const {error}=await sb.from('usuarios').insert(obj);if(error){alert('Error: '+error.message);return;}showToast('Usuario creado — deberá cambiar su contraseña al primer inicio de sesión');closeModal();loadView(CV);}
+  action:async()=>{
+  const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');
+  if(!n||!p){alert('Nombre y contraseña son obligatorios');return;}
+  // Intentar con must_change_password primero; si la columna no existe, reintentar sin ella
+  let obj={nombre:n,rol:r,password_hash:p,must_change_password:true};
+  if(e)obj.email=e;
+  let {error}=await sb.from('usuarios').insert(obj);
+  if(error && error.message && error.message.includes('must_change_password')){
+    // Columna no existe aún — crear sin ella
+    delete obj.must_change_password;
+    const r2=await sb.from('usuarios').insert(obj);
+    error=r2.error;
+  }
+  if(error){alert('Error: '+error.message);return;}
+  await logAct('usuarios',null,n,'crear','nombre',null,`${n} · ${r}`);
+  showToast('✅ Usuario creado correctamente');closeModal();loadView(CV);
+}
 },
 'nueva-empresa':{t:'🏢 Nueva empresa',btn:'🏢 Crear empresa',
   body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="nmp-n" class="fi" placeholder="Nombre empresa"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="nmp-p" class="fi" placeholder="Nombre o email"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="nmp-e" class="fi" type="email" placeholder="email@empresa.com"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="nmp-t" class="fi" placeholder="+34 956…"></div></div><div class="fg2"><label class="fl2">Otros emails <span style="color:var(--g400);font-weight:400">(separados por coma)</span></label><input id="nmp-o" class="fi" placeholder="email2@, email3@…"></div><div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="nmp-r-${r}" style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>`,
