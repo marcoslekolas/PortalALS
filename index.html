@@ -38,32 +38,31 @@
 // Service Worker registration
 if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
-    // Registrar SW externo con estrategia Network First para HTML
-    navigator.serviceWorker.register('./sw.js', {scope: './'})
-      .then(function(reg){
-        // Actualizar SW cuando hay nueva versión
-        reg.addEventListener('updatefound', function(){
-          const newWorker = reg.installing;
-          newWorker.addEventListener('statechange', function(){
-            if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
-              // Nueva versión disponible — notificar al usuario sutilmente
-              const toast = document.getElementById('toast');
-              if(toast){ toast.textContent = '🔄 Nueva versión disponible — recarga para actualizar'; toast.className='toast show'; setTimeout(()=>toast.classList.remove('show'),5000); }
-            }
+    try {
+      navigator.serviceWorker.register('./sw.js', {scope: './'})
+        .then(function(reg){
+          reg.addEventListener('updatefound', function(){
+            const newWorker = reg.installing;
+            if(!newWorker) return;
+            newWorker.addEventListener('statechange', function(){
+              if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+                const toast = document.getElementById('toast');
+                if(toast){ toast.textContent = '🔄 Nueva versión disponible — recarga para actualizar'; toast.className='toast show'; setTimeout(function(){toast.classList.remove('show');},5000); }
+              }
+            });
           });
-        });
-        // Install prompt (Chrome/Edge Android — instalar como app)
-        window.addEventListener('beforeinstallprompt', function(e){
-          e.preventDefault();
-          window._pwaPrompt = e;
-          setTimeout(function(){
-            if(!window.matchMedia('(display-mode: standalone)').matches && !window.navigator.standalone){
-              var btn = document.getElementById('pwa-install-btn');
-              if(btn) btn.style.display = 'flex';
-            }
-          }, 1500);
-        });
-      }).catch(function(err){ console.warn('SW registro fallido:', err); });
+          window.addEventListener('beforeinstallprompt', function(e){
+            e.preventDefault();
+            window._pwaPrompt = e;
+            setTimeout(function(){
+              if(!window.matchMedia('(display-mode: standalone)').matches && !window.navigator.standalone){
+                var btn = document.getElementById('pwa-install-btn');
+                if(btn) btn.style.display = 'flex';
+              }
+            }, 1500);
+          });
+        }).catch(function(){}); // silencioso — GitHub Pages bloquea worker-src por CSP
+    } catch(e){} // silencioso
   });
 }
 </script>
@@ -5401,7 +5400,7 @@ async function editUser(id){
     <div class="fr2" style="margin-bottom:14px">
       <div class="fg2">
         <label class="fl2">Rol del usuario</label>
-        <select id="eu-r" class="fi fs" onchange="previewRolDesc(this.value)" ${isMe&&CU.rol==='admin'?'':'${isMe?'disabled title=\"No puedes cambiar tu propio rol\"':''}'}>
+        <select id="eu-r" class="fi fs" onchange="previewRolDesc(this.value)" ${isMe ? 'disabled title="No puedes cambiar tu propio rol"' : ''}>
           ${rolOpts}
         </select>
         <div id="eu-rol-desc" style="font-size:11px;color:var(--g500);margin-top:5px;padding:6px 8px;background:var(--g50);border-radius:5px">
