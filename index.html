@@ -5436,7 +5436,19 @@ async function delUser(id){
   if(CU?.rol!=='admin'){alert('Solo el administrador puede eliminar usuarios.');return;}
   if(id===CU?.id){alert('No puedes eliminar tu propio usuario.');return;}
   if(!confirm('¿Eliminar este usuario? Esta acción no se puede deshacer.'))return;
-  await sb.from('usuarios').delete().eq('id',id);
+  // Usar RPC con SECURITY DEFINER si existe, si no UPDATE activo=false (soft delete)
+  const {error:rpcErr}=await sb.rpc('eliminar_usuario',{p_id:parseInt(id)});
+  if(rpcErr && (rpcErr.code==='42883' || rpcErr.message.includes('eliminar_usuario'))){
+    // RPC no existe — marcar como inactivo en su lugar
+    const {error}=await sb.from('usuarios').update({activo:false}).eq('id',id);
+    if(error){showToast('❌ Error: '+error.message);return;}
+    showToast('Usuario desactivado (SQL pendiente para eliminación física)');
+  } else if(rpcErr){
+    showToast('❌ Error al eliminar: '+rpcErr.message);return;
+  } else {
+    showToast('✅ Usuario eliminado');
+  }
+  await logAct('usuarios',id,'','eliminar','activo',true,false);
   closeModal();loadView(CV);
 }
 
@@ -5680,19 +5692,23 @@ const MODALS={
   action:async()=>{
   const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');
   if(!n||!p){alert('Nombre y contraseña son obligatorios');return;}
-  // Intentar con must_change_password primero; si la columna no existe, reintentar sin ella
-  let obj={nombre:n,rol:r,password_hash:p,must_change_password:true};
-  if(e)obj.email=e;
-  let {error}=await sb.from('usuarios').insert(obj);
-  if(error && error.message && error.message.includes('must_change_password')){
-    // Columna no existe aún — crear sin ella
-    delete obj.must_change_password;
-    const r2=await sb.from('usuarios').insert(obj);
-    error=r2.error;
+  // Usar RPC con SECURITY DEFINER para saltarse RLS en INSERT
+  const {data,error}=await sb.rpc('crear_usuario',{
+    p_nombre:n, p_email:e||null, p_password:p, p_rol:r
+  });
+  if(error){
+    // Fallback: INSERT directo si la RPC no existe aún
+    if(error.message && (error.message.includes('crear_usuario') || error.code==='42883')){
+      const obj={nombre:n,rol:r,password_hash:p};
+      if(e)obj.email=e;
+      const {error:e2}=await sb.from('usuarios').insert(obj);
+      if(e2){alert('Error al crear usuario: '+e2.message+'\n\nEjecuta el SQL fix_rls_usuarios.sql en Supabase.');return;}
+    } else {
+      alert('Error: '+error.message);return;
+    }
   }
-  if(error){alert('Error: '+error.message);return;}
   await logAct('usuarios',null,n,'crear','nombre',null,`${n} · ${r}`);
-  showToast('✅ Usuario creado correctamente');closeModal();loadView(CV);
+  showToast('✅ Usuario creado: '+n);closeModal();loadView(CV);
 }
 },
 'nueva-empresa':{t:'🏢 Nueva empresa',btn:'🏢 Crear empresa',
