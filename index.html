@@ -37,61 +37,33 @@
 
 // Service Worker registration
 if('serviceWorker' in navigator){
-  window.addEventListener('load',function(){
-    // SW code as blob — works from any origin
-    const swCode=`
-const CACHE_NAME='als-portal-v2';
-self.addEventListener('install',function(e){
-  self.skipWaiting();
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(function(cache){
-      return cache.addAll([self.registration.scope]).catch(function(){});
-    })
-  );
-});
-self.addEventListener('activate',function(e){
-  self.clients.claim();
-  e.waitUntil(
-    caches.keys().then(function(keys){
-      return Promise.all(keys.filter(function(k){return k!==CACHE_NAME;}).map(function(k){return caches.delete(k);}));
-    })
-  );
-});
-self.addEventListener('fetch',function(e){
-  var url=e.request.url;
-  if(e.request.method!=='GET')return;
-  if(url.indexOf('supabase.co')>-1)return; // never cache API
-  if(url.indexOf('googleapis.com')>-1)return;
-  e.respondWith(
-    caches.match(e.request).then(function(cached){
-      var networkFetch=fetch(e.request).then(function(response){
-        if(response&&response.ok&&response.type==='basic'){
-          var clone=response.clone();
-          caches.open(CACHE_NAME).then(function(cache){cache.put(e.request,clone);});
-        }
-        return response;
-      });
-      return cached||networkFetch;
-    })
-  );
-});`;
-    try{
-      var swBlob=new Blob([swCode],{type:'text/javascript'});
-      var swUrl=URL.createObjectURL(swBlob);
-      navigator.serviceWorker.register(swUrl,{scope:'./'}).then(function(){
-        // Install prompt (Chrome/Edge Android)
-        window.addEventListener('beforeinstallprompt',function(e){
-          e.preventDefault();
-          window._pwaPrompt=e;
-          setTimeout(function(){
-            if(!window.matchMedia('(display-mode: standalone)').matches&&!window.navigator.standalone){
-              var btn=document.getElementById('pwa-install-btn');
-              if(btn)btn.style.display='flex';
+  window.addEventListener('load', function(){
+    // Registrar SW externo con estrategia Network First para HTML
+    navigator.serviceWorker.register('./sw.js', {scope: './'})
+      .then(function(reg){
+        // Actualizar SW cuando hay nueva versión
+        reg.addEventListener('updatefound', function(){
+          const newWorker = reg.installing;
+          newWorker.addEventListener('statechange', function(){
+            if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+              // Nueva versión disponible — notificar al usuario sutilmente
+              const toast = document.getElementById('toast');
+              if(toast){ toast.textContent = '🔄 Nueva versión disponible — recarga para actualizar'; toast.className='toast show'; setTimeout(()=>toast.classList.remove('show'),5000); }
             }
-          },1500);
+          });
         });
-      }).catch(function(){});
-    }catch(err){}
+        // Install prompt (Chrome/Edge Android — instalar como app)
+        window.addEventListener('beforeinstallprompt', function(e){
+          e.preventDefault();
+          window._pwaPrompt = e;
+          setTimeout(function(){
+            if(!window.matchMedia('(display-mode: standalone)').matches && !window.navigator.standalone){
+              var btn = document.getElementById('pwa-install-btn');
+              if(btn) btn.style.display = 'flex';
+            }
+          }, 1500);
+        });
+      }).catch(function(err){ console.warn('SW registro fallido:', err); });
   });
 }
 </script>
@@ -1915,33 +1887,24 @@ async function doLogin(){
       }
     }catch(rpcErr){console.warn('RPC no disponible, usando fallback:',rpcErr.message);}
 
-    // 2. Fallback: búsqueda por nombre + password_hash (texto plano, legacy)
-    if(!rows||!rows.length){
-      const params='nombre=ilike.'+encodeURIComponent('*'+email+'*')+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=5';
-      const r2=await fetch(SB_URL+'/rest/v1/usuarios?'+params,{
-        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,Accept:'application/json'}
-      });
-      if(r2.ok){const d=await r2.json();if(d&&d.length>0)rows=d;}
-    }
+    // 2. Fallback legacy DESACTIVADO — solo bcrypt permitido
+    // Los fallbacks de texto plano han sido eliminados por seguridad (v3.2.0)
+    // Si un usuario no puede entrar, debe resetear su contraseña via admin
 
-    // 3. Fallback: búsqueda por email exacto (usuarios legacy con email)
-    if(!rows||!rows.length){
-      const params='email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+encodeURIComponent(pass)+'&limit=1';
-      const r3=await fetch(SB_URL+'/rest/v1/usuarios?'+params,{
-        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,Accept:'application/json'}
-      });
-      if(r3.ok){const d=await r3.json();if(d&&d.length>0)rows=d;}
-    }
+    // 3. Fallback legacy DESACTIVADO
 
     if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
     if(!rows||rows.length===0){
+      // Log intento fallido
+      logAuth('login_fail', null, email, 'Credenciales incorrectas');
       // Increment failed attempts
       try {
         const rl=JSON.parse(localStorage.getItem('als_login_rl')||'{}');
         rl.attempts=(rl.attempts||0)+1;
         if(rl.attempts>=5){
-          rl.blocked=Date.now()+15*60*1000; // 15 min block
+          rl.blocked=Date.now()+15*60*1000;
           rl.attempts=0;
+          logAuth('blocked', null, email, 'Cuenta bloqueada 15 min por '+rl.attempts+' intentos fallidos');
           if(errEl){ errEl.textContent='Cuenta bloqueada 15 min por exceso de intentos.'; }
         } else {
           const left=5-rl.attempts;
@@ -1952,12 +1915,15 @@ async function doLogin(){
       if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
       return;
     }
-    // Login OK — reset rate limit
+    // Login OK — reset rate limit + log
     try { localStorage.removeItem('als_login_rl'); } catch(e){}
+    logAuth('login_ok', rows[0].id, rows[0].nombre||email, rows[0].rol||'');
     CU=rows[0];
     saveSession(CU);
     // Init SDK (best effort)
     if(!sb){try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});}catch(e3){console.warn('SDK init:',e3);}}
+    // Cargar permisos del rol en caché
+    await cargarPermisosRol(CU.rol);
     // Update last access
     fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,{method:'PATCH',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({ultimo_acceso:new Date().toISOString()})}).catch(()=>{});
     // Check if must change password
@@ -2861,7 +2827,65 @@ function abrirTrackingAWB(awb){
   }
 }
 
-function doLogout(){CU=null;MOD=null;clearSession();document.getElementById('app').style.display='none';document.getElementById('screen-home').style.display='none';document.getElementById('screen-login').style.display='flex';document.getElementById('li-pass').value='';}
+function doLogout(){
+  logAuth('logout', CU?.id, CU?.nombre, CU?.rol||'');
+  CU=null;MOD=null;clearSession();
+  document.getElementById('app').style.display='none';
+  document.getElementById('screen-home').style.display='none';
+  document.getElementById('screen-login').style.display='flex';
+  document.getElementById('li-pass').value='';
+}
+
+// ── PUNTO 20: Log de autenticación ───────────────────────────
+async function logAuth(evento, usuarioId, usuarioNombre, detalles){
+  if(!sb) return;
+  try {
+    await sb.from('als_auth_log').insert({
+      evento,
+      usuario_id: usuarioId || null,
+      usuario_nombre: usuarioNombre || null,
+      email_intentado: usuarioNombre || null,
+      detalles: detalles || null,
+      created_at: new Date().toISOString()
+    });
+  } catch(e){ console.warn('logAuth error:', e.message); }
+}
+
+// ── PUNTO 19+20: Cargar permisos del rol al hacer login ──────
+let _permisos = {}; // caché de permisos del usuario activo
+async function cargarPermisosRol(rol){
+  if(!sb || !rol) return;
+  try {
+    // Admin tiene acceso total sin necesidad de consultar
+    if(rol === 'admin'){ _permisos = {__admin: true}; return; }
+    const {data} = await sb.from('als_permisos_rol').select('*').or(`rol.eq.${rol},rol.eq.*`);
+    _permisos = {};
+    (data||[]).forEach(p => { _permisos[p.modulo] = p; });
+  } catch(e){ _permisos = {}; }
+}
+
+function puedeAcceder(modulo, accion = 'ver'){
+  if(_permisos.__admin) return true;
+  const p = _permisos[modulo] || _permisos['*'];
+  if(!p) return false;
+  const mapa = {ver:'puede_ver', crear:'puede_crear', editar:'puede_editar', eliminar:'puede_eliminar', exportar:'puede_exportar'};
+  return p[mapa[accion]] === true;
+}
+
+// ── Log de operación con módulo ───────────────────────────────
+async function logActMod(tabla, rid, rnom, accion, campo, vant, vnew, modulo){
+  if(!sb) return;
+  try {
+    await sb.from('activity_log').insert({
+      tabla, registro_id:rid||null, registro_nombre:rnom||null,
+      accion, campo_modificado:campo||null,
+      valor_anterior:String(vant||''), valor_nuevo:String(vnew||''),
+      usuario_id:CU?.id, usuario_nombre:CU?.nombre,
+      modulo: modulo || tabla,
+      created_at: new Date().toISOString()
+    });
+  } catch(e){ console.warn('logActMod error:', e.message); }
+}
 
 const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas'};
 let CV='dashboard';
@@ -3227,7 +3251,22 @@ function scalar(v){return Array.isArray(v)?(v[0]||null):v;}
 function gc(id){const e=document.getElementById(id);return e?e.checked:false;}
 
 async function logAct(tabla,rid,rnom,accion,campo,vant,vnew){
-  try{await sb.from('activity_log').insert({tabla,registro_id:rid||null,registro_nombre:rnom||null,accion,campo_modificado:campo||null,valor_anterior:String(vant||''),valor_nuevo:String(vnew||''),usuario_id:CU?.id,usuario_nombre:CU?.nombre});}catch(e){console.warn('log err',e);}
+  // Inferir módulo por tabla
+  const moduloPorTabla = {
+    expediciones:'expediciones', buques:'buques', almacen_entradas:'almacen',
+    incidencias:'incidencias', empresas:'empresas', usuarios:'usuarios',
+    facturacion:'facturacion'
+  };
+  const modulo = moduloPorTabla[tabla] || tabla;
+  try{
+    await sb.from('activity_log').insert({
+      tabla, registro_id:rid||null, registro_nombre:rnom||null,
+      accion, campo_modificado:campo||null,
+      valor_anterior:String(vant||''), valor_nuevo:String(vnew||''),
+      usuario_id:CU?.id, usuario_nombre:CU?.nombre,
+      modulo
+    });
+  }catch(e){console.warn('log err',e);}
 }
 
 // Compresión adaptativa: 
@@ -3521,6 +3560,16 @@ function eliminarFoto(idx,prevEl){
 }
 
 async function loadView(view){
+  // Verificar permisos antes de cargar el módulo
+  const moduloCheck = {
+    'usuarios': 'usuarios', 'log': 'log', 'facturacion': 'facturacion',
+    'estadisticas': 'estadisticas', 'expediciones': 'expediciones',
+    'empresas': 'empresas', 'incidencias': 'incidencias',
+  };
+  if(moduloCheck[view] && !puedeAcceder(moduloCheck[view], 'ver')){
+    showToast('⛔ Sin permisos para acceder a este módulo');
+    return;
+  }
   switch(view){
     case 'dashboard':await loadDash();break;
     case 'flota':await loadFlota();break;
@@ -5329,9 +5378,59 @@ async function delUser(id){
 }
 
 async function loadLog(){
-  const {data}=await sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(300);
-  const logBadge=a=>{const m={'crear':'bg','eliminar':'br','email_aduanas':'ba','email_cliente':'ba','email_confronta':'ba'};return`<span class="badge ${m[a]||'bb'}">${a||'—'}</span>`;};
-  document.getElementById('log-tbody').innerHTML=(data||[]).map(l=>`<tr><td>${logBadge(l.accion)}</td><td><div class="fw">${l.registro_nombre||'—'}</div></td><td class="sm">${l.tabla||'—'}</td><td class="sm">${l.campo_modificado||'—'}</td><td class="sm" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.valor_anterior||'—'}</td><td class="sm" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.valor_nuevo||'—'}</td><td class="sm">${l.usuario_nombre||'—'}</td><td class="sm" style="white-space:nowrap">${fdt(l.created_at)}</td></tr>`).join('')||'<tr><td colspan="8"><div class="empty"><div class="empty-txt">Sin actividad registrada</div></div></td></tr>';
+  const [actR, authR] = await Promise.all([
+    sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(200),
+    sb.from('als_auth_log').select('*').order('created_at',{ascending:false}).limit(100)
+  ]);
+  const logBadge = a => {
+    const m = {
+      'crear':'bg', 'eliminar':'br', 'editar':'bb',
+      'email_aduanas':'ba', 'email_cliente':'ba', 'email_confronta':'ba',
+      'login_ok':'bg', 'logout':'bb', 'login_fail':'br', 'blocked':'br',
+      'password_change':'ba', 'alerta_llegada':'ba'
+    };
+    return `<span class="badge ${m[a]||'bb'}">${a||'—'}</span>`;
+  };
+
+  // Combinar y ordenar ambos logs por fecha
+  const actRows = (actR.data||[]).map(l => ({
+    tipo: 'operacion',
+    accion: l.accion,
+    registro: l.registro_nombre||'—',
+    modulo: l.modulo||l.tabla||'—',
+    campo: l.campo_modificado||'—',
+    v_ant: l.valor_anterior||'—',
+    v_new: l.valor_nuevo||'—',
+    usuario: l.usuario_nombre||'—',
+    fecha: l.created_at,
+  }));
+  const authRows = (authR.data||[]).map(l => ({
+    tipo: 'auth',
+    accion: l.evento,
+    registro: l.usuario_nombre||l.email_intentado||'—',
+    modulo: '🔐 Auth',
+    campo: '—',
+    v_ant: '—',
+    v_new: l.detalles||'—',
+    usuario: l.usuario_nombre||'—',
+    fecha: l.created_at,
+  }));
+  const todos = [...actRows, ...authRows].sort((a,b) => new Date(b.fecha) - new Date(a.fecha)).slice(0,300);
+
+  const head = `<tr><th>Acción</th><th>Registro</th><th>Módulo</th><th>Campo</th><th>Valor anterior</th><th>Valor nuevo</th><th>Usuario</th><th>Fecha y hora</th></tr>`;
+  const body = todos.map(l => `<tr ${l.tipo==='auth'?'style="background:var(--b50)"':''}>
+    <td>${logBadge(l.accion)}</td>
+    <td><div class="fw">${l.registro}</div></td>
+    <td class="sm"><strong>${l.modulo}</strong></td>
+    <td class="sm">${l.campo}</td>
+    <td class="sm" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.v_ant}</td>
+    <td class="sm" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.v_new}</td>
+    <td class="sm">${l.usuario}</td>
+    <td class="sm" style="white-space:nowrap">${fdt(l.fecha)}</td>
+  </tr>`).join('') || '<tr><td colspan="8"><div class="empty"><div class="empty-txt">Sin actividad registrada</div></div></td></tr>';
+
+  const tbody = document.getElementById('log-tbody');
+  if(tbody) tbody.innerHTML = head + body;
 }
 
 async function loadStats(){
