@@ -897,7 +897,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="pill-txt">Customs Way</div>
       </div>
     </div>
-    <div style="font-size:10px;color:var(--g400);font-family:var(--mono);padding:4px 8px;background:var(--g100);border-radius:var(--r);margin-right:8px" title="Versión del portal ALS">v3.2.0</div><div class="hm-contact">
+    <div style="font-size:10px;color:var(--g400);font-family:var(--mono);padding:4px 8px;background:var(--g100);border-radius:var(--r);margin-right:8px" title="Versión del portal ALS">v3.3.0</div><div class="hm-contact">
       <span>📞 +34 956 58 13 16</span>
       <span>📠 +34 956 676591</span>
       <span>✉️ <a href="mailto:als@alsalgeciras.com" style="color:inherit;text-decoration:none">als@alsalgeciras.com</a></span>
@@ -1123,6 +1123,15 @@ textarea.fi{resize:vertical;min-height:72px}
         <!-- Configuración eliminada del sidebar — accesible solo desde home (admin) -->
       </div>
 
+
+      <!-- Navegación Admin (oculta por defecto, visible solo en modo Configuración) -->
+      <div id="nav-adm" style="display:none;flex:1;overflow-y:auto">
+        <div class="sb-sec">Administración</div>
+        <div class="nav-item" onclick="nav('usuarios',this)"><span class="ni">👥</span><span class="nav-item-txt">Usuarios</span></div>
+        <div class="nav-item" onclick="nav('log',this)"><span class="ni">📋</span><span class="nav-item-txt">Log de actividad</span></div>
+        <div class="nav-item" onclick="nav('permisos',this)"><span class="ni">🔑</span><span class="nav-item-txt">Permisos por rol</span></div>
+        <div class="nav-item" onclick="nav('versiones',this)"><span class="ni">🏷️</span><span class="nav-item-txt">Versiones</span></div>
+      </div>
       <!-- Navegación Almacén -->
       <div id="nav-alm" style="display:none;flex:1;overflow-y:auto">
         <div class="sb-sec">Almacén & Embarque</div>
@@ -1314,13 +1323,27 @@ textarea.fi{resize:vertical;min-height:72px}
         <div id="users-list"></div>
       </div>
       
+<div class="view" id="view-permisos">
+  <div class="ph">
+    <div class="pt">🔑 Permisos por rol</div>
+    <button class="btn btn-s btn-sm" onclick="loadPermisos()">🔄 Refrescar</button>
+  </div>
+  <div style="padding:16px">
+    <div style="font-size:12px;color:var(--g500);margin-bottom:16px">
+      Los permisos se gestionan desde Supabase (<code>als_permisos_rol</code>). Esta vista es de solo lectura.
+    </div>
+    <div id="permisos-tabla">
+      <div class="empty"><div class="empty-txt">Cargando permisos...</div></div>
+    </div>
+  </div>
+</div>
 <div class="view" id="view-versiones">
   <div class="ph"><div class="pt">🏷️ Historial de versiones — ALS Portal Operativo</div></div>
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.2.0</span>
-        <span style="font-size:12px;color:var(--g400)">22/03/2026</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.3.0</span>
+        <span style="font-size:12px;color:var(--g400)">24/03/2026</span>
         <span class="badge bg">Actual</span>
       </div>
       <ul style="font-size:13px;color:var(--g700);margin:0;padding-left:20px;line-height:1.8">
@@ -1335,6 +1358,13 @@ textarea.fi{resize:vertical;min-height:72px}
         <li>🤖 IA: log de auditoría de uso por módulo y modelo</li>
         <li>📱 CW: iconos CW redimensionados y más visibles en todos los dispositivos</li>
         <li>🏷️ Versión v3.1 visible en header del Clasificador TARIC</li>
+        <li>🔒 Seguridad: eliminados fallbacks de texto plano en autenticación (solo bcrypt)</li>
+        <li>🔑 Roles granulares: permisos por módulo y acción (ver/crear/editar/eliminar/exportar)</li>
+        <li>📋 Audit log: login/logout/intentos fallidos registrados en als_auth_log</li>
+        <li>📱 PWA: Service Worker externo con estrategias Network First/Cache First</li>
+        <li>⚙️ Panel de permisos por rol en Configuración (Admin)</li>
+        <li>🎨 Badge de rol con color en header y sidebar</li>
+        <li>👋 Toast de bienvenida al hacer login</li>
       </ul>
     </div>
     <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px 20px;margin-bottom:12px">
@@ -1396,7 +1426,14 @@ textarea.fi{resize:vertical;min-height:72px}
   </div>
 </div>
 <div class="view" id="view-log">
-        <div class="ph"><div class="pt">Log de actividad</div></div>
+        <div class="ph">
+        <div class="pt">Log de actividad</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:11px;background:var(--b50);color:var(--b700);border:1px solid var(--b100);border-radius:4px;padding:2px 8px">🔐 Azul = Auth</span>
+          <span style="font-size:11px;background:var(--g50);color:var(--g600);border:1px solid var(--g200);border-radius:4px;padding:2px 8px">⚙️ Blanco = Operaciones</span>
+          <button class="btn btn-s btn-sm" onclick="loadLog()">🔄 Refrescar</button>
+        </div>
+      </div>
         <div class="tc"><table class="tbl"><thead><tr><th>Acción</th><th>Registro</th><th>Tabla</th><th>Campo</th><th>Valor anterior</th><th>Valor nuevo</th><th>Usuario</th><th>Fecha y hora</th></tr></thead><tbody id="log-tbody"></tbody></table></div>
       </div>
       <div class="view" id="view-facturacion">
@@ -1930,6 +1967,7 @@ async function doLogin(){
     if(CU.must_change_password){showChangePwd();return;}
     iniciarVerificacionSesion();
     showHome();
+    setTimeout(()=>showToast('👋 Bienvenido, '+CU.nombre.split(' ')[0]), 600);
   }catch(e){
     if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
     console.error('Login exception:',e);
@@ -2035,7 +2073,12 @@ function showHome(){
   // Update app header user info
   const hdrAv=document.getElementById('hdr-av'); if(hdrAv) hdrAv.textContent=init;
   const hdrName=document.getElementById('hdr-user-name'); if(hdrName) hdrName.textContent=(CU.nombre||'').split(' ').slice(0,2).join(' ');
-  const hdrRole=document.getElementById('hdr-user-role'); if(hdrRole) hdrRole.textContent=CU.rol||'';
+  const hdrRole=document.getElementById('hdr-user-role');
+  if(hdrRole){
+    const rolLabel={admin:'⚡ Admin',oficina:'🏢 Oficina',aduanas:'🏛 Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista'};
+    hdrRole.textContent = rolLabel[CU.rol] || CU.rol || '';
+    hdrRole.style.color = CU.rol==='admin'?'var(--rd400)':CU.rol==='aduanas'?'var(--tl400)':'var(--g400)';
+  }
   // Update sidebar user info
   const sbAv=document.getElementById('sb-av'); if(sbAv) sbAv.textContent=init;
   const sbName=document.getElementById('sb-name'); if(sbName) sbName.textContent=(CU.nombre||'').split(' ').slice(0,2).join(' ');
@@ -2120,7 +2163,7 @@ function enterMod(mod){
   // Si CU no está cargado, intentar recuperarlo de la sesión guardada
   if(!CU||!CU.id){
     var s=loadSession();
-    if(s&&s.id){ CU=s; } else { showHome(); return; }
+    if(s&&s.id){ CU=s; cargarPermisosRol(CU.rol).catch(()=>{}); } else { showHome(); return; }
   }
   const puedeOperativa=['admin','oficina','aduanas'];
   const esExclusivoAlmacen=['almacen','transportista'].includes(CU.rol);
@@ -2177,8 +2220,9 @@ function enterMod(mod){
   if(mod==='operativa'){
     document.getElementById('nav-op').style.display='block';
     document.getElementById('nav-alm').style.display='none';
-    document.getElementById('btn-nb').style.display='';
-    document.getElementById('btn-ne').style.display='';
+    // Solo mostrar botones de crear si el rol tiene permiso
+    document.getElementById('btn-nb').style.display = puedeAcceder('buques','crear') ? '' : 'none';
+    document.getElementById('btn-ne').style.display = puedeAcceder('expediciones','crear') ? '' : 'none';
     const navAdm=document.getElementById('nav-adm');
     // Configuración ya no está en sidebar — solo en home
     document.getElementById('bc-mod').textContent='Operativa';
@@ -3591,6 +3635,8 @@ async function loadView(view){
     case 'log':await loadLog();break;
     case 'estadisticas':await loadStats();break;
     case 'facturacion':await loadFacturacion();break;
+    case 'permisos':await loadPermisos();break;
+    case 'versiones':loadVersiones();break;
   }
 }
 
@@ -5250,7 +5296,8 @@ async function openEmpD(id){
   document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-d btn-sm" onclick="delEmp('${e.id}')">Eliminar</button><button class="btn btn-p" onclick="saveEmp('${e.id}')">💾 Guardar</button>`;
   document.getElementById('mo').classList.add('open');
 }
-async function saveEmp(id){const roles=['Cliente','Consignatario','Transportista'].filter(r=>document.getElementById('ep-r-'+r)?.checked);const otros=gv('ep-o').split(',').map(s=>s.trim()).filter(Boolean);await sb.from('empresas').update({nombre:gv('ep-n'),persona_contacto:gv('ep-p')||null,email_confronta:gv('ep-e')||null,telefono:gv('ep-t')||null,otros_emails:otros,rol:roles}).eq('id',id);await logAct('empresas',id,gv('ep-n'),'editar','datos',null,'actualizado');showToast('Empresa guardada');closeModal();loadView(CV);}
+async function saveEmp(id){
+  if(!puedeAcceder('empresas','editar')){ showToast('⛔ Sin permisos para editar empresas'); return; }const roles=['Cliente','Consignatario','Transportista'].filter(r=>document.getElementById('ep-r-'+r)?.checked);const otros=gv('ep-o').split(',').map(s=>s.trim()).filter(Boolean);await sb.from('empresas').update({nombre:gv('ep-n'),persona_contacto:gv('ep-p')||null,email_confronta:gv('ep-e')||null,telefono:gv('ep-t')||null,otros_emails:otros,rol:roles}).eq('id',id);await logAct('empresas',id,gv('ep-n'),'editar','datos',null,'actualizado');showToast('Empresa guardada');closeModal();loadView(CV);}
 async function delEmp(id){if(!confirm('¿Eliminar empresa?'))return;await sb.from('empresas').delete().eq('id',id);closeModal();loadView(CV);}
 
 async function delBuque(id,nombre){
@@ -5294,7 +5341,7 @@ async function loadUsuarios(){
 }
 
 async function editUser(id){
-  if(CU?.rol!=='admin'){alert('Solo el administrador puede editar usuarios.');return;}
+  if(!puedeAcceder('usuarios','editar')){showToast('⛔ Sin permisos para editar usuarios');return;}
   const {data:u}=await sb.from('usuarios').select('*').eq('id',id).single();
   if(!u)return;
   const isMe=u.id===CU?.id;
@@ -5340,7 +5387,7 @@ async function editUser(id){
 }
 
 async function saveUser(id){
-  if(CU?.rol!=='admin'){alert('Solo el administrador puede editar usuarios.');return;}
+  if(!puedeAcceder('usuarios','editar')){showToast('⛔ Sin permisos para editar usuarios');return;}
   const nuevoNombre=gv('eu-n').trim();
   if(!nuevoNombre){alert('El nombre no puede estar vacío.');return;}
   const obj={
@@ -5431,6 +5478,70 @@ async function loadLog(){
 
   const tbody = document.getElementById('log-tbody');
   if(tbody) tbody.innerHTML = head + body;
+}
+
+
+async function loadPermisos(){
+  const el = document.getElementById('permisos-tabla');
+  if(!el) return;
+  el.innerHTML = '<div class="empty"><div class="empty-txt">Cargando...</div></div>';
+  try {
+    const {data} = await sb.from('als_permisos_rol').select('*').order('rol').order('modulo');
+    if(!data || !data.length){
+      el.innerHTML = '<div class="empty"><div class="empty-txt">Sin permisos definidos — ejecuta seguridad_v3.sql en Supabase</div></div>';
+      return;
+    }
+    // Agrupar por rol
+    const porRol = {};
+    data.forEach(p => { if(!porRol[p.rol]) porRol[p.rol] = []; porRol[p.rol].push(p); });
+    const rolColors = {admin:'var(--rd500)',oficina:'var(--b600)',aduanas:'var(--tl500)',almacen:'var(--am600)',transportista:'var(--g500)'};
+    const acc = accion => `<span style="font-size:11px;color:var(--gr600);font-weight:700">✓</span>`;
+    const rej = () => `<span style="font-size:11px;color:var(--g300)">–</span>`;
+    const check = (p, k) => p[k] ? acc() : rej();
+    let html = '';
+    Object.entries(porRol).forEach(([rol, perms]) => {
+      const color = rolColors[rol] || 'var(--g600)';
+      html += `<div style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="background:${color};color:#fff;border-radius:6px;padding:3px 12px;font-size:12px;font-weight:700;text-transform:capitalize">${rol}</div>
+          <span style="font-size:11px;color:var(--g400)">${perms.length} módulos configurados</span>
+        </div>
+        <div style="border:1px solid var(--g200);border-radius:8px;overflow:hidden">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:var(--g50)">
+                <th style="padding:7px 12px;text-align:left;font-weight:700;color:var(--g600)">Módulo</th>
+                <th style="padding:7px 8px;text-align:center;color:var(--g500)">Ver</th>
+                <th style="padding:7px 8px;text-align:center;color:var(--g500)">Crear</th>
+                <th style="padding:7px 8px;text-align:center;color:var(--g500)">Editar</th>
+                <th style="padding:7px 8px;text-align:center;color:var(--g500)">Eliminar</th>
+                <th style="padding:7px 8px;text-align:center;color:var(--g500)">Exportar</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${perms.map((p,i) => `<tr style="border-top:1px solid var(--g100);${i%2?'background:var(--g50)':''}">
+                <td style="padding:6px 12px;font-weight:600;color:var(--g800)">${p.modulo}</td>
+                <td style="text-align:center;padding:6px 8px">${check(p,'puede_ver')}</td>
+                <td style="text-align:center;padding:6px 8px">${check(p,'puede_crear')}</td>
+                <td style="text-align:center;padding:6px 8px">${check(p,'puede_editar')}</td>
+                <td style="text-align:center;padding:6px 8px">${check(p,'puede_eliminar')}</td>
+                <td style="text-align:center;padding:6px 8px">${check(p,'puede_exportar')}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div class="empty"><div class="empty-txt">Error cargando permisos: ${e.message}</div></div>`;
+  }
+}
+
+function loadVersiones(){
+  // La vista de versiones es HTML estático — solo hacer scroll al top
+  const v = document.getElementById('view-versiones');
+  if(v) v.scrollTop = 0;
 }
 
 async function loadStats(){
