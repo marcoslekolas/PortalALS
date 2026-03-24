@@ -5496,8 +5496,11 @@ function previewRolDesc(rol){
 async function saveUser(id){
   if(!puedeAcceder('usuarios','editar')){showToast('⛔ Sin permisos para editar usuarios');return;}
   const nuevoNombre=gv('eu-n').trim();
-  const nuevoRol=gv('eu-r');
+  // Leer rol directamente del DOM (funciona aunque el select esté disabled)
+  const rolEl = document.getElementById('eu-r');
+  const nuevoRol = rolEl ? rolEl.value : gv('eu-r');
   if(!nuevoNombre){showToast('❌ El nombre no puede estar vacío');return;}
+  if(!nuevoRol){showToast('❌ Error: no se pudo leer el rol');return;}
   const obj={
     nombre:nuevoNombre,
     email:gv('eu-e')||null,
@@ -5510,17 +5513,19 @@ async function saveUser(id){
     const mcp=document.getElementById('eu-mcp');
     if(mcp) obj.must_change_password = p ? true : (mcp.checked||false);
   } catch(e){}
-  let {error:saveErr}=await sb.from('usuarios').update(obj).eq('id',id);
+  // Usar .select() para verificar que el UPDATE realmente afectó filas
+  let {data:saved, error:saveErr}=await sb.from('usuarios').update(obj).eq('id',id).select();
   if(saveErr && saveErr.message && saveErr.message.includes('must_change_password')){
     delete obj.must_change_password;
-    const r2=await sb.from('usuarios').update(obj).eq('id',id);
-    saveErr=r2.error;
+    const r2=await sb.from('usuarios').update(obj).eq('id',id).select();
+    saveErr=r2.error; saved=r2.data;
   }
   if(saveErr){ showToast('❌ Error: '+saveErr.message); return; }
+  if(!saved || saved.length===0){ showToast('❌ No se encontró el usuario para actualizar'); return; }
   await logAct('usuarios',id,nuevoNombre,'editar','rol',null,`${nuevoNombre} · ${nuevoRol}`);
   // Si se editó el propio usuario, actualizar sesión
   if(id===CU?.id){
-    CU.nombre=nuevoNombre; CU.email=obj.email;
+    CU.nombre=nuevoNombre; CU.email=obj.email; CU.rol=nuevoRol;
     const init=nuevoNombre.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     ['sb-av','hm-av'].forEach(eid=>{const e=document.getElementById(eid);if(e)e.textContent=init;});
     ['sb-name','hm-name'].forEach(eid=>{const e=document.getElementById(eid);if(e)e.textContent=nuevoNombre;});
