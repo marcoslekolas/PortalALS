@@ -1400,6 +1400,59 @@ async function clasificar(){
   btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Clasificando...';
 
   const resultArea = document.getElementById('busqueda-result');
+
+  // ── Memoria: buscar clasificación previa similar ─────────────────
+  if(sb){
+    try {
+      // Buscar coincidencia exacta primero, luego parcial
+      const palabrasClave = desc.toLowerCase().split(' ').filter(p=>p.length>3).slice(0,4);
+      if(palabrasClave.length > 0){
+        // Buscar por palabras clave en la descripción
+        let query = sb.from('taric_historial')
+          .select('descripcion_busqueda,codigo_taric,descripcion_nc,arancel_erga_omnes,confianza,medidas_json,created_at')
+          .order('created_at',{ascending:false})
+          .limit(50);
+        const {data:hist} = await query;
+        if(hist?.length){
+          // Calcular similitud por palabras comunes
+          const descNorm = desc.toLowerCase();
+          let mejorMatch = null, mejorScore = 0;
+          for(const h of hist){
+            const hNorm = (h.descripcion_busqueda||'').toLowerCase();
+            // Coincidencia exacta
+            if(hNorm === descNorm){ mejorMatch = h; mejorScore = 100; break; }
+            // Palabras en común
+            const palabrasH = hNorm.split(' ').filter(p=>p.length>3);
+            const comunes = palabrasClave.filter(p => palabrasH.some(hp=>hp.includes(p)||p.includes(hp)));
+            const score = comunes.length / Math.max(palabrasClave.length, 1) * 100;
+            if(score > mejorScore && score >= 60){ mejorScore = score; mejorMatch = h; }
+          }
+          if(mejorMatch && mejorScore >= 60){
+            // Mostrar sugerencia de memoria
+            const medidas = (() => { try { return JSON.parse(mejorMatch.medidas_json||'[]'); } catch(e){ return []; } })();
+            const resultadoMemoria = {
+              codigo_taric: mejorMatch.codigo_taric,
+              descripcion_nc: mejorMatch.descripcion_nc,
+              arancel_erga_omnes: mejorMatch.arancel_erga_omnes,
+              confianza: mejorMatch.confianza,
+              medidas_adicionales: medidas,
+              _desde_memoria: true,
+              _similitud: Math.round(mejorScore),
+              _desc_original: mejorMatch.descripcion_busqueda,
+              _fecha_previa: mejorMatch.created_at
+            };
+            mostrarResultado(resultadoMemoria, resultArea);
+            ultimaClasificacion = resultadoMemoria;
+            btn.disabled = false;
+            btn.innerHTML = 'Clasificar';
+            loadHistorialBadge();
+            return; // No llamar a la IA
+          }
+        }
+      }
+    } catch(e){ /* silencioso — continuar con IA si falla la memoria */ }
+  }
+
   resultArea.innerHTML = '<div class="loading-wrap"><div class="spinner"></div><span>Analizando mercancía con IA TARIC...</span></div>';
 
   try {
@@ -1421,7 +1474,31 @@ async function clasificar(){
   btn.innerHTML = 'Clasificar';
 }
 
-async function llamarGeminiAPI(prompt, modelOverride){
+async function forzarClasificarIA(){
+  // Forzar clasificación con IA ignorando la memoria
+  const desc = document.getElementById('desc-input').value.trim();
+  if(!desc) return;
+  const btn = document.getElementById('btn-clasificar');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Clasificando con IA...';
+  const resultArea = document.getElementById('busqueda-result');
+  resultArea.innerHTML = '<div class="loading-wrap"><div class="spinner"></div><span>Clasificando con IA (ignorando memoria)...</span></div>';
+  try {
+    const resultado = await llamarClaudeAPI(desc);
+    if(resultado){
+      mostrarResultado(resultado, resultArea);
+      ultimaClasificacion = resultado;
+      await guardarHistorial(desc, resultado);
+      loadHistorialBadge();
+    }
+  } catch(e){
+    resultArea.innerHTML = `<div style="padding:24px;color:var(--rd600)">❌ Error: ${e.message}</div>`;
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'Clasificar';
+}
+
+
   const key = getOpenRouterKey();
   if(!key) throw new Error('❌ Error de conexión con el servicio de IA. Inténtalo de nuevo.');
 
@@ -1527,6 +1604,17 @@ function mostrarResultado(r, container){
   const confianzaColor = r.confianza >= 85 ? 'var(--gr600)' : r.confianza >= 65 ? 'var(--am600)' : 'var(--rd600)';
   const confianzaLabel = r.confianza >= 85 ? 'Alta' : r.confianza >= 65 ? 'Media' : 'Revisar';
 
+  // Badge de memoria si viene del historial
+  const memoriaHtml = r._desde_memoria ? `
+    <div style="background:var(--am50);border:1px solid var(--am200,#fde68a);border-radius:8px;padding:8px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:16px">⚡</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;color:var(--am600)">Resultado desde memoria — ${r._similitud}% similitud</div>
+        <div style="font-size:11px;color:var(--g600);margin-top:1px">Clasificación previa: "${r._desc_original}" · ${r._fecha_previa ? new Date(r._fecha_previa).toLocaleDateString('es-ES') : ''}</div>
+      </div>
+      <button class="btn btn-s btn-sm" onclick="forzarClasificarIA()" style="font-size:11px;flex-shrink:0">🤖 Reclasificar con IA</button>
+    </div>` : '';
+
   const medidas = (r.medidas_adicionales || []).filter(m => m.tipo !== 'NINGUNA');
 
   const medidasHtml = medidas.length > 0 ? medidas.map(m => {
@@ -1571,6 +1659,7 @@ function mostrarResultado(r, container){
 
   container.innerHTML = `
     <div class="result-card">
+      ${memoriaHtml}
       <!-- Header: code + desc + confidence -->
       <div class="result-header">
         <div class="code-chip">${r.codigo_taric.match(/.{2}/g).join(' ')}</div>
