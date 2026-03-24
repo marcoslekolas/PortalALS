@@ -5520,8 +5520,16 @@ async function saveUser(id){
     const r2=await sb.from('usuarios').update(obj).eq('id',id).select();
     saveErr=r2.error; saved=r2.data;
   }
-  if(saveErr){ showToast('❌ Error: '+saveErr.message); return; }
-  if(!saved || saved.length===0){ showToast('❌ No se encontró el usuario para actualizar'); return; }
+  if(saveErr){
+    // Mostrar error específico de enum para dar instrucciones claras
+    if(saveErr.message && saveErr.message.includes('enum')){
+      showToast('❌ El rol "'+nuevoRol+'" no está en la base de datos. Ejecuta el SQL: ALTER TYPE usuario_rol_enum ADD VALUE ''+nuevoRol+''');
+    } else {
+      showToast('❌ Error al guardar: '+saveErr.message);
+    }
+    return;
+  }
+  if(!saved || saved.length===0){ showToast('❌ No se actualizó ningún usuario — comprueba la conexión'); return; }
   await logAct('usuarios',id,nuevoNombre,'editar','rol',null,`${nuevoNombre} · ${nuevoRol}`);
   // Si se editó el propio usuario, actualizar sesión
   if(id===CU?.id){
