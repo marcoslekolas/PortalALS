@@ -5324,28 +5324,49 @@ async function delExpedicion(id,ref){
 async function loadUsuarios(){
   const el=document.getElementById('users-list');
   if(el) el.innerHTML='<div class="empty"><div class="empty-txt">Cargando usuarios...</div></div>';
-  const {data,error}=await sb.from('usuarios').select('*').order('rol');
+  const {data,error}=await sb.from('usuarios').select('*').order('rol').order('nombre');
   if(error){ if(el) el.innerHTML=`<div class="empty"><div class="empty-txt">Error: ${error.message}</div></div>`; return; }
   if(!data||!data.length){ if(el) el.innerHTML='<div class="empty"><div class="empty-txt">Sin usuarios encontrados</div></div>'; return; }
-  const rC={admin:'br',oficina:'bb',almacen:'ba',aduanas:'bt',transportista:'bgr'};
-  const rL={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
-  document.getElementById('users-list').innerHTML=`<div class="tc">${(data||[]).map(u=>{
-    const isMe=u.id===CU?.id;
-    const avatar=(u.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    const avatarBg=u.rol==='admin'?'var(--rd500)':u.rol==='oficina'?'var(--b600)':'var(--am500)';
-    return`<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--g100)">
-      <div style="width:36px;height:36px;border-radius:50%;background:${avatarBg};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">${avatar}</div>
-      <div style="flex:1">
-        <div style="font-weight:600;font-size:13px">${u.nombre}
-          ${isMe?'<span class="badge bg" style="margin-left:6px;font-size:10px">Tú</span>':''}
-          ${u.must_change_password?'<span class="badge ba" style="margin-left:6px;font-size:10px">⚠️ debe cambiar contraseña</span>':''}
+
+  const rolColor={admin:'var(--rd500)',oficina:'var(--b600)',aduanas:'var(--tl500)',almacen:'var(--am500)',transportista:'var(--g500)'};
+  const rolLabel={admin:'⚡ Admin',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista'};
+  const esAdmin=CU?.rol==='admin';
+
+  if(el) el.innerHTML=`<div class="tc">
+    ${(data||[]).map(u=>{
+      const isMe=u.id===CU?.id;
+      const inactivo=u.activo===false;
+      const avatar=(u.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+      const avatarColor=rolColor[u.rol]||'var(--g500)';
+      return`<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--g100);${inactivo?'opacity:.5':''}">
+        <div style="width:38px;height:38px;border-radius:50%;background:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${avatar}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            ${u.nombre}
+            ${isMe?'<span class="badge bg" style="font-size:10px">Tú</span>':''}
+            ${inactivo?'<span class="badge" style="font-size:10px;background:var(--g200);color:var(--g600)">Inactivo</span>':''}
+            ${u.must_change_password?'<span class="badge ba" style="font-size:10px">⚠️ cambiar pwd</span>':''}
+          </div>
+          <div style="font-size:12px;color:var(--g500);margin-top:1px">
+            ${u.email||'Sin email'}
+            ${u.ultimo_acceso?` · Acceso: ${fdt(u.ultimo_acceso)}`:''}
+          </div>
         </div>
-        <div style="font-size:12px;color:var(--g500)">${u.email}${u.ultimo_acceso?` · Último acceso: ${fdt(u.ultimo_acceso)}`:''}</div>
-      </div>
-      <span class="badge ${rC[u.rol]||'bgr'}">${rL[u.rol]||u.rol}</span>
-      <button class="btn btn-s btn-sm" onclick="editUser('${u.id}')">✏️ Editar</button>
-    </div>`;
-  }).join('')}</div>`;
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          <span style="background:${avatarColor}22;color:${avatarColor};border:1px solid ${avatarColor}44;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700">${rolLabel[u.rol]||u.rol}</span>
+          ${esAdmin?`<button class="btn btn-s btn-sm" onclick="editUser('${u.id}')" title="Editar usuario">✏️</button>
+          <button class="btn btn-s btn-sm" onclick="verPermisosRol('${u.rol}')" title="Ver permisos del rol" style="font-size:11px">🔑</button>`:''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+  ${esAdmin?`<div style="padding:12px 16px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--g500);align-self:center">Gestión de roles →</span>
+    ${['admin','oficina','aduanas','almacen','transportista'].map(r=>`
+      <button class="btn btn-s btn-sm" onclick="verPermisosRol('${r}')" style="font-size:11px">
+        🔑 ${rolLabel[r]||r}
+      </button>`).join('')}
+  </div>`:''}`;
 }
 
 async function editUser(id){
@@ -5353,86 +5374,199 @@ async function editUser(id){
   const {data:u}=await sb.from('usuarios').select('*').eq('id',id).single();
   if(!u)return;
   const isMe=u.id===CU?.id;
-  document.getElementById('m-title').textContent=`✏️ Editar usuario${isMe?' (tú)':''}`;
+  const rolOpts=['almacen','oficina','aduanas','transportista','admin'].map(r=>`
+    <option value="${r}" ${u.rol===r?'selected':''}>${
+      {almacen:'📦 Almacén',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',transportista:'🚛 Transportista',admin:'⚡ Administrador'}[r]
+    }</option>`).join('');
+  const rolDesc={
+    admin:'Acceso total — gestión de usuarios, configuración y todos los módulos',
+    oficina:'Operativa completa: expediciones, buques, facturación, alertas, estadísticas',
+    aduanas:'Clasificador TARIC, borrador DUA, vista de expediciones (sin facturación)',
+    almacen:'APP Almacén: fotos, confirmaciones, ubicaciones, listos embarcar',
+    transportista:'Solo lectura: expediciones asignadas y listos para embarcar',
+  };
+  document.getElementById('m-title').textContent=`✏️ ${isMe?'Mi perfil':'Editar usuario'}`;
   document.getElementById('m-body').innerHTML=`
-    <div class="fr2">
+    <div class="fr2" style="margin-bottom:14px">
       <div class="fg2">
-        <label class="fl2">Nombre completo</label>
-        <input id="eu-n" class="fi" value="${u.nombre||''}" placeholder="Nombre o email">
+        <label class="fl2">Nombre completo *</label>
+        <input id="eu-n" class="fi" value="${u.nombre||''}" placeholder="Nombre completo">
       </div>
       <div class="fg2">
         <label class="fl2">Email</label>
         <input id="eu-e" class="fi" value="${u.email||''}" placeholder="email@als.com">
       </div>
     </div>
-    <div class="fr2">
+
+    <div class="fr2" style="margin-bottom:14px">
       <div class="fg2">
-        <label class="fl2">Rol</label>
-        <select id="eu-r" class="fi fs">
-          <option value="almacen" ${u.rol==='almacen'?'selected':''}>Almacén</option>
-          <option value="oficina" ${u.rol==='oficina'?'selected':''}>Oficina</option>
-          <option value="aduanas" ${u.rol==='aduanas'?'selected':''}>Aduanas</option>
-          <option value="transportista" ${u.rol==='transportista'?'selected':''}>Transportista</option>
-          <option value="admin" ${u.rol==='admin'?'selected':''}>Administrador</option>
+        <label class="fl2">Rol del usuario</label>
+        <select id="eu-r" class="fi fs" onchange="previewRolDesc(this.value)" ${isMe&&CU.rol==='admin'?'':'${isMe?'disabled title=\"No puedes cambiar tu propio rol\"':''}'}>
+          ${rolOpts}
         </select>
+        <div id="eu-rol-desc" style="font-size:11px;color:var(--g500);margin-top:5px;padding:6px 8px;background:var(--g50);border-radius:5px">
+          ${rolDesc[u.rol]||''}
+        </div>
       </div>
       <div class="fg2">
-        <label class="fl2">Nueva contraseña <span style="color:var(--g400);font-weight:400">(vacío = sin cambios)</span></label>
-        <input id="eu-p" class="fi" type="password" placeholder="••••••••">
+        <label class="fl2">Estado</label>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="eu-activo" ${u.activo!==false?'checked':''} style="accent-color:var(--gr600);width:16px;height:16px">
+            <span style="font-size:13px">Usuario activo</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="eu-mcp" ${u.must_change_password?'checked':''} style="accent-color:var(--am600);width:16px;height:16px">
+            <span style="font-size:13px">Forzar cambio de contraseña</span>
+          </label>
+        </div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-      <input type="checkbox" id="eu-mcp" style="accent-color:var(--am600)" ${u.must_change_password?'checked':''}>
-      <label for="eu-mcp" style="font-size:13px;cursor:pointer">Forzar cambio de contraseña en el próximo inicio de sesión</label>
+
+    <div style="border-top:1px solid var(--g100);padding-top:12px;margin-top:4px">
+      <label class="fl2">Nueva contraseña <span style="color:var(--g400);font-weight:400">(dejar vacío para no cambiar)</span></label>
+      <input id="eu-p" class="fi" type="password" placeholder="••••••••" style="margin-top:4px">
     </div>
-    ${isMe?`<div class="info-box">Estás editando tu propio usuario. Los cambios de nombre se aplicarán en la sesión actual.</div>`:''}
-    <div class="warn-box">Almacén: APP Almacén · Oficina: operativa completa · Admin: acceso total</div>`;
+
+    ${isMe?'<div class="info-box" style="margin-top:12px">Estás editando tu propio perfil.</div>':''}
+    ${CU.rol==='admin'&&!isMe?`<div style="margin-top:12px">
+      <button class="btn btn-s btn-sm" onclick="verPermisosRol(document.getElementById('eu-r').value)">🔑 Ver permisos del rol seleccionado</button>
+    </div>`:''}`;
+
   document.getElementById('m-foot').innerHTML=`
     <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
-    ${!isMe?`<button class="btn btn-d btn-sm" onclick="delUser('${u.id}')">🗑️ Eliminar</button>`:''}
+    ${CU.rol==='admin'&&!isMe?`<button class="btn btn-d btn-sm" onclick="delUser('${u.id}')">🗑️ Eliminar</button>`:''}
     <button class="btn btn-p" onclick="saveUser('${u.id}')">💾 Guardar cambios</button>`;
   document.getElementById('mo').classList.add('open');
 }
 
+function previewRolDesc(rol){
+  const desc={
+    admin:'Acceso total — gestión de usuarios, configuración y todos los módulos',
+    oficina:'Operativa completa: expediciones, buques, facturación, alertas, estadísticas',
+    aduanas:'Clasificador TARIC, borrador DUA, vista de expediciones (sin facturación)',
+    almacen:'APP Almacén: fotos, confirmaciones, ubicaciones, listos embarcar',
+    transportista:'Solo lectura: expediciones asignadas y listos para embarcar',
+  };
+  const el=document.getElementById('eu-rol-desc');
+  if(el) el.textContent=desc[rol]||'';
+}
+
+
 async function saveUser(id){
   if(!puedeAcceder('usuarios','editar')){showToast('⛔ Sin permisos para editar usuarios');return;}
   const nuevoNombre=gv('eu-n').trim();
-  if(!nuevoNombre){alert('El nombre no puede estar vacío.');return;}
+  const nuevoRol=gv('eu-r');
+  if(!nuevoNombre){showToast('❌ El nombre no puede estar vacío');return;}
   const obj={
     nombre:nuevoNombre,
-    email:gv('eu-e'),
-    rol:gv('eu-r'),
+    email:gv('eu-e')||null,
+    rol:nuevoRol,
+    activo:document.getElementById('eu-activo')?.checked!==false,
   };
   const p=gv('eu-p');
   if(p) obj.password_hash=p;
-  // must_change_password: solo añadir si la columna existe (evitar error de schema cache)
   try {
-    const mcp = document.getElementById('eu-mcp');
-    if(mcp !== null){ obj.must_change_password = p ? true : (mcp.checked||false); }
+    const mcp=document.getElementById('eu-mcp');
+    if(mcp) obj.must_change_password = p ? true : (mcp.checked||false);
   } catch(e){}
   let {error:saveErr}=await sb.from('usuarios').update(obj).eq('id',id);
   if(saveErr && saveErr.message && saveErr.message.includes('must_change_password')){
     delete obj.must_change_password;
-    await sb.from('usuarios').update(obj).eq('id',id);
+    const r2=await sb.from('usuarios').update(obj).eq('id',id);
+    saveErr=r2.error;
   }
-  await logAct('usuarios',id,nuevoNombre,'editar','nombre/rol',null,`${nuevoNombre} · ${obj.rol}`);
-  // Si el usuario editado es el propio admin logueado, actualizar CU en memoria
+  if(saveErr){ showToast('❌ Error: '+saveErr.message); return; }
+  await logAct('usuarios',id,nuevoNombre,'editar','rol',null,`${nuevoNombre} · ${nuevoRol}`);
+  // Si se editó el propio usuario, actualizar sesión
   if(id===CU?.id){
-    CU.nombre=nuevoNombre;
-    CU.email=obj.email;
-    // Actualizar avatar y nombre en la UI
+    CU.nombre=nuevoNombre; CU.email=obj.email;
     const init=nuevoNombre.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    const sbAv=document.getElementById('sb-av');if(sbAv)sbAv.textContent=init;
-    const sbName=document.getElementById('sb-name');if(sbName)sbName.textContent=nuevoNombre;
-    const hmAv=document.getElementById('hm-av');if(hmAv)hmAv.textContent=init;
-    const hmName=document.getElementById('hm-name');if(hmName)hmName.textContent=nuevoNombre;
+    ['sb-av','hm-av'].forEach(eid=>{const e=document.getElementById(eid);if(e)e.textContent=init;});
+    ['sb-name','hm-name'].forEach(eid=>{const e=document.getElementById(eid);if(e)e.textContent=nuevoNombre;});
+    saveSession(CU);
   }
-  showToast('✅ Usuario actualizado: '+nuevoNombre);
+  showToast('✅ Usuario actualizado: '+nuevoNombre+' ('+nuevoRol+')');
   closeModal();
   loadView(CV);
 }
 
-async function delUser(id){
+async function verPermisosRol(rol){
+  if(!rol) return;
+  const {data} = await sb.from('als_permisos_rol').select('*').eq('rol',rol).order('modulo');
+  const rolLabel = {admin:'⚡ Administrador',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista'};
+  const moduloLabel = {
+    expediciones:'📦 Expediciones', buques:'🚢 Buques', alertas:'🔔 Alertas',
+    incidencias:'⚠️ Incidencias', empresas:'🏢 Empresas', estadisticas:'📈 Estadísticas',
+    facturacion:'💶 Facturación', dua:'🏛️ DUA', taric:'🔍 TARIC',
+    almacen:'📦 Almacén', log:'📋 Log', usuarios:'👥 Usuarios',
+  };
+  const cols = ['puede_ver','puede_crear','puede_editar','puede_eliminar','puede_exportar'];
+  const colLabel = ['Ver','Crear','Editar','Eliminar','Exportar'];
+
+  document.getElementById('m-title').textContent = `🔑 Permisos del rol: ${rolLabel[rol]||rol}`;
+  document.getElementById('m-body').innerHTML = `
+    <div style="font-size:12px;color:var(--g500);margin-bottom:12px">
+      Edita los permisos del rol <strong>${rolLabel[rol]||rol}</strong>. Los cambios afectan a todos los usuarios con este rol.
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead>
+        <tr style="background:var(--g50)">
+          <th style="padding:7px 10px;text-align:left;font-weight:700;color:var(--g600)">Módulo</th>
+          ${colLabel.map(l=>`<th style="padding:7px 8px;text-align:center;color:var(--g500);font-weight:600">${l}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${(data||[]).map((p,i)=>`
+          <tr style="border-top:1px solid var(--g100);${i%2?'background:var(--g50)':''}">
+            <td style="padding:8px 10px;font-weight:600;color:var(--g800)">${moduloLabel[p.modulo]||p.modulo}</td>
+            ${cols.map(col=>`
+              <td style="text-align:center;padding:8px">
+                <input type="checkbox" data-mod="${p.modulo}" data-col="${col}"
+                  ${p[col]?'checked':''} style="width:16px;height:16px;accent-color:var(--b600);cursor:pointer">
+              </td>`).join('')}
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    ${!data||!data.length?`<div class="empty"><div class="empty-txt">Sin permisos configurados para este rol. Ejecuta el SQL fix_rls_usuarios.sql en Supabase.</div></div>`:''}`;
+
+  document.getElementById('m-foot').innerHTML=`
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="guardarPermisosRol('${rol}')">💾 Guardar permisos</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+async function guardarPermisosRol(rol){
+  const checkboxes = document.querySelectorAll('#m-body input[type=checkbox][data-mod]');
+  if(!checkboxes.length){ showToast('Sin cambios que guardar'); return; }
+
+  // Agrupar por módulo
+  const porModulo = {};
+  checkboxes.forEach(cb => {
+    const mod = cb.dataset.mod;
+    const col = cb.dataset.col;
+    if(!porModulo[mod]) porModulo[mod] = {};
+    porModulo[mod][col] = cb.checked;
+  });
+
+  let errores = 0;
+  for(const [modulo, perms] of Object.entries(porModulo)){
+    const {error} = await sb.from('als_permisos_rol')
+      .update(perms)
+      .eq('rol', rol)
+      .eq('modulo', modulo);
+    if(error) errores++;
+  }
+
+  if(errores){ showToast('⚠️ Algunos permisos no se pudieron guardar'); return; }
+  // Recargar permisos en caché si el rol editado es el del usuario actual
+  if(CU?.rol === rol) await cargarPermisosRol(rol);
+  await logAct('als_permisos_rol', null, rol, 'editar', 'permisos', null, 'Permisos actualizados por admin');
+  showToast('✅ Permisos guardados para el rol '+rol);
+  closeModal();
+}
+
+
   if(CU?.rol!=='admin'){alert('Solo el administrador puede eliminar usuarios.');return;}
   if(id===CU?.id){alert('No puedes eliminar tu propio usuario.');return;}
   if(!confirm('¿Eliminar este usuario? Esta acción no se puede deshacer.'))return;
