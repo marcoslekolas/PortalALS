@@ -2166,7 +2166,12 @@ function enterMod(mod){
   // Si CU no está cargado, intentar recuperarlo de la sesión guardada
   if(!CU||!CU.id){
     var s=loadSession();
-    if(s&&s.id){ CU=s; cargarPermisosRol(CU.rol).catch(()=>{}); } else { showHome(); return; }
+    if(s&&s.id){
+      CU=s;
+      // Cargar permisos antes de continuar — como es async, iniciamos y continuamos
+      // puedeAcceder() es permisivo mientras no están listos (_permisosListos=false)
+      cargarPermisosRol(CU.rol).catch(()=>{ _permisosListos=true; });
+    } else { showHome(); return; }
   }
   const puedeOperativa=['admin','oficina','aduanas'];
   const esExclusivoAlmacen=['almacen','transportista'].includes(CU.rol);
@@ -2898,26 +2903,62 @@ async function logAuth(evento, usuarioId, usuarioNombre, detalles){
   } catch(e){ console.warn('logAuth error:', e.message); }
 }
 
-// ── PUNTO 19+20: Cargar permisos del rol al hacer login ──────
-let _permisos = {}; // caché de permisos del usuario activo
+
+// ── PUNTO 19+20: Permisos por rol ────────────────────────────
+// Inicializar con acceso total hasta que se carguen los permisos reales
+// Esto evita bloquear al usuario si los permisos tardan en cargar
+let _permisos = {__admin: true}; // permisivo por defecto
+let _permisosListos = false;
+
 async function cargarPermisosRol(rol){
-  if(!sb || !rol) return;
+  if(!rol) return;
+  if(rol === 'admin'){
+    _permisos = {__admin: true};
+    _permisosListos = true;
+    return;
+  }
+  if(!sb){
+    // Sin Supabase — dar acceso básico según rol conocido
+    _permisos = {__admin: rol === 'admin'};
+    _permisosListos = true;
+    return;
+  }
   try {
-    // Admin tiene acceso total sin necesidad de consultar
-    if(rol === 'admin'){ _permisos = {__admin: true}; return; }
-    const {data} = await sb.from('als_permisos_rol').select('*').or(`rol.eq.${rol},rol.eq.*`);
-    _permisos = {};
-    (data||[]).forEach(p => { _permisos[p.modulo] = p; });
-  } catch(e){ _permisos = {}; }
+    const {data} = await sb.from('als_permisos_rol')
+      .select('*')
+      .or(`rol.eq.${rol},rol.eq.*`);
+    if(data && data.length > 0){
+      _permisos = {};
+      data.forEach(p => { _permisos[p.modulo] = p; });
+    } else {
+      // Sin datos en la tabla — dar acceso según rol (fallback seguro)
+      const fallback = {
+        admin: {__admin: true},
+        oficina: {'*': {puede_ver:true,puede_crear:true,puede_editar:true,puede_eliminar:false,puede_exportar:true}},
+        aduanas: {'expediciones':{puede_ver:true,puede_crear:false,puede_editar:true,puede_eliminar:false,puede_exportar:true},'dua':{puede_ver:true,puede_crear:true,puede_editar:true,puede_eliminar:false,puede_exportar:true},'taric':{puede_ver:true,puede_crear:true,puede_editar:true,puede_eliminar:false,puede_exportar:true}},
+        almacen: {'almacen':{puede_ver:true,puede_crear:true,puede_editar:true,puede_eliminar:false,puede_exportar:false},'expediciones':{puede_ver:true,puede_crear:false,puede_editar:true,puede_eliminar:false,puede_exportar:false}},
+        transportista: {'expediciones':{puede_ver:true,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false},'almacen':{puede_ver:true,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false}},
+      };
+      _permisos = fallback[rol] || {'*':{puede_ver:true,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false}};
+    }
+  } catch(e){
+    // Error de red — dar acceso permisivo para no bloquear
+    console.warn('cargarPermisosRol error:', e.message);
+    _permisos = {__admin: rol === 'admin'};
+  }
+  _permisosListos = true;
 }
 
 function puedeAcceder(modulo, accion = 'ver'){
+  // Si los permisos no están listos aún, dar acceso (evitar bloqueo por timing)
+  if(!_permisosListos) return true;
   if(_permisos.__admin) return true;
   const p = _permisos[modulo] || _permisos['*'];
   if(!p) return false;
   const mapa = {ver:'puede_ver', crear:'puede_crear', editar:'puede_editar', eliminar:'puede_eliminar', exportar:'puede_exportar'};
   return p[mapa[accion]] === true;
 }
+
 
 // ── Log de operación con módulo ───────────────────────────────
 async function logActMod(tabla, rid, rnom, accion, campo, vant, vnew, modulo){
