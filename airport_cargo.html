@@ -1114,17 +1114,23 @@ IMPORTANTE:
 - Responde ÚNICAMENTE con el JSON, sin texto adicional ni backticks`;
 
     // Usar OpenRouter (evita CORS desde el navegador)
-    // Cargar key desde Supabase si no está en localStorage (igual que TARIC)
-    if(!localStorage.getItem('als_openrouter_key')){
+    // Obtener key — localStorage → Supabase con timeout (funciona en iOS y Android)
+    let orKey = localStorage.getItem('als_openrouter_key') || '';
+    if(!orKey){
       try {
+        const ctrl = new AbortController();
+        const tid = setTimeout(()=>ctrl.abort(), 8000);
         const r = await fetch(`${SB_URL}/rest/v1/als_config?clave=eq.gemini_api_key&select=valor`,
-          {headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`}});
+          { signal: ctrl.signal, headers:{apikey:SB_KEY, Authorization:`Bearer ${SB_KEY}`}});
+        clearTimeout(tid);
         const d = await r.json();
-        if(d?.[0]?.valor) localStorage.setItem('als_openrouter_key', d[0].valor);
-      } catch(e){}
+        if(d?.[0]?.valor){
+          orKey = d[0].valor;
+          try{ localStorage.setItem('als_openrouter_key', orKey); }catch(e){}
+        }
+      } catch(e){ console.warn('Key load error:', e.message); }
     }
-    const orKey = localStorage.getItem('als_openrouter_key') || '';
-    if(!orKey) throw new Error('API key de OpenRouter no configurada. Configúrala en Aduanas → Clasificador TARIC.');
+    if(!orKey) throw new Error('API key no encontrada. El administrador debe guardarla en Aduanas → Clasificador TARIC.');
 
     // Para PDFs usar solo modelos que soporten documentos; para imágenes cualquier modelo visión
     const models = [

@@ -3024,24 +3024,51 @@ function abrirBuscadorEORI(){
 let _eoriMode = 'empresa';
 let _eoriKeyLoaded = false;
 
+// Función centralizada para obtener la API key de OpenRouter
+// Siempre funciona: localStorage → Supabase → error claro
+// Sin flag bloqueante — si falló antes, lo intenta de nuevo
+async function getORKey(){
+  // 1. Memoria rápida
+  let k = localStorage.getItem('als_openrouter_key');
+  if(k) return k;
+  // 2. Supabase — con timeout de 8s para móviles lentos
+  try {
+    const ctrl = new AbortController();
+    const tid = setTimeout(()=>ctrl.abort(), 8000);
+    const r = await fetch(
+      'https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=eq.gemini_api_key&select=valor',
+      { signal: ctrl.signal,
+        headers:{
+          apikey:'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1',
+          Authorization:'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'
+        }
+      }
+    );
+    clearTimeout(tid);
+    const d = await r.json();
+    if(d?.[0]?.valor){
+      k = d[0].valor;
+      try{ localStorage.setItem('als_openrouter_key', k); }catch(e){}
+      _eoriKeyLoaded = true;
+      return k;
+    }
+  } catch(e){ console.warn('getORKey Supabase error:', e.message); }
+  return null;
+}
+
 async function _loadEoriKey(){
   if(_eoriKeyLoaded) return;
-  // Try localStorage first
-  if(localStorage.getItem('als_openrouter_key')) { _eoriKeyLoaded = true; return; }
-  // Load from Supabase
+  if(localStorage.getItem('als_openrouter_key')){ _eoriKeyLoaded=true; return; }
+  const k = await getORKey();
+  if(k) _eoriKeyLoaded = true;
+  // Also load model
   try {
-    const r = await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=eq.gemini_api_key&select=valor',{
-      headers:{apikey:'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1',Authorization:'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'}
-    });
-    const d = await r.json();
-    if(d?.[0]?.valor){ localStorage.setItem('als_openrouter_key', d[0].valor); _eoriKeyLoaded=true; }
-    // Also load model
     const r2 = await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=eq.gemini_model&select=valor',{
       headers:{apikey:'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1',Authorization:'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'}
     });
     const d2 = await r2.json();
-    if(d2?.[0]?.valor) localStorage.setItem('als_or_model', d2[0].valor);
-  } catch(e){ console.warn('EORI key load:', e.message); }
+    if(d2?.[0]?.valor) try{ localStorage.setItem('als_or_model', d2[0].valor); }catch(e){}
+  } catch(e){}
 }
 
 function setEoriMode(mode){
@@ -3115,8 +3142,7 @@ async function buscarEORI(){
   }
 
   // Load key if needed
-  await _loadEoriKey();
-  const key = localStorage.getItem('als_openrouter_key')||'';
+  const key = await getORKey() || '';
   if(!key){
     if(resEl) resEl.innerHTML=`<div style="padding:14px;background:var(--am50);border:1px solid #fde68a;border-radius:var(--rl);color:#92400e">
       ⚠️ Configura la API key de <strong>OpenRouter</strong> en el módulo <strong>Aduanas → Clasificador TARIC</strong> (⚙️ en el sidebar). Gratis en <a href="https://openrouter.ai/keys" target="_blank" style="color:#1d4ed8">openrouter.ai/keys ↗</a>
@@ -4829,25 +4855,10 @@ Expedición de referencia en el portal: ${ref}`;
 
     status.innerHTML = '🔑 Obteniendo credenciales...';
 
-    // Cargar key — intentar localStorage, luego Supabase directamente
-    let orKey = localStorage.getItem('als_openrouter_key') || '';
+    // Usar función centralizada — funciona en iOS, Android y escritorio
+    const orKey = await getORKey();
     if(!orKey){
-      try {
-        await _loadEoriKey();
-        orKey = localStorage.getItem('als_openrouter_key') || '';
-      } catch(e){}
-    }
-    // Fallback directo a Supabase si _loadEoriKey falló
-    if(!orKey){
-      try {
-        const r = await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=eq.gemini_api_key&select=valor',
-          {headers:{apikey:'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1',Authorization:'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'}});
-        const d = await r.json();
-        if(d?.[0]?.valor){ orKey = d[0].valor; localStorage.setItem('als_openrouter_key', orKey); }
-      } catch(e){}
-    }
-    if(!orKey){
-      throw new Error('API key de OpenRouter no encontrada. El administrador debe configurarla en Aduanas → Clasificador TARIC.');
+      throw new Error('API key no encontrada en Supabase. El administrador debe guardarla en Aduanas → Clasificador TARIC.');
     }
 
     status.innerHTML = '🧠 IA procesando el documento...';
