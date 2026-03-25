@@ -949,8 +949,6 @@ textarea.fi{resize:vertical;min-height:72px}
           </div>
           <div class="hm-card-cta">Entrar →</div>
         </div>
-        <a href="taric.html" target="_blank" onclick="event.stopPropagation()" title="Abrir en nueva pestaña"
-          style="position:absolute;top:8px;right:8px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:3px 7px;font-size:11px;color:rgba(255,255,255,.8);text-decoration:none;line-height:1">↗</a>
       </div>
 
       <!-- EORI -->
@@ -1067,6 +1065,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <button id="btn-to-almacen" class="hdr-icon-btn" onclick="irAAlmacen()" style="display:none" title="Almacén">📦</button>
         <button id="btn-to-airport" class="hdr-icon-btn" onclick="window.location.href='airport_cargo.html'" style="display:none" title="Airport Cargo">✈️</button>
         <button class="hdr-icon-btn" onclick="abrirMenuAduanas()" style="display:none" id="btn-to-taric" title="Módulo Aduanas">🏛️</button>
+        <button id="btn-to-config" class="hdr-icon-btn" onclick="enterMod('configuracion')" style="display:none" title="Configuración">⚙️</button>
 
         <!-- Dark mode -->
         <button id="dark-toggle" class="hdr-icon-btn" onclick="toggleDarkMode()" title="Modo oscuro/claro">🌙</button>
@@ -1124,12 +1123,16 @@ textarea.fi{resize:vertical;min-height:72px}
 
 
       <!-- Navegación Admin (oculta por defecto, visible solo en modo Configuración) -->
-      <div id="nav-adm" style="display:none;flex:1;overflow-y:auto">
+      <div id="nav-adm" style="display:none;flex-direction:column;overflow-y:auto">
         <div class="sb-sec">Administración</div>
         <div class="nav-item" onclick="nav('usuarios',this)"><span class="ni">👥</span><span class="nav-item-txt">Usuarios</span></div>
         <div class="nav-item" onclick="nav('log',this)"><span class="ni">📋</span><span class="nav-item-txt">Log de actividad</span></div>
         <div class="nav-item" onclick="nav('permisos',this)"><span class="ni">🔑</span><span class="nav-item-txt">Permisos por rol</span></div>
         <div class="nav-item" onclick="nav('versiones',this)"><span class="ni">🏷️</span><span class="nav-item-txt">Versiones</span></div>
+        <div style="margin-top:auto;padding:12px 8px;border-top:1px solid var(--g200)">
+          <button class="btn btn-s btn-sm" style="width:100%;justify-content:center" onclick="enterMod('operativa')">← Ir a Operativa</button>
+          <button class="btn btn-s btn-sm" style="width:100%;justify-content:center;margin-top:6px" onclick="showHome()">🏠 Inicio</button>
+        </div>
       </div>
       <!-- Navegación Almacén -->
       <div id="nav-alm" style="display:none;flex:1;overflow-y:auto">
@@ -2129,8 +2132,6 @@ function showHome(){
         </div>
         <div class="hm-card-cta">Entrar →</div>
       </div>
-      <a href="airport_cargo.html" target="_blank" onclick="event.stopPropagation()" title="Abrir en nueva pestaña"
-        style="position:absolute;top:8px;right:8px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:3px 7px;font-size:11px;color:rgba(255,255,255,.8);text-decoration:none;line-height:1">↗</a>
     </div>`;
 
   // Módulo Aduanas — solo visible para rol 'aduanas' y 'admin'
@@ -2188,19 +2189,21 @@ function enterMod(mod){
     document.getElementById('sb-av').textContent=init;
     document.getElementById('sb-name').textContent=CU.nombre||'—';
     document.getElementById('sb-role').textContent='Administrador';
-    document.getElementById('nav-op').style.display='block';
+    document.getElementById('nav-op').style.display='none';
     document.getElementById('nav-alm').style.display='none';
     document.getElementById('btn-nb').style.display='none';
     document.getElementById('btn-ne').style.display='none';
     document.getElementById('bc-mod').textContent='Configuración';
     const navAdm=document.getElementById('nav-adm');
-    if(navAdm) navAdm.style.display='block';
+    if(navAdm) navAdm.style.display='flex';
     const btnAlmacen=document.getElementById('btn-to-almacen');
     const btnAirport=document.getElementById('btn-to-airport');
     const btnOperativa=document.getElementById('btn-to-operativa');
     if(btnAlmacen) btnAlmacen.style.display='';
-    if(btnAirport) btnAirport.style.display='';
-    if(btnOperativa) btnOperativa.style.display='none';
+    if(btnAirport) btnAirport.style.display=puedeOperativa.includes(CU.rol)?'':'none';
+    if(btnOperativa) btnOperativa.style.display='';
+    const btnConfig=document.getElementById('btn-to-config');
+    if(btnConfig) btnConfig.style.display='none';
     // Ir directo a la sección de usuarios
     nav('usuarios', document.querySelector('#nav-adm .nav-item'));
     return;
@@ -2226,30 +2229,34 @@ function enterMod(mod){
   const btnOperativa=document.getElementById('btn-to-operativa');
 
   if(mod==='operativa'){
-    document.getElementById('nav-op').style.display='block';
+    document.getElementById('nav-op').style.display='flex';
     document.getElementById('nav-alm').style.display='none';
+    document.getElementById('nav-adm').style.display='none';
     // Solo mostrar botones de crear si el rol tiene permiso
     document.getElementById('btn-nb').style.display = puedeAcceder('buques','crear') ? '' : 'none';
     document.getElementById('btn-ne').style.display = puedeAcceder('expediciones','crear') ? '' : 'none';
-    const navAdm=document.getElementById('nav-adm');
-    // Configuración ya no está en sidebar — solo en home
     document.getElementById('bc-mod').textContent='Operativa';
     if(btnAlmacen){btnAlmacen.style.display='';btnAlmacen.title='Almacén & Embarque';}
     if(btnAirport) btnAirport.style.display=puedeAirport?'':'none';
     const btnTaric=document.getElementById('btn-to-taric');
     if(btnTaric) btnTaric.style.display=['admin','oficina','aduanas'].includes(CU.rol)?'flex':'none';
     if(btnOperativa) btnOperativa.style.display='none';
+    const btnConfig=document.getElementById('btn-to-config');
+    if(btnConfig) btnConfig.style.display=CU.rol==='admin'?'':'none';
     nav('dashboard',document.querySelector('#nav-op .nav-item'));
     setTimeout(loadFactBadge, 800);
   } else {
     document.getElementById('nav-op').style.display='none';
-    document.getElementById('nav-alm').style.display='block';
+    document.getElementById('nav-alm').style.display='flex';
+    document.getElementById('nav-adm').style.display='none';
     document.getElementById('btn-nb').style.display='none';
     document.getElementById('btn-ne').style.display='none';
     document.getElementById('bc-mod').textContent='Almacén & Embarque';
     if(btnAlmacen) btnAlmacen.style.display='none';
     if(btnAirport) btnAirport.style.display=(!esExclusivoAlmacen&&puedeAirport)?'':'none';
     if(btnOperativa) btnOperativa.style.display=esExclusivoAlmacen?'none':'';
+    const btnConfig=document.getElementById('btn-to-config');
+    if(btnConfig) btnConfig.style.display=CU.rol==='admin'?'':'none';
     // En móvil: ir directamente a Fotos & Confirmar con la barra visible
     if(window.innerWidth<=768){
       nav('alm-fotos',document.querySelector('#nav-alm .nav-item:nth-child(2)'));
