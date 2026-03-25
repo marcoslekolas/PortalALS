@@ -4631,10 +4631,9 @@ async function loadAlertas(){
     sb.from('incidencias').select('*,expediciones(id,nº_expedicion)').neq('estado','Cerrada'),
     // Expediciones en tránsito sin MRN — candidatas a alerta TARIC
     sb.from('expediciones')
-      .select('id,nº_expedicion,descripcion_mercancias,status_aduanero,tramite_aduanero,ubicacion,buques(nombre),fecha_max_despacho')
+      .select('id,nº_expedicion,status_aduanero,tramite_aduanero,ubicacion,buques(nombre),fecha_max_despacho')
       .neq('tramite_aduanero','Despachado')
       .neq('ubicacion','Pendiente recibir')
-      .not('descripcion_mercancias','is',null)
       .limit(30)
   ]);
   let html='';
@@ -4652,7 +4651,7 @@ async function loadAlertas(){
 
   const alertasTaric = [];
   (expSinDespachar||[]).forEach(e=>{
-    const desc = (e.descripcion_mercancias||'').toLowerCase();
+    const desc = ''; // columna descripcion_mercancias no existe en BD
     if(!desc) return;
     Object.entries(medidasControl).forEach(([tipo, cfg])=>{
       const coincide = cfg.keys.some(k => desc.includes(k));
@@ -4674,7 +4673,7 @@ async function loadAlertas(){
           <div class="a-title">${exp.nº_expedicion} — ${exp.buques?.nombre||'—'}</div>
           <div class="a-detail" style="font-weight:600;color:var(--rd600)">${cfg.label}</div>
           <div class="a-detail">${cfg.detalle}</div>
-          ${exp.descripcion_mercancias?`<div style="font-size:10px;color:var(--g400);margin-top:2px;font-style:italic">Mercancía: "${exp.descripcion_mercancias.substring(0,80)}${exp.descripcion_mercancias.length>80?'…':''}"</div>`:''}
+
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
           <span class="badge ${cfg.badge}">TARIC</span>
@@ -4896,10 +4895,8 @@ Expedición de referencia en el portal: ${ref}`;
         ${ocr.observaciones?`<div style="padding:8px 12px;border-top:1px solid var(--g100);font-size:11px;color:var(--am600)"><strong>Observaciones:</strong> ${ocr.observaciones}</div>`:''}
       </div>`;
 
-    // Guardar resultado OCR en la expedición
-    await sb.from('expediciones').update({
-      descripcion_mercancias: ocr.marcas || null,
-    }).eq('id', expId).then(()=>{});
+    // Guardar marcas OCR en la descripción de la incidencia (columna descripcion_mercancias no existe)
+    // Las marcas quedan en el resultado OCR mostrado al usuario
 
     // Pie del modal según resultado
     if(hayDiscrepancia){
@@ -5361,7 +5358,6 @@ async function guardarLandedNoPrevisto(){
       buque_id: buqueId,
       bultos,
       kilos,
-      descripcion_mercancias: [desc, nota].filter(Boolean).join(' · ') || null,
       status_aduanero: sta||null,
       ubicacion: 'Landed',
       estado_semaforo: '⚓ Landed',
@@ -5449,7 +5445,7 @@ async function confirmarLlegadaFotos(id){
   // Actualizar expedición
   const upd = { ubicacion:'Almacén-Sin Ubicar', notif_llegada_sent:true };
   if(fotoUrl) upd.foto_llegada_url = fotoUrl;
-  if(nota) upd.descripcion_mercancias = nota;
+  // nota se guarda en la incidencia si hay daño — columna descripcion_mercancias no existe en BD
   await sb.from('expediciones').update(upd).eq('id', id);
 
   const estadoTxt = { ok:'Correcto', leve:'Daño leve', grave:'Daño grave', humedad:'Humedad', precinto:'Precinto roto' }[estado] || estado;
