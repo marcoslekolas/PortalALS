@@ -1093,16 +1093,26 @@ async function guardarModeloSupabase(model){
 
 async function saveOpenRouterKeyToSupabase(key){
   if(!key) return;
-  // Guardar en localStorage del dispositivo actual
   localStorage.setItem('als_openrouter_key', key);
-  // Guardar en Supabase para que esté disponible en TODOS los dispositivos
   if(sb){
     try {
-      await sb.from('als_config').upsert(
+      const {error} = await sb.from('als_config').upsert(
         {clave:'gemini_api_key', valor:key},
         {onConflict:'clave'}
       );
-    } catch(e){ console.warn('No se pudo guardar key en Supabase:', e.message); }
+      if(error){
+        console.error('Error guardando key en Supabase:', error.message);
+        showToast('⚠️ Key guardada localmente pero no en Supabase: ' + error.message);
+      } else {
+        console.log('✅ Key guardada en Supabase correctamente');
+      }
+    } catch(e){
+      console.error('Exception guardando key:', e.message);
+      showToast('⚠️ Error Supabase: ' + e.message);
+    }
+  } else {
+    console.warn('sb no disponible al guardar key');
+    showToast('⚠️ Sin conexión a Supabase — key guardada solo localmente');
   }
 }
 
