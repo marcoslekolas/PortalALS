@@ -1114,6 +1114,15 @@ IMPORTANTE:
 - Responde ÚNICAMENTE con el JSON, sin texto adicional ni backticks`;
 
     // Usar OpenRouter (evita CORS desde el navegador)
+    // Cargar key desde Supabase si no está en localStorage (igual que TARIC)
+    if(!localStorage.getItem('als_openrouter_key')){
+      try {
+        const r = await fetch(`${SB_URL}/rest/v1/als_config?clave=eq.gemini_api_key&select=valor`,
+          {headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`}});
+        const d = await r.json();
+        if(d?.[0]?.valor) localStorage.setItem('als_openrouter_key', d[0].valor);
+      } catch(e){}
+    }
     const orKey = localStorage.getItem('als_openrouter_key') || '';
     if(!orKey) throw new Error('API key de OpenRouter no configurada. Configúrala en Aduanas → Clasificador TARIC.');
 
