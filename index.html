@@ -4742,7 +4742,202 @@ async function loadAlmacen(){
   document.getElementById('alm-lis').innerHTML=lis.length?lis.map(rL).join(''):'<div class="empty"><div class="empty-txt">No hay autorizadas</div></div>';
 }
 
-async function confirmLlegada(id){
+// ── OCR Albarán — Mejora 7 ────────────────────────────────────────
+async function leerAlbaranOCR(expId, ref, bultosPortal, kilosPortal){
+  document.getElementById('m-title').textContent = '📄 Leer albarán con IA';
+  document.getElementById('m-body').innerHTML = `
+    <div class="info-box" style="margin-bottom:14px">
+      Fotografía el albarán de entrega o packing list. La IA extraerá bultos, peso y marcas, y los comparará con la expedición registrada.
+    </div>
+    <div style="background:var(--b50);border:1px solid var(--b100);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+      <div><div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase">Expedición</div><div style="font-weight:700;font-size:13px;color:var(--b700)">${ref}</div></div>
+      <div><div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase">Bultos portal</div><div style="font-weight:700;font-size:18px;color:var(--b700)">${bultosPortal}</div></div>
+      <div><div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase">Kilos portal</div><div style="font-weight:700;font-size:18px;color:var(--b700)">${kilosPortal}</div></div>
+    </div>
+    <div class="fg2" style="margin-bottom:12px">
+      <label class="fl2">Foto del albarán o packing list</label>
+      <div class="foto-area" onclick="document.getElementById('ocr-fi').click()" id="ocr-area">
+        <input type="file" id="ocr-fi" accept="image/*,application/pdf" onchange="previewOCRFoto(this)">
+        <div style="font-size:28px;margin-bottom:6px">📄</div>
+        <div style="font-size:13px;color:var(--g600)">Toca para fotografiar o seleccionar el albarán</div>
+        <div style="font-size:11px;color:var(--g400);margin-top:4px">Funciona con fotos del móvil, escaneos o imágenes del documento</div>
+      </div>
+      <div id="ocr-preview"></div>
+    </div>
+    <div id="ocr-status" style="min-height:16px;font-size:12px;color:var(--g500)"></div>
+    <div id="ocr-result"></div>`;
+  document.getElementById('m-foot').innerHTML = `
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" id="ocr-btn" onclick="procesarOCRAlbaran('${expId}','${ref}',${bultosPortal},${kilosPortal})" disabled>🤖 Analizar con IA</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+function previewOCRFoto(input){
+  const file = input?.files?.[0];
+  if(!file) return;
+  const prev = document.getElementById('ocr-preview');
+  const btn = document.getElementById('ocr-btn');
+  if(file.type.startsWith('image/')){
+    const url = URL.createObjectURL(file);
+    prev.innerHTML = `<img src="${url}" style="max-width:100%;max-height:200px;border-radius:8px;margin-top:8px;border:1px solid var(--g200)">`;
+  } else {
+    prev.innerHTML = `<div style="padding:8px;background:var(--g50);border-radius:6px;font-size:12px;margin-top:6px">📎 ${file.name}</div>`;
+  }
+  if(btn) btn.disabled = false;
+}
+
+async function procesarOCRAlbaran(expId, ref, bultosPortal, kilosPortal){
+  const fileInput = document.getElementById('ocr-fi');
+  const status = document.getElementById('ocr-status');
+  const result = document.getElementById('ocr-result');
+  const btn = document.getElementById('ocr-btn');
+
+  if(!fileInput?.files?.length){ showToast('⚠️ Selecciona una foto del albarán'); return; }
+  const file = fileInput.files[0];
+
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> Analizando...';
+  status.innerHTML = '📡 Enviando imagen a la IA...';
+
+  try {
+    // Convertir a base64
+    const base64 = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = () => rej(new Error('Error leyendo imagen'));
+      r.readAsDataURL(file);
+    });
+    const mediaType = file.type || 'image/jpeg';
+
+    const prompt = `Analiza este albarán de entrega o packing list y extrae los datos de bultos/pesos.
+
+Devuelve ÚNICAMENTE un JSON con esta estructura exacta (sin texto adicional):
+{
+  "nº_expedicion": "referencia o AWB encontrado en el documento, o null si no hay",
+  "bultos": número entero de bultos/cajas/palés,
+  "kilos": número decimal de peso bruto en kg,
+  "marcas": "marcas, referencias o descripción del contenido si aparecen",
+  "observaciones": "cualquier nota relevante del documento (daños, discrepancias mencionadas, etc.)",
+  "confianza": número del 0 al 100 indicando confianza en la extracción
+}
+
+Si un dato no aparece claramente, usa null para texto o 0 para números.
+Expedición de referencia en el portal: ${ref}`;
+
+    status.innerHTML = '🧠 IA procesando el documento...';
+
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+            { type: 'text', text: prompt }
+          ]
+        }]
+      })
+    });
+
+    const data = await resp.json();
+    const text = (data.content||[]).map(c=>c.text||'').join('');
+    const clean = text.replace(/```json|```/g,'').trim();
+
+    let ocr;
+    try { ocr = JSON.parse(clean); }
+    catch(e){ throw new Error('No se pudieron extraer datos del documento. Asegúrate de que la imagen sea legible.'); }
+
+    status.innerHTML = '';
+
+    // Comparar con datos del portal
+    const bultosOCR = ocr.bultos || 0;
+    const kilosOCR = ocr.kilos || 0;
+    const difBultos = bultosOCR - bultosPortal;
+    const difKilos = +(kilosOCR - kilosPortal).toFixed(2);
+    const hayDiscrepancia = Math.abs(difBultos) > 0 || Math.abs(difKilos) > 0.5;
+
+    const fila = (label, portal, ocr, dif, unidad) => {
+      const ok = Math.abs(dif) <= (unidad==='kg'?0.5:0);
+      const color = ok ? 'var(--gr600)' : 'var(--rd600)';
+      const icon = ok ? '✅' : '❌';
+      return `<tr style="${!ok?'background:var(--rd50)':''}">
+        <td style="padding:8px 12px;font-weight:600;font-size:12px">${label}</td>
+        <td style="padding:8px 12px;text-align:center;font-size:13px;font-weight:700">${portal} ${unidad}</td>
+        <td style="padding:8px 12px;text-align:center;font-size:13px;font-weight:700;color:${color}">${ocr||'—'} ${ocr?unidad:''}</td>
+        <td style="padding:8px 12px;text-align:center;font-size:13px;font-weight:700;color:${color}">${icon} ${!ok?(dif>0?'+':'')+dif+' '+unidad:'Correcto'}</td>
+      </tr>`;
+    };
+
+    result.innerHTML = `
+      <div style="border:1px solid ${hayDiscrepancia?'#fecaca':'#bbf7d0'};border-radius:10px;overflow:hidden;margin-top:4px">
+        <div style="background:${hayDiscrepancia?'var(--rd50)':'var(--gr50)'};padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid ${hayDiscrepancia?'#fecaca':'#bbf7d0'}">
+          <span style="font-size:18px">${hayDiscrepancia?'⚠️':'✅'}</span>
+          <span style="font-size:13px;font-weight:700;color:${hayDiscrepancia?'var(--rd600)':'var(--gr600)'}">
+            ${hayDiscrepancia?'DISCREPANCIA detectada — revisar antes de confirmar':'Sin discrepancias — datos coinciden'}
+          </span>
+          <span style="margin-left:auto;font-size:11px;color:var(--g400)">Confianza IA: ${ocr.confianza||'—'}%</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--g50)">
+            <th style="padding:7px 12px;text-align:left;font-size:11px;color:var(--g500)">Campo</th>
+            <th style="padding:7px 12px;text-align:center;font-size:11px;color:var(--g500)">Portal</th>
+            <th style="padding:7px 12px;text-align:center;font-size:11px;color:var(--g500)">Albarán</th>
+            <th style="padding:7px 12px;text-align:center;font-size:11px;color:var(--g500)">Diferencia</th>
+          </tr></thead>
+          <tbody>
+            ${fila('Bultos', bultosPortal, bultosOCR, difBultos, 'btos')}
+            ${fila('Peso bruto', kilosPortal, kilosOCR, difKilos, 'kg')}
+          </tbody>
+        </table>
+        ${ocr.marcas?`<div style="padding:8px 12px;border-top:1px solid var(--g100);font-size:11px;color:var(--g600)"><strong>Marcas/referencias:</strong> ${ocr.marcas}</div>`:''}
+        ${ocr.observaciones?`<div style="padding:8px 12px;border-top:1px solid var(--g100);font-size:11px;color:var(--am600)"><strong>Observaciones:</strong> ${ocr.observaciones}</div>`:''}
+      </div>`;
+
+    // Guardar resultado OCR en la expedición
+    await sb.from('expediciones').update({
+      descripcion_mercancias: ocr.marcas || null,
+    }).eq('id', expId).then(()=>{});
+
+    // Pie del modal según resultado
+    if(hayDiscrepancia){
+      document.getElementById('m-foot').innerHTML = `
+        <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-d btn-sm" onclick="abrirIncidenciaOCR('${expId}','${ref}',${difBultos},${difKilos})">⚠️ Crear incidencia</button>
+        <button class="btn btn-g btn-sm" onclick="confirmarLlegadaFotos('${expId}');closeModal()">✅ Confirmar igualmente</button>`;
+    } else {
+      document.getElementById('m-foot').innerHTML = `
+        <button class="btn btn-s" onclick="closeModal()">Cerrar</button>
+        <button class="btn btn-g" onclick="confirmarLlegadaFotos('${expId}');closeModal()">✅ Confirmar llegada</button>`;
+    }
+
+  } catch(e){
+    status.innerHTML = `<span style="color:var(--rd600)">❌ ${e.message}</span>`;
+    btn.disabled = false;
+    btn.innerHTML = '🤖 Reintentar';
+  }
+}
+
+async function abrirIncidenciaOCR(expId, ref, difBultos, difKilos){
+  // Abrir incidencia pre-rellenada con los datos de la discrepancia
+  const desc = [
+    difBultos !== 0 ? `Discrepancia de bultos: ${difBultos > 0 ? '+' : ''}${difBultos} (albarán vs portal)` : '',
+    Math.abs(difKilos) > 0.5 ? `Discrepancia de peso: ${difKilos > 0 ? '+' : ''}${difKilos} kg (albarán vs portal)` : '',
+  ].filter(Boolean).join('. ');
+
+  closeModal();
+  await new Promise(r=>setTimeout(r,200));
+  openModal('nueva-incidencia', expId);
+  await new Promise(r=>setTimeout(r,300));
+  const tipEl = document.getElementById('ni-tip');
+  const desEl = document.getElementById('ni-des');
+  if(tipEl) tipEl.value = 'Faltas';
+  if(desEl) desEl.value = `OCR albarán — ${desc}. Verificar físicamente antes de presentar DUA.`;
+}
+
+
   const {data:e}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',id).single();
   await sb.from('expediciones').update({ubicacion:'Almacén-Sin Ubicar',notif_llegada_sent:true}).eq('id',id);
   await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir','Almacén-Sin Ubicar');
@@ -4907,22 +5102,68 @@ async function loadAlmFotos(tab){
             </div>
             ${bdg(e.estado_semaforo)}
           </div>
+
+          <!-- Estado visual del envío -->
+          <div style="margin-bottom:10px">
+            <label class="fl2">Estado del envío recibido</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px" id="est-${e.id}">
+              <button class="est-btn active" data-val="ok" onclick="selEstado('${e.id}','ok',this)"
+                style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--gr300);border-radius:8px;background:var(--gr50);color:var(--gr700);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">
+                ✅ Correcto
+              </button>
+              <button class="est-btn" data-val="leve" onclick="selEstado('${e.id}','leve',this)"
+                style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">
+                ⚠️ Daño leve
+              </button>
+              <button class="est-btn" data-val="grave" onclick="selEstado('${e.id}','grave',this)"
+                style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">
+                🔴 Daño grave
+              </button>
+              <button class="est-btn" data-val="humedad" onclick="selEstado('${e.id}','humedad',this)"
+                style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">
+                💧 Humedad
+              </button>
+              <button class="est-btn" data-val="precinto" onclick="selEstado('${e.id}','precinto',this)"
+                style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">
+                🔓 Precinto roto
+              </button>
+            </div>
+            <div id="aviso-estado-${e.id}" style="display:none;margin-top:6px;padding:6px 10px;background:var(--am50);border:1px solid var(--am200,#fde68a);border-radius:6px;font-size:11px;color:var(--am700,#92400e)">
+              ⚠️ Se creará una incidencia automáticamente al confirmar la llegada
+            </div>
+          </div>
+
+          <!-- Zona de fotos -->
           <div class="fg2" style="margin-bottom:8px">
-            <label class="fl2">Fotos llegada <span style="color:var(--gr600);font-size:11px">— compresión auto 75%</span></label>
-            <div class="foto-area" onclick="document.getElementById('fl-fi-${e.id}').click()">
-              <input type="file" id="fl-fi-${e.id}" accept="image/*" multiple>
-              <div style="font-size:22px;margin-bottom:4px">📸</div>
-              <div style="font-size:12px;color:var(--g600)">Toca para seleccionar fotos</div>
+            <label class="fl2">📸 Fotos de los bultos recibidos
+              <span style="color:var(--b600);font-size:10px;font-weight:400"> — recomendado: una general + detalle de cada daño</span>
+            </label>
+            <div class="foto-area" onclick="document.getElementById('fl-fi-${e.id}').click()" style="padding:16px">
+              <input type="file" id="fl-fi-${e.id}" accept="image/*" multiple capture="environment">
+              <div style="font-size:26px;margin-bottom:4px">📷</div>
+              <div style="font-size:13px;font-weight:600;color:var(--g700)">Fotografiar bultos recibidos</div>
+              <div style="font-size:11px;color:var(--g400);margin-top:3px">Varias fotos • Cámara trasera del móvil</div>
             </div>
             <div class="foto-prev" id="fl-pv-${e.id}"></div>
           </div>
+
+          <!-- Notas de llegada -->
+          <div class="fg2" style="margin-bottom:10px">
+            <textarea id="fl-nota-${e.id}" class="fi" placeholder="Notas de llegada: marcas visibles, condición del embalaje, observaciones…" style="min-height:52px;font-size:12px;resize:vertical"></textarea>
+          </div>
+
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-g" style="flex:1" onclick="confirmarLlegadaFotos('${e.id}')">✅ Confirmar llegada → Almacén-Sin Ubicar</button>
-            <button class="btn btn-w" onclick="abrirIncidenciaLlegada('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">⚠️ Incidencia</button>
+            <button class="btn btn-g" style="flex:1" onclick="confirmarLlegadaFotos('${e.id}')">✅ Confirmar llegada</button>
+            <button class="btn btn-s btn-sm" onclick="leerAlbaranOCR('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}',${e.bultos},${e.kilos})" title="Fotografiar albarán y verificar con IA">📄 Albarán</button>
           </div>
         </div>`).join('')}
       </div>`).join('');
-    (exps||[]).forEach(e=>setupFotos('fl-fi-'+e.id,'fl-pv-'+e.id,null));
+    (exps||[]).forEach(e=>{
+      setupFotos('fl-fi-'+e.id,'fl-pv-'+e.id,null);
+      // Marcar estado inicial como "ok"
+      window['_estLlegada'] = window['_estLlegada'] || {};
+      window['_estLlegada'][e.id] = 'ok';
+    });
   } else if(currentFotosTab==='carga'){
     const {data:buques}=await sb.from('buques').select('id,nombre,eta_buque').or('estado_operacion.is.null,estado_operacion.neq.Finalizado').order('eta_buque',{ascending:true,nullsFirst:false});
     const {data:exps}=await sb.from('expediciones').select('*,buques(id,nombre,eta_buque)').eq('estado_carga','✅ AUTORIZADO');
@@ -5017,25 +5258,84 @@ async function loadAlmFotos(tab){
   }
 }
 
+// ── Estado visual del envío en llegadas ──────────────────────────
+function selEstado(expId, val, btn){
+  window['_estLlegada'] = window['_estLlegada'] || {};
+  window['_estLlegada'][expId] = val;
+
+  // Resetear todos los botones del grupo
+  const contenedor = document.getElementById('est-'+expId);
+  if(!contenedor) return;
+  contenedor.querySelectorAll('.est-btn').forEach(b => {
+    b.style.border = '2px solid var(--g200)';
+    b.style.background = 'var(--w)';
+    b.style.color = 'var(--g500)';
+  });
+
+  // Estilos según el estado seleccionado
+  const estilos = {
+    ok:       { border:'var(--gr400)', bg:'var(--gr50)',  color:'var(--gr700)' },
+    leve:     { border:'var(--am400)', bg:'var(--am50)',  color:'var(--am700)' },
+    grave:    { border:'var(--rd400)', bg:'var(--rd50)',  color:'var(--rd600)' },
+    humedad:  { border:'var(--b400)',  bg:'var(--b50)',   color:'var(--b700)'  },
+    precinto: { border:'var(--rd400)', bg:'var(--rd50)',  color:'var(--rd600)' },
+  };
+  const s = estilos[val] || estilos.ok;
+  btn.style.border = `2px solid ${s.border}`;
+  btn.style.background = s.bg;
+  btn.style.color = s.color;
+
+  // Mostrar aviso si hay daño
+  const aviso = document.getElementById('aviso-estado-'+expId);
+  if(aviso) aviso.style.display = val !== 'ok' ? '' : 'none';
+}
+
 async function confirmarLlegadaFotos(id){
   const {data:e}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',id).single();
-  // Obtener fotos del input correspondiente
-  const inp=document.getElementById('fl-fi-'+id)||document.getElementById('fl-i');
-  const prevEl=document.getElementById('fl-pv-'+id)||document.getElementById('fl-p');
-  const files=prevEl?._files||[];
-  // Comprimir y subir fotos si las hay
-  let fotoUrl=null;
+  const inp = document.getElementById('fl-fi-'+id) || document.getElementById('fl-i');
+  const prevEl = document.getElementById('fl-pv-'+id) || document.getElementById('fl-p');
+  const files = prevEl?._files || [];
+  const estado = (window['_estLlegada'] || {})[id] || 'ok';
+  const nota = (document.getElementById('fl-nota-'+id)?.value || '').trim();
+
+  // Subir fotos si las hay
+  let fotoUrl = null;
   if(files.length){
     showToast('📤 Subiendo fotos...');
-    const urls=await subirFotosYGuardar(files,'expediciones',id,'llegada');
-    if(urls.length) fotoUrl=urls[0];
+    const urls = await subirFotosYGuardar(files, 'expediciones', id, 'llegada');
+    if(urls.length) fotoUrl = urls[0];
   }
-  const upd={ubicacion:'Almacén-Sin Ubicar',notif_llegada_sent:true};
-  if(fotoUrl) upd.foto_llegada_url=fotoUrl;
-  await sb.from('expediciones').update(upd).eq('id',id);
-  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir','Almacén-Sin Ubicar'+(fotoUrl?' [con foto]':''));
-  await alertarOperativa(id,e?.nº_expedicion||'',e?.buques?.nombre||'');
-  showToast('✅ Llegada confirmada'+( fotoUrl?' con foto 📸':''));
+
+  // Actualizar expedición
+  const upd = { ubicacion:'Almacén-Sin Ubicar', notif_llegada_sent:true };
+  if(fotoUrl) upd.foto_llegada_url = fotoUrl;
+  if(nota) upd.descripcion_mercancias = nota;
+  await sb.from('expediciones').update(upd).eq('id', id);
+
+  const estadoTxt = { ok:'Correcto', leve:'Daño leve', grave:'Daño grave', humedad:'Humedad', precinto:'Precinto roto' }[estado] || estado;
+  await logAct('expediciones', id, e?.nº_expedicion||'', 'editar', 'ubicacion', 'Pendiente recibir',
+    'Almacén-Sin Ubicar' + (fotoUrl?' [foto]':'') + ` [estado: ${estadoTxt}]`);
+  await alertarOperativa(id, e?.nº_expedicion||'', e?.buques?.nombre||'');
+
+  // Si hay daño → crear incidencia automáticamente
+  if(estado !== 'ok'){
+    const tipoInc = { leve:'Embalaje', grave:'Roto', humedad:'Humedad', precinto:'Precinto' }[estado] || 'Otro';
+    const descInc = [
+      `Estado al recibir: ${estadoTxt}`,
+      nota ? `Notas: ${nota}` : '',
+      fotoUrl ? `Foto adjunta` : 'Sin foto'
+    ].filter(Boolean).join(' · ');
+    await sb.from('incidencias').insert({
+      expedicion_id: id, tipo: tipoInc,
+      descripcion: descInc, nombre: tipoInc
+    });
+    showToast(`✅ Llegada confirmada · ⚠️ Incidencia "${tipoInc}" creada automáticamente`);
+  } else {
+    showToast('✅ Llegada confirmada' + (fotoUrl?' con foto 📸':''));
+  }
+
+  // Limpiar estado en memoria
+  if(window['_estLlegada']) delete window['_estLlegada'][id];
   await loadAlmFotos('llegadas');
 }
 
