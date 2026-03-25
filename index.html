@@ -5910,8 +5910,26 @@ async function saveEmp(id){
 async function delEmp(id){if(!confirm('¿Eliminar empresa?'))return;await sb.from('empresas').delete().eq('id',id);closeModal();loadView(CV);}
 
 async function delBuque(id,nombre){
-  if(!confirm('⚠️ ¿Eliminar el buque "'+nombre+'" y TODAS sus expediciones asociadas? Esta acción no se puede deshacer.'))return;
-  // Delete related expediciones first
+  if(!confirm('⚠️ ¿Eliminar el buque "'+nombre+'" y TODAS sus expediciones y fotos asociadas? Esta acción no se puede deshacer.'))return;
+
+  // Obtener IDs de expediciones del buque para limpiar fotos
+  const {data:exps} = await sb.from('expediciones').select('id').eq('buque_id',id);
+  const expIds = (exps||[]).map(e=>e.id);
+
+  // Eliminar fotos del storage por cada expedición
+  if(expIds.length){
+    const {data:fotos} = await sb.from('fotos_operativas')
+      .select('storage_path')
+      .eq('entidad','expediciones')
+      .in('entidad_id', expIds);
+    if(fotos?.length){
+      const paths = fotos.map(f=>f.storage_path).filter(Boolean);
+      if(paths.length) await sb.storage.from('fotos-operativas').remove(paths);
+      await sb.from('fotos_operativas').delete().eq('entidad','expediciones').in('entidad_id', expIds);
+    }
+    await sb.from('incidencias').delete().in('expedicion_id', expIds);
+  }
+
   await sb.from('expediciones').delete().eq('buque_id',id);
   await sb.from('buques').delete().eq('id',id);
   await logAct('buques',id,nombre,'eliminar',null,nombre,null);
@@ -5919,11 +5937,31 @@ async function delBuque(id,nombre){
 }
 
 async function delExpedicion(id,ref){
-  if(!confirm('⚠️ ¿Eliminar la expedición "'+ref+'"? Esta acción no se puede deshacer.'))return;
+  if(!confirm('⚠️ ¿Eliminar la expedición "'+ref+'"? Se eliminarán también las fotos asociadas. Esta acción no se puede deshacer.'))return;
+
+  // 1. Obtener paths de fotos en storage antes de eliminar
+  const {data:fotos} = await sb.from('fotos_operativas')
+    .select('storage_path')
+    .eq('entidad','expediciones')
+    .eq('entidad_id', id);
+
+  // 2. Eliminar archivos del storage
+  if(fotos && fotos.length){
+    const paths = fotos.map(f=>f.storage_path).filter(Boolean);
+    if(paths.length){
+      const {error:storErr} = await sb.storage.from('fotos-operativas').remove(paths);
+      if(storErr) console.warn('Error eliminando fotos del storage:', storErr.message);
+    }
+    // 3. Eliminar registros de fotos_operativas
+    await sb.from('fotos_operativas').delete().eq('entidad','expediciones').eq('entidad_id', id);
+  }
+
+  // 4. Eliminar incidencias y expedición
   await sb.from('incidencias').delete().eq('expedicion_id',id);
   await sb.from('expediciones').delete().eq('id',id);
-  await logAct('expediciones',id,ref,'eliminar',null,ref,null);
-  showToast('Expedición eliminada');closeModal();loadView(CV);
+  await logAct('expediciones',id,ref,'eliminar',null,ref, fotos?.length ? `eliminada con ${fotos.length} foto(s)` : null);
+  showToast('Expedición eliminada'+(fotos?.length?' · '+fotos.length+' foto(s) borrada(s)':''));
+  closeModal();loadView(CV);
 }
 
 async function loadUsuarios(){
