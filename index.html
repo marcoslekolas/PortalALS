@@ -5353,15 +5353,19 @@ async function guardarLandedNoPrevisto(){
 
     // Crear expedición con estado Landed directamente
     const estadoTxt = {ok:'Correcto',leve:'Daño leve',grave:'Daño grave',humedad:'Humedad',precinto:'Precinto roto'}[estado]||estado;
+
+    // Si hay foto → ya está recogida → AUTORIZADO y fuera de Landed
+    // Si no hay foto → queda en Landed pendiente de recoger
+    const yaRecogida = !!fotoUrl;
     const obj = {
       nº_expedicion: ref,
       buque_id: buqueId,
       bultos,
       kilos,
       status_aduanero: sta||null,
-      ubicacion: 'Landed',
-      estado_semaforo: '📦 UBICADA',
-      estado_carga: '📦 UBICADA',
+      ubicacion: yaRecogida ? 'Almacén-Sin Ubicar' : 'Landed',
+      estado_semaforo: yaRecogida ? '✅ AUTORIZADO' : '📦 UBICADA',
+      estado_carga:    yaRecogida ? '✅ AUTORIZADO' : '📦 UBICADA',
       tramite_aduanero: 'Pendiente despachar',
       notif_llegada_sent: true,
       created_by: CU?.id,
@@ -5383,9 +5387,9 @@ async function guardarLandedNoPrevisto(){
     }
 
     await logAct('expediciones', nueva.id, ref, 'crear', 'landed_no_previsto', null,
-      `${ref} · ${bultos} btos · ${kilos}kg · ${estadoTxt}${fotoUrl?' · con foto':''}`);
+      `${ref} · ${bultos} btos · ${kilos}kg · ${estadoTxt}${yaRecogida?' · recogida con foto':' · pendiente recoger'}`);
 
-    showToast(`✅ Landed registrado: ${ref}${estado!=='ok'?' · ⚠️ incidencia creada':''}`);
+    showToast(`✅ Landed registrado: ${ref}${yaRecogida?' · 📸 recogida y autorizada':' · pendiente de recoger'}${estado!=='ok'?' · ⚠️ incidencia creada':''}`);
     closeModal();
     await loadAlmFotos('landed');
 
