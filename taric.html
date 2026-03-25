@@ -1052,11 +1052,19 @@ if(localStorage.getItem('als_openrouter_key')) _orKeyResolve && _orKeyResolve();
 setTimeout(() => _orKeyResolve && _orKeyResolve(), 3000);
 
 async function loadOpenRouterKeyFromSupabase(){
-  // La key ya NO se guarda en Supabase (RLS la protege del lado servidor)
-  // La key vive en localStorage de cada dispositivo — introducida una vez por el admin
-  // Esta función solo carga configuración no sensible: modelo activo
+async function loadOpenRouterKeyFromSupabase(){
   if(!sb) return;
   try {
+    // Cargar key si está en Supabase (puesta por el admin desde cualquier dispositivo)
+    if(!getOpenRouterKey()){
+      const {data:dk} = await sb.from('als_config').select('valor').eq('clave','gemini_api_key').single();
+      if(dk?.valor){
+        localStorage.setItem('als_openrouter_key', dk.valor);
+        _orKeyCache = dk.valor;
+        _orKeyResolve && _orKeyResolve();
+      }
+    }
+    // Cargar modelo activo
     let modelVal = null;
     const {data:dm1} = await sb.from('als_config').select('valor').eq('clave','or_model').single();
     if(dm1?.valor) modelVal = dm1.valor;
@@ -1070,7 +1078,7 @@ async function loadOpenRouterKeyFromSupabase(){
       if(sel){ for(const o of sel.options) if(o.value===modelVal) o.selected=true; }
     }
   } catch(e){}
-  // Resolver la promesa si la key ya está en localStorage
+  // Resolver la promesa si la key ya está disponible
   if(getOpenRouterKey()) _orKeyResolve && _orKeyResolve();
 }
 
@@ -1080,9 +1088,18 @@ async function guardarModeloSupabase(model){
 }
 
 async function saveOpenRouterKeyToSupabase(key){
-  // La key se guarda solo en localStorage del dispositivo (RLS protege Supabase)
-  // No se sube a Supabase para evitar exposición
-  if(key) localStorage.setItem('als_openrouter_key', key);
+  if(!key) return;
+  // Guardar en localStorage del dispositivo actual
+  localStorage.setItem('als_openrouter_key', key);
+  // Guardar en Supabase para que esté disponible en TODOS los dispositivos
+  if(sb){
+    try {
+      await sb.from('als_config').upsert(
+        {clave:'gemini_api_key', valor:key},
+        {onConflict:'clave'}
+      );
+    } catch(e){ console.warn('No se pudo guardar key en Supabase:', e.message); }
+  }
 }
 
 // ── Función central OpenRouter ────────────────────────────────
