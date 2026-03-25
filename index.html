@@ -3093,6 +3093,27 @@ async function buscarEORI(){
   }
   if(valEl){ valEl.style.display='none'; }
 
+  // Buscar en directorio local antes de llamar a la IA
+  const cached = await buscarEORIenCache(query);
+  if(cached && cached.length > 0){
+    const c = cached[0];
+    const fechaCache = c.updated_at ? new Date(c.updated_at).toLocaleDateString('es-ES') : '—';
+    resEl.innerHTML=`
+      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
+        <div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border-bottom:1px solid #fde68a;padding:14px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:20px">⚡</span>
+          <span style="font-size:14px;font-weight:700;color:var(--g900)">Resultado desde directorio local</span>
+          <span style="font-size:11px;color:var(--g500)">Última consulta: ${fechaCache}</span>
+          <button onclick="buscarEORIForzandoIA()" style="margin-left:auto;background:var(--b600);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">🤖 Actualizar con IA</button>
+        </div>
+        <div style="padding:18px 20px">
+          <div style="font-size:13px;color:var(--g700);line-height:1.8;white-space:pre-wrap">${(c.resultado_texto||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        </div>
+      </div>`;
+    if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
+    return;
+  }
+
   // Load key if needed
   await _loadEoriKey();
   const key = localStorage.getItem('als_openrouter_key')||'';
@@ -3226,8 +3247,14 @@ Responde en español de forma directa.`;
             style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;text-decoration:none">
             🏛️ Consultar en AEAT
           </a>
+          <button onclick="guardarEORIenCache('${query.replace(/'/g,"\\'")}', this.closest('.eori-result-card')?.querySelector('.eori-text')?.textContent || document.querySelector('#eori-result .eori-text-wrap')?.textContent || '')" 
+            style="display:inline-flex;align-items:center;gap:5px;background:var(--b600);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">
+            💾 Guardar en directorio
+          </button>
         </div>
       </div>`;
+    // Guardar automáticamente en cache si el resultado parece válido
+    if(text && text.length > 50) guardarEORIenCache(query, text).catch(()=>{});
 
   } catch(e){
     const msg = e.message||'';
@@ -3249,6 +3276,44 @@ Responde en español de forma directa.`;
 }
 
 
+
+async function buscarEORIForzandoIA(){
+  // Forzar búsqueda con IA ignorando el cache local
+  const cached_orig = sb ? sb.from.bind(sb) : null;
+  if(sb){ const _orig = sb.from; sb.from = (t) => t==='als_eori_cache' ? { select:()=>({or:()=>({order:()=>({limit:()=>({data:null,error:null})})})})} : _orig.call(sb,t); }
+  await buscarEORI();
+  if(sb && cached_orig){ sb.from = cached_orig; }
+}
+
+// ── Mejora 16: EORI → Directorio local en Supabase ──────────────
+async function guardarEORIenCache(query, texto){
+  if(!sb || !query || !texto) return;
+  try {
+    // Extraer el código EORI si está en el texto
+    const eoriMatch = texto.match(/[A-Z]{2}[A-Z0-9]{5,15}/);
+    const eoriCodigo = eoriMatch ? eoriMatch[0] : query.toUpperCase().replace(/\s/g,'');
+    await sb.from('als_eori_cache').upsert({
+      query: query.trim(),
+      eori_codigo: eoriCodigo,
+      resultado_texto: texto.substring(0, 2000),
+      updated_at: new Date().toISOString()
+    }, {onConflict: 'query'});
+    showToastHome('✅ EORI guardado en directorio local');
+  } catch(e){ showToastHome('⚠️ No se pudo guardar: ' + e.message); }
+}
+
+async function buscarEORIenCache(query){
+  if(!sb || !query) return null;
+  try {
+    const q = query.trim();
+    const {data} = await sb.from('als_eori_cache')
+      .select('*')
+      .or(`query.ilike.%${q}%,eori_codigo.ilike.%${q}%`)
+      .order('updated_at', {ascending: false})
+      .limit(3);
+    return data?.length ? data : null;
+  } catch(e){ return null; }
+}
 
 function showToastHome(msg){
   // Usar showToast si está disponible (en app), si no crear toast propio
@@ -4561,11 +4626,64 @@ function tlNext(){window.tlMonth++;if(window.tlMonth>11){window.tlMonth=0;window
 function tlToday(){window.tlYear=null;window.tlMonth=null;loadTL();}
 
 async function loadAlertas(){
-  const [{data:al},{data:inc}]=await Promise.all([
+  const [{data:al},{data:inc},{data:expSinDespachar}]=await Promise.all([
     sb.from('v_alertas').select('*'),
-    sb.from('incidencias').select('*,expediciones(id,nº_expedicion)').neq('estado','Cerrada')
+    sb.from('incidencias').select('*,expediciones(id,nº_expedicion)').neq('estado','Cerrada'),
+    // Expediciones en tránsito sin MRN — candidatas a alerta TARIC
+    sb.from('expediciones')
+      .select('id,nº_expedicion,descripcion_mercancias,status_aduanero,tramite_aduanero,ubicacion,buques(nombre),fecha_max_despacho')
+      .neq('tramite_aduanero','Despachado')
+      .neq('ubicacion','Pendiente recibir')
+      .not('descripcion_mercancias','is',null)
+      .limit(30)
   ]);
   let html='';
+
+  // ── Alertas TARIC proactivas por medidas de control ────────────
+  const medidasControl = {
+    // Palabras clave → tipo de alerta TARIC
+    cites:     { keys:['cites','especie protegida','fauna','flora','coral','marfil','piel exótica','reptil','aligátor','cocodrilo','carey','tortuga','halcón','loros','cotorra','papagayo','madera tropical','caoba','palisandro','ébano'], icon:'🦜', label:'CITES — Especie protegida', detalle:'Requiere permiso CITES de importación/exportación (MITERD). Documentación previa obligatoria.', badge:'br' },
+    veterinario:{ keys:['carne','pescado','mariscos','productos lácteos','leche','queso','huevos','miel','gelatina','colágeno','pienso','alimento animal','productos de origen animal','tripas','sebos','pieles frescas'], icon:'🐄', label:'Control veterinario (DSCE)', detalle:'Requiere Documento Sanitario Común de Entrada (DSCE) y notificación previa en TRACES-NT.', badge:'ba' },
+    fitosanitario:{ keys:['plantas','semillas','flores','bulbos','fruta fresca','verdura','madera','corteza','tierra','suelo','tubérculos'], icon:'🌿', label:'Control fitosanitario', detalle:'Requiere Certificado Fitosanitario de origen y notificación previa. Inspección en PAF.', badge:'ba' },
+    doble_uso: { keys:['cifrado','encriptación','láser industrial','óptica militar','drone','uav','explosivo','precursor','química dual','semiconductor avanzado','circuito integrado avanzado'], icon:'⚠️', label:'Posible Doble Uso', detalle:'Verificar si el producto requiere Autorización de Exportación de Doble Uso (Reg. UE 2021/821).', badge:'br' },
+    alimentario:{ keys:['alimento','comida','bebida','conserva','enlatado','congelado','azúcar','aceite','harina','cereal','pasta','arroz','licor','vino','cerveza'], icon:'🍽️', label:'Control sanitario alimentario', detalle:'Posible notificación RASFF. Verificar requisitos EFSA y etiquetado reglamento 1169/2011.', badge:'ba' },
+    residuos:   { keys:['residuo','chatarra','reciclaje','subproducto','desecho','baja','desperdicio'], icon:'♻️', label:'Posible residuo — Regl. traslado', detalle:'Verificar Reglamento traslado de residuos UE 1013/2006. Puede requerir notificación previa.', badge:'br' },
+  };
+
+  const alertasTaric = [];
+  (expSinDespachar||[]).forEach(e=>{
+    const desc = (e.descripcion_mercancias||'').toLowerCase();
+    if(!desc) return;
+    Object.entries(medidasControl).forEach(([tipo, cfg])=>{
+      const coincide = cfg.keys.some(k => desc.includes(k));
+      if(coincide){
+        alertasTaric.push({ exp: e, tipo, cfg });
+      }
+    });
+  });
+
+  if(alertasTaric.length > 0){
+    html += `<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--rl);padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:16px">🏷️</span>
+      <div style="font-size:12px;font-weight:700;color:var(--rd600)">Alertas proactivas TARIC — ${alertasTaric.length} expedición${alertasTaric.length>1?'es requieren':'require'} atención documental</div>
+    </div>`;
+    alertasTaric.forEach(({exp, tipo, cfg})=>{
+      html+=`<div class="a-item ${cfg.badge==='br'?'crit':'wrn'}" style="cursor:pointer" onclick="openExpD('${exp.id}');nav('expediciones',null)">
+        <div class="a-icon">${cfg.icon}</div>
+        <div class="a-info">
+          <div class="a-title">${exp.nº_expedicion} — ${exp.buques?.nombre||'—'}</div>
+          <div class="a-detail" style="font-weight:600;color:var(--rd600)">${cfg.label}</div>
+          <div class="a-detail">${cfg.detalle}</div>
+          ${exp.descripcion_mercancias?`<div style="font-size:10px;color:var(--g400);margin-top:2px;font-style:italic">Mercancía: "${exp.descripcion_mercancias.substring(0,80)}${exp.descripcion_mercancias.length>80?'…':''}"</div>`:''}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+          <span class="badge ${cfg.badge}">TARIC</span>
+          <button class="btn btn-sm btn-p" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();openExpD('${exp.id}')">Ver →</button>
+        </div>
+      </div>`;
+    });
+    html += `<div style="height:1px;background:var(--g200);margin:10px 0"></div>`;
+  }
 
   // Alertas de despacho — clickable → abre expedición directamente
   (al||[]).forEach(a=>{

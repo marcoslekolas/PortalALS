@@ -392,6 +392,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
             <select id="tar-year" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadTarifasView()">
               <option value="2026">2026</option><option value="2025">2025</option>
             </select>
+            <button class="btn btn-s btn-sm" onclick="importarTarifasPDF()" title="Importar tarifas desde PDF via IA">📄 Importar PDF</button>
             <button class="btn btn-p btn-sm" onclick="abrirNuevoAnio()">+ Nuevo año</button>
           </div>
         </div>
@@ -1028,6 +1029,191 @@ async function guardarTarifas(year,prov){
   await loadTarifasDB();
   toast('Tarifas '+prov+' '+year+' guardadas ✅');
   closeModal();loadTarifasView();
+}
+
+// ── Mejora 11: Importar tarifas desde PDF via IA ─────────────────
+function importarTarifasPDF(){
+  document.getElementById('m-title').textContent = '📄 Importar tarifas desde PDF';
+  document.getElementById('m-body').innerHTML = `
+    <div class="info-box" style="margin-bottom:16px">
+      Sube el PDF de tarifas de Swissport o Groundforce. La IA extraerá automáticamente todos los conceptos, días libres, mínimos y precios.
+    </div>
+    <div style="margin-bottom:14px">
+      <label class="fl2">Handler</label>
+      <select id="imp-handler" class="fi fs">
+        <option value="Swissport">Swissport</option>
+        <option value="Groundforce">Groundforce</option>
+      </select>
+    </div>
+    <div style="margin-bottom:14px">
+      <label class="fl2">Año</label>
+      <input id="imp-year" class="fi" type="number" value="${new Date().getFullYear()}" min="2024" max="2030">
+    </div>
+    <div style="margin-bottom:14px">
+      <label class="fl2">PDF de tarifas</label>
+      <input id="imp-pdf" type="file" accept=".pdf,image/*" class="fi" style="padding:6px">
+    </div>
+    <div id="imp-status" style="min-height:20px;font-size:12px;color:var(--g500)"></div>
+    <div id="imp-preview" style="margin-top:12px"></div>`;
+  document.getElementById('m-foot').innerHTML = `
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="procesarPDFTarifas()">🤖 Extraer con IA</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+async function procesarPDFTarifas(){
+  const fileInput = document.getElementById('imp-pdf');
+  const handler = document.getElementById('imp-handler').value;
+  const year = parseInt(document.getElementById('imp-year').value);
+  const status = document.getElementById('imp-status');
+  const preview = document.getElementById('imp-preview');
+
+  if(!fileInput.files.length){ status.textContent = '⚠️ Selecciona un archivo PDF o imagen'; return; }
+  const file = fileInput.files[0];
+  const isPDF = file.type === 'application/pdf';
+  const isImage = file.type.startsWith('image/');
+  if(!isPDF && !isImage){ status.textContent = '⚠️ Solo se admiten PDF e imágenes'; return; }
+
+  status.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Leyendo archivo y enviando a IA...</div>';
+
+  try {
+    // Convertir a base64
+    const base64 = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = () => rej(new Error('Error leyendo archivo'));
+      r.readAsDataURL(file);
+    });
+
+    const mediaType = isPDF ? 'application/pdf' : file.type;
+
+    const prompt = `Eres un experto en tarifas de handling aeroportuario. Analiza este documento de tarifas de ${handler} para el año ${year} y extrae TODOS los conceptos de tarificación.
+
+Para cada concepto devuelve un JSON con exactamente esta estructura (array de objetos):
+[
+  {
+    "concepto": "Almacenaje",
+    "aplica": "Por kg",
+    "dias_libres": 2,
+    "minimo_eur": 15.00,
+    "unitario_eur": 0.08,
+    "base": "kg/día",
+    "fijo_awb_eur": 0
+  }
+]
+
+Conceptos habituales a buscar: Almacenaje, Gestión Documental, Tratamiento Recinto, Tratamiento Mantenimiento, Fin de Semana/Festivo, Express/Urgente, Carga Camión, Apertura.
+
+IMPORTANTE:
+- Extrae TODOS los conceptos que encuentres en el documento
+- Si un campo no aplica, usa 0
+- dias_libres: número de días sin cargo antes de empezar a cobrar
+- minimo_eur: cargo mínimo independiente del peso
+- unitario_eur: precio por unidad (kg, bulto, etc.)
+- fijo_awb_eur: cargo fijo por AWB/guía aérea
+- Responde ÚNICAMENTE con el JSON, sin texto adicional ni backticks`;
+
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: isPDF ? 'document' : 'image',
+              source: { type: 'base64', media_type: mediaType, data: base64 }
+            },
+            { type: 'text', text: prompt }
+          ]
+        }]
+      })
+    });
+
+    const data = await resp.json();
+    const text = data.content?.map(c => c.text||'').join('') || '';
+    const clean = text.replace(/```json|```/g,'').trim();
+    let tarifas;
+    try { tarifas = JSON.parse(clean); } catch(e){ throw new Error('La IA no devolvió JSON válido. Intenta con una imagen más clara del PDF.'); }
+    if(!Array.isArray(tarifas) || !tarifas.length) throw new Error('No se encontraron tarifas en el documento.');
+
+    // Mostrar preview
+    preview.innerHTML = `
+      <div style="font-size:12px;font-weight:700;color:var(--g700);margin-bottom:8px">✅ ${tarifas.length} conceptos extraídos — Revisar antes de guardar:</div>
+      <div style="overflow-x:auto;border:1px solid var(--g200);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="background:var(--g50)">
+            <th style="padding:6px 8px;text-align:left">Concepto</th>
+            <th style="padding:6px 8px;text-align:right">D.Libres</th>
+            <th style="padding:6px 8px;text-align:right">Mínimo €</th>
+            <th style="padding:6px 8px;text-align:right">Unitario €</th>
+            <th style="padding:6px 8px;text-align:right">Fijo AWB €</th>
+          </tr></thead>
+          <tbody>
+            ${tarifas.map((t,i) => `<tr style="${i%2?'background:var(--g50)':''}">
+              <td style="padding:5px 8px;font-weight:600">${t.concepto}</td>
+              <td style="padding:5px 8px;text-align:right">${t.dias_libres||0}</td>
+              <td style="padding:5px 8px;text-align:right;font-family:monospace">${(t.minimo_eur||0).toFixed(2)}</td>
+              <td style="padding:5px 8px;text-align:right;font-family:monospace">${(t.unitario_eur||0).toFixed(4)}</td>
+              <td style="padding:5px 8px;text-align:right;font-family:monospace">${(t.fijo_awb_eur||0).toFixed(2)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+    // Guardar en Supabase
+    document.getElementById('m-foot').innerHTML = `
+      <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-s" onclick="procesarPDFTarifas()">🔄 Reextraer</button>
+      <button class="btn btn-p" onclick="guardarTarifasIA(${JSON.stringify(tarifas).replace(/"/g,'&quot;')}, '${handler}', ${year})">💾 Guardar tarifas</button>`;
+
+    status.innerHTML = `<span style="color:var(--gr600)">✅ Extracción completada. Revisa los datos y pulsa Guardar.</span>`;
+
+  } catch(e){
+    status.innerHTML = `<span style="color:var(--rd600)">❌ ${e.message}</span>`;
+  }
+}
+
+async function guardarTarifasIA(tarifas, handler, year){
+  const status = document.getElementById('imp-status');
+  status.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Guardando en base de datos...</div>';
+
+  try {
+    // Mapear conceptos a campos de la tabla tarifas
+    const conceptoMap = {
+      'almacenaje': 'almacenaje', 'storage': 'almacenaje',
+      'gestión documental': 'gestion_documental', 'documentación': 'gestion_documental',
+      'tratamiento recinto': 'tratamiento_recinto',
+      'tratamiento mantenimiento': 'tratamiento_mantenimiento', 'mantenimiento': 'tratamiento_mantenimiento',
+      'fin de semana': 'finde', 'festivo': 'finde', 'weekend': 'finde',
+      'express': 'express', 'urgente': 'express',
+      'carga camión': 'carga_camion', 'camión': 'carga_camion',
+      'apertura': 'apertura',
+    };
+
+    // Construir objeto de tarifas para upsert
+    const obj = { año: year, handler, updated_at: new Date().toISOString() };
+    tarifas.forEach(t => {
+      const key = Object.keys(conceptoMap).find(k => t.concepto.toLowerCase().includes(k));
+      const field = key ? conceptoMap[key] : null;
+      if(field){
+        obj[`${field}_dias_libres`] = t.dias_libres || 0;
+        obj[`${field}_minimo`] = t.minimo_eur || 0;
+        obj[`${field}_unitario`] = t.unitario_eur || 0;
+        obj[`${field}_fijo_awb`] = t.fijo_awb_eur || 0;
+      }
+    });
+
+    const {error} = await sb.from('tarifas_handling').upsert(obj, {onConflict:'año,handler'});
+    if(error) throw new Error(error.message);
+
+    status.innerHTML = `<span style="color:var(--gr600)">✅ Tarifas ${handler} ${year} guardadas correctamente</span>`;
+    setTimeout(()=>{ closeModal(); loadTarifasDB(); }, 1500);
+    toast(`✅ Tarifas ${handler} ${year} importadas desde PDF`);
+  } catch(e){
+    status.innerHTML = `<span style="color:var(--rd600)">❌ Error guardando: ${e.message}</span>`;
+  }
 }
 
 async function abrirNuevoAnio(){
