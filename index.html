@@ -4796,17 +4796,21 @@ async function procesarOCRAlbaran(expId, ref, bultosPortal, kilosPortal){
 
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></div> Analizando...';
-  status.innerHTML = '📡 Enviando imagen a la IA...';
+  status.innerHTML = '📡 Preparando imagen...';
 
   try {
-    // Convertir a base64
+    // Comprimir y convertir siempre a JPEG — resuelve HEIC de iPhone y reduce tamaño
+    // Safari móvil y HEIC: la compresión via canvas convierte automáticamente a JPEG
+    status.innerHTML = '🗜️ Comprimiendo imagen...';
+    const fileComprimido = await compFoto(file, 1600, 0.82);
+
     const base64 = await new Promise((res, rej) => {
       const r = new FileReader();
       r.onload = () => res(r.result.split(',')[1]);
       r.onerror = () => rej(new Error('Error leyendo imagen'));
-      r.readAsDataURL(file);
+      r.readAsDataURL(fileComprimido);
     });
-    const mediaType = file.type || 'image/jpeg';
+    const mediaType = 'image/jpeg'; // siempre JPEG tras compresión
 
     const prompt = `Analiza este albarán de entrega o packing list y extrae los datos de bultos/pesos.
 
@@ -4823,14 +4827,30 @@ Devuelve ÚNICAMENTE un JSON con esta estructura exacta (sin texto adicional):
 Si un dato no aparece claramente, usa null para texto o 0 para números.
 Expedición de referencia en el portal: ${ref}`;
 
-    status.innerHTML = '🧠 IA procesando el documento...';
+    status.innerHTML = '🔑 Obteniendo credenciales...';
 
-    // Cargar key desde Supabase si no está en localStorage (igual que TARIC)
-    await _loadEoriKey();
-    const orKey = localStorage.getItem('als_openrouter_key') || '';
+    // Cargar key — intentar localStorage, luego Supabase directamente
+    let orKey = localStorage.getItem('als_openrouter_key') || '';
     if(!orKey){
-      throw new Error('API key de OpenRouter no configurada. Configúrala en Aduanas → Clasificador TARIC (⚙️ en el sidebar).');
+      try {
+        await _loadEoriKey();
+        orKey = localStorage.getItem('als_openrouter_key') || '';
+      } catch(e){}
     }
+    // Fallback directo a Supabase si _loadEoriKey falló
+    if(!orKey){
+      try {
+        const r = await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=eq.gemini_api_key&select=valor',
+          {headers:{apikey:'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1',Authorization:'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'}});
+        const d = await r.json();
+        if(d?.[0]?.valor){ orKey = d[0].valor; localStorage.setItem('als_openrouter_key', orKey); }
+      } catch(e){}
+    }
+    if(!orKey){
+      throw new Error('API key de OpenRouter no encontrada. El administrador debe configurarla en Aduanas → Clasificador TARIC.');
+    }
+
+    status.innerHTML = '🧠 IA procesando el documento...';
 
     // Modelos con visión disponibles en OpenRouter
     const visionModels = [
