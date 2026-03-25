@@ -1113,26 +1113,45 @@ IMPORTANTE:
 - fijo_awb_eur: cargo fijo por AWB/guía aérea
 - Responde ÚNICAMENTE con el JSON, sin texto adicional ni backticks`;
 
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: isPDF ? 'document' : 'image',
-              source: { type: 'base64', media_type: mediaType, data: base64 }
-            },
-            { type: 'text', text: prompt }
-          ]
-        }]
-      })
-    });
+    // Usar OpenRouter (evita CORS desde el navegador)
+    const orKey = localStorage.getItem('als_openrouter_key') || '';
+    if(!orKey) throw new Error('API key de OpenRouter no configurada. Configúrala en Aduanas → Clasificador TARIC.');
 
-    const data = await resp.json();
-    const text = data.content?.map(c => c.text||'').join('') || '';
+    // Para PDFs usar solo modelos que soporten documentos; para imágenes cualquier modelo visión
+    const models = [
+      'mistralai/mistral-small-3.2-24b-instruct:free',
+      'mistralai/mistral-small-3.2-24b-instruct',
+    ];
+
+    let text = '';
+    for(const model of models){
+      try {
+        const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${orKey}`,
+            'HTTP-Referer': 'https://marcoslekolas.github.io/PortalALS/',
+            'X-Title': 'ALS Airport Cargo Tarifas'
+          },
+          body: JSON.stringify({
+            model, max_tokens: 1000,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
+                { type: 'text', text: prompt }
+              ]
+            }]
+          })
+        });
+        const d = await resp.json();
+        if(!resp.ok || d.error) continue;
+        text = d?.choices?.[0]?.message?.content || '';
+        if(text) break;
+      } catch(e){ continue; }
+    }
+    if(!text) throw new Error('No se pudo analizar el documento. Intenta con una imagen más clara.');
     const clean = text.replace(/```json|```/g,'').trim();
     let tarifas;
     try { tarifas = JSON.parse(clean); } catch(e){ throw new Error('La IA no devolvió JSON válido. Intenta con una imagen más clara del PDF.'); }

@@ -4825,24 +4825,54 @@ Expedición de referencia en el portal: ${ref}`;
 
     status.innerHTML = '🧠 IA procesando el documento...';
 
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-            { type: 'text', text: prompt }
-          ]
-        }]
-      })
-    });
+    // Usar OpenRouter (evita bloqueo CORS de api.anthropic.com desde el navegador)
+    const orKey = localStorage.getItem('als_openrouter_key') || '';
+    if(!orKey){
+      throw new Error('API key de OpenRouter no configurada. Configúrala en Aduanas → Clasificador TARIC (⚙️ en el sidebar).');
+    }
 
-    const data = await resp.json();
-    const text = (data.content||[]).map(c=>c.text||'').join('');
+    // Modelos con visión disponibles en OpenRouter
+    const visionModels = [
+      'mistralai/mistral-small-3.2-24b-instruct:free',
+      'mistralai/mistral-small-3.2-24b-instruct',
+    ];
+
+    let text = '';
+    let lastErr = null;
+    for(const model of visionModels){
+      try {
+        const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${orKey}`,
+            'HTTP-Referer': 'https://marcoslekolas.github.io/PortalALS/',
+            'X-Title': 'ALS Portal OCR Albarán'
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 800,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
+                { type: 'text', text: prompt }
+              ]
+            }]
+          })
+        });
+        const d = await resp.json();
+        if(!resp.ok || d.error){
+          const em = d?.error?.message||'';
+          if(resp.status===429 || em.includes('rate') || em.includes('limit')){ lastErr=new Error('rate_limit'); continue; }
+          lastErr = new Error(em||'Error '+resp.status); continue;
+        }
+        text = d?.choices?.[0]?.message?.content || '';
+        if(text) break;
+      } catch(e){ lastErr=e; continue; }
+    }
+
+    if(!text) throw new Error(lastErr?.message||'No se pudo analizar el documento. Inténtalo de nuevo.');
     const clean = text.replace(/```json|```/g,'').trim();
 
     let ocr;
