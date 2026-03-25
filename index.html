@@ -5210,11 +5210,23 @@ async function loadAlmFotos(tab){
     (landedExps||[]).forEach(e=>{if(!e.buque_id)return;if(!landedByBuque[e.buque_id])landedByBuque[e.buque_id]=[];landedByBuque[e.buque_id].push(e);});
     // Filtrar buques que tienen al menos una expedición Landed
     const buquesConLanded=buques.filter(b=>(landedByBuque[b.id]||[]).length>0);
+
+    // Cabecera con botón de Landed no previsto (siempre visible)
+    const buqueOpts = buques.map(b=>`<option value="${b.id}">${b.nombre}</option>`).join('');
+    const headerHtml = `
+      <div style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--rl);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--am700)">⚓ Landed no previsto</div>
+          <div style="font-size:11px;color:var(--am600);margin-top:2px">Mercancía recibida sin expedición previa en el sistema</div>
+        </div>
+        <button class="btn btn-p btn-sm" onclick="abrirLandedNoPrevisto()">+ Registrar landed no previsto</button>
+      </div>`;
+
     if(!buquesConLanded.length){
-      cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay expediciones Landed pendientes de recoger</div></div>';
+      cont.innerHTML = headerHtml + '<div class="empty" style="padding:40px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay expediciones Landed previstas pendientes de recoger</div></div>';
       return;
     }
-    cont.innerHTML=buquesConLanded.map(b=>{
+    cont.innerHTML = headerHtml + buquesConLanded.map(b=>{
       const bLanded=landedByBuque[b.id]||[];
       return`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
         <div style="background:var(--am50);border-bottom:1px solid #fde68a;padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
@@ -5241,7 +5253,161 @@ async function loadAlmFotos(tab){
   }
 }
 
-// ── Estado visual del envío en llegadas ──────────────────────────
+// ── Landed no previsto ───────────────────────────────────────────
+async function abrirLandedNoPrevisto(){
+  // Cargar buques activos para el selector
+  const {data:buques}=await sb.from('buques')
+    .select('id,nombre,eta_buque')
+    .or('estado_operacion.is.null,estado_operacion.neq.Finalizado')
+    .order('eta_buque',{ascending:true,nullsFirst:false});
+  const bOpts=(buques||[]).map(b=>`<option value="${b.id}">${b.nombre}${b.eta_buque?' · ETA '+new Date(b.eta_buque).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'}):''}</option>`).join('');
+
+  document.getElementById('m-title').textContent='⚓ Landed no previsto';
+  document.getElementById('m-body').innerHTML=`
+    <div class="info-box" style="margin-bottom:14px">
+      Registra mercancía recibida que <strong>no estaba prevista</strong> en el sistema. Se creará la expedición automáticamente con estado Landed.
+    </div>
+    <div class="fr2" style="margin-bottom:12px">
+      <div class="fg2">
+        <label class="fl2">Buque de procedencia *</label>
+        <select id="lnp-bq" class="fi fs">
+          <option value="">— Seleccionar buque —</option>
+          ${bOpts}
+        </select>
+      </div>
+      <div class="fg2">
+        <label class="fl2">Nº referencia / AWB *</label>
+        <input id="lnp-ref" class="fi" placeholder="Referencia, AWB, guía…">
+      </div>
+    </div>
+    <div class="fr2" style="margin-bottom:12px">
+      <div class="fg2">
+        <label class="fl2">Bultos *</label>
+        <input id="lnp-bul" class="fi" type="number" min="1" value="1">
+      </div>
+      <div class="fg2">
+        <label class="fl2">Kilos</label>
+        <input id="lnp-kg" class="fi" type="number" min="0" step="0.1" value="0">
+      </div>
+    </div>
+    <div class="fg2" style="margin-bottom:12px">
+      <label class="fl2">Descripción / marcas de la mercancía</label>
+      <input id="lnp-desc" class="fi" placeholder="Descripción visible en el bulto, marcas, referencia del cliente…">
+    </div>
+    <div class="fr2" style="margin-bottom:12px">
+      <div class="fg2">
+        <label class="fl2">Estado del embalaje</label>
+        <select id="lnp-estado" class="fi fs">
+          <option value="ok">✅ Correcto</option>
+          <option value="leve">⚠️ Daño leve</option>
+          <option value="grave">🔴 Daño grave</option>
+          <option value="humedad">💧 Humedad</option>
+          <option value="precinto">🔓 Precinto roto</option>
+        </select>
+      </div>
+      <div class="fg2">
+        <label class="fl2">Status aduanero</label>
+        <select id="lnp-sta" class="fi fs">
+          <option value="">— Sin especificar —</option>
+          <option>Comunitario</option><option>DAE</option><option>T1</option><option>Terceros</option><option>X</option>
+        </select>
+      </div>
+    </div>
+    <div class="fg2" style="margin-bottom:12px">
+      <label class="fl2">📸 Fotos de la mercancía en muelle <span style="color:var(--b600);font-size:10px">(recomendado — sirven como evidencia)</span></label>
+      <div class="foto-area" onclick="document.getElementById('lnp-fi').click()" style="padding:16px">
+        <input type="file" id="lnp-fi" accept="image/*" multiple capture="environment">
+        <div style="font-size:26px;margin-bottom:4px">📷</div>
+        <div style="font-size:13px;font-weight:600;color:var(--g700)">Fotografiar mercancía</div>
+        <div style="font-size:11px;color:var(--g400);margin-top:3px">Varias fotos · Vista general + detalle de marcas</div>
+      </div>
+      <div class="foto-prev" id="lnp-pv"></div>
+    </div>
+    <div class="fg2">
+      <label class="fl2">Notas adicionales</label>
+      <textarea id="lnp-nota" class="fi" placeholder="Quién entregó, observaciones, persona de contacto…" style="min-height:52px;font-size:12px;resize:vertical"></textarea>
+    </div>
+    <div id="lnp-status" style="min-height:16px;font-size:12px;color:var(--g500);margin-top:8px"></div>`;
+
+  document.getElementById('m-foot').innerHTML=`
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="guardarLandedNoPrevisto()">⚓ Registrar landed</button>`;
+  document.getElementById('mo').classList.add('open');
+  setTimeout(()=>setupFotos('lnp-fi','lnp-pv',null),100);
+}
+
+async function guardarLandedNoPrevisto(){
+  const buqueId = gv('lnp-bq');
+  const ref = gv('lnp-ref').trim();
+  const bultos = parseInt(gv('lnp-bul'))||1;
+  const kilos = parseFloat(gv('lnp-kg'))||0;
+  const desc = gv('lnp-desc').trim();
+  const estado = gv('lnp-estado');
+  const sta = gv('lnp-sta')||null;
+  const nota = gv('lnp-nota').trim();
+  const status = document.getElementById('lnp-status');
+
+  if(!buqueId){ showToast('⚠️ Selecciona el buque'); return; }
+  if(!ref){ showToast('⚠️ La referencia es obligatoria'); return; }
+
+  status.innerHTML='<div style="display:flex;align-items:center;gap:6px"><div class="spinner" style="width:12px;height:12px;border-width:2px"></div> Creando expedición…</div>';
+
+  try {
+    // Subir fotos si las hay
+    const prevEl = document.getElementById('lnp-pv');
+    const files = prevEl?._files||[];
+    let fotoUrl = null;
+    if(files.length){
+      status.innerHTML='<div style="display:flex;align-items:center;gap:6px"><div class="spinner" style="width:12px;height:12px;border-width:2px"></div> Subiendo fotos…</div>';
+      const urls = await subirFotosYGuardar(files,'expediciones','nuevo','landed');
+      if(urls.length) fotoUrl = urls[0];
+    }
+
+    // Crear expedición con estado Landed directamente
+    const estadoTxt = {ok:'Correcto',leve:'Daño leve',grave:'Daño grave',humedad:'Humedad',precinto:'Precinto roto'}[estado]||estado;
+    const obj = {
+      nº_expedicion: ref,
+      buque_id: buqueId,
+      bultos,
+      kilos,
+      descripcion_mercancias: [desc, nota].filter(Boolean).join(' · ') || null,
+      status_aduanero: sta||null,
+      ubicacion: 'Landed',
+      estado_semaforo: '⚓ Landed',
+      estado_carga: '⚓ Landed',
+      tramite_aduanero: 'Pendiente despachar',
+      notif_llegada_sent: true,
+      created_by: CU?.id,
+      created_by_nombre: CU?.nombre,
+    };
+    if(fotoUrl) obj.foto_llegada_url = fotoUrl;
+
+    const {data:nueva, error} = await sb.from('expediciones').insert(obj).select().single();
+    if(error) throw new Error(error.message);
+
+    // Si hay daño → crear incidencia automáticamente
+    if(estado !== 'ok'){
+      const tipoInc = {leve:'Embalaje',grave:'Roto',humedad:'Humedad',precinto:'Precinto'}[estado]||'Otro';
+      const descInc = `Landed no previsto — Estado al recibir: ${estadoTxt}${nota?' · '+nota:''}`;
+      await sb.from('incidencias').insert({
+        expedicion_id: nueva.id, tipo: tipoInc,
+        descripcion: descInc, nombre: tipoInc
+      });
+    }
+
+    await logAct('expediciones', nueva.id, ref, 'crear', 'landed_no_previsto', null,
+      `${ref} · ${bultos} btos · ${kilos}kg · ${estadoTxt}${fotoUrl?' · con foto':''}`);
+
+    showToast(`✅ Landed registrado: ${ref}${estado!=='ok'?' · ⚠️ incidencia creada':''}`);
+    closeModal();
+    await loadAlmFotos('landed');
+
+  } catch(e){
+    status.innerHTML=`<span style="color:var(--rd600)">❌ ${e.message}</span>`;
+  }
+}
+
+
 function selEstado(expId, val, btn){
   window['_estLlegada'] = window['_estLlegada'] || {};
   window['_estLlegada'][expId] = val;
