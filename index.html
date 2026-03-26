@@ -5589,13 +5589,31 @@ async function loadAlmFotos(tab){
     const {data:exps}=await sb.from('expediciones').select('*,buques(id,nombre,eta_buque)').eq('estado_carga','✅ AUTORIZADO');
     if(!exps||!exps.length){cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">🚛</div><div class="empty-txt">No hay expediciones autorizadas pendientes de carga</div></div>';return;}
     const byBuque={};(exps||[]).forEach(e=>{const bn=e.buques?.nombre||'Sin buque';const bid=e.buques?.id||'x';if(!byBuque[bid])byBuque[bid]={nombre:bn,eta:e.buques?.eta_buque,items:[]};byBuque[bid].items.push(e);});
-    cont.innerHTML=Object.entries(byBuque).map(([bid,d])=>`
-      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
-        <div style="background:var(--gr50);border-bottom:1px solid #bbf7d0;padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
-          <div style="font-weight:700;color:var(--gr700)">🚢 ${d.nombre}</div>
-          <div style="font-size:12px;color:var(--gr600)">ETA: ${d.eta?fd(d.eta):'—'} · ${d.items.length} exp. autorizadas</div>
+    cont.innerHTML=Object.entries(byBuque).map(([bid,d])=>{
+      const totalBultos=d.items.reduce((a,e)=>a+(e.bultos||0),0);
+      return`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
+        <div style="background:var(--gr50);border-bottom:1px solid #bbf7d0;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <div style="font-weight:700;color:var(--gr700)">🚢 ${d.nombre}</div>
+            <div style="font-size:11px;color:var(--gr600)">ETA: ${d.eta?fd(d.eta):'—'} · ${d.items.length} exp. · ${totalBultos} bultos totales</div>
+          </div>
+          <button onclick="abrirScannerCarga('${bid}','${(d.nombre||'').replace(/'/g,"\\'")}',${totalBultos})"
+            style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">
+            📷 Escanear bultos
+          </button>
         </div>
         <div style="padding:16px">
+          <!-- Progreso de escaneo -->
+          <div id="scan-prog-${bid}" style="margin-bottom:12px;display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+              <span style="font-size:12px;font-weight:600;color:var(--g700)">Bultos escaneados</span>
+              <span id="scan-count-${bid}" style="font-size:13px;font-weight:800;color:var(--b600)">0 / ${totalBultos}</span>
+            </div>
+            <div style="background:var(--g100);border-radius:4px;height:8px;overflow:hidden">
+              <div id="scan-bar-${bid}" style="height:100%;background:var(--b500);width:0%;transition:width .3s"></div>
+            </div>
+            <div id="scan-detail-${bid}" style="margin-top:8px;font-size:11px;color:var(--g500)"></div>
+          </div>
           <div class="fg2"><label class="fl2">Foto camión cargado <span style="color:var(--rd600);font-size:10px">requerida</span></label>
             <div class="foto-area" onclick="document.getElementById('cg-fi-${bid}').click()">
               <input type="file" id="cg-fi-${bid}" accept="image/*" multiple capture="environment" onchange="onCargaFoto('${bid}')">
@@ -5604,10 +5622,16 @@ async function loadAlmFotos(tab){
             <div class="foto-prev" id="cg-pv-${bid}"></div>
           </div>
           <button id="cg-btn-${bid}" class="btn btn-g btn-full" style="display:none" onclick="confirmarCargaBuque('${bid}')">✅ Confirmar carga — ${d.items.length} expediciones</button>
-          <div style="margin-top:12px;font-size:12px;color:var(--g500)">Expediciones: ${d.items.map(e=>`<span class="badge bb" style="margin:2px">${e.nº_expedicion}</span>`).join('')}</div>
+          <div style="margin-top:12px;font-size:12px;color:var(--g500)">Expediciones: ${d.items.map(e=>`<span class="badge bb" style="margin:2px">${e.nº_expedicion} (${e.bultos||0}b)</span>`).join('')}</div>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     Object.keys(byBuque).forEach(bid=>setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null));
+    // Restaurar progreso de escaneo si había sesión activa
+    Object.keys(byBuque).forEach(bid=>{
+      const prog = window._scanCargaProg?.[bid];
+      if(prog && prog.escaneados > 0) _actualizarProgresoCarga(bid, prog.escaneados, prog.total, prog.detalle||[]);
+    });
   } else if(currentFotosTab==='embarque'){
     // Buques en proceso activos
     const {data:BALL}=await sb.from('buques').select('id,nombre,eta_buque,estado_operacion').order('eta_buque',{ascending:true,nullsFirst:false});
@@ -5871,7 +5895,7 @@ function selEstado(expId, val, btn){
 }
 
 async function confirmarLlegadaFotos(id){
-  const {data:e}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',id).single();
+  const {data:e}=await sb.from('expediciones').select('nº_expedicion,bultos,buques(nombre)').eq('id',id).single();
   const inp = document.getElementById('fl-fi-'+id) || document.getElementById('fl-i');
   const prevEl = document.getElementById('fl-pv-'+id) || document.getElementById('fl-p');
   const files = prevEl?._files || [];
@@ -5889,7 +5913,6 @@ async function confirmarLlegadaFotos(id){
   // Actualizar expedición
   const upd = { ubicacion:'Almacén-Sin Ubicar', notif_llegada_sent:true };
   if(fotoUrl) upd.foto_llegada_url = fotoUrl;
-  // nota se guarda en la incidencia si hay daño — columna descripcion_mercancias no existe en BD
   await sb.from('expediciones').update(upd).eq('id', id);
 
   const estadoTxt = { ok:'Correcto', leve:'Daño leve', grave:'Daño grave', humedad:'Humedad', precinto:'Precinto roto' }[estado] || estado;
@@ -5900,23 +5923,109 @@ async function confirmarLlegadaFotos(id){
   // Si hay daño → crear incidencia automáticamente
   if(estado !== 'ok'){
     const tipoInc = { leve:'Embalaje', grave:'Roto', humedad:'Humedad', precinto:'Precinto' }[estado] || 'Otro';
-    const descInc = [
-      `Estado al recibir: ${estadoTxt}`,
-      nota ? `Notas: ${nota}` : '',
-      fotoUrl ? `Foto adjunta` : 'Sin foto'
-    ].filter(Boolean).join(' · ');
-    await sb.from('incidencias').insert({
-      expedicion_id: id, tipo: tipoInc,
-      descripcion: descInc, nombre: tipoInc
-    });
+    const descInc = [`Estado al recibir: ${estadoTxt}`, nota?`Notas: ${nota}`:'', fotoUrl?'Foto adjunta':'Sin foto'].filter(Boolean).join(' · ');
+    await sb.from('incidencias').insert({ expedicion_id:id, tipo:tipoInc, descripcion:descInc, nombre:tipoInc });
     showToast(`✅ Llegada confirmada · ⚠️ Incidencia "${tipoInc}" creada automáticamente`);
   } else {
     showToast('✅ Llegada confirmada' + (fotoUrl?' con foto 📸':''));
   }
 
-  // Limpiar estado en memoria
   if(window['_estLlegada']) delete window['_estLlegada'][id];
-  await loadAlmFotos('llegadas');
+
+  // Ofrecer imprimir etiquetas QR por bulto si hay más de 0 bultos
+  const numBultos = e?.bultos || 0;
+  if(numBultos > 0){
+    ofrecerEtiquetasBultos(id, e?.nº_expedicion||'', numBultos);
+  } else {
+    await loadAlmFotos('llegadas');
+  }
+}
+
+// ── Etiquetas QR por bulto ────────────────────────────────────────
+function ofrecerEtiquetasBultos(expId, ref, numBultos){
+  const ov = document.createElement('div');
+  ov.id = 'etiquetas-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.3)">
+      <div style="font-size:28px;margin-bottom:8px">🏷️</div>
+      <div style="font-size:15px;font-weight:800;color:var(--g900);margin-bottom:6px">Imprimir etiquetas QR</div>
+      <div style="font-size:13px;color:var(--g600);margin-bottom:16px;line-height:1.5">
+        La expedición <strong>${ref}</strong> tiene <strong>${numBultos} bulto${numBultos>1?'s':''}</strong>.<br>
+        ¿Imprimir una etiqueta QR por bulto para el escaneo de carga?
+      </div>
+      <div style="font-size:11px;color:var(--b600);background:var(--b50);border-radius:6px;padding:8px;margin-bottom:16px">
+        Cada etiqueta identifica el bulto de forma única para verificar la carga camión.
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button id="btn-imp-etiq" style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer">
+          🖨️ Imprimir ${numBultos} etiqueta${numBultos>1?'s':''}
+        </button>
+        <button onclick="document.getElementById('etiquetas-overlay').remove();loadAlmFotos('llegadas')"
+          style="background:var(--g100);color:var(--g600);border:none;border-radius:8px;padding:10px 14px;font-size:12px;cursor:pointer">
+          Ahora no
+        </button>
+      </div>
+      <div id="etiq-progress" style="margin-top:12px;min-height:16px;font-size:11px;color:var(--g500)"></div>
+    </div>`;
+  document.body.appendChild(ov);
+
+  document.getElementById('btn-imp-etiq').addEventListener('click', async()=>{
+    document.getElementById('btn-imp-etiq').disabled = true;
+    document.getElementById('etiq-progress').textContent = '⏳ Generando etiquetas…';
+    await imprimirEtiquetasBultos(expId, ref, numBultos);
+    document.getElementById('etiquetas-overlay')?.remove();
+    await loadAlmFotos('llegadas');
+  });
+}
+
+async function imprimirEtiquetasBultos(expId, ref, numBultos){
+  // Generar todos los QR en paralelo
+  const qrPromises = [];
+  for(let i = 1; i <= numBultos; i++){
+    const qrData = `ALS-BLT:${expId}:${i}:${numBultos}`;
+    qrPromises.push(generarQRDataURL(qrData, 160).then(url=>({n:i, url, qrData})));
+  }
+  const etiquetas = await Promise.all(qrPromises);
+
+  const w = window.open('','_blank',`width=460,height=${Math.min(800, 200*numBultos+120)}`);
+  if(!w){ showToast('⚠️ Permite ventanas emergentes para imprimir'); return; }
+
+  const etiqHtml = etiquetas.map(({n, url, qrData})=>`
+    <div class="etiq">
+      <div class="logo">● ALS</div>
+      <div class="ref">${ref}</div>
+      <div class="bulto">Bulto ${n} de ${numBultos}</div>
+      ${url ? `<img src="${url}" width="120" height="120">` : '<div style="width:120px;height:120px;border:1px solid #ccc;display:inline-flex;align-items:center;justify-content:center;font-size:10px">QR</div>'}
+      <div class="cod">${qrData}</div>
+    </div>`).join('');
+
+  w.document.write(`<!DOCTYPE html><html><head><title>Etiquetas — ${ref}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,sans-serif;background:#fff;padding:8px}
+      .etiq{display:inline-block;border:1px solid #d1d5db;border-radius:8px;padding:10px;margin:4px;text-align:center;width:160px;vertical-align:top;page-break-inside:avoid}
+      .logo{font-size:9px;font-weight:700;color:#1565c0;letter-spacing:1px}
+      .ref{font-size:11px;font-weight:800;margin:3px 0;letter-spacing:.3px}
+      .bulto{font-size:10px;color:#6b7280;margin-bottom:4px;font-weight:600}
+      img{display:block;margin:0 auto;border:1px solid #e5e7eb;border-radius:4px;padding:3px}
+      .cod{font-size:7px;color:#9ca3af;margin-top:4px;word-break:break-all;font-family:monospace}
+      .acciones{text-align:center;padding:12px;position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;z-index:10}
+      button{background:#1565c0;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;margin:4px}
+      .btn-s{background:#6b7280}
+      @media print{.acciones{display:none}body{padding:0}.etiq{margin:2px;border:1px dashed #ccc}}
+      @page{margin:5mm;size:auto}
+    </style>
+  </head><body>
+    <div class="acciones">
+      <strong style="font-size:13px">${numBultos} etiqueta${numBultos>1?'s':''} — ${ref}</strong>
+      <button onclick="window.print()">🖨️ Imprimir todas</button>
+      <button class="btn-s" onclick="window.close()">Cerrar</button>
+    </div>
+    <div style="padding:8px">${etiqHtml}</div>
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>{ try{ w.print(); }catch(e){} }, 800);
 }
 
 function abrirIncidenciaLlegada(expId,expRef){
@@ -7896,6 +8005,133 @@ async function imprimirQRLlegada(expId, ref){
   w.document.close();
   // Dar tiempo a que cargue el data URL antes de imprimir
   setTimeout(()=>{ try{ w.print(); }catch(e){} }, 700);
+}
+
+// ── Escáner de carga camión por buque ────────────────────────────
+window._scanCargaProg = window._scanCargaProg || {};
+
+function _actualizarProgresoCarga(bid, escaneados, total, detalle){
+  const progDiv = document.getElementById('scan-prog-'+bid);
+  const countEl = document.getElementById('scan-count-'+bid);
+  const barEl   = document.getElementById('scan-bar-'+bid);
+  const detEl   = document.getElementById('scan-detail-'+bid);
+  if(!progDiv) return;
+  progDiv.style.display = '';
+  if(countEl) countEl.textContent = `${escaneados} / ${total}`;
+  if(barEl){ barEl.style.width=`${Math.round(escaneados/Math.max(total,1)*100)}%`; barEl.style.background=escaneados>=total?'var(--gr500)':'var(--b500)'; }
+  if(detEl) detEl.innerHTML=(detalle||[]).slice(-3).map(d=>`<span class="badge bb" style="font-size:10px;margin:1px">${d}</span>`).join('');
+}
+
+async function abrirScannerCarga(bid, buqueNombre, totalBultos){
+  if(!window._scanCargaProg[bid]) window._scanCargaProg[bid]={escaneados:0,total:totalBultos,bultos:new Set(),detalle:[]};
+  const estado=window._scanCargaProg[bid];
+  const {data:expsAutorizadas}=await sb.from('expediciones').select('id,nº_expedicion,bultos').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO');
+  const expMap={};(expsAutorizadas||[]).forEach(e=>{expMap[e.id]=e;});
+
+  const ov=document.createElement('div');
+  ov.id='scanner-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
+  ov.innerHTML=`
+    <div style="background:rgba(0,0,0,.85);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div><div style="color:#fff;font-weight:700;font-size:14px">📷 Escaneo de carga</div>
+        <div style="color:#9ca3af;font-size:11px">${buqueNombre}</div></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div id="sc-carga-count" style="background:rgba(59,130,246,.3);color:#93c5fd;font-weight:700;font-size:13px;padding:4px 10px;border-radius:6px">${estado.escaneados} / ${totalBultos}</div>
+        <button onclick="cerrarScannerQR()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer">✕</button>
+      </div>
+    </div>
+    <div id="qr-reader" style="width:100%;max-width:500px;margin:0 auto"></div>
+    <div id="scanner-result" style="flex:1;padding:12px 16px;color:#fff;overflow-y:auto">
+      <div style="font-size:12px;color:#9ca3af;text-align:center">Apunta a la etiqueta QR de cada bulto</div>
+      <div id="sc-carga-lista" style="margin-top:8px"></div>
+      ${estado.escaneados>0?`<div style="text-align:center;margin-top:8px"><button onclick="resetearEscaneo('${bid}')" style="background:rgba(239,68,68,.3);color:#fca5a5;border:none;border-radius:6px;padding:5px 12px;font-size:11px;cursor:pointer">↩ Reiniciar escaneo</button></div>`:''}
+    </div>`;
+  document.body.appendChild(ov);
+  _renderListaBultos(bid, estado);
+
+  if(!window.Html5Qrcode){
+    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);}).catch(()=>{});
+  }
+  if(!window.Html5Qrcode){document.getElementById('scanner-result').innerHTML='<div style="color:#f87171;padding:16px;text-align:center">❌ No se pudo cargar el escáner</div>';return;}
+  try{
+    _html5QrScanner=new window.Html5Qrcode('qr-reader');
+    await _html5QrScanner.start({facingMode:'environment'},{fps:10,qrbox:{width:200,height:200},aspectRatio:1.0},
+      (t)=>_procesarQRCarga(t,bid,buqueNombre,totalBultos,expMap),()=>{});
+  }catch(e){document.getElementById('scanner-result').innerHTML=`<div style="color:#f87171;padding:16px;text-align:center">❌ Sin cámara: ${e.message||e}</div>`;}
+}
+
+function _renderListaBultos(bid, estado){
+  const el=document.getElementById('sc-carga-lista');if(!el)return;
+  if(!estado.detalle.length){el.innerHTML='';return;}
+  el.innerHTML=estado.detalle.slice(-8).reverse().map(d=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:12px">
+      <span style="color:#22c55e;font-size:16px">✅</span><span style="color:#fff;font-family:monospace">${d}</span>
+    </div>`).join('');
+}
+
+async function _procesarQRCarga(texto, bid, buqueNombre, totalBultos, expMap){
+  const ahora=Date.now();
+  if(texto===_ultimoQRLeido&&ahora-_ultimoQRTs<3000)return;
+  _ultimoQRLeido=texto; _ultimoQRTs=ahora;
+  const estado=window._scanCargaProg[bid];if(!estado)return;
+
+  const match=texto.match(/^ALS-BLT:([a-f0-9-]{36}):(\d+):(\d+)$/i);
+  if(!match){
+    const matchExp=texto.match(/^ALS-EXP:([a-f0-9-]{36})$/i);
+    if(matchExp&&expMap[matchExp[1]]) _mostrarMensajeScan('⚠️ QR de expedición — usa las etiquetas de bulto impresas en llegada','#fbbf24');
+    else _mostrarMensajeScan('⚠️ QR no reconocido','#fbbf24');
+    return;
+  }
+  const expId=match[1], numBulto=parseInt(match[2]), totalBultosExp=parseInt(match[3]);
+  const bltKey=`${expId}:${numBulto}`;
+  if(!expMap[expId]){
+    if(navigator.vibrate)navigator.vibrate([100,50,100,50,100]);
+    const {data:otra}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',expId).single();
+    _mostrarMensajeScan(`🚫 Bulto de OTRO buque: ${otra?.nº_expedicion||'—'} (${otra?.buques?.nombre||'—'})`, '#ef4444');
+    return;
+  }
+  if(estado.bultos.has(bltKey)){
+    if(navigator.vibrate)navigator.vibrate(50);
+    _mostrarMensajeScan(`⚠️ Bulto ${numBulto} de ${expMap[expId].nº_expedicion} ya escaneado`,'#fbbf24');
+    return;
+  }
+  estado.bultos.add(bltKey); estado.escaneados++;
+  const label=`${expMap[expId].nº_expedicion} — B${numBulto}/${totalBultosExp}`;
+  estado.detalle.push(label);
+  if(navigator.vibrate)navigator.vibrate(150);
+  const countEl=document.getElementById('sc-carga-count');
+  if(countEl)countEl.textContent=`${estado.escaneados} / ${totalBultos}`;
+  _renderListaBultos(bid,estado);
+  _actualizarProgresoCarga(bid,estado.escaneados,totalBultos,estado.detalle);
+  if(estado.escaneados>=totalBultos){
+    if(navigator.vibrate)navigator.vibrate([200,100,200,100,200]);
+    _mostrarMensajeScan('🎉 ¡Todos los bultos verificados! Haz la foto y confirma la carga.','#22c55e');
+    setTimeout(()=>{
+      cerrarScannerQR();
+      const btn=document.getElementById('cg-btn-'+bid);
+      if(btn)btn.style.display='';
+      showToast('✅ Todos los bultos escaneados — haz la foto para confirmar');
+    },2000);
+  } else {
+    _mostrarMensajeScan(`✅ ${label} — quedan ${totalBultos-estado.escaneados}`, '#22c55e');
+  }
+}
+
+function _mostrarMensajeScan(msg, color){
+  const res=document.getElementById('scanner-result');if(!res)return;
+  const div=document.createElement('div');
+  div.style.cssText=`color:${color};font-size:13px;font-weight:600;text-align:center;padding:6px`;
+  div.textContent=msg;
+  const lista=document.getElementById('sc-carga-lista');
+  if(lista)lista.before(div); else res.prepend(div);
+  setTimeout(()=>div.remove(),3000);
+}
+
+function resetearEscaneo(bid){
+  if(window._scanCargaProg?.[bid]) window._scanCargaProg[bid]={escaneados:0,total:window._scanCargaProg[bid].total,bultos:new Set(),detalle:[]};
+  _actualizarProgresoCarga(bid,0,window._scanCargaProg[bid]?.total||0,[]);
+  const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='none';
+  cerrarScannerQR(); showToast('↩️ Escaneo reiniciado');
 }
 
 async function generarQRDataURL(texto, size=200){
