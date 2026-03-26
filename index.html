@@ -8070,15 +8070,15 @@ async function _verificarManualScanner(){
 }
 
 function cerrarScannerQR(){
-  if(_html5QrScanner){
-    _html5QrScanner.stop().catch(()=>{});
-    _html5QrScanner = null;
-  }
-  clearInterval(_scannerInterval);
-  _scannerInterval = null;
-  if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream=null; }
   const ov = document.getElementById('scanner-overlay');
-  if(ov) ov.remove();
+  if(ov) ov.remove(); // Primero quitar overlay para feedback inmediato
+  if(_html5QrScanner){
+    const sc = _html5QrScanner;
+    _html5QrScanner = null;
+    sc.stop().catch(()=>{}).finally(()=>{ try{ sc.clear && sc.clear(); }catch(e){} });
+  }
+  clearInterval(_scannerInterval); _scannerInterval = null;
+  if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream=null; }
 }
 
 let _ultimoQRLeido = null;
@@ -8123,8 +8123,11 @@ async function _mostrarResultadoScan(e, res){
   const autorizada = e.estado_carga === '✅ AUTORIZADO';
   const color = autorizada ? '#22c55e' : '#ef4444';
   const bg = autorizada ? 'rgba(34,197,94,.15)' : 'rgba(239,68,68,.15)';
-
   if(navigator.vibrate) navigator.vibrate(autorizada ? [200] : [100,50,100,50,100]);
+
+  // Guardar ID para uso en botones
+  const expId = e.id;
+  const expRef = e.nº_expedicion;
 
   res.innerHTML = `
     <div style="background:${bg};border:2px solid ${color};border-radius:10px;padding:14px;margin:8px 16px">
@@ -8136,18 +8139,45 @@ async function _mostrarResultadoScan(e, res){
       <div style="font-size:12px;color:#d1d5db;margin-top:4px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
       <div style="font-size:11px;color:#9ca3af;margin-top:2px">${e.bultos||0} btos · ${e.kilos||0} kg · ${e.ubicacion||'—'}</div>
     </div>
-    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;padding:0 16px 8px">
-      ${autorizada ? `
-        <button onclick="confirmarCargaDesdeScanner('${e.id}','${e.nº_expedicion}')"
-          style="background:#22c55e;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer">
-          ✅ Confirmar carga</button>` : ''}
-      <button onclick="cerrarScannerQR();openExpD('${e.id}')"
-        style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-size:12px;cursor:pointer">
-        👁 Ver ficha</button>
-      <button onclick="_ultimoQRLeido=null;document.getElementById('scanner-result').innerHTML='<div style=color:#9ca3af;font-size:13px>Apunta al siguiente QR</div>'"
-        style="background:#6b7280;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-size:12px;cursor:pointer">
-        🔄 Siguiente</button>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;padding:8px 16px 12px">
+      ${autorizada ? '<button id="sc-btn-carga" style="background:#22c55e;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer">✅ Confirmar carga</button>' : ''}
+      <button id="sc-btn-ficha" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-size:12px;cursor:pointer">👁 Ver ficha</button>
+      <button id="sc-btn-sig" style="background:#6b7280;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-size:12px;cursor:pointer">🔄 Siguiente</button>
     </div>`;
+
+  // Scroll al resultado
+  res.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+  // Asignar eventos con addEventListener para evitar conflictos con closures en onclick
+  requestAnimationFrame(()=>{
+    const btnCarga = document.getElementById('sc-btn-carga');
+    const btnFicha = document.getElementById('sc-btn-ficha');
+    const btnSig   = document.getElementById('sc-btn-sig');
+
+    if(btnCarga) btnCarga.addEventListener('click', ()=>confirmarCargaDesdeScanner(expId, expRef));
+
+    if(btnFicha) btnFicha.addEventListener('click', ()=>{
+      const id = expId;
+      cerrarScannerQR();
+      setTimeout(()=>openExpD(id), 200);
+    });
+
+    if(btnSig) btnSig.addEventListener('click', ()=>{
+      _ultimoQRLeido = null;
+      res.innerHTML = `
+        <div style="font-size:13px;color:#9ca3af;padding:8px">Apunta al siguiente QR</div>
+        <div style="display:flex;gap:8px;margin-top:8px;padding:0 16px">
+          <input id="scan-manual-inp" placeholder="O escribe la referencia…"
+            style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:8px;padding:8px 12px;font-size:13px"
+            onkeydown="if(event.key==='Enter')_verificarManualScanner()">
+          <button onclick="_verificarManualScanner()"
+            style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer">🔍</button>
+        </div>`;
+      // Scroll al visor para ver la cámara
+      const qrReader = document.getElementById('qr-reader');
+      if(qrReader) qrReader.scrollIntoView({behavior:'smooth', block:'start'});
+    });
+  });
 }
 
 async function confirmarCargaDesdeScanner(expId, ref){
