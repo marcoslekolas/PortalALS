@@ -2662,31 +2662,141 @@ function exportarBuquesCSV(){
 async function abrirEditorPlantillas(){
   await loadEmailPlantillas();
   const tipos=[
-    {k:'confronta',lb:'📧 Confronta (Guardia Civil)'},
-    {k:'notif_aduanas',lb:'🏢 Notificación Aduanas'},
-    {k:'notif_cliente',lb:'👤 Notificación Cliente'},
-    {k:'airport_cargo',lb:'✈️ Airport Cargo'}
+    {k:'confronta',       lb:'📧 Confronta (Guardia Civil)',  vars:['{{buque}}','{{imo}}','{{escala}}','{{eta}}','{{terminal}}','{{expedicion}}','{{empresa}}','{{bultos}}','{{kilos}}','{{mrn}}','{{fecha}}']},
+    {k:'notif_aduanas',   lb:'🏢 Notificación Aduanas',       vars:['{{buque}}','{{expedicion}}','{{empresa}}','{{bultos}}','{{kilos}}','{{status}}','{{fecha_max}}','{{fecha}}']},
+    {k:'notif_cliente',   lb:'👤 Notificación Cliente',        vars:['{{buque}}','{{expedicion}}','{{bultos}}','{{kilos}}','{{ubicacion}}','{{estado}}','{{fecha}}']},
+    {k:'facturacion',     lb:'💶 Facturación',                 vars:['{{buque}}','{{escala}}','{{terminal}}','{{cliente}}','{{consignatario}}','{{total_exp}}','{{total_bultos}}','{{total_kilos}}','{{fecha}}']},
+    {k:'airport_cargo',  lb:'✈️ Airport Cargo',              vars:['{{awb}}','{{aeropuerto}}','{{empresa}}','{{bultos}}','{{kilos}}','{{fecha}}']},
   ];
+
+  // Plantillas por defecto si no existen en BD
+  const defaults = {
+    confronta: {
+      asunto: 'Confronta de mercancías — Buque {{buque}} · Escala {{escala}}',
+      cuerpo: `Estimada Guardia Civil de Puertos — Algeciras,
+
+Por la presente les remitimos la relación de mercancías para confronta correspondiente al buque {{buque}} (IMO: {{imo}}, Escala APBA: {{escala}}).
+
+DATOS DEL BUQUE:
+  · Nombre: {{buque}}
+  · IMO: {{imo}}
+  · Escala APBA: {{escala}}
+  · ETA: {{eta}}
+  · Terminal: {{terminal}}
+
+EXPEDICIÓN:
+  · Referencia: {{expedicion}}
+  · Empresa: {{empresa}}
+  · Bultos: {{bultos}}
+  · Kilos: {{kilos}} kg
+  · MRN: {{mrn}}
+
+Quedamos a su disposición para cualquier aclaración.
+
+Atentamente,
+Departamento de Operaciones
+ALGECIRAS LOGISTIC SOLUTIONS (ALS)
+📞 +34 956 58 13 16 · als@alsalgeciras.com`
+    },
+    notif_aduanas: {
+      asunto: 'Aviso despacho aduanero — Exp. {{expedicion}} · {{buque}}',
+      cuerpo: `Estimado Departamento de Aduanas,
+
+Les comunicamos que la siguiente expedición está pendiente de despacho:
+
+  · Buque: {{buque}}
+  · Expedición: {{expedicion}}
+  · Empresa: {{empresa}}
+  · Bultos: {{bultos}} · Kilos: {{kilos}} kg
+  · Status: {{status}}
+  · Fecha máx. despacho: {{fecha_max}}
+
+Por favor, procedan con el despacho a la mayor brevedad posible.
+
+Atentamente,
+ALGECIRAS LOGISTIC SOLUTIONS (ALS)`
+    },
+    notif_cliente: {
+      asunto: 'Aviso llegada mercancía — {{expedicion}} · {{buque}}',
+      cuerpo: `Estimado cliente,
+
+Le comunicamos que su mercancía ha llegado a nuestras instalaciones:
+
+  · Referencia: {{expedicion}}
+  · Buque: {{buque}}
+  · Bultos: {{bultos}} · Kilos: {{kilos}} kg
+  · Ubicación actual: {{ubicacion}}
+  · Estado: {{estado}}
+
+Quedamos a su disposición.
+
+Atentamente,
+ALGECIRAS LOGISTIC SOLUTIONS (ALS)
+📞 +34 956 58 13 16 · als@alsalgeciras.com`
+    },
+  };
+
   document.getElementById('m-title').textContent='📝 Plantillas de email';
   const tabs=tipos.map((t,i)=>`<button class="tab-btn ${i===0?'active':''}" onclick="showPlantilla('${t.k}',this)">${t.lb}</button>`).join('');
   document.getElementById('m-body').innerHTML=`
-    <div class="tabs" style="margin-bottom:14px">${tabs}</div>
+    <div class="tabs" style="margin-bottom:14px;overflow-x:auto;white-space:nowrap">${tabs}</div>
     <div id="plantilla-edit-area"></div>`;
   document.getElementById('m-foot').innerHTML=`
     <button class="btn btn-s" onclick="closeModal()">Cerrar</button>
+    <button class="btn btn-w btn-sm" onclick="resetPlantilla()" style="font-size:11px">↩️ Restaurar defecto</button>
     <button class="btn btn-p" onclick="guardarPlantilla()">💾 Guardar plantilla</button>`;
   document.getElementById('mo').classList.add('open');
+  window._plantillasDefaults = defaults;
+  window._plantillasTipos = tipos;
   showPlantilla(tipos[0].k);
 }
-function showPlantilla(tipo,el){
+
+function showPlantilla(tipo, el){
   if(el){document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
-  const p=_emailPlantillas[tipo]||{tipo,asunto:'',cuerpo:'',variables:[]};
-  const vars=p.variables||[];
+  const tipoInfo = (window._plantillasTipos||[]).find(t=>t.k===tipo) || {vars:[]};
+  const p = _emailPlantillas[tipo] || (window._plantillasDefaults||{})[tipo] || {tipo,asunto:'',cuerpo:''};
+  const vars = tipoInfo.vars || [];
   document.getElementById('plantilla-edit-area').innerHTML=`
     <input type="hidden" id="plt-tipo" value="${tipo}">
-    <div class="fg2"><label class="fl2">Asunto</label><input id="plt-asunto" class="fi" value="${(p.asunto||'').replace(/"/g,'&quot;')}"></div>
-    ${vars.length?`<div class="info-box" style="font-size:11px">Variables disponibles: ${vars.map(v=>`<code style="background:var(--g100);padding:1px 5px;border-radius:3px">${v}</code>`).join(' ')}</div>`:''}
-    <div class="fg2"><label class="fl2">Cuerpo</label><textarea id="plt-cuerpo" class="fi" style="min-height:200px;font-family:var(--mono);font-size:11px;line-height:1.6">${p.cuerpo||''}</textarea></div>`;
+    <div class="fg2" style="margin-bottom:8px">
+      <label class="fl2">Asunto</label>
+      <input id="plt-asunto" class="fi" value="${(p.asunto||'').replace(/"/g,'&quot;')}">
+    </div>
+    ${vars.length?`
+    <div style="background:var(--b50);border:1px solid var(--b100);border-radius:6px;padding:8px 12px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--b700);margin-bottom:5px">Variables disponibles — clic para insertar:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">
+        ${vars.map(v=>`<button type="button" onclick="insertarVariable('${v}')"
+          style="background:var(--b100);border:1px solid var(--b200);border-radius:4px;padding:2px 7px;font-size:11px;font-family:var(--mono);cursor:pointer;color:var(--b700)"
+          title="Insertar ${v}">${v}</button>`).join('')}
+      </div>
+    </div>`:''
+    }
+    <div class="fg2">
+      <label class="fl2">Cuerpo del mensaje</label>
+      <textarea id="plt-cuerpo" class="fi" style="min-height:220px;font-family:var(--mono);font-size:11px;line-height:1.6">${p.cuerpo||''}</textarea>
+    </div>
+    <div style="font-size:11px;color:var(--g400);margin-top:6px">
+      💡 Las variables se reemplazan automáticamente al generar el email. Usa {{variable}} exactamente como aparece arriba.
+    </div>`;
+}
+
+function insertarVariable(v){
+  const ta = document.getElementById('plt-cuerpo');
+  if(!ta) return;
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  ta.value = ta.value.substring(0, start) + v + ta.value.substring(end);
+  ta.selectionStart = ta.selectionEnd = start + v.length;
+  ta.focus();
+}
+
+function resetPlantilla(){
+  const tipo = document.getElementById('plt-tipo')?.value;
+  const def = (window._plantillasDefaults||{})[tipo];
+  if(!def){ showToast('Sin plantilla por defecto para este tipo'); return; }
+  document.getElementById('plt-asunto').value = def.asunto || '';
+  document.getElementById('plt-cuerpo').value = def.cuerpo || '';
+  showToast('↩️ Plantilla restaurada a los valores por defecto');
 }
 async function guardarPlantilla(){
   const tipo=document.getElementById('plt-tipo')?.value;
@@ -5207,15 +5317,16 @@ async function marcarCarg(id){if(!confirm('¿Confirmar carga en camión?'))retur
 
 // ── DASHBOARD ALMACÉN ──────────────────────────────────────
 async function loadAlmDash(){
-  const [{data:BALL},{data:exps}]=await Promise.all([
+  const [{data:BALL},{data:exps},{data:incs}]=await Promise.all([
     sb.from('buques').select('*,ec:cliente_id(nombre)').order('eta_buque',{ascending:true,nullsFirst:false}),
-    sb.from('expediciones').select('*,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO')
+    sb.from('expediciones').select('*,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO'),
+    sb.from('incidencias').select('tipo,estado,created_at').neq('estado','Cerrada')
   ]);
-  // Filtrar buques activos en JS (evita bug NULL de Supabase)
   const B=(BALL||[]).filter(b=>b.estado_operacion!=='Finalizado');
   const E=exps||[];
+  const I=incs||[];
 
-  // Calcular totales reales por buque desde expediciones
+  // KPIs principales
   const expMap={};
   E.forEach(e=>{
     if(!e.buque_id)return;
@@ -5234,11 +5345,73 @@ async function loadAlmDash(){
   const aut=E.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
   const lis=B.filter(b=>b.total_expediciones>0&&b.total_expediciones===b.total_autorizadas);
 
+  // Métricas avanzadas
+  const sinFoto=E.filter(e=>
+    e.ubicacion&&e.ubicacion.startsWith('Almacén')&&
+    !e.foto_llegada_url
+  ).length;
+
+  // Tiempo medio en almacén (entre notif_llegada y hora_de_carga)
+  const conTiempo=E.filter(e=>e.notif_llegada_sent&&e.hora_de_carga&&e.updated_at);
+  const tiempoMedio=conTiempo.length>0
+    ? Math.round(conTiempo.reduce((a,e)=>{
+        const d=(new Date(e.hora_de_carga)-new Date(e.updated_at))/86400000;
+        return a+Math.abs(d);
+      },0)/conTiempo.length*10)/10
+    : null;
+
+  // Ranking incidencias abiertas por tipo
+  const tipoInc={};
+  I.forEach(i=>{ tipoInc[i.tipo]=(tipoInc[i.tipo]||0)+1; });
+  const rankingInc=Object.entries(tipoInc).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
   document.getElementById('alm-kpi-grid').innerHTML=`
     <div class="kpi bl"><div class="kpi-lbl">Buques activos</div><div class="kpi-val">${B.length}</div><div class="kpi-sub" style="color:var(--b600)">${B.filter(b=>b.estado_operacion==='En proceso'||!b.estado_operacion).length} en proceso</div></div>
-    <div class="kpi am"><div class="kpi-lbl">Exped. pendientes llegada</div><div class="kpi-val">${pend}</div></div>
-    <div class="kpi rd"><div class="kpi-lbl">En almacén — revisar</div><div class="kpi-val">${rev}</div></div>
-    <div class="kpi gr"><div class="kpi-lbl">Autorizados embarcar</div><div class="kpi-val">${aut}</div></div>`;
+    <div class="kpi am"><div class="kpi-lbl">Pend. llegada</div><div class="kpi-val">${pend}</div><div class="kpi-sub">en tránsito</div></div>
+    <div class="kpi rd"><div class="kpi-lbl">En almacén — revisar</div><div class="kpi-val">${rev}</div><div class="kpi-sub">${sinFoto>0?`<span style="color:var(--rd600)">📷 ${sinFoto} sin foto</span>`:''}</div></div>
+    <div class="kpi gr"><div class="kpi-lbl">Autorizados embarcar</div><div class="kpi-val">${aut}</div></div>
+    <div class="kpi ${I.length>0?'rd':'gr'}"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>
+    ${tiempoMedio!==null?`<div class="kpi bl"><div class="kpi-lbl">Tiempo medio almacén</div><div class="kpi-val">${tiempoMedio}d</div><div class="kpi-sub">llegada→carga</div></div>`:''}`;
+
+  // Sección incidencias abiertas por tipo
+  const incHtml = rankingInc.length ? `
+    <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--g500);margin-bottom:10px">⚠️ Incidencias abiertas por tipo</div>
+      ${rankingInc.map(([tipo,n])=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--g100)">
+          <span class="badge ba" style="font-size:11px;min-width:80px;text-align:center">${tipo}</span>
+          <div style="flex:1;background:var(--g100);border-radius:4px;height:8px;overflow:hidden">
+            <div style="height:100%;background:var(--am500);width:${Math.round(n/I.length*100)}%;transition:width .3s"></div>
+          </div>
+          <span style="font-size:12px;font-weight:700;color:var(--am600);min-width:20px;text-align:right">${n}</span>
+        </div>`).join('')}
+    </div>` : '';
+
+  // Expediciones sin foto de llegada
+  const sinFotoList = E.filter(e=>
+    e.ubicacion&&e.ubicacion.startsWith('Almacén')&&!e.foto_llegada_url
+  ).slice(0,5);
+  const sinFotoHtml = sinFotoList.length ? `
+    <div style="background:var(--w);border:1px solid var(--rd200,#fecaca);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--rd600);margin-bottom:10px">📷 Expediciones en almacén sin foto de llegada</div>
+      ${sinFotoList.map(e=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--g100);font-size:12px;cursor:pointer" onclick="openExpD('${e.id}')">
+          <span style="font-weight:700;font-family:var(--mono)">${e.nº_expedicion}</span>
+          <span style="color:var(--g500)">${e.buques?.nombre||'—'}</span>
+          <span style="margin-left:auto">${bdg(e.estado_semaforo)}</span>
+        </div>`).join('')}
+      ${sinFotoList.length<sinFoto?`<div style="font-size:11px;color:var(--g400);margin-top:6px">Y ${sinFoto-sinFotoList.length} más…</div>`:''}
+    </div>` : '';
+
+  // Insertar secciones extra si el contenedor existe
+  let extraCont = document.getElementById('alm-dash-extra');
+  if(!extraCont){
+    extraCont = document.createElement('div');
+    extraCont.id = 'alm-dash-extra';
+    document.getElementById('alm-kpi-grid').after(extraCont);
+  }
+  extraCont.innerHTML = sinFotoHtml + incHtml;
+
   document.getElementById('alm-listos-dash').innerHTML=lis.length
     ?lis.map(b=>buqueCard(b,true)).join('')
     :'<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay buques con todas las expediciones autorizadas</div></div>';
@@ -6226,11 +6399,103 @@ async function openEmpD(id){
       : '<div style="color:var(--g400);font-size:12px;padding:8px 0;text-align:center">Sin incidencias registradas</div>'}
     </div>`;
 
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-d btn-sm" onclick="delEmp('${e.id}')">Eliminar</button><button class="btn btn-p" onclick="saveEmp('${e.id}')">💾 Guardar</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-d btn-sm" onclick="delEmp('${e.id}')">Eliminar</button><button class="btn btn-s btn-sm" onclick="abrirTimelineEmpresa('${e.id}','${(e.nombre||'').replace(/'/g,"\\'")}')">📅 Timeline</button><button class="btn btn-p" onclick="saveEmp('${e.id}')">💾 Guardar</button>`;
   document.getElementById('mo').classList.add('open');
 }
 async function saveEmp(id){
   if(!puedeAcceder('empresas','editar')){ showToast('⛔ Sin permisos para editar empresas'); return; }const roles=['Cliente','Consignatario','Transportista'].filter(r=>document.getElementById('ep-r-'+r)?.checked);const otros=gv('ep-o').split(',').map(s=>s.trim()).filter(Boolean);await sb.from('empresas').update({nombre:gv('ep-n'),persona_contacto:gv('ep-p')||null,email_confronta:gv('ep-e')||null,telefono:gv('ep-t')||null,otros_emails:otros,rol:roles}).eq('id',id);await logAct('empresas',id,gv('ep-n'),'editar','datos',null,'actualizado');showToast('Empresa guardada');closeModal();loadView(CV);}
+
+async function abrirTimelineEmpresa(empId, empNombre){
+  closeModal();
+  document.getElementById('m-title').textContent = '📅 Timeline — '+empNombre;
+  document.getElementById('m-body').innerHTML = '<div class="loading"><div class="spinner"></div>Cargando historial…</div>';
+  document.getElementById('m-foot').innerHTML = '<button class="btn btn-s" onclick="closeModal()">Cerrar</button>';
+  document.getElementById('mo').classList.add('open');
+
+  // Cargar expediciones + incidencias en paralelo
+  const [{data:exps},{data:incs}] = await Promise.all([
+    sb.from('expediciones')
+      .select('id,nº_expedicion,estado_semaforo,estado_carga,tramite_aduanero,bultos,kilos,created_at,updated_at,buques(nombre),nº_mrn')
+      .eq('empresa_id', empId)
+      .order('created_at',{ascending:false})
+      .limit(50),
+    sb.from('incidencias')
+      .select('id,tipo,descripcion,estado,created_at,expediciones(nº_expedicion)')
+      .eq('expediciones.empresa_id', empId)
+      .order('created_at',{ascending:false})
+      .limit(50)
+  ]);
+
+  // Combinar eventos en una sola línea de tiempo
+  const eventos = [];
+  (exps||[]).forEach(e=>{
+    eventos.push({
+      ts: e.created_at, tipo:'exp_creada',
+      titulo: `📦 Nueva expedición: ${e.nº_expedicion}`,
+      sub: `${e.buques?.nombre||'—'} · ${e.bultos||0} btos · ${e.kilos||0} kg`,
+      badge: bdg(e.estado_semaforo), id: e.id, onClick:`openExpD('${e.id}')`
+    });
+    if(e.nº_mrn){
+      eventos.push({
+        ts: e.updated_at, tipo:'mrn',
+        titulo: `✅ MRN registrado: ${e.nº_expedicion}`,
+        sub: `MRN: ${e.nº_mrn} · Despachado`,
+        badge: '<span class="badge bg" style="font-size:10px">Despachado</span>', id: e.id, onClick:`openExpD('${e.id}')`
+      });
+    }
+  });
+  (incs||[]).forEach(i=>{
+    eventos.push({
+      ts: i.created_at, tipo:'incidencia',
+      titulo: `⚠️ Incidencia: ${i.tipo}`,
+      sub: (i.descripcion||'').substring(0,80)+(i.descripcion?.length>80?'…':''),
+      badge: `<span class="badge ${i.estado==='Cerrada'?'bg':i.estado==='En gestión'?'ba':'br'}" style="font-size:10px">${i.estado}</span>`,
+      id: i.id, onClick:`openIncD('${i.id}')`
+    });
+  });
+  eventos.sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+
+  if(!eventos.length){
+    document.getElementById('m-body').innerHTML = '<div class="empty" style="padding:40px 0"><div class="empty-icon">📅</div><div class="empty-txt">Sin actividad registrada para esta empresa</div></div>';
+    return;
+  }
+
+  // Agrupar por mes
+  const porMes = {};
+  eventos.forEach(ev=>{
+    const d = new Date(ev.ts);
+    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const lbl = d.toLocaleDateString('es-ES',{month:'long',year:'numeric'});
+    if(!porMes[k]) porMes[k]={lbl,eventos:[]};
+    porMes[k].eventos.push(ev);
+  });
+
+  const colorTipo = {exp_creada:'var(--b500)', mrn:'var(--gr500)', incidencia:'var(--am500)'};
+
+  document.getElementById('m-body').innerHTML = `
+    <div style="font-size:12px;color:var(--g500);margin-bottom:14px">
+      ${eventos.length} evento${eventos.length>1?'s':''} · ${(exps||[]).length} expedicion${(exps||[]).length!==1?'es':''} · ${(incs||[]).length} incidencia${(incs||[]).length!==1?'s':''}
+    </div>
+    ${Object.entries(porMes).map(([k,mes])=>`
+      <div style="margin-bottom:20px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--g400);margin-bottom:10px;padding-bottom:4px;border-bottom:2px solid var(--g100)">${mes.lbl}</div>
+        <div style="position:relative;padding-left:20px">
+          <div style="position:absolute;left:6px;top:0;bottom:0;width:2px;background:var(--g100)"></div>
+          ${mes.eventos.map(ev=>`
+            <div style="position:relative;margin-bottom:10px;cursor:pointer" onclick="${ev.onClick};closeModal()">
+              <div style="position:absolute;left:-17px;top:4px;width:10px;height:10px;border-radius:50%;background:${colorTipo[ev.tipo]||'var(--g400)'};border:2px solid #fff;box-shadow:0 0 0 1px ${colorTipo[ev.tipo]||'var(--g300)'}"></div>
+              <div style="background:var(--g50);border:1px solid var(--g200);border-radius:8px;padding:8px 12px;transition:background .1s" onmouseenter="this.style.background='var(--b50)'" onmouseleave="this.style.background='var(--g50)'">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <div style="font-size:12px;font-weight:700;color:var(--g800);flex:1">${ev.titulo}</div>
+                  ${ev.badge}
+                  <div style="font-size:10px;color:var(--g400)">${new Date(ev.ts).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit'})}</div>
+                </div>
+                ${ev.sub?`<div style="font-size:11px;color:var(--g500);margin-top:3px">${ev.sub}</div>`:''}
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`).join('')}`;
+}
 async function delEmp(id){if(!confirm('¿Eliminar empresa?'))return;await sb.from('empresas').delete().eq('id',id);closeModal();loadView(CV);}
 
 async function delBuque(id,nombre){
@@ -7196,7 +7461,7 @@ async function openExpD(id){
     </div>
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR</button><button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
 }
@@ -7567,6 +7832,60 @@ async function impExpAlb(expId){
   if(!e)return;
   abrirAlbaran(htmlAlb(e.buques||{},[e]));
 }
+
+// ── QR por expedición ─────────────────────────────────────────────
+function mostrarQRExpedicion(id, ref){
+  // URL que abre directamente la expedición en el portal
+  const portalUrl = `https://marcoslekolas.github.io/PortalALS/?exp=${id}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(portalUrl)}&bgcolor=ffffff&color=000000&margin=10`;
+
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:28px;max-width:320px;width:100%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.3)">
+      <div style="font-size:15px;font-weight:800;color:var(--g900);margin-bottom:4px">📱 Código QR</div>
+      <div style="font-size:12px;color:var(--g500);margin-bottom:16px;font-family:var(--mono)">${ref}</div>
+      <div style="display:inline-block;border:3px solid var(--g200);border-radius:10px;padding:8px;margin-bottom:14px">
+        <img src="${qrUrl}" alt="QR ${ref}" style="width:200px;height:200px;display:block">
+      </div>
+      <div style="font-size:11px;color:var(--g500);margin-bottom:16px;line-height:1.5">
+        Escanea para abrir la ficha directamente en el portal.<br>
+        Ideal para pegar en el bulto o documentación.
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button onclick="imprimirQR('${id}','${ref}')"
+          style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer">🖨️ Imprimir</button>
+        <a href="${qrUrl.replace('200x200','400x400')}" download="QR_${ref}.png"
+          style="background:var(--gr600);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center">⬇️ Descargar</a>
+        <button onclick="this.closest('div[style*=fixed]').remove()"
+          style="background:var(--g100);color:var(--g600);border:none;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer">Cerrar</button>
+      </div>
+    </div>`;
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+
+function imprimirQR(id, ref){
+  const portalUrl = `https://marcoslekolas.github.io/PortalALS/?exp=${id}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(portalUrl)}&bgcolor=ffffff&color=000000&margin=10`;
+  const w = window.open('','_blank','width=400,height=500');
+  w.document.write(`<!DOCTYPE html><html><head><title>QR — ${ref}</title>
+    <style>body{font-family:Arial,sans-serif;text-align:center;padding:20px;margin:0}
+    .ref{font-size:14px;font-weight:700;margin:10px 0 4px;letter-spacing:1px}
+    .sub{font-size:10px;color:#666;margin-bottom:12px}
+    img{border:2px solid #eee;border-radius:6px;padding:6px}
+    .url{font-size:9px;color:#999;margin-top:8px;word-break:break-all}
+    @media print{button{display:none}}</style></head><body>
+    <div class="ref">ALS · ${ref}</div>
+    <div class="sub">Portal Operativo — Escanear para abrir ficha</div>
+    <img src="${qrUrl}" width="250" height="250"><br>
+    <div class="url">${portalUrl}</div>
+    <br><button onclick="window.print()">🖨️ Imprimir</button>
+    <scr` + `ipt>setTimeout(()=>window.print(),500);</scr` + `ipt>
+  </body></html>`);
+  w.document.close();
+}
+
 
 
 
