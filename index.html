@@ -7637,9 +7637,12 @@ async function sendConfronta(buqueId){
   const {data:b}=await sb.from('buques').select('*,en:consignatario_id(nombre,email_confronta)').eq('id',buqueId).single();
   const {data:exps}=await sb.from('expediciones').select('bultos,kilos,nº_mrn').eq('buque_id',buqueId);
   if(!b)return;
-  const totalBultos=(exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
-  const totalPeso=(exps||[]).reduce((a,e)=>a+(e.kilos||0),0);
-  const mrns=(exps||[]).map(e=>e.nº_mrn).filter(m=>m && !m.trimStart().startsWith('-'));
+
+  // Solo expediciones con MRN válido (sin guion al inicio) para bultos, kilos y lista MRNs
+  const expsConMRN=(exps||[]).filter(e=>e.nº_mrn && !e.nº_mrn.trimStart().startsWith('-'));
+  const totalBultos=expsConMRN.reduce((a,e)=>a+(e.bultos||0),0);
+  const totalPeso=expsConMRN.reduce((a,e)=>a+(e.kilos||0),0);
+  const mrns=expsConMRN.map(e=>e.nº_mrn).filter(Boolean);
   const destinatario='ca-pif-algeciras-confronta@guardiacivil.org';
   const emailCC=b.en?.email_confronta||'';
   const emailBCC='als@alsalgeciras.com,aduanas@alsalgeciras.com';
