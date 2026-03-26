@@ -2957,7 +2957,7 @@ function renderPaginacion(info, onCambio){
 async function verFotosExpedicion(expId, ref){
   try{
     const {data}=await sb.from('fotos_operativas')
-      .select('storage_url,tipo,created_at,subida_por')
+      .select('id,storage_url,storage_path,tipo,created_at,subida_por')
       .eq('entidad','expediciones')
       .eq('entidad_id',expId)
       .order('created_at');
@@ -2974,12 +2974,12 @@ async function verFotosExpedicion(expId, ref){
 
     const todasUrls=[];
     const tipos={};
-    // Fotos de la tabla fotos_operativas
+    const fotosData={}; // url → {id, storage_path} para poder eliminar
     data.forEach(f=>{
       todasUrls.push(f.storage_url);
       tipos[f.storage_url]=f.tipo;
+      fotosData[f.storage_url]={id:f.id, path:f.storage_path};
     });
-    // Fotos de campos directos (legacy / primeras implementaciones)
     [['llegada',exp?.foto_llegada_url],['carga',exp?.foto_carga_url],['embarque',exp?.foto_embarque_url]]
       .forEach(([tipo,url])=>{
         if(url&&!todasUrls.includes(url)){todasUrls.push(url);tipos[url]=tipo;}
@@ -2987,10 +2987,46 @@ async function verFotosExpedicion(expId, ref){
 
     if(!todasUrls.length){showToast('No hay fotos para '+ref);return;}
 
-    // Mostrar galería
-    abrirGaleriaFotos(todasUrls,'📸 Fotos — '+ref);
+    abrirGaleriaFotos(todasUrls,'📸 Fotos — '+ref, fotosData, expId);
 
   }catch(e){showToast('Error cargando fotos: '+e.message);}
+}
+
+// ── Eliminar foto individual ──────────────────────────────────────
+async function eliminarFotoGaleria(url, fotosData, expId, onDone){
+  if(!await confirmarAccion('¿Eliminar esta foto? Se borrará del almacenamiento. Esta acción no se puede deshacer.', true)) return;
+
+  try {
+    const fData = fotosData?.[url];
+
+    // 1. Borrar del storage si tenemos el path
+    if(fData?.path){
+      await sb.storage.from('fotos-operativas').remove([fData.path]);
+    }
+
+    // 2. Borrar de fotos_operativas si tenemos el id
+    if(fData?.id){
+      await sb.from('fotos_operativas').delete().eq('id', fData.id);
+    }
+
+    // 3. Limpiar campo directo en expedición si coincide
+    if(expId){
+      const {data:exp} = await sb.from('expediciones')
+        .select('foto_llegada_url,foto_carga_url,foto_embarque_url')
+        .eq('id', expId).single();
+      const upd = {};
+      if(exp?.foto_llegada_url === url) upd.foto_llegada_url = null;
+      if(exp?.foto_carga_url   === url) upd.foto_carga_url   = null;
+      if(exp?.foto_embarque_url=== url) upd.foto_embarque_url= null;
+      if(Object.keys(upd).length) await sb.from('expediciones').update(upd).eq('id', expId);
+    }
+
+    showToast('🗑️ Foto eliminada');
+    if(onDone) onDone(url);
+
+  } catch(e){
+    showToast('❌ Error al eliminar: '+e.message);
+  }
 }
 
 
@@ -3795,15 +3831,15 @@ async function subirFotosYGuardar(files, entidad, entidadId, tipo, statusEl){
 }
 
 // Mostrar galería de fotos con opción de descarga
-function abrirGaleriaFotos(urls, titulo){
+function abrirGaleriaFotos(urls, titulo, fotosData, expId){
   titulo = titulo || 'Fotos';
   if(!urls||!urls.length){showToast('No hay fotos disponibles');return;}
 
-  // Remove existing gallery if open
   var existing = document.getElementById('als-gallery-overlay');
   if(existing) existing.remove();
 
   var idx = 0;
+  var urlsArr = urls.slice(); // copia mutable para poder eliminar
   var overlay = document.createElement('div');
   overlay.id = 'als-gallery-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;flex-direction:column;outline:none';
@@ -3811,45 +3847,60 @@ function abrirGaleriaFotos(urls, titulo){
   document.body.appendChild(overlay);
 
   function render(){
-    var url = urls[idx];
+    if(!urlsArr.length){ overlay.remove(); showToast('No quedan fotos'); return; }
+    if(idx >= urlsArr.length) idx = urlsArr.length - 1;
+    var url = urlsArr[idx];
     var nombre = url.split('/').pop() || 'foto.jpg';
 
     // Header
     var hdr = document.createElement('div');
-    hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.5);flex-shrink:0';
-    
+    hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.5);flex-shrink:0;gap:8px;flex-wrap:wrap';
+
     var title = document.createElement('div');
-    title.style.cssText = 'color:#fff;font-weight:600;font-size:14px';
-    title.textContent = titulo + ' (' + (idx+1) + '/' + urls.length + ')';
+    title.style.cssText = 'color:#fff;font-weight:600;font-size:14px;flex:1;min-width:0';
+    title.textContent = titulo + ' (' + (idx+1) + '/' + urlsArr.length + ')';
     hdr.appendChild(title);
 
     var btns = document.createElement('div');
-    btns.style.cssText = 'display:flex;gap:10px;align-items:center';
+    btns.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
 
-    // Download button
+    // Botón eliminar — solo para admin
+    if(CU?.rol === 'admin'){
+      var delBtn = document.createElement('button');
+      delBtn.style.cssText = 'background:rgba(239,68,68,.8);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer';
+      delBtn.textContent = '🗑️ Eliminar';
+      delBtn.onclick = function(){
+        eliminarFotoGaleria(url, fotosData, expId, function(deletedUrl){
+          // Quitar de la lista local y re-renderizar
+          urlsArr = urlsArr.filter(u => u !== deletedUrl);
+          overlay.innerHTML = '';
+          render();
+        });
+      };
+      btns.appendChild(delBtn);
+    }
+
+    // Descargar
     var dlBtn = document.createElement('a');
-    // Descarga siempre el original sin transformaciones
-    var urlOriginal = fotoUrlDescarga(url);
-    dlBtn.href = urlOriginal;
+    dlBtn.href = fotoUrlDescarga(url);
     dlBtn.download = nombre;
     dlBtn.target = '_blank';
-    dlBtn.style.cssText = 'background:#1565c0;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:5px';
-    dlBtn.textContent = '⬇️ Descargar';
+    dlBtn.style.cssText = 'background:#1565c0;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none';
+    dlBtn.textContent = '⬇️';
     btns.appendChild(dlBtn);
 
-    // View original button
+    // Ver original
     var viewBtn = document.createElement('a');
-    // Ver original sin transformaciones en nueva pestaña
     viewBtn.href = fotoUrlDescarga(url);
     viewBtn.target = '_blank';
     viewBtn.style.cssText = 'background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;text-decoration:none';
-    viewBtn.textContent = '🔍 Original';
+    viewBtn.textContent = '🔍';
     btns.appendChild(viewBtn);
 
-    // Close button
+    // Cerrar
     var closeBtn = document.createElement('button');
     closeBtn.style.cssText = 'background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer';
-    closeBtn.textContent = '✕ Cerrar';
+    closeBtn.textContent = '✕';
     closeBtn.onclick = function(){ overlay.remove(); };
     btns.appendChild(closeBtn);
 
@@ -3859,7 +3910,7 @@ function abrirGaleriaFotos(urls, titulo){
     var imgWrap = document.createElement('div');
     imgWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:12px;overflow:hidden';
 
-    if(urls.length > 1){
+    if(urlsArr.length > 1){
       var prevBtn = document.createElement('button');
       prevBtn.textContent = '‹';
       prevBtn.style.cssText = 'position:absolute;left:12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:50%;width:44px;height:44px;font-size:24px;cursor:pointer;z-index:1;display:flex;align-items:center;justify-content:center;flex-shrink:0';
@@ -3868,32 +3919,29 @@ function abrirGaleriaFotos(urls, titulo){
     }
 
     var img = document.createElement('img');
-    // Mostrar versión optimizada en pantalla (Supabase Image Transformations)
-    // Esto reduce drasticamente el egress: de 400KB a ~80KB por visualización
     img.src = fotoUrlPantalla(url, 1400);
     img.style.cssText = 'max-width:100%;max-height:calc(100vh - 130px);object-fit:contain;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.5)';
     img.loading = 'lazy';
     imgWrap.appendChild(img);
 
-    if(urls.length > 1){
+    if(urlsArr.length > 1){
       var nextBtn = document.createElement('button');
       nextBtn.textContent = '›';
       nextBtn.style.cssText = 'position:absolute;right:12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:50%;width:44px;height:44px;font-size:24px;cursor:pointer;z-index:1;display:flex;align-items:center;justify-content:center;flex-shrink:0';
-      nextBtn.onclick = function(){ if(idx<urls.length-1){idx++;overlay.innerHTML='';render();} };
+      nextBtn.onclick = function(){ if(idx<urlsArr.length-1){idx++;overlay.innerHTML='';render();} };
       imgWrap.appendChild(nextBtn);
     }
 
-    // Thumbnails strip
+    // Thumbnails
     var strip = null;
-    if(urls.length > 1){
+    if(urlsArr.length > 1){
       strip = document.createElement('div');
       strip.style.cssText = 'display:flex;gap:6px;justify-content:center;padding:10px;background:rgba(0,0,0,.5);flex-shrink:0;overflow-x:auto';
-      urls.forEach(function(u, i){
+      urlsArr.forEach(function(u, i){
         var th = document.createElement('div');
         th.style.cssText = 'width:52px;height:52px;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid '+(i===idx?'#fff':'transparent')+';flex-shrink:0';
         th.onclick = (function(i){ return function(){ idx=i; overlay.innerHTML=''; render(); }; })(i);
         var timg = document.createElement('img');
-        // Thumbnails usan versión muy pequeña (200px) — mínimo egress
         timg.src = fotoUrlThumb(u, 200);
         timg.style.cssText = 'width:100%;height:100%;object-fit:cover';
         timg.loading = 'lazy';
@@ -3902,21 +3950,19 @@ function abrirGaleriaFotos(urls, titulo){
       });
     }
 
-    // Assemble
     overlay.innerHTML = '';
     overlay.appendChild(hdr);
     overlay.appendChild(imgWrap);
     if(strip) overlay.appendChild(strip);
   }
 
-  // Keyboard navigation
   overlay.addEventListener('keydown', function(e){
-    if(e.key === 'Escape'){ overlay.remove(); }
-    else if(e.key === 'ArrowLeft' && idx > 0){ idx--; overlay.innerHTML=''; render(); }
-    else if(e.key === 'ArrowRight' && idx < urls.length-1){ idx++; overlay.innerHTML=''; render(); }
+    if(e.key==='Escape'){ overlay.remove(); }
+    else if(e.key==='ArrowLeft'&&idx>0){ idx--; overlay.innerHTML=''; render(); }
+    else if(e.key==='ArrowRight'&&idx<urlsArr.length-1){ idx++; overlay.innerHTML=''; render(); }
   });
 
-  overlay.addEventListener('click', function(e){ if(e.target === overlay) overlay.remove(); });
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
   render();
   overlay.focus();
 }
