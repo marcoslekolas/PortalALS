@@ -1521,6 +1521,9 @@ textarea.fi{resize:vertical;min-height:72px}
   <button class="mob-alm-btn" id="mab-landed" onclick="switchFotosTab('landed',this);navAlmMob(this)">
     <span class="mob-icon">⚓</span><span class="mob-lbl">Landed</span>
   </button>
+  <button class="mob-alm-btn" id="mab-scanner" onclick="abrirScannerQR()">
+    <span class="mob-icon">📷</span><span class="mob-lbl">Escáner</span>
+  </button>
   <button class="mob-alm-btn" id="mab-home" onclick="navAlmMobHome()">
     <span class="mob-icon">🏠</span><span class="mob-lbl">Inicio</span>
   </button>
@@ -7833,57 +7836,369 @@ async function impExpAlb(expId){
   abrirAlbaran(htmlAlb(e.buques||{},[e]));
 }
 
-// ── QR por expedición ─────────────────────────────────────────────
-function mostrarQRExpedicion(id, ref){
-  // URL que abre directamente la expedición en el portal
-  const portalUrl = `https://marcoslekolas.github.io/PortalALS/?exp=${id}`;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(portalUrl)}&bgcolor=ffffff&color=000000&margin=10`;
+// ── Sistema QR de expediciones + Escáner de autorización ─────────
 
+async function generarQRDataURL(texto, size=200){
+  return new Promise(resolve=>{
+    if(window.QRCode){
+      _crearQRDiv(texto, size, resolve); return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+    script.onload = ()=>{ if(!window.QRCode){ resolve(null); return; } _crearQRDiv(texto, size, resolve); };
+    script.onerror = ()=>resolve(null);
+    document.head.appendChild(script);
+  });
+}
+function _crearQRDiv(texto, size, resolve){
+  const div = document.createElement('div');
+  div.style.cssText = 'position:absolute;left:-9999px;top:-9999px';
+  document.body.appendChild(div);
+  try {
+    new window.QRCode(div, {text:texto, width:size, height:size,
+      colorDark:'#000000', colorLight:'#ffffff',
+      correctLevel: window.QRCode.CorrectLevel.M});
+    setTimeout(()=>{
+      const cvs = div.querySelector('canvas');
+      const url = cvs ? cvs.toDataURL('image/png') : null;
+      document.body.removeChild(div);
+      resolve(url);
+    }, 300);
+  } catch(e){ document.body.removeChild(div); resolve(null); }
+}
+
+// El QR codifica: ALS-EXP:{id} — permite identificar unívocamente la expedición
+function qrDataParaExp(id){ return `ALS-EXP:${id}`; }
+
+function mostrarQRExpedicion(id, ref){
+  const qrData = qrDataParaExp(id);
   const ov = document.createElement('div');
+  ov.id = 'qr-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
   ov.innerHTML = `
     <div style="background:#fff;border-radius:16px;padding:28px;max-width:320px;width:100%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.3)">
       <div style="font-size:15px;font-weight:800;color:var(--g900);margin-bottom:4px">📱 Código QR</div>
-      <div style="font-size:12px;color:var(--g500);margin-bottom:16px;font-family:var(--mono)">${ref}</div>
-      <div style="display:inline-block;border:3px solid var(--g200);border-radius:10px;padding:8px;margin-bottom:14px">
-        <img src="${qrUrl}" alt="QR ${ref}" style="width:200px;height:200px;display:block">
+      <div style="font-size:12px;color:var(--g500);margin-bottom:2px;font-family:var(--mono)">${ref}</div>
+      <div style="font-size:10px;color:var(--b600);margin-bottom:14px">Escanear con el lector de almacén para autorizar carga</div>
+      <div id="qr-img-wrap" style="display:inline-flex;align-items:center;justify-content:center;border:3px solid var(--g200);border-radius:10px;padding:10px;margin-bottom:14px;min-width:220px;min-height:220px">
+        <div class="spinner"></div>
       </div>
       <div style="font-size:11px;color:var(--g500);margin-bottom:16px;line-height:1.5">
-        Escanea para abrir la ficha directamente en el portal.<br>
-        Ideal para pegar en el bulto o documentación.
+        Al escanear con el módulo <strong>Escáner</strong> del almacén,<br>
+        el sistema verificará en tiempo real si está autorizada para carga.
       </div>
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        <button onclick="imprimirQR('${id}','${ref}')"
-          style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer">🖨️ Imprimir</button>
-        <a href="${qrUrl.replace('200x200','400x400')}" download="QR_${ref}.png"
-          style="background:var(--gr600);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center">⬇️ Descargar</a>
-        <button onclick="this.closest('div[style*=fixed]').remove()"
+        <button id="qr-btn-print" style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;display:none">🖨️ Imprimir</button>
+        <button id="qr-btn-dl" style="background:var(--gr600);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;display:none">⬇️ PNG</button>
+        <button onclick="document.getElementById('qr-overlay').remove()"
           style="background:var(--g100);color:var(--g600);border:none;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer">Cerrar</button>
       </div>
     </div>`;
   ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
   document.body.appendChild(ov);
+
+  generarQRDataURL(qrData, 200).then(dataUrl=>{
+    const wrap = document.getElementById('qr-img-wrap');
+    if(!wrap) return;
+    if(dataUrl){
+      wrap.innerHTML = `<img src="${dataUrl}" style="width:200px;height:200px;display:block;border-radius:4px">`;
+      const btnP = document.getElementById('qr-btn-print');
+      const btnD = document.getElementById('qr-btn-dl');
+      if(btnP){ btnP.style.display=''; btnP.onclick=()=>imprimirQR(ref,qrData,dataUrl); }
+      if(btnD){ btnD.style.display=''; btnD.onclick=()=>{ const a=document.createElement('a');a.href=dataUrl;a.download=`QR_${ref}.png`;a.click(); }; }
+    } else {
+      wrap.innerHTML = `<div style="font-size:11px;color:var(--rd600);padding:20px">❌ Error generando QR</div>`;
+    }
+  });
 }
 
-function imprimirQR(id, ref){
-  const portalUrl = `https://marcoslekolas.github.io/PortalALS/?exp=${id}`;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(portalUrl)}&bgcolor=ffffff&color=000000&margin=10`;
-  const w = window.open('','_blank','width=400,height=500');
+function imprimirQR(ref, qrData, dataUrl){
+  const w = window.open('','_blank','width=420,height=520');
   w.document.write(`<!DOCTYPE html><html><head><title>QR — ${ref}</title>
     <style>body{font-family:Arial,sans-serif;text-align:center;padding:20px;margin:0}
     .ref{font-size:14px;font-weight:700;margin:10px 0 4px;letter-spacing:1px}
     .sub{font-size:10px;color:#666;margin-bottom:12px}
     img{border:2px solid #eee;border-radius:6px;padding:6px}
-    .url{font-size:9px;color:#999;margin-top:8px;word-break:break-all}
+    .cod{font-size:9px;color:#999;margin-top:6px;font-family:monospace}
     @media print{button{display:none}}</style></head><body>
     <div class="ref">ALS · ${ref}</div>
-    <div class="sub">Portal Operativo — Escanear para abrir ficha</div>
-    <img src="${qrUrl}" width="250" height="250"><br>
-    <div class="url">${portalUrl}</div>
+    <div class="sub">Portal Operativo ALS — Escáner de autorización</div>
+    <img src="${dataUrl}" width="220" height="220">
+    <div class="cod">${qrData}</div>
     <br><button onclick="window.print()">🖨️ Imprimir</button>
-    <scr` + `ipt>setTimeout(()=>window.print(),500);</scr` + `ipt>
   </body></html>`);
   w.document.close();
+  setTimeout(()=>w.print(), 500);
+}
+
+// ── Escáner QR de autorización de carga ──────────────────────────
+let _scannerStream = null;
+let _scannerInterval = null;
+
+async function abrirScannerQR(){
+  // Verificar soporte de cámara
+  if(!navigator.mediaDevices?.getUserMedia){
+    showToast('⚠️ Tu dispositivo no soporta acceso a la cámara');
+    return;
+  }
+
+  const ov = document.createElement('div');
+  ov.id = 'scanner-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
+  ov.innerHTML = `
+    <div style="background:rgba(0,0,0,.8);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div style="color:#fff;font-weight:700;font-size:15px">📷 Escáner de autorización</div>
+      <button onclick="cerrarScannerQR()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer">✕ Cerrar</button>
+    </div>
+    <div style="flex:1;position:relative;display:flex;align-items:center;justify-content:center">
+      <video id="scanner-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover"></video>
+      <!-- Marco de escaneo -->
+      <div style="position:absolute;width:220px;height:220px;border:3px solid #fff;border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.5)">
+        <div style="position:absolute;top:-2px;left:-2px;width:30px;height:30px;border-top:4px solid #3b82f6;border-left:4px solid #3b82f6;border-radius:4px 0 0 0"></div>
+        <div style="position:absolute;top:-2px;right:-2px;width:30px;height:30px;border-top:4px solid #3b82f6;border-right:4px solid #3b82f6;border-radius:0 4px 0 0"></div>
+        <div style="position:absolute;bottom:-2px;left:-2px;width:30px;height:30px;border-bottom:4px solid #3b82f6;border-left:4px solid #3b82f6;border-radius:0 0 0 4px"></div>
+        <div style="position:absolute;bottom:-2px;right:-2px;width:30px;height:30px;border-bottom:4px solid #3b82f6;border-right:4px solid #3b82f6;border-radius:0 0 4px 0"></div>
+        <div id="scanner-line" style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#3b82f6,transparent);animation:scanLine 2s linear infinite"></div>
+      </div>
+    </div>
+    <div id="scanner-result" style="flex-shrink:0;min-height:100px;padding:16px;background:rgba(0,0,0,.8);color:#fff;text-align:center">
+      <div style="font-size:13px;color:#9ca3af">Apunta al código QR de la expedición</div>
+    </div>
+    <canvas id="scanner-canvas" style="display:none"></canvas>`;
+
+  // Añadir animación CSS si no existe
+  if(!document.getElementById('scanner-style')){
+    const st = document.createElement('style');
+    st.id = 'scanner-style';
+    st.textContent = '@keyframes scanLine{0%{top:0}100%{top:100%}}';
+    document.head.appendChild(st);
+  }
+
+  document.body.appendChild(ov);
+
+  // Iniciar cámara trasera
+  try {
+    _scannerStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
+    });
+    const video = document.getElementById('scanner-video');
+    video.srcObject = _scannerStream;
+    await video.play();
+    _iniciarDeteccionQR(video);
+  } catch(e){
+    document.getElementById('scanner-result').innerHTML =
+      `<div style="color:#f87171;font-size:13px">❌ Sin acceso a la cámara: ${e.message}<br><br>
+      <button onclick="abrirScannerManual()" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer">✏️ Introducir referencia manualmente</button></div>`;
+  }
+}
+
+function _iniciarDeteccionQR(video){
+  const canvas = document.getElementById('scanner-canvas');
+  // Usar BarcodeDetector API si disponible (Chrome Android, Safari 17+)
+  if(window.BarcodeDetector){
+    const detector = new window.BarcodeDetector({formats:['qr_code']});
+    _scannerInterval = setInterval(async()=>{
+      if(video.readyState < 2) return;
+      try {
+        const codes = await detector.detect(video);
+        if(codes.length > 0) _procesarQRLeido(codes[0].rawValue);
+      } catch(e){}
+    }, 500);
+  } else {
+    // Fallback: cargar jsQR desde CDN para decodificar frame a frame
+    if(!window.jsQR){
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+      script.onload = ()=>_scannerConJsQR(video, canvas);
+      document.head.appendChild(script);
+    } else {
+      _scannerConJsQR(video, canvas);
+    }
+  }
+}
+
+function _scannerConJsQR(video, canvas){
+  const ctx = canvas.getContext('2d');
+  _scannerInterval = setInterval(()=>{
+    if(video.readyState < 2 || !window.jsQR) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    try {
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = window.jsQR(img.data, img.width, img.height, {inversionAttempts:'dontInvert'});
+      if(code) _procesarQRLeido(code.data);
+    } catch(e){}
+  }, 400);
+}
+
+let _ultimoQRLeido = null;
+let _ultimoQRTs = 0;
+
+async function _procesarQRLeido(texto){
+  // Evitar procesar el mismo QR varias veces seguidas
+  const ahora = Date.now();
+  if(texto === _ultimoQRLeido && ahora - _ultimoQRTs < 3000) return;
+  _ultimoQRLeido = texto;
+  _ultimoQRTs = ahora;
+
+  const res = document.getElementById('scanner-result');
+  if(!res) return;
+
+  // Detener el intervalo temporalmente para no procesar más mientras consultamos
+  clearInterval(_scannerInterval);
+  _scannerInterval = null;
+
+  // Vibrar si el dispositivo lo soporta
+  if(navigator.vibrate) navigator.vibrate(100);
+
+  // Verificar formato ALS-EXP:{uuid}
+  const match = texto.match(/^ALS-EXP:([a-f0-9-]{36})$/i);
+  if(!match){
+    res.innerHTML = `<div style="color:#fbbf24;font-size:13px;padding:8px">
+      ⚠️ QR no reconocido como expedición ALS<br>
+      <span style="font-size:11px;color:#9ca3af">${texto.substring(0,50)}</span><br><br>
+      <button onclick="_reanudarScanner()" style="background:#6b7280;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer">🔄 Volver a escanear</button>
+    </div>`;
+    return;
+  }
+
+  const expId = match[1];
+  res.innerHTML = `<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:8px"></div>Consultando estado...</div>`;
+
+  // Consultar Supabase
+  const {data:e, error} = await sb.from('expediciones')
+    .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
+    .eq('id', expId)
+    .single();
+
+  if(error || !e){
+    res.innerHTML = `<div style="color:#f87171;font-size:13px">
+      ❌ Expedición no encontrada en el sistema<br>
+      <span style="font-size:11px;color:#9ca3af">${expId}</span><br><br>
+      <button onclick="_reanudarScanner()" style="background:#6b7280;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer">🔄 Volver</button>
+    </div>`;
+    if(navigator.vibrate) navigator.vibrate([100,50,100]);
+    return;
+  }
+
+  const autorizada = e.estado_carga === '✅ AUTORIZADO';
+  const color = autorizada ? '#22c55e' : '#ef4444';
+  const bgColor = autorizada ? 'rgba(34,197,94,.15)' : 'rgba(239,68,68,.15)';
+  const icono = autorizada ? '✅' : '🚫';
+  const msg = autorizada ? 'AUTORIZADA PARA CARGA' : 'NO AUTORIZADA — RECHAZAR CARGA';
+
+  if(navigator.vibrate) navigator.vibrate(autorizada ? [200] : [100,50,100,50,100]);
+
+  res.innerHTML = `
+    <div style="background:${bgColor};border:2px solid ${color};border-radius:10px;padding:12px;margin-bottom:8px">
+      <div style="font-size:28px;margin-bottom:4px">${icono}</div>
+      <div style="font-size:16px;font-weight:800;color:${color};margin-bottom:6px">${msg}</div>
+      <div style="font-size:13px;font-weight:700;color:#fff;font-family:monospace">${e.nº_expedicion}</div>
+      <div style="font-size:11px;color:#d1d5db;margin-top:4px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
+      <div style="font-size:11px;color:#d1d5db">${e.bultos||0} btos · ${e.kilos||0} kg · ${e.ubicacion||'—'}</div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      ${autorizada ? `<button onclick="confirmarCargaDesdeScanner('${e.id}','${e.nº_expedicion}')"
+        style="background:#22c55e;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer">
+        ✅ Confirmar carga</button>` : ''}
+      <button onclick="cerrarScannerQR();openExpD('${e.id}')"
+        style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer">
+        👁 Ver expedición</button>
+      <button onclick="_reanudarScanner()"
+        style="background:#6b7280;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer">
+        🔄 Siguiente</button>
+    </div>`;
+}
+
+function _reanudarScanner(){
+  _ultimoQRLeido = null;
+  const video = document.getElementById('scanner-video');
+  if(video) _iniciarDeteccionQR(video);
+  const res = document.getElementById('scanner-result');
+  if(res) res.innerHTML = '<div style="font-size:13px;color:#9ca3af">Apunta al siguiente código QR</div>';
+}
+
+async function confirmarCargaDesdeScanner(expId, ref){
+  const res = document.getElementById('scanner-result');
+  if(res) res.innerHTML = `<div style="color:#9ca3af"><div class="spinner" style="display:inline-block;margin-right:8px"></div>Registrando carga...</div>`;
+  const ts = new Date().toISOString();
+  await sb.from('expediciones').update({
+    hora_de_carga: ts,
+    ubicacion: 'Camión cargado',
+    estado_semaforo: '🚛 CARGADO CAMIÓN',
+    estado_carga: '🚛 CARGADO CAMIÓN'
+  }).eq('id', expId);
+  await logAct('expediciones', expId, ref, 'editar', 'estado_carga', '✅ AUTORIZADO', '🚛 CARGADO CAMIÓN');
+  if(navigator.vibrate) navigator.vibrate([200,100,200]);
+  if(res) res.innerHTML = `
+    <div style="color:#22c55e;font-size:15px;font-weight:700;padding:12px">
+      ✅ Carga confirmada<br>
+      <span style="font-size:12px;font-family:monospace">${ref}</span>
+    </div>
+    <button onclick="_reanudarScanner()"
+      style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;cursor:pointer;margin-top:8px">
+      📷 Siguiente expedición</button>`;
+  showToast(`✅ Carga confirmada: ${ref}`);
+}
+
+function cerrarScannerQR(){
+  clearInterval(_scannerInterval);
+  _scannerInterval = null;
+  if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream=null; }
+  const ov = document.getElementById('scanner-overlay');
+  if(ov) ov.remove();
+}
+
+function abrirScannerManual(){
+  cerrarScannerQR();
+  document.getElementById('m-title').textContent = '📷 Verificar expedición';
+  document.getElementById('m-body').innerHTML = `
+    <div class="info-box">Introduce la referencia de la expedición para verificar si está autorizada para carga.</div>
+    <div class="fg2">
+      <label class="fl2">Nº de expedición / referencia</label>
+      <input id="scan-manual-ref" class="fi" placeholder="ALS-2024-001, AWB123…" autofocus
+        onkeydown="if(event.key==='Enter')verificarExpManual()">
+    </div>
+    <div id="scan-manual-res" style="margin-top:12px"></div>`;
+  document.getElementById('m-foot').innerHTML = `
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="verificarExpManual()">🔍 Verificar</button>`;
+  document.getElementById('mo').classList.add('open');
+  setTimeout(()=>document.getElementById('scan-manual-ref')?.focus(),200);
+}
+
+async function verificarExpManual(){
+  const ref = document.getElementById('scan-manual-ref')?.value?.trim();
+  if(!ref){ showToast('⚠️ Introduce una referencia'); return; }
+  const res = document.getElementById('scan-manual-res');
+  res.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando…</div>';
+  const {data:exps} = await sb.from('expediciones')
+    .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre)')
+    .ilike('nº_expedicion', `%${ref}%`)
+    .limit(3);
+  if(!exps?.length){
+    res.innerHTML = '<div style="color:var(--rd600);font-size:13px">❌ No se encontró ninguna expedición con esa referencia</div>';
+    return;
+  }
+  res.innerHTML = exps.map(e=>{
+    const ok = e.estado_carga === '✅ AUTORIZADO';
+    return `<div style="border:2px solid ${ok?'var(--gr400)':'var(--rd300)'};border-radius:8px;padding:10px;margin-bottom:8px;background:${ok?'var(--gr50)':'var(--rd50)'}">
+      <div style="font-weight:700;font-size:14px;color:${ok?'var(--gr700)':'var(--rd600)'}">${ok?'✅':'🚫'} ${e.nº_expedicion}</div>
+      <div style="font-size:12px;color:var(--g600);margin-top:3px">${e.buques?.nombre||'—'} · ${e.bultos||0} btos · ${e.kilos||0} kg</div>
+      <div style="font-size:11px;margin-top:4px">${ok?'<strong>AUTORIZADA para carga</strong>':'<strong>NO autorizada — rechazar</strong>'}</div>
+      ${ok?`<button onclick="confirmarCargaManual('${e.id}','${e.nº_expedicion}')" class="btn btn-p btn-sm" style="margin-top:8px;font-size:11px">✅ Confirmar carga</button>`:''}
+    </div>`;
+  }).join('');
+}
+
+async function confirmarCargaManual(expId, ref){
+  const ts = new Date().toISOString();
+  await sb.from('expediciones').update({hora_de_carga:ts, ubicacion:'Camión cargado', estado_semaforo:'🚛 CARGADO CAMIÓN', estado_carga:'🚛 CARGADO CAMIÓN'}).eq('id',expId);
+  await logAct('expediciones', expId, ref, 'editar', 'estado_carga', '✅ AUTORIZADO', '🚛 CARGADO CAMIÓN');
+  showToast(`✅ Carga confirmada: ${ref}`);
+  closeModal();
+  loadView(CV);
 }
 
 
