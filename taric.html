@@ -1809,6 +1809,19 @@ function mostrarResultado(r, container){
       </div>
     </div>
   `;
+
+  // Alertas de medidas de control — se añaden fuera del result-card para mayor visibilidad
+  const alertasMC = analizarMedidasControl(
+    (document.getElementById('mercancias-input')?.value||'') + ' ' + (r.descripcion_nc||''),
+    r.codigo_taric
+  );
+  if(alertasMC.length){
+    container.innerHTML += renderAlertasMedidasControl(alertasMC, '⚠️ Alertas detectadas para esta clasificación');
+    // Notificación del sistema si está permitida
+    if(typeof notifSistema === 'function'){
+      notifSistema('🚨 Alerta TARIC', alertasMC.map(a=>a.titulo).join(' · '));
+    }
+  }
 }
 
 // ── Mejora 17: SPG / Acuerdos arancelarios UE ────────────────────
@@ -2278,6 +2291,24 @@ async function renderLineasFactura(data, filename){
     </tr>`;
   }
   tbody.innerHTML = html;
+
+  // Alertas de medidas de control por línea de factura
+  const todasDescripciones = lineas.map(l=>l.descripcion_original||l.descripcion_es||'').join(' ');
+  const todosCodigos = lineas.map(l=>l.codigo_taric||'').join(',');
+  const alertasMC = analizarMedidasControl(todasDescripciones, todosCodigos.split(',')[0]);
+  // También comprobar cada línea individualmente
+  const alertasExtra = [];
+  lineas.forEach(l=>{
+    analizarMedidasControl(l.descripcion_original||l.descripcion_es||'', l.codigo_taric||'').forEach(a=>{
+      if(!alertasMC.find(x=>x.key===a.key) && !alertasExtra.find(x=>x.key===a.key)) alertasExtra.push(a);
+    });
+  });
+  const todasAlertas = [...alertasMC, ...alertasExtra];
+  if(todasAlertas.length){
+    const alertaDiv = document.createElement('div');
+    alertaDiv.innerHTML = renderAlertasMedidasControl(todasAlertas, `🚨 ${todasAlertas.length} alerta${todasAlertas.length>1?'s':''} detectada${todasAlertas.length>1?'s':''} en esta factura`);
+    info.after(alertaDiv);
+  }
 
   // Save to history
   for(const l of lineas){
@@ -3287,9 +3318,116 @@ function renderBorradorDUA(d, container, filename){
 
     </div>
   `;
+
+  // Alertas de medidas de control basadas en las partidas del DUA
+  const descDUA = (d.partidas||[]).map(p=>p.descripcion||'').join(' ');
+  const codsDUA = (d.partidas||[]).map(p=>p.taric||'');
+  let alertasDUA = analizarMedidasControl(descDUA, codsDUA[0]||'');
+  // Comprobar cada partida individualmente
+  codsDUA.slice(1).forEach(c=>{
+    analizarMedidasControl('', c).forEach(a=>{
+      if(!alertasDUA.find(x=>x.key===a.key)) alertasDUA.push(a);
+    });
+  });
+  if(alertasDUA.length){
+    container.innerHTML += renderAlertasMedidasControl(alertasDUA, `🚨 ${alertasDUA.length} alerta${alertasDUA.length>1?'s':''} de control para este DUA`);
+  }
 }
 
-// ── Mejora 14: Validación TARIC online ───────────────────────────
+// ── Alertas medidas de control TARIC ─────────────────────────────
+// Se activa en: clasificación TARIC, escaneo factura y borrador DUA
+const _medidasControlDef = {
+  cites: {
+    icon: '🐾', titulo: 'CITES — Especies protegidas',
+    color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd',
+    palabras: ['cites','marfil','carey','coral','tiburon','tiburón','piel de cocodrilo','boa','pitón','piton','fauna silvestre','flora silvestre','especie protegida','apéndice i','apendice i','apéndice ii','apendice ii'],
+    codigosNC: ['0106','0206','0208','4103','4301','4302','4303','4304','0508'],
+    descripcion: 'Requiere Certificado CITES emitido por autoridad designada. Importación/exportación restringida o prohibida según Apéndice.',
+    accion: 'Verificar en CITES.org si la especie requiere permiso. Contactar con Ministerio para Transición Ecológica.'
+  },
+  veterinario: {
+    icon: '🐄', titulo: 'Control veterinario / sanitario',
+    color: '#b45309', bg: '#fffbeb', border: '#fde68a',
+    palabras: ['carne','pescado','marisco','lacteo','lácteo','huevo','miel','grasa animal','sebo','proteina animal','proteína animal','subproducto animal','pienso','alimento animal','medicina veterinaria','vacuna animal'],
+    codigosNC: ['02','03','04','0504','0505','0506','0507','0511','1601','1602','1603','1604','1605','2301','2309'],
+    descripcion: 'Requiere certificado sanitario veterinario del país de origen y control en Puesto de Inspección Fronterizo (PIF) autorizado.',
+    accion: 'Documentos: certificado veterinario oficial, DVCE (Documento Veterinario Común de Entrada). Coordinar con SOIVRE/AECOSAN.'
+  },
+  fitosanitario: {
+    icon: '🌿', titulo: 'Control fitosanitario',
+    color: '#166534', bg: '#f0fdf4', border: '#bbf7d0',
+    palabras: ['planta','semilla','fruta','vegetal','madera','madera en bruto','corteza','flores','bulbo','tubérculo','tuberculo','cereal','legumbre','hortalizas','tierra vegetal','musgo'],
+    codigosNC: ['06','07','08','09','10','11','12','13','14','4401','4403','4404'],
+    descripcion: 'Requiere pasaporte fitosanitario y/o certificado fitosanitario del país exportador. Control en frontera por SOIVRE.',
+    accion: 'Certificado fitosanitario del país origen. Tratamiento de madera (NIMF-15 para embalajes de madera).'
+  },
+  doble_uso: {
+    icon: '⚔️', titulo: 'Posible artículo de doble uso',
+    color: '#991b1b', bg: '#fff1f2', border: '#fecaca',
+    palabras: ['criptografía','cifrado','encriptación','dual use','doble uso','material nuclear','explosivo','arma','municion','munición','detonador','cohete','misil','laser de alta potencia','equipo militar','tecnología militar'],
+    codigosNC: ['2707','2710','2844','2845','2850','3601','3602','3603','3604','3605','8525','8526','8802','8803','9301','9302','9303','9304','9305','9306'],
+    descripcion: 'Puede requerir autorización de exportación según Reglamento UE 2021/821. Verificar si figura en las listas de control.',
+    accion: 'Consultar Listado Español de Exportación de Material de Defensa y Doble Uso (ESPDEF). MINCOTUR — Subdirección General de Comercio Exterior.'
+  },
+  alimentario: {
+    icon: '🍎', titulo: 'Control alimentario / aditivos',
+    color: '#0c4a6e', bg: '#f0f9ff', border: '#bae6fd',
+    palabras: ['alimento','alimenticio','bebida','aditivo alimentario','conservante','colorante alimentario','edulcorante','aromatizante','suplemento alimenticio','complemento alimentario','novel food','nuevo alimento'],
+    codigosNC: ['2101','2102','2103','2104','2105','2106','2107','2201','2202','2203','2204','2205','2206','2207','2208','2209'],
+    descripcion: 'Requiere cumplimiento de normativa alimentaria UE (Reglamento CE 178/2002). Posible verificación por AECOSAN.',
+    accion: 'Verificar etiquetado, aditivos autorizados (Lista positiva UE), residuos de pesticidas y contaminantes.'
+  },
+  residuos: {
+    icon: '♻️', titulo: 'Posibles residuos — Reglamento 1013/2006',
+    color: '#4d7c0f', bg: '#f7fee7', border: '#d9f99d',
+    palabras: ['residuo','chatarra','scrap','desecho','reciclaje','segunda mano','usado','reutilizable','basura','lodo','ceniza'],
+    codigosNC: ['2618','2619','2620','2621','3825','4004','4012','7204','7404','7503','7602','7802','7902','8001','8002','8101','8102'],
+    descripcion: 'Los residuos están sujetos al Reglamento 1013/2006 sobre traslados. Pueden requerir notificación previa a la autoridad competente.',
+    accion: 'Clasificar según listas verde/ámbar/roja del Reglamento. Puede requerir notificación escrita y garantía financiera.'
+  }
+};
+
+function analizarMedidasControl(descripcion, codigoTaric){
+  const desc = (descripcion||'').toLowerCase();
+  const cod  = (codigoTaric||'').replace(/\s/g,'');
+  const alertas = [];
+
+  for(const [key, def] of Object.entries(_medidasControlDef)){
+    let disparada = false;
+    // Comprobar palabras clave en descripción
+    if(def.palabras.some(p => desc.includes(p))) disparada = true;
+    // Comprobar prefijo de código NC
+    if(!disparada && cod.length >= 4 && def.codigosNC.some(nc => cod.startsWith(nc.replace(/\s/g,'')))) disparada = true;
+    if(disparada) alertas.push({key, ...def});
+  }
+  return alertas;
+}
+
+function renderAlertasMedidasControl(alertas, titulo){
+  if(!alertas.length) return '';
+  return `
+    <div style="margin:16px 0;border:2px solid #fca5a5;border-radius:10px;overflow:hidden">
+      <div style="background:#fef2f2;padding:10px 16px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #fecaca">
+        <span style="font-size:18px">🚨</span>
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#991b1b">${titulo||'Alertas de control detectadas'}</div>
+          <div style="font-size:11px;color:#b91c1c;margin-top:1px">${alertas.length} medida${alertas.length>1?'s':''} de control identificada${alertas.length>1?'s':''} — verificar antes de proceder</div>
+        </div>
+      </div>
+      ${alertas.map(a=>`
+        <div style="padding:12px 16px;border-bottom:1px solid #fee2e2;background:${a.bg}">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-size:18px">${a.icon}</span>
+            <span style="font-size:13px;font-weight:700;color:${a.color}">${a.titulo}</span>
+          </div>
+          <div style="font-size:12px;color:#374151;margin-bottom:5px">${a.descripcion}</div>
+          <div style="font-size:11px;background:rgba(0,0,0,.05);border-radius:5px;padding:5px 8px;color:#374151">
+            <strong>Acción requerida:</strong> ${a.accion}
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
 async function validarTARICOnline(){
   const d = window._ultimoDUA;
   if(!d || !d.partidas?.length){ showToast('Sin partidas para validar'); return; }
