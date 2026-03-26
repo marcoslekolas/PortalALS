@@ -1607,13 +1607,41 @@ function showToast(msg){
 }
 
 let lastAlertCheck=new Date().toISOString();
+// ── Notificaciones del sistema (PWA) ──────────────────────────
+let _notifPermiso = null;
+async function pedirPermisoNotif(){
+  if(!('Notification' in window)) return false;
+  if(Notification.permission === 'granted'){ _notifPermiso=true; return true; }
+  if(Notification.permission === 'denied'){ _notifPermiso=false; return false; }
+  const r = await Notification.requestPermission();
+  _notifPermiso = r === 'granted';
+  return _notifPermiso;
+}
+function notifSistema(titulo, cuerpo, icono='🔔'){
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(titulo, {
+      body: cuerpo,
+      icon: '/PortalALS/icon-192.png',
+      badge: '/PortalALS/icon-192.png',
+      tag: titulo, // evita duplicados
+      renotify: false,
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+    setTimeout(()=>n.close(), 8000);
+  } catch(e){}
+}
+
 async function checkAlertas(){
   if(!CU||MOD!=='operativa')return;
   try{
     const {data}=await sb.from('activity_log').select('*').eq('accion','alerta_llegada').gt('created_at',lastAlertCheck).order('created_at');
     if(data&&data.length>0){
       lastAlertCheck=data[data.length-1].created_at;
-      data.forEach(a=>{mostrarBanner('🔔 Llegada al almacén: '+a.registro_nombre+' — requiere atención','amber');});
+      data.forEach(a=>{
+        mostrarBanner('🔔 Llegada al almacén: '+a.registro_nombre+' — requiere atención','amber');
+        notifSistema('📦 Llegada al almacén', a.registro_nombre+' — requiere atención');
+      });
       const badge=document.getElementById('badge-al');
       if(badge){const cur=parseInt(badge.textContent||'0');badge.textContent=cur+data.length;badge.style.display='';}
     }
@@ -1957,6 +1985,8 @@ async function doLogin(){
     // Login OK — reset rate limit + log
     try { localStorage.removeItem('als_login_rl'); } catch(e){}
     logAuth('login_ok', rows[0].id, rows[0].nombre||email, rows[0].rol||'');
+    // Pedir permiso para notificaciones del sistema (silencioso, sin modal)
+    pedirPermisoNotif().catch(()=>{});
     CU=rows[0];
     saveSession(CU);
     // Init SDK (best effort)
@@ -2290,23 +2320,65 @@ async function busquedaGlobal(q){
   if(!q||q.length<2){res.style.display='none';return;}
   _searchTimer=setTimeout(async()=>{
     try{
-      // Buscar en paralelo en buques, expediciones, empresas
-      const [rb,re,remp]=await Promise.all([
-        sb.from('buques').select('id,nombre,imo,estado_operacion').ilike('nombre','%'+q+'%').limit(4),
-        sb.from('expediciones').select('id,nº_expedicion,buques(nombre),estado_semaforo').ilike('nº_expedicion','%'+q+'%').limit(4),
-        sb.from('empresas').select('id,nombre,email_confronta').ilike('nombre','%'+q+'%').limit(3),
+      const [rb,re,remp,rmrn,rinc]=await Promise.all([
+        // Buques: por nombre o escala APBA
+        sb.from('buques').select('id,nombre,imo,estado_operacion,nº_escala')
+          .or(`nombre.ilike.%${q}%,nº_escala.ilike.%${q}%`).limit(4),
+        // Expediciones: por referencia
+        sb.from('expediciones').select('id,nº_expedicion,buques(nombre),estado_semaforo')
+          .ilike('nº_expedicion','%'+q+'%').limit(4),
+        // Empresas: por nombre o email
+        sb.from('empresas').select('id,nombre,email_confronta')
+          .or(`nombre.ilike.%${q}%,email_confronta.ilike.%${q}%`).limit(3),
+        // Expediciones: por MRN
+        sb.from('expediciones').select('id,nº_expedicion,nº_mrn,buques(nombre),estado_semaforo')
+          .ilike('nº_mrn','%'+q+'%').limit(3),
+        // Incidencias: por descripción
+        sb.from('incidencias').select('id,tipo,descripcion,estado,expediciones(id,nº_expedicion)')
+          .ilike('descripcion','%'+q+'%').limit(3),
       ]);
       const rows=[];
-      (rb.data||[]).forEach(b=>rows.push({tipo:'🚢 Buque',titulo:b.nombre,sub:b.imo||'Sin IMO',est:b.estado_operacion||'—',action:`openBuque('${b.id}')`}));
-      (re.data||[]).forEach(e=>rows.push({tipo:'📦 Expedición',titulo:e.nº_expedicion,sub:e.buques?.nombre||'Sin buque',est:e.estado_semaforo||'—',action:`openExpD('${e.id}')`}));
-      (remp.data||[]).forEach(e=>rows.push({tipo:'🏢 Empresa',titulo:e.nombre,sub:e.email_confronta||'Sin email',est:'',action:`openEmpD('${e.id}')`}));
-      if(!rows.length){res.innerHTML='<div style="padding:14px;font-size:12px;color:var(--g400);text-align:center">Sin resultados para "'+q+'"</div>';res.style.display='';}
-      else{
-        res.innerHTML=rows.map(r=>`<div onclick="${r.action};cerrarBusqueda()" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:10px" onmouseenter="this.style.background='var(--b50)'" onmouseleave="this.style.background=''">
-          <div style="font-size:11px;color:var(--g400);min-width:75px">${r.tipo}</div>
-          <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.titulo}</div><div style="font-size:11px;color:var(--g500)">${r.sub}</div></div>
-          ${r.est?`<span class="badge bgr" style="font-size:10px">${r.est}</span>`:''}
-        </div>`).join('');
+      (rb.data||[]).forEach(b=>rows.push({
+        tipo:'🚢 Buque', titulo:b.nombre,
+        sub: b.nº_escala ? `Escala: ${b.nº_escala}` : (b.imo||'Sin IMO'),
+        est:b.estado_operacion||'—', action:`openBuque('${b.id}')`
+      }));
+      (re.data||[]).forEach(e=>rows.push({
+        tipo:'📦 Expedición', titulo:e.nº_expedicion,
+        sub:e.buques?.nombre||'Sin buque', est:e.estado_semaforo||'—',
+        action:`openExpD('${e.id}')`
+      }));
+      // MRN — solo añadir si no está ya en resultados por referencia
+      const refsYa=new Set((re.data||[]).map(e=>e.id));
+      (rmrn.data||[]).filter(e=>!refsYa.has(e.id)).forEach(e=>rows.push({
+        tipo:'📋 MRN', titulo:e.nº_mrn,
+        sub:`Exp: ${e.nº_expedicion} · ${e.buques?.nombre||'—'}`,
+        est:e.estado_semaforo||'—', action:`openExpD('${e.id}')`
+      }));
+      (remp.data||[]).forEach(e=>rows.push({
+        tipo:'🏢 Empresa', titulo:e.nombre,
+        sub:e.email_confronta||'Sin email', est:'',
+        action:`openEmpD('${e.id}')`
+      }));
+      (rinc.data||[]).forEach(i=>rows.push({
+        tipo:'⚠️ Incidencia', titulo:`${i.tipo}: ${(i.descripcion||'').substring(0,40)}${(i.descripcion||'').length>40?'…':''}`,
+        sub:`Exp: ${i.expediciones?.nº_expedicion||'—'}`,
+        est:i.estado||'—', action:`openIncD('${i.id}')`
+      }));
+
+      if(!rows.length){
+        res.innerHTML=`<div style="padding:14px;font-size:12px;color:var(--g400);text-align:center">Sin resultados para "${q}"</div>`;
+        res.style.display='';
+      } else {
+        res.innerHTML=rows.map(r=>`
+          <div onclick="${r.action};cerrarBusqueda()" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:10px" onmouseenter="this.style.background='var(--b50)'" onmouseleave="this.style.background=''">
+            <div style="font-size:11px;color:var(--g400);min-width:80px;flex-shrink:0">${r.tipo}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.titulo}</div>
+              <div style="font-size:11px;color:var(--g500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.sub}</div>
+            </div>
+            ${r.est?`<span class="badge bgr" style="font-size:10px;flex-shrink:0">${r.est}</span>`:''}
+          </div>`).join('');
         res.style.display='';
       }
     }catch(e){res.style.display='none';}
@@ -2340,6 +2412,18 @@ async function checkAlertasDespacho(){
     if(!urgentes.length)return;
     const vencidas=urgentes.filter(e=>new Date(e.fecha_max_despacho)<now);
     const proximas=urgentes.filter(e=>new Date(e.fecha_max_despacho)>=now);
+    // Notificación del sistema para vencidas
+    if(vencidas.length){
+      notifSistema(
+        `🚨 ${vencidas.length} expedición${vencidas.length>1?'es':''} vencidas`,
+        vencidas.slice(0,3).map(e=>e.nº_expedicion).join(', ')+(vencidas.length>3?'…':'')
+      );
+    } else if(proximas.length){
+      notifSistema(
+        `⚠️ ${proximas.length} expedición${proximas.length>1?'es':''} vencen pronto`,
+        proximas.slice(0,3).map(e=>e.nº_expedicion+' ('+Math.round((new Date(e.fecha_max_despacho)-now)/86400000)+'d)').join(', ')
+      );
+    }
     const cont=document.getElementById('alerta-despacho-banner');
     if(!cont)return;
     cont.innerHTML=`<div style="background:${vencidas.length?'var(--rd50)':'var(--am50)'};border:1px solid ${vencidas.length?'#fecaca':'#fde68a'};border-radius:var(--rl);padding:12px 16px;margin-bottom:14px">
@@ -5962,8 +6046,70 @@ async function loadEmpresas(){
 }
 async function openEmpD(id){
   const {data:e}=await sb.from('empresas').select('*').eq('id',id).single();if(!e)return;
+  // Cargar incidencias de esta empresa (via expediciones)
+  const {data:incs}=await sb.from('incidencias')
+    .select('*,expediciones(nº_expedicion,buques(nombre))')
+    .eq('expediciones.empresa_id', id)
+    .order('created_at',{ascending:false})
+    .limit(20);
+  // Cargar expediciones de esta empresa
+  const {data:exps}=await sb.from('expediciones')
+    .select('id,nº_expedicion,estado_semaforo,buques(nombre)')
+    .eq('empresa_id',id)
+    .order('created_at',{ascending:false})
+    .limit(5);
+
+  const incCount = (incs||[]).length;
+  const incAbiertasCount = (incs||[]).filter(i=>i.estado!=='Cerrada').length;
+  const tiposCount = {};
+  (incs||[]).forEach(i=>{ tiposCount[i.tipo]=(tiposCount[i.tipo]||0)+1; });
+
   document.getElementById('m-title').textContent='🏢 '+e.nombre;
-  document.getElementById('m-body').innerHTML=`<div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="ep-n" class="fi" value="${e.nombre||''}"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="ep-p" class="fi" value="${e.persona_contacto||''}"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="ep-e" class="fi" value="${e.email_confronta||''}"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="ep-t" class="fi" value="${e.telefono||''}"></div></div><div class="fg2"><label class="fl2">Otros emails</label><input id="ep-o" class="fi" value="${(e.otros_emails||[]).join(', ')}"></div><div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="ep-r-${r}" ${(e.rol||[]).includes(r)?'checked':''} style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>`;
+  document.getElementById('m-body').innerHTML=`
+    <div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="ep-n" class="fi" value="${e.nombre||''}"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="ep-p" class="fi" value="${e.persona_contacto||''}"></div></div>
+    <div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="ep-e" class="fi" value="${e.email_confronta||''}"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="ep-t" class="fi" value="${e.telefono||''}"></div></div>
+    <div class="fg2"><label class="fl2">Otros emails</label><input id="ep-o" class="fi" value="${(e.otros_emails||[]).join(', ')}"></div>
+    <div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="ep-r-${r}" ${(e.rol||[]).includes(r)?'checked':''} style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>
+
+    ${exps?.length ? `
+    <hr class="fdiv">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--g400);margin-bottom:8px">📦 Últimas expediciones</div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      ${(exps||[]).map(ex=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--g50);border-radius:6px;font-size:12px;cursor:pointer" onclick="closeModal();setTimeout(()=>openExpD('${ex.id}'),100)">
+          <span style="font-weight:700;font-family:var(--mono)">${ex.nº_expedicion}</span>
+          <span style="color:var(--g500)">${ex.buques?.nombre||'—'}</span>
+          <span style="margin-left:auto">${bdg(ex.estado_semaforo)}</span>
+        </div>`).join('')}
+    </div>` : ''}
+
+    <hr class="fdiv">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--g400)">⚠️ Historial de incidencias</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        ${incAbiertasCount>0?`<span class="badge br" style="font-size:10px">${incAbiertasCount} abiertas</span>`:''}
+        <span style="font-size:11px;color:var(--g500)">${incCount} total</span>
+      </div>
+    </div>
+    ${Object.keys(tiposCount).length>0?`
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      ${Object.entries(tiposCount).sort((a,b)=>b[1]-a[1]).map(([t,n])=>`
+        <span style="background:var(--am50);color:var(--am700);border:1px solid var(--am200,#fde68a);border-radius:5px;padding:2px 8px;font-size:11px">${t}: ${n}</span>
+      `).join('')}
+    </div>` : ''}
+    <div style="max-height:180px;overflow-y:auto">
+      ${(incs||[]).length ? (incs||[]).map(i=>`
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--g100);font-size:12px;cursor:pointer" onclick="closeModal();setTimeout(()=>openIncD('${i.id}'),100)">
+          <span class="badge ${i.estado==='Cerrada'?'bg':i.estado==='En gestión'?'ba':'br'}" style="font-size:10px;flex-shrink:0">${i.estado}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600">${i.tipo} — ${i.expediciones?.nº_expedicion||'—'}</div>
+            <div style="color:var(--g500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.descripcion||'Sin descripción'}</div>
+          </div>
+          <div style="color:var(--g400);font-size:11px;flex-shrink:0">${fd(i.fecha_incidencia||i.created_at)}</div>
+        </div>`).join('')
+      : '<div style="color:var(--g400);font-size:12px;padding:8px 0;text-align:center">Sin incidencias registradas</div>'}
+    </div>`;
+
   document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-d btn-sm" onclick="delEmp('${e.id}')">Eliminar</button><button class="btn btn-p" onclick="saveEmp('${e.id}')">💾 Guardar</button>`;
   document.getElementById('mo').classList.add('open');
 }
@@ -6424,16 +6570,120 @@ function loadVersiones(){
 }
 
 async function loadStats(){
-  const [bR,eR]=await Promise.all([sb.from('buques').select('*'),sb.from('expediciones').select('*,empresas(nombre)')]);
-  const B=bR.data||[],E=eR.data||[];
-  const kg=E.reduce((a,e)=>a+(e.kilos||0),0),bt=E.reduce((a,e)=>a+(e.bultos||0),0);
-  document.getElementById('st-kpis').innerHTML=`<div class="kpi bl"><div class="kpi-lbl">Total buques</div><div class="kpi-val">${B.length}</div></div><div class="kpi gr"><div class="kpi-lbl">Total expediciones</div><div class="kpi-val">${E.length}</div></div><div class="kpi am"><div class="kpi-lbl">Bultos gestionados</div><div class="kpi-val">${bt}</div></div><div class="kpi bl"><div class="kpi-lbl">Kilos totales</div><div class="kpi-val">${kg.toLocaleString('es-ES')}</div></div>`;
-  const byE={},byS={};
-  E.forEach(e=>{const n=e.empresas?.nombre||'Sin asignar';byE[n]=(byE[n]||0)+1;});
-  E.forEach(e=>{const s=e.estado_semaforo||'—';byS[s]=(byS[s]||0)+1;});
-  const mE=Math.max(...Object.values(byE),1),mS=Math.max(...Object.values(byS),1);
+  // Inyectar filtros si no existen
+  const statsView=document.getElementById('view-estadisticas');
+  if(statsView && !document.getElementById('st-filters')){
+    statsView.insertAdjacentHTML('afterbegin',`
+      <div id="st-filters" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 16px;background:var(--g50);border-bottom:1px solid var(--g200)">
+        <span style="font-size:12px;font-weight:600;color:var(--g600)">Filtrar:</span>
+        <select id="st-f-year" class="fi fs" style="font-size:12px;padding:4px 8px;width:auto" onchange="loadStats()">
+          <option value="">Todos los años</option>
+          ${[new Date().getFullYear(),new Date().getFullYear()-1].map(y=>`<option value="${y}">${y}</option>`).join('')}
+        </select>
+        <select id="st-f-mes" class="fi fs" style="font-size:12px;padding:4px 8px;width:auto" onchange="loadStats()">
+          <option value="">Todos los meses</option>
+          ${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m,i)=>`<option value="${i+1}">${m}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm" style="font-size:11px" onclick="document.getElementById('st-f-year').value='';document.getElementById('st-f-mes').value='';loadStats()">✕ Limpiar</button>
+        <button class="btn btn-sm btn-p" style="font-size:11px;margin-left:auto" onclick="exportarStatsCSV()">⬇️ Exportar CSV</button>
+      </div>`);
+  }
+
+  const year=document.getElementById('st-f-year')?.value||'';
+  const mes=document.getElementById('st-f-mes')?.value||'';
+
+  let qE=sb.from('expediciones').select('*,empresas(nombre),buques(nombre)');
+  let qB=sb.from('buques').select('*');
+  if(year && mes){
+    const m=mes.padStart(2,'0');
+    const dias=new Date(parseInt(year),parseInt(mes),0).getDate();
+    const d1=`${year}-${m}-01`, d2=`${year}-${m}-${dias}T23:59:59`;
+    qE=qE.gte('created_at',d1).lte('created_at',d2);
+    qB=qB.gte('eta_buque',d1).lte('eta_buque',d2);
+  } else if(year){
+    qE=qE.gte('created_at',`${year}-01-01`).lte('created_at',`${year}-12-31T23:59:59`);
+    qB=qB.gte('eta_buque',`${year}-01-01`).lte('eta_buque',`${year}-12-31T23:59:59`);
+  }
+
+  const [bR,eR,iR,uR,lR]=await Promise.all([
+    qB, qE,
+    sb.from('incidencias').select('tipo,estado,created_at'),
+    sb.from('usuarios').select('id,nombre,rol'),
+    sb.from('activity_log').select('usuario_nombre').limit(500)
+  ]);
+  const B=bR.data||[],E=eR.data||[],I=iR.data||[],U=uR.data||[],L=lR.data||[];
+
+  const kg=E.reduce((a,e)=>a+(e.kilos||0),0);
+  const bt=E.reduce((a,e)=>a+(e.bultos||0),0);
+  const incAbiertas=I.filter(i=>i.estado!=='Cerrada').length;
+  const despachadas=E.filter(e=>e.tramite_aduanero==='Despachado').length;
+  const pct=E.length?Math.round(despachadas/E.length*100):0;
+
+  document.getElementById('st-kpis').innerHTML=`
+    <div class="kpi bl"><div class="kpi-lbl">Buques</div><div class="kpi-val">${B.length}</div></div>
+    <div class="kpi gr"><div class="kpi-lbl">Expediciones</div><div class="kpi-val">${E.length}</div></div>
+    <div class="kpi am"><div class="kpi-lbl">Bultos</div><div class="kpi-val">${bt.toLocaleString('es-ES')}</div></div>
+    <div class="kpi bl"><div class="kpi-lbl">Kilos</div><div class="kpi-val">${(kg/1000).toLocaleString('es-ES',{maximumFractionDigits:1})}t</div></div>
+    <div class="kpi ${incAbiertas>0?'rd':'gr'}"><div class="kpi-lbl">Incid. abiertas</div><div class="kpi-val">${incAbiertas}</div></div>
+    <div class="kpi gr"><div class="kpi-lbl">% Despachado</div><div class="kpi-val">${pct}%</div></div>`;
+
+  const byEmp={},byEst={},byTipoInc={},byUsuario={},byMes={};
+  E.forEach(e=>{
+    const n=e.empresas?.nombre||'Sin asignar'; byEmp[n]=(byEmp[n]||0)+1;
+    const s=e.estado_semaforo||'—'; byEst[s]=(byEst[s]||0)+1;
+    const m=e.created_at?.substring(0,7)||'—'; byMes[m]=(byMes[m]||0)+1;
+  });
+  I.forEach(i=>{byTipoInc[i.tipo]=(byTipoInc[i.tipo]||0)+1;});
+  L.forEach(l=>{if(l.usuario_nombre)byUsuario[l.usuario_nombre]=(byUsuario[l.usuario_nombre]||0)+1;});
+
+  const mE=Math.max(...Object.values(byEmp),1);
+  const mS=Math.max(...Object.values(byEst),1);
+  const mI=Math.max(...Object.values(byTipoInc),1);
+  const mU=Math.max(...Object.values(byUsuario),1);
+  const mM=Math.max(...Object.values(byMes),1);
   const sC={'✅ AUTORIZADO':'var(--gr500)','🚛 CARGADO CAMIÓN':'var(--gr500)','🚨 EN ALMACÉN - REVISAR':'var(--rd500)','⏳ EN TRÁNSITO':'var(--b500)','⌛ ESPERANDO ALMACÉN':'var(--b500)','📦 UBICADA':'var(--tl500)'};
-  document.getElementById('st-charts').innerHTML=`<div class="cc"><div class="ct">Expediciones por empresa</div>${Object.entries(byE).sort((a,b)=>b[1]-a[1]).map(([n,v])=>`<div class="bar-row"><div class="bar-lbl">${n}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/mE*100)}%;background:var(--b500)"></div></div><div class="bar-val">${v}</div></div>`).join('')}</div><div class="cc"><div class="ct">Expediciones por estado</div>${Object.entries(byS).sort((a,b)=>b[1]-a[1]).map(([s,v])=>`<div class="bar-row"><div class="bar-lbl">${s}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/mS*100)}%;background:${sC[s]||'var(--g400)'}"></div></div><div class="bar-val">${v}</div></div>`).join('')}</div>`;
+
+  const barHtml=(entries,max,colorFn)=>entries.sort((a,b)=>b[1]-a[1]).map(([n,v])=>`
+    <div class="bar-row">
+      <div class="bar-lbl" title="${n}">${n.length>24?n.substring(0,24)+'…':n}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/max*100)}%;background:${colorFn(n)}"></div></div>
+      <div class="bar-val">${v}</div>
+    </div>`).join('');
+
+  const mesesOrdenados=Object.entries(byMes).sort((a,b)=>a[0].localeCompare(b[0])).slice(-8);
+
+  document.getElementById('st-charts').innerHTML=`
+    <div class="cc"><div class="ct">📦 Por empresa</div>${barHtml(Object.entries(byEmp),mE,()=>'var(--b500)')}</div>
+    <div class="cc"><div class="ct">🚦 Por estado</div>${barHtml(Object.entries(byEst),mS,n=>sC[n]||'var(--g400)')}</div>
+    <div class="cc"><div class="ct">📅 Evolución mensual</div>${mesesOrdenados.length?barHtml(mesesOrdenados,mM,()=>'var(--tl500)'):'<div style="color:var(--g400);font-size:12px;padding:8px">Sin datos</div>'}</div>
+    <div class="cc"><div class="ct">⚠️ Incidencias por tipo</div>${Object.keys(byTipoInc).length?barHtml(Object.entries(byTipoInc),mI,()=>'var(--am500)'):'<div style="color:var(--g400);font-size:12px;padding:8px">Sin incidencias</div>'}</div>
+    ${CU?.rol==='admin'?`<div class="cc"><div class="ct">👤 Actividad por usuario</div>${barHtml(Object.entries(byUsuario).slice(0,8),mU,()=>'var(--b400)')}</div>`:''}
+    ${CU?.rol==='admin'?`
+    <div class="cc" style="grid-column:1/-1">
+      <div class="ct">👥 Usuarios del sistema</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
+        <thead><tr style="background:var(--g50)">
+          <th style="padding:6px 10px;text-align:left;color:var(--g600)">Nombre</th>
+          <th style="padding:6px 10px;text-align:left;color:var(--g600)">Rol</th>
+          <th style="padding:6px 10px;text-align:right;color:var(--g600)">Acciones en log</th>
+        </tr></thead>
+        <tbody>${U.map(u=>`<tr style="border-bottom:1px solid var(--g100)">
+          <td style="padding:6px 10px">${u.nombre}</td>
+          <td style="padding:6px 10px"><span class="badge bb" style="font-size:10px">${u.rol}</span></td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600">${byUsuario[u.nombre]||0}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`:''}`;
+}
+
+async function exportarStatsCSV(){
+  const {data:E}=await sb.from('expediciones').select('nº_expedicion,bultos,kilos,estado_semaforo,tramite_aduanero,ubicacion,created_at,empresas(nombre),buques(nombre)').order('created_at',{ascending:false});
+  if(!E?.length){showToast('Sin datos para exportar');return;}
+  const header='Expedición,Buque,Empresa,Bultos,Kilos,Estado,Trámite,Ubicación,Fecha\n';
+  const rows=E.map(e=>[e.nº_expedicion||'',e.buques?.nombre||'',e.empresas?.nombre||'',e.bultos||0,e.kilos||0,e.estado_semaforo||'',e.tramite_aduanero||'',e.ubicacion||'',(e.created_at||'').substring(0,10)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob(['\uFEFF'+header+rows],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`ALS_estadisticas_${new Date().toISOString().substring(0,10)}.csv`;a.click();
+  showToast('✅ CSV exportado');
 }
 
 // ── MODALES ──────────────────────────────────────────────────
