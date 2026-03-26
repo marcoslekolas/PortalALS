@@ -2477,21 +2477,34 @@ async function loadHistorialExp(expId){
 async function subirFotoStorage(file, entidad, entidadId, tipo){
   if(!sb) return null;
   try{
-    // Subir SIEMPRE el original sin comprimir
-    // El original es la fuente de verdad para descarga
-    // La visualización en pantalla usa Supabase Image Transformations
-    const ext = (file.type === 'image/png') ? 'png' : 'jpg';
-    const path = `${entidad}/${entidadId}/${tipo}_${Date.now()}.${ext}`;
-    // Si el archivo es muy grande (>8MB) comprimir solo dimensionalmente antes de subir
-    // para evitar timeouts, pero sin pérdida perceptible de calidad (q=0.97)
+    // Comprimir SIEMPRE a JPEG antes de subir:
+    // - Convierte HEIC/HEIF de iPhone automáticamente
+    // - Reduce tamaño para evitar timeouts en redes lentas
+    // - Calidad 0.88 preserva detalle suficiente para documentación
+    const umbral = 1.5 * 1024 * 1024; // comprimir si > 1.5MB
     let fileToUpload = file;
-    if(file.size > 8 * 1024 * 1024){
-      fileToUpload = await compFoto(file, 4000, 0.97); // solo reducir dimensiones si >4000px, sin perder calidad
+    if(file.size > umbral || file.type === 'image/heic' || file.type === 'image/heif' ||
+       !file.type.startsWith('image/jpeg')){
+      fileToUpload = await compFoto(file, 2400, 0.88);
     }
-    const {data,error} = await sb.storage.from('fotos-operativas').upload(
-      path, fileToUpload, {upsert:true, contentType:'image/jpeg'}
-    );
+
+    const path = `${entidad}/${entidadId}/${tipo}_${Date.now()}.jpg`;
+
+    // Subir con reintentos (hasta 3 intentos) para redes móviles inestables
+    let data, error;
+    for(let intento = 1; intento <= 3; intento++){
+      const res = await sb.storage.from('fotos-operativas').upload(
+        path, fileToUpload, {upsert:true, contentType:'image/jpeg'}
+      );
+      data = res.data; error = res.error;
+      if(!error) break;
+      if(intento < 3){
+        // Esperar antes de reintentar (backoff exponencial)
+        await new Promise(r => setTimeout(r, intento * 1000));
+      }
+    }
     if(error) throw error;
+
     const {data:urlData} = sb.storage.from('fotos-operativas').getPublicUrl(path);
     // Guardar en tabla fotos_operativas
     await sb.from('fotos_operativas').insert({
@@ -2500,7 +2513,10 @@ async function subirFotoStorage(file, entidad, entidadId, tipo){
       subida_por:CU?.id
     });
     return urlData.publicUrl;
-  }catch(e){console.warn('subirFotoStorage:',e);return null;}
+  }catch(e){
+    console.warn('subirFotoStorage error:', e?.message||e);
+    return null;
+  }
 }
 
 // ── Supabase Image Transformations ───────────────────────────────
@@ -3543,30 +3559,63 @@ async function logAct(tabla,rid,rnom,accion,campo,vant,vnew){
 //   - Preview/almacén: 1400px max, calidad 0.82 (buena para pantalla, ~200-400KB)  
 //   - Descarga/cliente: calidad 0.92 (alta, apta para envío)
 async function compFoto(f, mw=1400, q=0.82){
-  return new Promise((resolve,reject)=>{
-    const img=new Image();
-    const u=URL.createObjectURL(f);
-    img.onerror=()=>{URL.revokeObjectURL(u);resolve(f);}; // fallback: usar original
-    img.onload=()=>{
-      let w=img.width, h=img.height;
-      // Solo reducir si es más grande que el máximo
-      if(w>mw){ h=Math.round(h*mw/w); w=mw; }
-      const canvas=document.createElement('canvas');
-      canvas.width=w; canvas.height=h;
-      const ctx=canvas.getContext('2d');
-      // Fondo blanco para imágenes con transparencia
-      ctx.fillStyle='#ffffff';
-      ctx.fillRect(0,0,w,h);
-      ctx.drawImage(img,0,0,w,h);
+  return new Promise((resolve)=>{
+    // Timeout de seguridad: si tarda más de 15s devolver original
+    const timeout = setTimeout(()=>resolve(f), 15000);
+
+    const img = new Image();
+    const u = URL.createObjectURL(f);
+
+    img.onerror = ()=>{
+      clearTimeout(timeout);
       URL.revokeObjectURL(u);
-      canvas.toBlob(blob=>{
-        if(!blob){resolve(f);return;}
-        // Mantener nombre original pero con extensión .jpg
-        const nombre=f.name.replace(/\.[^.]+$/,'')+'.jpg';
-        resolve(new File([blob], nombre, {type:'image/jpeg', lastModified:Date.now()}));
-      },'image/jpeg', q);
+      resolve(f); // fallback silencioso al original
     };
-    img.src=u;
+
+    img.onload = ()=>{
+      clearTimeout(timeout);
+      try {
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+
+        // Protección contra dimensiones 0 (puede ocurrir con HEIC en Android)
+        if(!w || !h){ URL.revokeObjectURL(u); resolve(f); return; }
+
+        // Escalar manteniendo proporción
+        if(w > mw){ h = Math.round(h * mw / w); w = mw; }
+        // Limitar también altura máxima para evitar canvas gigantes en móvil
+        const maxH = mw * 1.5;
+        if(h > maxH){ w = Math.round(w * maxH / h); h = maxH; }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if(!ctx){ URL.revokeObjectURL(u); resolve(f); return; }
+
+        // Fondo blanco para transparencias y HEIC
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(u);
+
+        canvas.toBlob(blob => {
+          if(!blob || blob.size < 1000){
+            // Si el blob está vacío o demasiado pequeño, fallback al original
+            resolve(f); return;
+          }
+          const nombre = (f.name||'foto').replace(/\.[^.]+$/, '') + '.jpg';
+          resolve(new File([blob], nombre, {type:'image/jpeg', lastModified:Date.now()}));
+        }, 'image/jpeg', q);
+
+      } catch(e){
+        URL.revokeObjectURL(u);
+        resolve(f); // fallback en cualquier error
+      }
+    };
+
+    // Importante en iOS: no usar crossOrigin para blob URLs locales
+    img.src = u;
   });
 }
 
@@ -3597,16 +3646,38 @@ async function procesarFotos(files, stId){
   return out;
 }
 
-// Subir fotos a Supabase Storage y retornar URLs
-async function subirFotosYGuardar(files, entidad, entidadId, tipo){
-  if(!files||!files.length) return [];
-  const urls=[];
-  for(const file of files){
+async function subirFotosYGuardar(files, entidad, entidadId, tipo, statusEl){
+  if(!files || !files.length) return [];
+  const urls = [];
+  const total = files.length;
+
+  for(let i = 0; i < files.length; i++){
+    // Actualizar progreso si hay elemento de status
+    if(statusEl){
+      statusEl.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--b600)">
+        <div class="spinner" style="width:12px;height:12px;border-width:2px"></div>
+        Subiendo foto ${i+1} de ${total}...
+      </div>`;
+    }
     try{
-      const url=await subirFotoStorage(file, entidad, entidadId, tipo);
+      const url = await subirFotoStorage(files[i], entidad, entidadId, tipo);
       if(url) urls.push(url);
-    }catch(e){console.warn('Error subiendo foto:',e);}
+    }catch(e){
+      console.warn(`Error subiendo foto ${i+1}:`, e);
+      // Continuar con las demás aunque una falle
+    }
   }
+
+  if(statusEl){
+    if(urls.length === total){
+      statusEl.innerHTML = `<span style="color:var(--gr600);font-size:12px">✅ ${total} foto${total>1?'s':''} subida${total>1?'s':''}</span>`;
+    } else if(urls.length > 0){
+      statusEl.innerHTML = `<span style="color:var(--am600);font-size:12px">⚠️ ${urls.length}/${total} fotos subidas</span>`;
+    } else {
+      statusEl.innerHTML = `<span style="color:var(--rd600);font-size:12px">❌ Error al subir las fotos</span>`;
+    }
+  }
+
   return urls;
 }
 
@@ -3787,34 +3858,79 @@ async function cargarFotosExistentes(entidad, entidadId, tipo, contenedor){
     },50);
   }catch(e){contenedor.innerHTML='';}
 }
-function setupFotos(inpId,prevId,stId){
-  const inp=document.getElementById(inpId),prev=document.getElementById(prevId);
-  if(!inp||!prev)return;
-  inp.addEventListener('change',async()=>{
-    const files=Array.from(inp.files);if(!files.length)return;
-    prev.innerHTML='<div class="loading" style="padding:10px"><div class="spinner"></div></div>';
-    // Mostrar info de tamaño original + preview comprimida para la vista previa local
-    await procesarFotos(files,stId);
-    // _files guarda los ORIGINALES — se subirán sin comprimir a Storage
-    renderFotoPreview(prev,files);
+function setupFotos(inpId, prevId, stId){
+  const inp = document.getElementById(inpId);
+  const prev = document.getElementById(prevId);
+  if(!inp || !prev) return;
+
+  // Asegurar capture en móvil si no está ya definido
+  // No forzar capture="environment" para que el usuario pueda elegir galería o cámara
+  // En iOS/Android el sistema muestra el selector automáticamente con accept="image/*"
+
+  inp.addEventListener('change', async()=>{
+    const files = Array.from(inp.files || []);
+    if(!files.length) return;
+
+    // Feedback inmediato — el usuario sabe que algo está pasando
+    prev.innerHTML = `<div style="padding:12px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--b600)">
+      <div class="spinner" style="width:14px;height:14px;border-width:2px"></div>
+      Procesando ${files.length} foto${files.length>1?'s':''}...
+    </div>`;
+
+    try {
+      // Procesar en paralelo para mayor velocidad en móvil
+      const procesadas = await Promise.all(files.map(f => compFoto(f, 1200, 0.80)));
+
+      // Actualizar estado si hay elemento de status
+      if(stId){
+        const el = document.getElementById(stId);
+        if(el){
+          const totalKB = Math.round(files.reduce((a,f)=>a+f.size,0)/1024);
+          el.innerHTML = `✅ ${files.length} foto${files.length>1?'s':''} · ${totalKB}KB · lista${files.length>1?'s':''} para subir`;
+          el.style.color = 'var(--gr600)';
+        }
+      }
+
+      // Guardar originales y renderizar preview
+      prev._files = [...files];
+      renderFotoPreview(prev, files);
+
+    } catch(e){
+      console.warn('setupFotos error:', e);
+      prev.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--rd600)">⚠️ Error al procesar las fotos. Inténtalo de nuevo.</div>`;
+      // Guardar originales aunque falle la preview
+      prev._files = [...files];
+    }
   });
 }
 
-function renderFotoPreview(prev,files){
-  // Guardar originales en _files para subida posterior
-  prev._files=[...files];
-  // Para preview local: generar thumbnail comprimido sin bloquear
-  const thumbPromises = files.map(f => compFoto(f, 800, 0.75));
-  prev.innerHTML = files.map((f,i) => `<div class="foto-thumb" style="position:relative;display:inline-block">
-    <img src="${URL.createObjectURL(f)}" style="display:block" id="foto-prev-thumb-${prev.id}-${i}">
-    <button type="button" onclick="eliminarFoto(${i},this.parentElement.parentElement)" style="position:absolute;top:2px;right:2px;background:rgba(220,38,38,.85);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-weight:700">×</button>
-  </div>`).join('');
-  // Reemplazar previews con versión comprimida para mejor rendimiento local
-  thumbPromises.forEach((p,i) => {
-    p.then(compressed => {
-      const el = document.getElementById('foto-prev-thumb-'+prev.id+'-'+i);
-      if(el){ const burl = URL.createObjectURL(compressed); el.src = burl; }
-    });
+function renderFotoPreview(prev, files){
+  if(!files || !files.length){ prev.innerHTML=''; prev._files=[]; return; }
+  // Guardar originales
+  prev._files = [...files];
+
+  // Renderizar con blob URLs — más rápido que esperar compresión para preview
+  prev.innerHTML = files.map((f, i) => {
+    const burl = URL.createObjectURL(f);
+    return `<div class="foto-thumb" style="position:relative;display:inline-block">
+      <img src="${burl}" style="display:block" id="foto-prev-thumb-${prev.id}-${i}"
+        onerror="this.style.display='none';this.nextElementSibling?.insertAdjacentHTML('afterend','<div style=\\'width:72px;height:72px;background:var(--g100);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:22px\\'>📷</div>')">
+      <button type="button" onclick="eliminarFoto(${i}, this.parentElement.parentElement)"
+        style="position:absolute;top:2px;right:2px;background:rgba(220,38,38,.85);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-weight:700">×</button>
+    </div>`;
+  }).join('');
+
+  // Reemplazar con versión comprimida en background (no bloquea UI)
+  files.forEach((f, i) => {
+    compFoto(f, 800, 0.75).then(compressed => {
+      const el = document.getElementById(`foto-prev-thumb-${prev.id}-${i}`);
+      if(el && el.src){
+        const oldUrl = el.src;
+        el.src = URL.createObjectURL(compressed);
+        // Liberar el blob URL anterior para no agotar memoria en móvil
+        try{ URL.revokeObjectURL(oldUrl); }catch(e){}
+      }
+    }).catch(()=>{/* Ignorar errores de compresión thumbnail */});
   });
 }
 
@@ -4866,7 +4982,7 @@ async function leerAlbaranOCR(expId, ref, bultosPortal, kilosPortal){
     <div class="fg2" style="margin-bottom:12px">
       <label class="fl2">Foto del albarán o packing list</label>
       <div class="foto-area" onclick="document.getElementById('ocr-fi').click()" id="ocr-area">
-        <input type="file" id="ocr-fi" accept="image/*,application/pdf" onchange="previewOCRFoto(this)">
+        <input type="file" id="ocr-fi" accept="image/*,application/pdf" capture="environment" onchange="previewOCRFoto(this)">
         <div style="font-size:28px;margin-bottom:6px">📄</div>
         <div style="font-size:13px;color:var(--g600)">Toca para fotografiar o seleccionar el albarán</div>
         <div style="font-size:11px;color:var(--g400);margin-top:4px">Funciona con fotos del móvil, escaneos o imágenes del documento</div>
@@ -5304,7 +5420,7 @@ async function loadAlmFotos(tab){
         <div style="padding:16px">
           <div class="fg2"><label class="fl2">Foto camión cargado <span style="color:var(--rd600);font-size:10px">requerida</span></label>
             <div class="foto-area" onclick="document.getElementById('cg-fi-${bid}').click()">
-              <input type="file" id="cg-fi-${bid}" accept="image/*" multiple onchange="onCargaFoto('${bid}')">
+              <input type="file" id="cg-fi-${bid}" accept="image/*" multiple capture="environment" onchange="onCargaFoto('${bid}')">
               <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del camión cargado</div>
             </div>
             <div class="foto-prev" id="cg-pv-${bid}"></div>
@@ -5328,7 +5444,7 @@ async function loadAlmFotos(tab){
         <div style="padding:16px">
           <div class="fg2"><label class="fl2">Foto embarque <span style="color:var(--rd600);font-size:10px">requerida antes de confirmar</span></label>
             <div class="foto-area" onclick="document.getElementById('embt-fi-${b.id}').click()">
-              <input type="file" id="embt-fi-${b.id}" accept="image/*" multiple onchange="onEmbTabFoto('${b.id}')">
+              <input type="file" id="embt-fi-${b.id}" accept="image/*" multiple capture="environment" onchange="onEmbTabFoto('${b.id}')">
               <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del buque embarcado</div>
             </div>
             <div class="foto-prev" id="embt-pv-${b.id}"></div>
@@ -5383,7 +5499,7 @@ async function loadAlmFotos(tab){
           </div>
           <div class="fg2"><label class="fl2">Foto de recogida en muelle</label>
             <div class="foto-area" onclick="document.getElementById('lnd-fi-${b.id}').click()">
-              <input type="file" id="lnd-fi-${b.id}" accept="image/*" multiple onchange="onLandedBuqueFoto('${b.id}')">
+              <input type="file" id="lnd-fi-${b.id}" accept="image/*" multiple capture="environment" onchange="onLandedBuqueFoto('${b.id}')">
               <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto opcional de la mercancía en muelle</div>
             </div>
             <div class="foto-prev" id="lnd-pv-${b.id}"></div>
@@ -5656,7 +5772,7 @@ async function guardarIncidenciaLlegada(){
 }
 function onCargaFoto(bid){const f=document.getElementById('cg-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='';setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);}}
 async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
-  if(!confirm('¿Confirmar carga en camión para TODAS las expediciones autorizadas de este buque?'))return;
+  if(!await confirmarAccion('¿Confirmar carga en camión para TODAS las expediciones autorizadas de este buque?'))return;
   const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO');
   if(!data||!data.length){alert('No hay expediciones autorizadas');return;}
   // Subir fotos del buque (una foto para toda la carga)
@@ -5912,7 +6028,7 @@ async function enviarEmailFacturacionAuto(buqueId){
 }
 
 async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
-  if(!confirm('¿Marcar el buque como EMBARCADO? Las expediciones pasarán a "A bordo" (excepto las Landed).'))return;
+  if(!await confirmarAccion('¿Marcar el buque como EMBARCADO? Las expediciones pasarán a "A bordo" (excepto las Landed).'))return;
   // Subir fotos de embarque
   const prevEl=document.getElementById('embt-pv-'+bid);
   const files=prevEl?._files||[];
@@ -6118,7 +6234,7 @@ async function saveEmp(id){
 async function delEmp(id){if(!confirm('¿Eliminar empresa?'))return;await sb.from('empresas').delete().eq('id',id);closeModal();loadView(CV);}
 
 async function delBuque(id,nombre){
-  if(!confirm('⚠️ ¿Eliminar el buque "'+nombre+'" y TODAS sus expediciones y fotos asociadas? Esta acción no se puede deshacer.'))return;
+  if(!await confirmarAccion('⚠️ ¿Eliminar el buque "'+nombre+'" y TODAS sus expediciones y fotos asociadas?',true))return;
 
   // Obtener IDs de expediciones del buque para limpiar fotos
   const {data:exps} = await sb.from('expediciones').select('id').eq('buque_id',id);
@@ -6145,7 +6261,7 @@ async function delBuque(id,nombre){
 }
 
 async function delExpedicion(id,ref){
-  if(!confirm('⚠️ ¿Eliminar la expedición "'+ref+'"? Se eliminarán también las fotos asociadas. Esta acción no se puede deshacer.'))return;
+  if(!await confirmarAccion('⚠️ ¿Eliminar la expedición "'+ref+'"? Se eliminarán las fotos asociadas.',true))return;
 
   // 1. Obtener paths de fotos en storage antes de eliminar
   const {data:fotos} = await sb.from('fotos_operativas')
@@ -6775,7 +6891,7 @@ const MODALS={
 },
 'carga-camion':{t:'🚛 Carga camión',btn:'📸 Hacer foto primero',
   body:async()=>{const {data}=await sb.from('expediciones').select('id,nº_expedicion,buques(nombre,id)').eq('estado_carga','✅ AUTORIZADO');const opts=(data||[]).map(e=>`<option value="${e.id}" data-bqid="${e.buques?.id||''}">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</option>`).join('');return`<div class="fg2"><label class="fl2">Expedición autorizada *</label><select id="cc-exp" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div>
-<div class="fg2"><label class="fl2">Foto camión cargado <span style="color:var(--rd600);font-size:10px">— requerida antes de confirmar</span></label><div class="foto-area" onclick="document.getElementById('cc-fi').click()"><input type="file" id="cc-fi" accept="image/*" multiple onchange="onCCFoto()"><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Toca para hacer foto del camión cargado</div></div><div id="cc-fst" class="foto-st"></div><div class="foto-prev" id="cc-fpv"></div></div>
+<div class="fg2"><label class="fl2">Foto camión cargado <span style="color:var(--rd600);font-size:10px">— requerida antes de confirmar</span></label><div class="foto-area" onclick="document.getElementById('cc-fi').click()"><input type="file" id="cc-fi" accept="image/*" multiple capture="environment" onchange="onCCFoto()"><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Toca para hacer foto del camión cargado</div></div><div id="cc-fst" class="foto-st"></div><div class="foto-prev" id="cc-fpv"></div></div>
 <button id="cc-confirm-btn" class="btn btn-g btn-full" style="display:none;margin-top:8px" onclick="confirmarCarga()">✅ Confirmar carga</button>
 <div class="fg2" style="margin-top:12px"><label class="fl2">— o — Finalizar carga de TODAS las expediciones de un buque</label><select id="cc-bq-all" class="fi fs"><option value="">— Seleccionar buque —</option>${((await sb.from('buques').select('id,nombre').or('estado_operacion.is.null,estado_operacion.neq.Finalizado').order('nombre')).data||[]).map(b=>`<option value="${b.id}">${b.nombre}</option>`).join('')}</select><button class="btn btn-w btn-sm" style="margin-top:8px;width:100%" onclick="finalizarTodas()">🚛 Marcar TODAS cargadas (este buque)</button></div>`;},
   action:async()=>{showToast('Usa el botón verde para confirmar la carga');},
@@ -6783,7 +6899,7 @@ const MODALS={
 },
 'embarque-buque':{t:'🚢 Marcar embarcado',btn:'📸 Hacer foto primero',
   body:async()=>{const {data}=await sb.from('buques').select('id,nombre').or('estado_operacion.is.null,estado_operacion.neq.Finalizado').order('nombre');const opts=(data||[]).map(b=>`<option value="${b.id}">${b.nombre}</option>`).join('');return`<div class="fg2"><label class="fl2">Buque *</label><select id="emb-bq" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div>
-<div class="fg2"><label class="fl2">Foto embarque <span style="color:var(--rd600);font-size:10px">— requerida antes de confirmar</span></label><div class="foto-area" onclick="document.getElementById('emb-fi').click()"><input type="file" id="emb-fi" accept="image/*" multiple onchange="onEmbFoto()"><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Foto del buque embarcado</div></div><div id="emb-fst" class="foto-st"></div><div class="foto-prev" id="emb-fpv"></div></div>
+<div class="fg2"><label class="fl2">Foto embarque <span style="color:var(--rd600);font-size:10px">— requerida antes de confirmar</span></label><div class="foto-area" onclick="document.getElementById('emb-fi').click()"><input type="file" id="emb-fi" accept="image/*" multiple capture="environment" onchange="onEmbFoto()"><div style="font-size:24px;margin-bottom:6px">📸</div><div style="font-size:13px;color:var(--g600)">Foto del buque embarcado</div></div><div id="emb-fst" class="foto-st"></div><div class="foto-prev" id="emb-fpv"></div></div>
 <button id="emb-confirm-btn" class="btn btn-g btn-full" style="display:none;margin-top:8px" onclick="confirmarEmbarque()">✅ Confirmar embarque — cambiar estado a EMBARCADO</button>`;},
   action:async()=>{showToast('Usa el botón verde para confirmar el embarque');},
   after:()=>setTimeout(()=>setupFotos('emb-fi','emb-fpv','emb-fst'),100)
@@ -7113,7 +7229,7 @@ async function confirmarCarga(){
 }
 async function finalizarTodas(){
   const bqId=gv('cc-bq-all');if(!bqId){alert('Selecciona un buque');return;}
-  if(!confirm('¿Marcar como cargadas TODAS las expediciones autorizadas de este buque?'))return;
+  if(!await confirmarAccion('¿Marcar como cargadas TODAS las expediciones autorizadas de este buque?'))return;
   const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bqId).eq('estado_carga','✅ AUTORIZADO');
   if(!data||!data.length){alert('No hay expediciones autorizadas para este buque');return;}
   const ts=new Date().toISOString();
@@ -7132,7 +7248,7 @@ function onEmbFoto(){
 }
 async function confirmarEmbarque(){
   const bqId=gv('emb-bq');if(!bqId){alert('Selecciona un buque');return;}
-  if(!confirm('¿Marcar el buque como EMBARCADO? Esto cambiará el estado de la operación y el color de la etiqueta.'))return;
+  if(!await confirmarAccion('¿Marcar el buque como EMBARCADO? Esto cambiará el estado de la operación y el color de la etiqueta.'))return;
   await sb.from('buques').update({estado_operacion:'Finalizado'}).eq('id',bqId);
   const {data:exps}=await sb.from('expediciones').select('id').eq('buque_id',bqId);
   for(const e of exps||[]){
