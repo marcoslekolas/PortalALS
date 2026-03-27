@@ -6026,52 +6026,129 @@ function ofrecerEtiquetasBultos(expId, ref, numBultos){
 }
 
 async function imprimirEtiquetasBultos(expId, ref, numBultos){
-  // Generar todos los QR en paralelo
   const qrPromises = [];
   for(let i = 1; i <= numBultos; i++){
     const qrData = `ALS-BLT:${expId}:${i}:${numBultos}`;
-    qrPromises.push(generarQRDataURL(qrData, 160).then(url=>({n:i, url, qrData})));
+    qrPromises.push(generarQRDataURL(qrData, 220).then(url=>({n:i, url, qrData})));
   }
   const etiquetas = await Promise.all(qrPromises);
 
-  const w = window.open('','_blank',`width=460,height=${Math.min(800, 200*numBultos+120)}`);
+  const w = window.open('','_blank','width=480,height=640');
   if(!w){ showToast('⚠️ Permite ventanas emergentes para imprimir'); return; }
 
-  const etiqHtml = etiquetas.map(({n, url, qrData})=>`
-    <div class="etiq">
-      <div class="logo">● ALS</div>
+  // Una etiqueta por página — salto de página entre cada bulto
+  const etiqHtml = etiquetas.map(({n, url, qrData}, i)=>`
+    <div class="etiq${i < etiquetas.length-1 ? ' salto' : ''}">
+      <div class="empresa">ALGECIRAS LOGISTIC SOLUTIONS</div>
       <div class="ref">${ref}</div>
-      <div class="bulto">Bulto ${n} de ${numBultos}</div>
-      ${url ? `<img src="${url}" width="120" height="120">` : '<div style="width:120px;height:120px;border:1px solid #ccc;display:inline-flex;align-items:center;justify-content:center;font-size:10px">QR</div>'}
+      <div class="bulto-num">BULTO ${n} / ${numBultos}</div>
+      <div class="qr-wrap">
+        ${url
+          ? `<img src="${url}" width="190" height="190" alt="QR bulto ${n}">`
+          : `<div class="qr-placeholder">QR</div>`}
+      </div>
       <div class="cod">${qrData}</div>
+      <div class="pie">Escanear en carga camión · Portal ALS</div>
     </div>`).join('');
 
-  w.document.write(`<!DOCTYPE html><html><head><title>Etiquetas — ${ref}</title>
+  w.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="utf-8">
+    <title>Etiquetas — ${ref}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;background:#fff;padding:8px}
-      .etiq{display:inline-block;border:1px solid #d1d5db;border-radius:8px;padding:10px;margin:4px;text-align:center;width:160px;vertical-align:top;page-break-inside:avoid}
-      .logo{font-size:9px;font-weight:700;color:#1565c0;letter-spacing:1px}
-      .ref{font-size:11px;font-weight:800;margin:3px 0;letter-spacing:.3px}
-      .bulto{font-size:10px;color:#6b7280;margin-bottom:4px;font-weight:600}
-      img{display:block;margin:0 auto;border:1px solid #e5e7eb;border-radius:4px;padding:3px}
-      .cod{font-size:7px;color:#9ca3af;margin-top:4px;word-break:break-all;font-family:monospace}
-      .acciones{text-align:center;padding:12px;position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;z-index:10}
-      button{background:#1565c0;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;margin:4px}
-      .btn-s{background:#6b7280}
-      @media print{.acciones{display:none}body{padding:0}.etiq{margin:2px;border:1px dashed #ccc}}
-      @page{margin:5mm;size:auto}
+      body{font-family:Arial,sans-serif;background:#f5f5f5}
+
+      /* Barra de acciones — solo en pantalla */
+      .acciones{
+        display:flex;align-items:center;justify-content:space-between;
+        padding:10px 16px;background:#1565c0;color:#fff;
+        position:sticky;top:0;z-index:10;gap:8px;flex-wrap:wrap
+      }
+      .acciones strong{font-size:13px}
+      .acciones button{
+        background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.4);
+        border-radius:6px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer
+      }
+      .acciones button.imp{background:#fff;color:#1565c0}
+
+      /* Etiqueta — cuartilla aprox (105×148mm = A6) */
+      .etiq{
+        width:105mm;
+        min-height:148mm;
+        background:#fff;
+        border:1px solid #e5e7eb;
+        border-radius:4mm;
+        padding:6mm;
+        margin:8px auto;
+        text-align:center;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:space-between;
+        gap:3mm;
+      }
+      .salto{ page-break-after:always; }
+
+      .empresa{
+        font-size:7pt;font-weight:700;color:#1565c0;
+        letter-spacing:.8px;text-transform:uppercase;
+        border-bottom:1px solid #e5e7eb;padding-bottom:2mm;width:100%
+      }
+      .ref{
+        font-size:14pt;font-weight:900;letter-spacing:.3px;color:#111;
+        line-height:1.1;word-break:break-all
+      }
+      .bulto-num{
+        font-size:11pt;font-weight:700;color:#fff;
+        background:#1565c0;border-radius:4mm;
+        padding:2mm 6mm;letter-spacing:.5px
+      }
+      .qr-wrap{
+        border:1.5px solid #e5e7eb;border-radius:3mm;padding:3mm;
+        display:inline-flex;align-items:center;justify-content:center
+      }
+      .qr-wrap img{display:block}
+      .qr-placeholder{
+        width:190px;height:190px;border:1px solid #ccc;
+        display:flex;align-items:center;justify-content:center;
+        font-size:10pt;color:#9ca3af
+      }
+      .cod{
+        font-size:6pt;color:#9ca3af;font-family:monospace;
+        word-break:break-all;line-height:1.4;max-width:90mm
+      }
+      .pie{
+        font-size:7pt;color:#6b7280;
+        border-top:1px solid #e5e7eb;padding-top:2mm;width:100%
+      }
+
+      /* Impresión */
+      @media print{
+        body{background:#fff}
+        .acciones{display:none}
+        .etiq{
+          margin:0;border:none;border-radius:0;
+          width:100%;min-height:auto;
+          padding:5mm;
+        }
+        @page{
+          size:A6 portrait;
+          margin:4mm;
+        }
+      }
     </style>
   </head><body>
     <div class="acciones">
-      <strong style="font-size:13px">${numBultos} etiqueta${numBultos>1?'s':''} — ${ref}</strong>
-      <button onclick="window.print()">🖨️ Imprimir todas</button>
-      <button class="btn-s" onclick="window.close()">Cerrar</button>
+      <strong>${numBultos} etiqueta${numBultos>1?'s':''} · ${ref}</strong>
+      <div style="display:flex;gap:8px">
+        <button class="imp" onclick="window.print()">🖨️ Imprimir</button>
+        <button onclick="window.close()">Cerrar</button>
+      </div>
     </div>
-    <div style="padding:8px">${etiqHtml}</div>
+    ${etiqHtml}
   </body></html>`);
   w.document.close();
-  setTimeout(()=>{ try{ w.print(); }catch(e){} }, 800);
+  setTimeout(()=>{ try{ w.print(); }catch(e){} }, 900);
 }
 
 function abrirIncidenciaLlegada(expId,expRef){
