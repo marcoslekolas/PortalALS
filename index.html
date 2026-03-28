@@ -1230,21 +1230,47 @@ textarea.fi{resize:vertical;min-height:72px}
         <div id="buques-list" class="buque-list"></div>
       </div>
       <div class="view" id="view-expediciones">
-        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-          <div class="sbar" style="flex:1;min-width:200px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" placeholder="Buscar referencia, buque, empresa..." oninput="filtrarE(this.value)"></div>
-          <select class="fi fs" style="width:auto" onchange="filtrarEst(this.value)" id="fil-est">
+        <!-- Filtros multi-campo -->
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <div class="sbar" style="flex:2;min-width:180px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" id="fil-q" placeholder="Referencia, buque, empresa, MRN, ubicación…" oninput="filtrarExp()"></div>
+          <select class="fi fs" style="width:auto;min-width:140px" onchange="filtrarExp()" id="fil-est">
             <option value="">Todos los estados</option>
             <option>⏳ EN TRÁNSITO</option><option>⌛ ESPERANDO ALMACÉN</option>
             <option>📦 UBICADA</option><option>🚨 EN ALMACÉN - REVISAR</option>
-            <option>✅ AUTORIZADO</option><option>🚛 CARGADO CAMIÓN</option>
+            <option>✅ AUTORIZADO</option><option>🚛 CARGADO CAMIÓN</option><option>🚢 EMBARCADO</option>
           </select>
-          <select class="fi fs" style="width:auto" onchange="filtrarStatus(this.value)" id="fil-sta">
+          <select class="fi fs" style="width:auto" onchange="filtrarExp()" id="fil-sta">
             <option value="">Todos los status</option>
             <option>Comunitario</option><option>DAE</option><option>T1</option><option>Terceros</option><option>X</option>
           </select>
+          <select class="fi fs" style="width:auto" onchange="filtrarExp()" id="fil-tra">
+            <option value="">Todos los trámites</option>
+            <option>Pendiente despachar</option><option>Despachado</option>
+          </select>
+          <select class="fi fs" style="width:auto" onchange="filtrarExp()" id="fil-ubic">
+            <option value="">Todas las ubicaciones</option>
+            ${UBICACIONES.map(u=>`<option>${u}</option>`).join('')}
+          </select>
         </div>
-          <div style="display:flex;gap:6px;align-items:flex-end;flex-shrink:0"><button class="btn btn-s btn-sm" onclick="exportarExpedicionesCSV()" title="Exportar a CSV">⬇️ CSV</button><span id="lote-count" style="font-size:12px;color:var(--b600);font-weight:600;white-space:nowrap"></span><button id="btn-lote" class="btn btn-s btn-sm" style="display:none" onclick="abrirEdicionLote()">✏️ Lote</button></div>
-        <div class="tc"><table class="tbl"><thead><tr><th style="width:30px"></th><th>Referencia</th><th>Buque</th><th>Empresa</th><th>Carga</th><th>Estado</th><th>Status Adua.</th><th>Trámite</th><th>Ubic.</th><th>F. Máx. Desp.</th></tr></thead><tbody id="exp-tbody"></tbody></table></div>
+        <!-- Toolbar de acciones -->
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:var(--g50);border-radius:var(--r);border:1px solid var(--g200)" id="exp-toolbar">
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;flex-shrink:0">
+            <input type="checkbox" id="chk-all-exp" style="accent-color:var(--b600);width:16px;height:16px" onchange="toggleTodosExp(this)">
+            <span style="font-weight:600;color:var(--g700)">Selec. todo</span>
+          </label>
+          <span id="lote-count" style="font-size:12px;color:var(--b600);font-weight:700;min-width:60px"></span>
+          <div id="lote-actions" style="display:none;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-s btn-sm" onclick="loteNotifCliente()" title="Notificar cliente por email">📧 Notif. cliente</button>
+            <button class="btn btn-s btn-sm" onclick="loteCambiarUbicacion()" title="Cambiar ubicación">📍 Ubicación</button>
+            <button class="btn btn-w btn-sm" onclick="abrirEdicionLote()" title="Editar campos en lote">✏️ Editar lote</button>
+            <button class="btn btn-d btn-sm" onclick="loteEliminar()" title="Eliminar seleccionadas (solo admin)" id="btn-lote-del" style="${CU?.rol==='admin'?'':'display:none'}">🗑️ Eliminar</button>
+          </div>
+          <button class="btn btn-s btn-sm" onclick="exportarExpedicionesCSV()" style="margin-left:auto" title="Exportar a CSV">⬇️ CSV</button>
+        </div>
+        <div class="tc"><table class="tbl"><thead><tr>
+          <th style="width:38px;padding:0"></th>
+          <th>Referencia</th><th>Buque</th><th>Empresa</th><th>Carga</th><th>Estado</th><th>Status Adua.</th><th>Trámite</th><th>Ubic.</th><th>F. Máx. Desp.</th>
+        </tr></thead><tbody id="exp-tbody"></tbody></table></div>
       </div>
       <div class="view" id="view-kanban"><div class="kb-board" id="kb-board"></div></div>
       <div class="view" id="view-calendario">
@@ -2593,13 +2619,6 @@ function getPlantilla(tipo,vars={}){
 // EDICIÓN EN LOTE DE EXPEDICIONES
 // ═══════════════════════════════════════════════════════════════
 let _selExpLote=new Set();
-function toggleExpLote(id,el){
-  if(el.checked) _selExpLote.add(id);
-  else _selExpLote.delete(id);
-  document.getElementById('btn-lote')?.classList.toggle('hidden',_selExpLote.size===0);
-  const lbl=document.getElementById('lote-count');
-  if(lbl) lbl.textContent=_selExpLote.size>0?_selExpLote.size+' sel.':'';
-}
 function abrirEdicionLote(){
   if(!_selExpLote.size){showToast('Selecciona al menos una expedición');return;}
   document.getElementById('m-title').textContent='✏️ Editar en lote — '+_selExpLote.size+' expediciones';
@@ -4492,31 +4511,202 @@ function renderE(list){
     </tr>`;
   }).join('')||'<tr><td colspan="9"><div class="empty"><div class="empty-txt">Sin expediciones</div></div></td></tr>';
 }
-function filtrarE(q){
-  const s=q.toLowerCase();
-  const est=document.getElementById('fil-est')?.value||'';
-  const sta=document.getElementById('fil-sta')?.value||'';
-  renderE(allE.filter(e=>
-    ((e.nº_expedicion||'').toLowerCase().includes(s)||(e.buques?.nombre||'').toLowerCase().includes(s)||(e.empresas?.nombre||'').toLowerCase().includes(s))
-    &&(!est||e.estado_semaforo===est)
-    &&(!sta||e.status_aduanero===sta)
-  ));
+// ── Filtrado unificado de expediciones ───────────────────────────
+let _expFiltradas = []; // lista actualmente visible
+
+function filtrarExp(){
+  const q  = (document.getElementById('fil-q')?.value||'').toLowerCase().trim();
+  const est= document.getElementById('fil-est')?.value||'';
+  const sta= document.getElementById('fil-sta')?.value||'';
+  const tra= document.getElementById('fil-tra')?.value||'';
+  const ubi= document.getElementById('fil-ubic')?.value||'';
+  _expFiltradas = allE.filter(e=>{
+    if(q && !([e.nº_expedicion,e.buques?.nombre,e.empresas?.nombre,e.nº_mrn,e.ubicacion,e.status_aduanero,e.tramite_aduanero]
+      .map(v=>(v||'').toLowerCase()).some(v=>v.includes(q)))) return false;
+    if(est && e.estado_semaforo!==est) return false;
+    if(sta && e.status_aduanero!==sta) return false;
+    if(tra && e.tramite_aduanero!==tra) return false;
+    if(ubi && e.ubicacion!==ubi) return false;
+    return true;
+  });
+  renderE(_expFiltradas);
+  // Resetear selección al filtrar
+  _selExpLote.clear();
+  _actualizarToolbarLote();
 }
-function filtrarEst(v){
-  const q=document.querySelector('#view-expediciones .sbar input')?.value||'';
-  const sta=document.getElementById('fil-sta')?.value||'';
-  renderE(allE.filter(e=>
-    (!q||(e.nº_expedicion||'').toLowerCase().includes(q.toLowerCase())||(e.buques?.nombre||'').toLowerCase().includes(q.toLowerCase()))
-    &&(!v||e.estado_semaforo===v)&&(!sta||e.status_aduanero===sta)
-  ));
+
+// Compatibilidad con llamadas antiguas
+function filtrarE(q){ document.getElementById('fil-q').value=q||''; filtrarExp(); }
+function filtrarEst(v){ document.getElementById('fil-est').value=v||''; filtrarExp(); }
+function filtrarStatus(v){ document.getElementById('fil-sta').value=v||''; filtrarExp(); }
+
+// ── Selección en lote ─────────────────────────────────────────────
+function toggleExpLote(id,el){
+  if(el.checked) _selExpLote.add(id);
+  else _selExpLote.delete(id);
+  _actualizarToolbarLote();
 }
-function filtrarStatus(v){
-  const q=document.querySelector('#view-expediciones .sbar input')?.value||'';
-  const est=document.getElementById('fil-est')?.value||'';
-  renderE(allE.filter(e=>
-    (!q||(e.nº_expedicion||'').toLowerCase().includes(q.toLowerCase())||(e.buques?.nombre||'').toLowerCase().includes(q.toLowerCase()))
-    &&(!est||e.estado_semaforo===est)&&(!v||e.status_aduanero===v)
-  ));
+
+function toggleTodosExp(chk){
+  const lista = _expFiltradas.length ? _expFiltradas : allE;
+  if(chk.checked){
+    lista.forEach(e=>_selExpLote.add(e.id));
+    // Marcar todos los checkboxes visibles
+    document.querySelectorAll('#exp-tbody input[type=checkbox]').forEach(c=>c.checked=true);
+  } else {
+    _selExpLote.clear();
+    document.querySelectorAll('#exp-tbody input[type=checkbox]').forEach(c=>c.checked=false);
+  }
+  _actualizarToolbarLote();
+}
+
+function _actualizarToolbarLote(){
+  const n = _selExpLote.size;
+  const lbl = document.getElementById('lote-count');
+  const act = document.getElementById('lote-actions');
+  if(lbl) lbl.textContent = n>0 ? `${n} seleccionada${n>1?'s':''}` : '';
+  if(act) act.style.display = n>0 ? 'flex' : 'none';
+  // Botón eliminar solo admin
+  const btnDel = document.getElementById('btn-lote-del');
+  if(btnDel) btnDel.style.display = CU?.rol==='admin' ? '' : 'none';
+}
+
+// ── Acciones en lote ──────────────────────────────────────────────
+async function loteNotifCliente(){
+  if(!_selExpLote.size){ showToast('Selecciona al menos una expedición'); return; }
+  const ids = [..._selExpLote];
+  // Cargar expediciones seleccionadas con datos de empresa
+  const {data:exps} = await sb.from('expediciones')
+    .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,empresas(nombre,email_confronta,otros_emails),buques(nombre)')
+    .in('id', ids);
+  if(!exps?.length){ showToast('No se encontraron las expediciones'); return; }
+
+  // Agrupar por empresa para enviar un email por empresa con todas sus expediciones
+  const porEmpresa = {};
+  exps.forEach(e=>{
+    const key = e.empresas?.email_confronta || '__sin_email__';
+    if(!porEmpresa[key]) porEmpresa[key] = {emp:e.empresas, exps:[]};
+    porEmpresa[key].exps.push(e);
+  });
+
+  const sinEmail = porEmpresa['__sin_email__']?.exps||[];
+  delete porEmpresa['__sin_email__'];
+
+  const numEmails = Object.keys(porEmpresa).length;
+  document.getElementById('m-title').textContent = `📧 Notificar clientes — ${ids.length} expediciones`;
+  document.getElementById('m-body').innerHTML = `
+    <div class="info-box">Se enviará un email por empresa con sus expediciones seleccionadas.</div>
+    ${sinEmail.length?`<div style="background:var(--am50);border:1px solid var(--am200);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px">
+      ⚠️ <strong>${sinEmail.length} expedición(es)</strong> sin email de empresa configurado: ${sinEmail.map(e=>e.nº_expedicion).join(', ')}
+    </div>`:''}
+    <div style="font-size:13px;margin-bottom:12px">${numEmails} email${numEmails!==1?'s':''} a enviar:</div>
+    ${Object.entries(porEmpresa).map(([email,d])=>`
+      <div style="border:1px solid var(--g200);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:12px">
+        <div style="font-weight:700">${d.emp?.nombre||email}</div>
+        <div style="color:var(--b600);margin:2px 0">${email}</div>
+        <div style="color:var(--g500)">${d.exps.map(e=>e.nº_expedicion).join(', ')}</div>
+      </div>`).join('')}`;
+  document.getElementById('m-foot').innerHTML = `
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="_ejecutarLoteNotifCliente()">📧 Enviar ${numEmails} email${numEmails!==1?'s':''}</button>`;
+  // Guardar datos para el envío
+  window._loteNotifData = porEmpresa;
+  document.getElementById('mo').classList.add('open');
+}
+
+async function _ejecutarLoteNotifCliente(){
+  const porEmpresa = window._loteNotifData||{};
+  const plantilla = _emailPlantillas['notif_cliente'];
+  let enviados = 0;
+  for(const [email, d] of Object.entries(porEmpresa)){
+    const expLines = d.exps.map(e=>`  · ${e.nº_expedicion} — ${e.buques?.nombre||'—'} · ${e.bultos||0}b · ${e.kilos||0}kg · ${e.ubicacion||'—'}`).join('\n');
+    const vars = {
+      '{{expedicion}}': d.exps.map(e=>e.nº_expedicion).join(', '),
+      '{{buque}}': [...new Set(d.exps.map(e=>e.buques?.nombre||'—'))].join(', '),
+      '{{bultos}}': d.exps.reduce((a,e)=>a+(e.bultos||0),0),
+      '{{kilos}}': d.exps.reduce((a,e)=>a+(e.kilos||0),0),
+      '{{ubicacion}}': [...new Set(d.exps.map(e=>e.ubicacion||'—'))].join(', '),
+      '{{estado}}': [...new Set(d.exps.map(e=>e.estado_semaforo||'—'))].join(', '),
+      '{{fecha}}': new Date().toLocaleDateString('es-ES'),
+    };
+    let asunto = plantilla?.asunto || `Aviso mercancía — ${d.exps.map(e=>e.nº_expedicion).join(', ')}`;
+    let cuerpo = plantilla?.cuerpo || `Estimado cliente,\n\nLe informamos del estado de sus expediciones:\n\n${expLines}\n\nAtentamente,\nALS`;
+    Object.entries(vars).forEach(([k,v])=>{ asunto=asunto.replaceAll(k,v); cuerpo=cuerpo.replaceAll(k,v); });
+    const otros = d.emp?.otros_emails||[];
+    const cc = otros.filter(Boolean).join(',');
+    let mailto = `mailto:${email}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+    if(cc) mailto += `&cc=${encodeURIComponent(cc)}`;
+    window.open(mailto,'_blank');
+    enviados++;
+    // Pequeña pausa entre aperturas para que el gestor de correo las procese
+    await new Promise(r=>setTimeout(r,400));
+  }
+  closeModal();
+  showToast(`✅ ${enviados} email${enviados!==1?'s':''} abierto${enviados!==1?'s':''} en el cliente de correo`);
+}
+
+async function loteCambiarUbicacion(){
+  if(!_selExpLote.size){ showToast('Selecciona al menos una expedición'); return; }
+  document.getElementById('m-title').textContent = `📍 Cambiar ubicación — ${_selExpLote.size} expediciones`;
+  document.getElementById('m-body').innerHTML = `
+    <div class="info-box">La nueva ubicación se aplicará a las <strong>${_selExpLote.size} expediciones</strong> seleccionadas.</div>
+    <div class="fg2">
+      <label class="fl2">Nueva ubicación *</label>
+      <select id="lote-ubic-nueva" class="fi fs">
+        <option value="">— Seleccionar —</option>
+        ${UBICACIONES.map(u=>`<option>${u}</option>`).join('')}
+      </select>
+    </div>`;
+  document.getElementById('m-foot').innerHTML = `
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="_ejecutarLoteUbicacion()">📍 Aplicar ubicación</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+async function _ejecutarLoteUbicacion(){
+  const ubic = document.getElementById('lote-ubic-nueva')?.value;
+  if(!ubic){ showToast('Selecciona una ubicación'); return; }
+  const ids = [..._selExpLote];
+  const semUbic = semaforoDeUbicacion(ubic);
+  const obj = {ubicacion:ubic};
+  if(semUbic && !['✅ AUTORIZADO','🚢 EMBARCADO','🚛 CARGADO CAMIÓN'].includes(semUbic)){
+    obj.estado_semaforo = semUbic; obj.estado_carga = semUbic;
+  }
+  let ok=0;
+  for(const id of ids){
+    const {error} = await sb.from('expediciones').update(obj).eq('id',id);
+    if(!error) ok++;
+  }
+  showToast(`✅ ${ok} expediciones → ${ubic}`);
+  _selExpLote.clear(); closeModal(); loadView(CV);
+}
+
+async function loteEliminar(){
+  if(!_selExpLote.size){ showToast('Selecciona al menos una expedición'); return; }
+  if(CU?.rol!=='admin'){ showToast('⛔ Solo administradores pueden eliminar expediciones'); return; }
+  const ids = [..._selExpLote];
+  if(!await confirmarAccion(`⚠️ ¿Eliminar ${ids.length} expedición(es) y TODAS sus fotos asociadas? Esta acción no se puede deshacer.`, true)) return;
+
+  showToast('⏳ Eliminando…');
+  let ok=0, totalFotos=0;
+  for(const id of ids){
+    try{
+      // 1. Fotos en storage
+      const {data:fotos} = await sb.from('fotos_operativas').select('storage_path').eq('entidad','expediciones').eq('entidad_id',id);
+      if(fotos?.length){
+        const paths = fotos.map(f=>f.storage_path).filter(Boolean);
+        if(paths.length) await sb.storage.from('fotos-operativas').remove(paths);
+        await sb.from('fotos_operativas').delete().eq('entidad','expediciones').eq('entidad_id',id);
+        totalFotos += fotos.length;
+      }
+      // 2. Incidencias y expedición
+      await sb.from('incidencias').delete().eq('expedicion_id',id);
+      await sb.from('expediciones').delete().eq('id',id);
+      ok++;
+    } catch(e){ console.warn('Error eliminando exp',id,e); }
+  }
+  showToast(`✅ ${ok} expedición(es) eliminada(s)${totalFotos?' · '+totalFotos+' foto(s) borrada(s)':''}`);
+  _selExpLote.clear(); loadView(CV);
 }
 
 async function loadKanban(){
