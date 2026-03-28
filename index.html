@@ -1232,8 +1232,14 @@ textarea.fi{resize:vertical;min-height:72px}
       <div class="view" id="view-expediciones">
         <!-- Filtros multi-campo -->
         <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-          <div class="sbar" style="flex:2;min-width:180px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" id="fil-q" placeholder="Referencia, buque, empresa, MRN, ubicación…" oninput="filtrarExp()"></div>
-          <select class="fi fs" style="width:auto;min-width:140px" onchange="filtrarExp()" id="fil-est">
+          <div class="sbar" style="flex:2;min-width:180px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" id="fil-q" placeholder="Referencia, MRN, ubicación…" oninput="filtrarExp()"></div>
+          <select class="fi fs" style="width:auto;min-width:130px" onchange="filtrarExp()" id="fil-buque">
+            <option value="">Todos los buques</option>
+          </select>
+          <select class="fi fs" style="width:auto;min-width:130px" onchange="filtrarExp()" id="fil-empresa">
+            <option value="">Todas las empresas</option>
+          </select>
+          <select class="fi fs" style="width:auto;min-width:130px" onchange="filtrarExp()" id="fil-est">
             <option value="">Todos los estados</option>
             <option>⏳ EN TRÁNSITO</option><option>⌛ ESPERANDO ALMACÉN</option>
             <option>📦 UBICADA</option><option>🚨 EN ALMACÉN - REVISAR</option>
@@ -1251,6 +1257,7 @@ textarea.fi{resize:vertical;min-height:72px}
             <option value="">Todas las ubicaciones</option>
             ${UBICACIONES.map(u=>`<option>${u}</option>`).join('')}
           </select>
+          <button class="btn btn-s btn-sm" onclick="resetFiltrosExp()" title="Limpiar filtros" style="flex-shrink:0">✕ Limpiar</button>
         </div>
         <!-- Toolbar de acciones -->
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:var(--g50);border-radius:var(--r);border:1px solid var(--g200)" id="exp-toolbar">
@@ -4487,7 +4494,30 @@ function renderB(list){document.getElementById('buques-list').innerHTML=list.map
 function filtrarB(q){const s=q.toLowerCase();renderB(allB.filter(b=>(b.nombre||'').toLowerCase().includes(s)||(b.imo||'').includes(s)||(b.nº_escala||'').toLowerCase().includes(s)));}
 
 let allE=[];
-async function loadExp(){const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas(nombre)').order('created_at',{ascending:false});allE=data||[];renderE(allE);}
+async function loadExp(){
+  const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas(nombre)').order('created_at',{ascending:false});
+  allE=data||[];
+  _poblarFiltrosExp();
+  renderE(allE);
+  _expFiltradas=[...allE];
+}
+
+function _poblarFiltrosExp(){
+  // Buques únicos
+  const buques=[...new Set(allE.map(e=>e.buques?.nombre).filter(Boolean))].sort();
+  const selB=document.getElementById('fil-buque');
+  if(selB){
+    const cur=selB.value;
+    selB.innerHTML='<option value="">Todos los buques</option>'+buques.map(b=>`<option ${b===cur?'selected':''}>${b}</option>`).join('');
+  }
+  // Empresas únicas
+  const empresas=[...new Set(allE.map(e=>e.empresas?.nombre).filter(Boolean))].sort();
+  const selE=document.getElementById('fil-empresa');
+  if(selE){
+    const cur=selE.value;
+    selE.innerHTML='<option value="">Todas las empresas</option>'+empresas.map(e=>`<option ${e===cur?'selected':''}>${e}</option>`).join('');
+  }
+}
 function renderE(list){
   const hoy=new Date();
   document.getElementById('exp-tbody').innerHTML=list.map(e=>{
@@ -4515,14 +4545,18 @@ function renderE(list){
 let _expFiltradas = []; // lista actualmente visible
 
 function filtrarExp(){
-  const q  = (document.getElementById('fil-q')?.value||'').toLowerCase().trim();
-  const est= document.getElementById('fil-est')?.value||'';
-  const sta= document.getElementById('fil-sta')?.value||'';
-  const tra= document.getElementById('fil-tra')?.value||'';
-  const ubi= document.getElementById('fil-ubic')?.value||'';
+  const q   = (document.getElementById('fil-q')?.value||'').toLowerCase().trim();
+  const buq = document.getElementById('fil-buque')?.value||'';
+  const emp = document.getElementById('fil-empresa')?.value||'';
+  const est = document.getElementById('fil-est')?.value||'';
+  const sta = document.getElementById('fil-sta')?.value||'';
+  const tra = document.getElementById('fil-tra')?.value||'';
+  const ubi = document.getElementById('fil-ubic')?.value||'';
   _expFiltradas = allE.filter(e=>{
     if(q && !([e.nº_expedicion,e.buques?.nombre,e.empresas?.nombre,e.nº_mrn,e.ubicacion,e.status_aduanero,e.tramite_aduanero]
       .map(v=>(v||'').toLowerCase()).some(v=>v.includes(q)))) return false;
+    if(buq && e.buques?.nombre!==buq) return false;
+    if(emp && e.empresas?.nombre!==emp) return false;
     if(est && e.estado_semaforo!==est) return false;
     if(sta && e.status_aduanero!==sta) return false;
     if(tra && e.tramite_aduanero!==tra) return false;
@@ -4530,9 +4564,16 @@ function filtrarExp(){
     return true;
   });
   renderE(_expFiltradas);
-  // Resetear selección al filtrar
   _selExpLote.clear();
   _actualizarToolbarLote();
+}
+
+function resetFiltrosExp(){
+  ['fil-q','fil-buque','fil-empresa','fil-est','fil-sta','fil-tra','fil-ubic'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){ el.nodeName==='INPUT'?el.value='':el.value=''; }
+  });
+  filtrarExp();
 }
 
 // Compatibilidad con llamadas antiguas
