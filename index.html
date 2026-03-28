@@ -4687,11 +4687,13 @@ async function loteNotifCliente(){
 
   const totalBultos = exps.reduce((a,e)=>a+(e.bultos||0),0);
   const totalKilos  = exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
-  const buques      = [...new Set(exps.map(e=>e.buques?.nombre).filter(Boolean))].join(', ');
+  const nombresBuques = [...new Set(exps.map(e=>e.buques?.nombre).filter(Boolean))];
+  const buques = nombresBuques.join(', ');
+  const multiBuque = nombresBuques.length > 1;
   const empresaNombre = [...new Set(exps.map(e=>e.empresas?.nombre).filter(Boolean))].join(', ') || 'cliente';
-  const fecha       = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  const fecha = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
 
-  // Recoger emails
+  // Emails
   const emailsSet = new Set();
   const ccSet = new Set();
   exps.forEach(e=>{
@@ -4699,26 +4701,16 @@ async function loteNotifCliente(){
     (e.empresas?.otros_emails||[]).forEach(m=>{ if(m) ccSet.add(m); });
   });
   emailsSet.forEach(m=>ccSet.delete(m));
-  const toEmail  = [...emailsSet].join(',') || '';
-  const ccEmail  = [...ccSet].join(',');
+  const toEmail = [...emailsSet].join(',') || '';
+  const ccEmail = [...ccSet].join(',');
 
-  // Asunto con buque
-  const asunto = buques.includes(',')
+  // Asunto
+  const asunto = multiBuque
     ? `Aviso mercancía en almacén — Buques: ${buques} · ${exps.length} expedición${exps.length!==1?'es':''}`
     : `Aviso mercancía en almacén — Buque ${buques} · ${exps.length} expedición${exps.length!==1?'es':''}`;
 
-  // Detalle por expedición — tabla de texto
-  const sepLinea = '─'.repeat(52);
-  const detalle = exps.map((e,i)=>`  ${i+1}. ${e.nº_expedicion}
-     • Buque:       ${e.buques?.nombre||'—'}
-     • Bultos:      ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg
-     • Ubicación:   ${e.ubicacion||'—'}
-     • Estado:      ${e.estado_semaforo||'—'}
-     • Trámite:     ${e.tramite_aduanero||'—'}
-     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}`
-  ).join('\n\n');
-
-  // Cuerpo completo con firma de la plantilla
+  const sep  = '─'.repeat(52);
+  const sep2 = '═'.repeat(52);
   const firma = `Atentamente,
 
 Departamento de Operaciones
@@ -4726,30 +4718,74 @@ ALGECIRAS LOGISTIC SOLUTIONS (ALS)
 📞 +34 956 58 13 16 · als@alsalgeciras.com
 OPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40`;
 
+  // Agrupar expediciones por buque
+  const porBuque = {};
+  exps.forEach(e=>{
+    const bn = e.buques?.nombre || '(Sin buque)';
+    if(!porBuque[bn]) porBuque[bn] = [];
+    porBuque[bn].push(e);
+  });
+
+  // Construir bloque de detalle — agrupado si hay más de un buque
+  let bloqueDetalle = '';
+  if(multiBuque){
+    // Primero el resumen por buques
+    bloqueDetalle += `${sep2}\nRESUMEN POR BUQUE\n${sep2}\n\n`;
+    Object.entries(porBuque).forEach(([bn, bExps])=>{
+      const bBultos = bExps.reduce((a,e)=>a+(e.bultos||0),0);
+      const bKilos  = bExps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+      bloqueDetalle += `  🚢 ${bn}\n`;
+      bloqueDetalle += `     ${bExps.length} expedición${bExps.length!==1?'es':''} · ${bBultos} bultos · ${bKilos} kg\n\n`;
+    });
+    bloqueDetalle += `${sep2}\nTOTAL GLOBAL: ${exps.length} expediciones · ${totalBultos} bultos · ${totalKilos} kg\n${sep2}\n`;
+
+    // Luego el detalle por buque
+    Object.entries(porBuque).forEach(([bn, bExps])=>{
+      const bBultos = bExps.reduce((a,e)=>a+(e.bultos||0),0);
+      const bKilos  = bExps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+      bloqueDetalle += `\n${sep}\n🚢 ${bn} — ${bExps.length} exp. · ${bBultos} btos · ${bKilos} kg\n${sep}\n\n`;
+      bExps.forEach((e,i)=>{
+        bloqueDetalle += `  ${i+1}. ${e.nº_expedicion}\n`;
+        bloqueDetalle += `     • Bultos:    ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg\n`;
+        bloqueDetalle += `     • Ubicación: ${e.ubicacion||'—'}\n`;
+        bloqueDetalle += `     • Estado:    ${e.estado_semaforo||'—'}\n`;
+        bloqueDetalle += `     • Trámite:   ${e.tramite_aduanero||'—'}\n`;
+        bloqueDetalle += `     • Status:    ${e.status_aduanero||'—'}\n`;
+        if(e.nº_mrn) bloqueDetalle += `     • MRN:       ${e.nº_mrn}\n`;
+        bloqueDetalle += '\n';
+      });
+    });
+  } else {
+    // Un solo buque — formato simple
+    bloqueDetalle += `${sep}\nDETALLE DE EXPEDICIONES\n${sep}\n\n`;
+    exps.forEach((e,i)=>{
+      bloqueDetalle += `  ${i+1}. ${e.nº_expedicion}\n`;
+      bloqueDetalle += `     • Bultos:    ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg\n`;
+      bloqueDetalle += `     • Ubicación: ${e.ubicacion||'—'}\n`;
+      bloqueDetalle += `     • Estado:    ${e.estado_semaforo||'—'}\n`;
+      bloqueDetalle += `     • Trámite:   ${e.tramite_aduanero||'—'}\n`;
+      bloqueDetalle += `     • Status:    ${e.status_aduanero||'—'}\n`;
+      if(e.nº_mrn) bloqueDetalle += `     • MRN:       ${e.nº_mrn}\n`;
+      bloqueDetalle += '\n';
+    });
+    bloqueDetalle += `${sep}\nTOTALES: ${totalBultos} bultos · ${totalKilos} kg\n${sep}`;
+  }
+
   const cuerpo =
 `Estimado cliente,
 
 Le comunicamos que las siguientes expediciones se encuentran bajo control logístico, documental y en trámite para su próximo embarque.
 
-BUQUE: ${buques}
+${multiBuque ? `BUQUES: ${buques}` : `BUQUE: ${buques}`}
 FECHA: ${fecha}
-RESUMEN: ${exps.length} expedición${exps.length!==1?'es':', '} · ${totalBultos} bultos · ${totalKilos} kg
+RESUMEN: ${exps.length} expedición${exps.length!==1?'es':''} · ${totalBultos} bultos · ${totalKilos} kg
 
-${sepLinea}
-DETALLE DE EXPEDICIONES
-${sepLinea}
-
-${detalle}
-
-${sepLinea}
-TOTALES: ${totalBultos} bultos · ${totalKilos} kg
-${sepLinea}
+${bloqueDetalle}
 
 Quedamos a su disposición para cualquier consulta relacionada con el despacho aduanero o la retirada de la mercancía.
 
 ${firma}`;
 
-  // Abrir directamente el cliente de correo
   if(!toEmail){ showToast('⚠️ No hay email configurado para las empresas seleccionadas'); return; }
   let _mailto = `mailto:${toEmail}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
   if(ccEmail) _mailto += `&cc=${encodeURIComponent(ccEmail)}`;
