@@ -622,62 +622,8 @@ async function loadTarifasDB(){
 }
 
 
-// ── AWB TRACKING — enlace al portal del carrier ──────────────
-// Prefijos AWB → URL directa del portal del carrier (con AWB pre-cargado)
-var AWB_PORTALS={
-  '001':'https://www.aacargo.com/track/?awb=',
-  '006':'https://www.lhcargo.com/track/track-shipment.html?awb=',
-  '014':'https://www.airfranceklm.com/en/cargo/tracking?awb=',
-  '020':'https://www.lhcargo.com/track/track-shipment.html?awb=',
-  '023':'https://www.unitedcargo.com/uc/tracking?awb=',
-  '052':'https://iberia.com/cargo/tracking?awb=',
-  '055':'https://www.airfranceklm.com/en/cargo/tracking?awb=',
-  '057':'https://www.airfranceklm.com/en/cargo/tracking?awb=',
-  '074':'https://www.aacargo.com/track/?awb=',
-  '083':'https://www.cathaycargo.com/en-us/track-and-trace.html?awb=',
-  '098':'https://www.iagcargo.com/en/tools/track-a-shipment?awb=',
-  '125':'https://www.iagcargo.com/en/tools/track-a-shipment?awb=',
-  '172':'https://skycargo.com/tracking?awb=',
-  '176':'https://cargo.etihad.com/tracking?awb=',
-  '180':'https://www.corendon.com/',
-  '235':'https://www.turkishcargo.com/en/track-shipment?awb=',
-  '618':'https://cargo.finnair.com/tracking?awb=',
-  '724':'https://iberia.com/cargo/tracking?awb='
-};
-function awbUrl(awb){
-  if(!awb||awb==='—'||awb==='') return '#';
-  var clean=awb.replace(/[\-\s]/g,'');
-  var prefix=clean.substring(0,3);
-  var number=clean.substring(3);
-  var formatted=prefix+'-'+number;
-  var base=AWB_PORTALS[prefix];
-  if(base){
-    // URL directa del carrier con AWB pre-cargado
-    return base.includes('?awb=') ? base+formatted : base;
-  }
-  // Fallback: track-trace con el número formateado en el campo de búsqueda
-  // Nota: track-trace pre-carga el número desde el hash de la URL
-  return 'https://www.track-trace.com/aircargo#'+formatted;
-}
-function abrirTrackingAWB(awb){
-  if(!awb||awb==='—'||awb==='') return;
-  var clean=awb.replace(/[\-\s]/g,'');
-  var prefix=clean.substring(0,3);
-  var number=clean.substring(3);
-  var base=AWB_PORTALS[prefix];
-  var url;
-  if(base){
-    url = base.includes('?awb=') ? base+prefix+'-'+number : base;
-  } else {
-    url = 'https://www.track-trace.com/aircargo#'+prefix+'-'+number;
-  }
-  window.open(url,'_blank');
-  var fmt=prefix+'-'+number;
-  if(navigator.clipboard){
-    navigator.clipboard.writeText(fmt).catch(function(){});
-  }
-  toast('✈️ '+fmt+' — abriendo tracking');
-}
+
+// ── CÁLCULOS ─────────────────────────────────────────────
 
 // ── CÁLCULOS ─────────────────────────────────────────────
 function diasFact(ll,rt,h){
@@ -751,7 +697,7 @@ async function init(){
       var action = btn.getAttribute('data-action');
       if(action==='edit') editEntrada(aid);
       else if(action==='del') delEntrada(aid);
-      else if(action==='awb') abrirTrackingAWB(btn.getAttribute('data-awb'));
+      
       return;
     }
     var tr = ev.target.closest('tr.tbl-row');
@@ -800,7 +746,7 @@ function miniTable(list){
   if(!list.length)return'<div class="empty">Sin entradas</div>';
   var rows=list.map(function(e){
     return'<tr class="tbl-row" data-id="'+e.id+'" style="cursor:pointer"><td class="fw" style="font-family:var(--mono)">'+
-      (e.awb||'—')+(e.awb?(' <a href="'+awbUrl(e.awb)+'" target="_blank" style="font-size:10px;color:var(--g400);text-decoration:none" title="Rastrear AWB">✈️</a>'):'')+' </td><td>'+(e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
+      (e.awb||'—')+' </td><td>'+(e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
       '<td><span class="badge bb">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+fd(e.fecha_llegada)+'</td><td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
       '<td style="font-weight:700;color:var(--b700)">'+fc(calcTotal(e))+'</td></tr>';
@@ -847,7 +793,7 @@ function renderRows(list){
     // Use data-id on tr — onclick delegated via JS, no inline quote nesting
     return'<tr'+bg+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="updateSel()"></label></td>'+
-      '<td class="fw" style="font-family:var(--mono);font-size:11px">'+( e.awb||'—')+(e.awb?(' <a href="'+awbUrl(e.awb)+'" target="_blank" style="font-size:10px;color:var(--g400);text-decoration:none" title="Rastrear AWB">✈️</a>'):'')+' </td>'+
+      '<td class="fw" style="font-family:var(--mono);font-size:11px">'+( e.awb||'—')+' </td>'+
       '<td style="cursor:pointer">'+( e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td>'+
       '<td class="sm" style="cursor:pointer">'+( e.buque||'—')+'</td>'+
       '<td><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
