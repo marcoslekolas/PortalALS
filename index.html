@@ -4575,74 +4575,89 @@ function _actualizarToolbarLote(){
 async function loteNotifCliente(){
   if(!_selExpLote.size){ showToast('Selecciona al menos una expedición'); return; }
   const ids = [..._selExpLote];
-  // Cargar expediciones seleccionadas con datos de empresa
   const {data:exps} = await sb.from('expediciones')
     .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,empresas(nombre,email_confronta,otros_emails),buques(nombre)')
     .in('id', ids);
   if(!exps?.length){ showToast('No se encontraron las expediciones'); return; }
 
-  // Agrupar por empresa para enviar un email por empresa con todas sus expediciones
-  const porEmpresa = {};
+  const plantilla = _emailPlantillas['notif_cliente'];
+  const totalBultos = exps.reduce((a,e)=>a+(e.bultos||0),0);
+  const totalKilos  = exps.reduce((a,e)=>a+(e.kilos||0),0);
+  const buques = [...new Set(exps.map(e=>e.buques?.nombre||'—'))].join(', ');
+  const expLines = exps.map(e=>
+    `  · ${e.nº_expedicion} — ${e.buques?.nombre||'—'} · ${e.bultos||0} btos · ${e.kilos||0} kg · ${e.ubicacion||'—'}`
+  ).join('\n');
+
+  // Recoger emails únicos de todas las empresas de la selección
+  const emailsSet = new Set();
+  const ccSet = new Set();
   exps.forEach(e=>{
-    const key = e.empresas?.email_confronta || '__sin_email__';
-    if(!porEmpresa[key]) porEmpresa[key] = {emp:e.empresas, exps:[]};
-    porEmpresa[key].exps.push(e);
+    if(e.empresas?.email_confronta) emailsSet.add(e.empresas.email_confronta);
+    (e.empresas?.otros_emails||[]).forEach(m=>{ if(m) ccSet.add(m); });
   });
+  // Los emails principales van en TO; los otros_emails van en CC
+  emailsSet.forEach(m=>ccSet.delete(m)); // evitar duplicados TO/CC
 
-  const sinEmail = porEmpresa['__sin_email__']?.exps||[];
-  delete porEmpresa['__sin_email__'];
+  const toEmail = [...emailsSet].join(',') || 'als@alsalgeciras.com';
+  const ccEmail = [...ccSet].join(',');
 
-  const numEmails = Object.keys(porEmpresa).length;
-  document.getElementById('m-title').textContent = `📧 Notificar clientes — ${ids.length} expediciones`;
+  const vars = {
+    '{{expedicion}}': exps.map(e=>e.nº_expedicion).join(', '),
+    '{{buque}}': buques,
+    '{{bultos}}': totalBultos,
+    '{{kilos}}': totalKilos,
+    '{{ubicacion}}': [...new Set(exps.map(e=>e.ubicacion||'—'))].join(', '),
+    '{{estado}}': [...new Set(exps.map(e=>e.estado_semaforo||'—'))].join(', '),
+    '{{fecha}}': new Date().toLocaleDateString('es-ES'),
+  };
+
+  let asunto = plantilla?.asunto || `Aviso mercancía — ${exps.length} expediciones`;
+  let cuerpo  = plantilla?.cuerpo ||
+    `Estimado cliente,\n\nLe informamos del estado de sus expediciones:\n\n${expLines}\n\nAtentamente,\nALGECIRAS LOGISTIC SOLUTIONS`;
+
+  Object.entries(vars).forEach(([k,v])=>{ asunto=asunto.replaceAll(k,v); cuerpo=cuerpo.replaceAll(k,v); });
+
+  // Si la plantilla no incluye el detalle de expediciones, añadirlo al final
+  if(!cuerpo.includes(exps[0]?.nº_expedicion)){
+    cuerpo += `\n\n--- Detalle de expediciones ---\n${expLines}`;
+  }
+
+  // Vista previa antes de abrir el cliente de correo
+  document.getElementById('m-title').textContent = `📧 Notificar cliente — ${exps.length} expedicion${exps.length!==1?'es':''}`;
   document.getElementById('m-body').innerHTML = `
-    <div class="info-box">Se enviará un email por empresa con sus expediciones seleccionadas.</div>
-    ${sinEmail.length?`<div style="background:var(--am50);border:1px solid var(--am200);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px">
-      ⚠️ <strong>${sinEmail.length} expedición(es)</strong> sin email de empresa configurado: ${sinEmail.map(e=>e.nº_expedicion).join(', ')}
-    </div>`:''}
-    <div style="font-size:13px;margin-bottom:12px">${numEmails} email${numEmails!==1?'s':''} a enviar:</div>
-    ${Object.entries(porEmpresa).map(([email,d])=>`
-      <div style="border:1px solid var(--g200);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:12px">
-        <div style="font-weight:700">${d.emp?.nombre||email}</div>
-        <div style="color:var(--b600);margin:2px 0">${email}</div>
-        <div style="color:var(--g500)">${d.exps.map(e=>e.nº_expedicion).join(', ')}</div>
-      </div>`).join('')}`;
+    <div class="info-box">Se abrirá <strong>un único email</strong> con las ${exps.length} expediciones seleccionadas.</div>
+    <div class="fg2"><label class="fl2">Para</label>
+      <input id="lnc-to" class="fi" value="${toEmail}" placeholder="email@empresa.com">
+    </div>
+    ${ccEmail?`<div class="fg2"><label class="fl2">CC</label>
+      <input id="lnc-cc" class="fi" value="${ccEmail}">
+    </div>`:'<div class="fg2"><label class="fl2">CC (opcional)</label><input id="lnc-cc" class="fi" placeholder="cc@empresa.com"></div>'}
+    <div class="fg2"><label class="fl2">Asunto</label>
+      <input id="lnc-asunto" class="fi" value="${asunto.replace(/"/g,'&quot;')}">
+    </div>
+    <div class="fg2"><label class="fl2">Cuerpo</label>
+      <textarea id="lnc-cuerpo" class="fi" style="min-height:200px;font-size:12px;font-family:var(--mono);line-height:1.6">${cuerpo}</textarea>
+    </div>
+    <div style="font-size:11px;color:var(--g400);margin-top:4px">
+      ${exps.length} expedición(es) · ${totalBultos} bultos · ${totalKilos} kg · ${buques}
+    </div>`;
   document.getElementById('m-foot').innerHTML = `
     <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
-    <button class="btn btn-p" onclick="_ejecutarLoteNotifCliente()">📧 Enviar ${numEmails} email${numEmails!==1?'s':''}</button>`;
-  // Guardar datos para el envío
-  window._loteNotifData = porEmpresa;
+    <button class="btn btn-p" onclick="_enviarLoteNotifCliente()">📧 Abrir en cliente de correo</button>`;
   document.getElementById('mo').classList.add('open');
 }
 
-async function _ejecutarLoteNotifCliente(){
-  const porEmpresa = window._loteNotifData||{};
-  const plantilla = _emailPlantillas['notif_cliente'];
-  let enviados = 0;
-  for(const [email, d] of Object.entries(porEmpresa)){
-    const expLines = d.exps.map(e=>`  · ${e.nº_expedicion} — ${e.buques?.nombre||'—'} · ${e.bultos||0}b · ${e.kilos||0}kg · ${e.ubicacion||'—'}`).join('\n');
-    const vars = {
-      '{{expedicion}}': d.exps.map(e=>e.nº_expedicion).join(', '),
-      '{{buque}}': [...new Set(d.exps.map(e=>e.buques?.nombre||'—'))].join(', '),
-      '{{bultos}}': d.exps.reduce((a,e)=>a+(e.bultos||0),0),
-      '{{kilos}}': d.exps.reduce((a,e)=>a+(e.kilos||0),0),
-      '{{ubicacion}}': [...new Set(d.exps.map(e=>e.ubicacion||'—'))].join(', '),
-      '{{estado}}': [...new Set(d.exps.map(e=>e.estado_semaforo||'—'))].join(', '),
-      '{{fecha}}': new Date().toLocaleDateString('es-ES'),
-    };
-    let asunto = plantilla?.asunto || `Aviso mercancía — ${d.exps.map(e=>e.nº_expedicion).join(', ')}`;
-    let cuerpo = plantilla?.cuerpo || `Estimado cliente,\n\nLe informamos del estado de sus expediciones:\n\n${expLines}\n\nAtentamente,\nALS`;
-    Object.entries(vars).forEach(([k,v])=>{ asunto=asunto.replaceAll(k,v); cuerpo=cuerpo.replaceAll(k,v); });
-    const otros = d.emp?.otros_emails||[];
-    const cc = otros.filter(Boolean).join(',');
-    let mailto = `mailto:${email}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
-    if(cc) mailto += `&cc=${encodeURIComponent(cc)}`;
-    window.open(mailto,'_blank');
-    enviados++;
-    // Pequeña pausa entre aperturas para que el gestor de correo las procese
-    await new Promise(r=>setTimeout(r,400));
-  }
+function _enviarLoteNotifCliente(){
+  const to     = document.getElementById('lnc-to')?.value?.trim()||'';
+  const cc     = document.getElementById('lnc-cc')?.value?.trim()||'';
+  const asunto = document.getElementById('lnc-asunto')?.value||'';
+  const cuerpo = document.getElementById('lnc-cuerpo')?.value||'';
+  if(!to){ showToast('⚠️ Introduce al menos un destinatario'); return; }
+  let mailto = `mailto:${to}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+  if(cc) mailto += `&cc=${encodeURIComponent(cc)}`;
+  window.open(mailto,'_blank');
   closeModal();
-  showToast(`✅ ${enviados} email${enviados!==1?'s':''} abierto${enviados!==1?'s':''} en el cliente de correo`);
+  showToast('📧 Email abierto en el cliente de correo');
 }
 
 async function loteCambiarUbicacion(){
