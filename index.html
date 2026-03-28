@@ -4683,43 +4683,16 @@ Quedamos a su disposición para cualquier consulta relacionada con el despacho a
 
 ${firma}`;
 
-  // Vista previa editable
-  document.getElementById('m-title').textContent = `📧 Notificar cliente — ${exps.length} expedicion${exps.length!==1?'es':''}`;
-  document.getElementById('m-body').innerHTML = `
-    <div class="info-box">Revisa y ajusta el email antes de abrirlo en el cliente de correo.</div>
-    <div class="fg2"><label class="fl2">Para</label>
-      <input id="lnc-to" class="fi" value="${toEmail}" placeholder="email@empresa.com">
-    </div>
-    <div class="fg2"><label class="fl2">CC (opcional)</label>
-      <input id="lnc-cc" class="fi" value="${ccEmail}" placeholder="cc@empresa.com">
-    </div>
-    <div class="fg2"><label class="fl2">Asunto</label>
-      <input id="lnc-asunto" class="fi" value="${asunto.replace(/"/g,'&quot;')}">
-    </div>
-    <div class="fg2"><label class="fl2">Cuerpo</label>
-      <textarea id="lnc-cuerpo" class="fi" style="min-height:260px;font-size:12px;font-family:var(--mono);line-height:1.6">${cuerpo.replace(/</g,'&lt;')}</textarea>
-    </div>
-    <div style="font-size:11px;color:var(--g400);margin-top:4px">
-      ${empresaNombre} · ${buques} · ${totalBultos} btos · ${totalKilos} kg
-    </div>`;
-  document.getElementById('m-foot').innerHTML = `
-    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
-    <button class="btn btn-p" onclick="_enviarLoteNotifCliente()">📧 Abrir en cliente de correo</button>`;
-  document.getElementById('mo').classList.add('open');
+  // Abrir directamente el cliente de correo
+  if(!toEmail){ showToast('⚠️ No hay email configurado para las empresas seleccionadas'); return; }
+  let _mailto = `mailto:${toEmail}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+  if(ccEmail) _mailto += `&cc=${encodeURIComponent(ccEmail)}`;
+  const _a = document.createElement('a'); _a.href=_mailto; _a.target='_blank';
+  document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
+  showToast('📧 Abriendo cliente de correo…');
 }
 
-function _enviarLoteNotifCliente(){
-  const to     = document.getElementById('lnc-to')?.value?.trim()||'';
-  const cc     = document.getElementById('lnc-cc')?.value?.trim()||'';
-  const asunto = document.getElementById('lnc-asunto')?.value||'';
-  const cuerpo = document.getElementById('lnc-cuerpo')?.value||'';
-  if(!to){ showToast('⚠️ Introduce al menos un destinatario'); return; }
-  let mailto = `mailto:${to}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
-  if(cc) mailto += `&cc=${encodeURIComponent(cc)}`;
-  window.open(mailto,'_blank');
-  closeModal();
-  showToast('📧 Email abierto en el cliente de correo');
-}
+
 
 async function loteCambiarUbicacion(){
   if(!_selExpLote.size){ showToast('Selecciona al menos una expedición'); return; }
@@ -7938,30 +7911,15 @@ Quedamos a su disposición para cualquier consulta relacionada con el despacho a
 
 ${firma}`;
 
+  // Abrir directamente el cliente de correo
+  if(!toEmail){ showToast('⚠️ No hay email configurado para las empresas de este buque'); return; }
+  let _mailto = `mailto:${toEmail}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+  if(ccEmail) _mailto += `&cc=${encodeURIComponent(ccEmail)}`;
   closeModal();
   setTimeout(()=>{
-    document.getElementById('m-title').textContent = `📨 Notif. cliente — ${buqueNombre}`;
-    document.getElementById('m-body').innerHTML = `
-      <div class="info-box">Revisa y ajusta el email antes de abrirlo en el cliente de correo.</div>
-      <div class="fg2"><label class="fl2">Para</label>
-        <input id="lnc-to" class="fi" value="${toEmail}" placeholder="email@empresa.com">
-      </div>
-      <div class="fg2"><label class="fl2">CC (opcional)</label>
-        <input id="lnc-cc" class="fi" value="${ccEmail}" placeholder="cc@empresa.com">
-      </div>
-      <div class="fg2"><label class="fl2">Asunto</label>
-        <input id="lnc-asunto" class="fi" value="${asunto.replace(/"/g,'&quot;')}">
-      </div>
-      <div class="fg2"><label class="fl2">Cuerpo</label>
-        <textarea id="lnc-cuerpo" class="fi" style="min-height:260px;font-size:12px;font-family:var(--mono);line-height:1.6">${cuerpo.replace(/</g,'&lt;')}</textarea>
-      </div>
-      <div style="font-size:11px;color:var(--g400);margin-top:4px">
-        ${empresaNombre} · ${buqueNombre} · ${exps.length} exp. · ${totalBultos} btos · ${totalKilos} kg
-      </div>`;
-    document.getElementById('m-foot').innerHTML = `
-      <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-p" onclick="_enviarLoteNotifCliente()">📧 Abrir en cliente de correo</button>`;
-    document.getElementById('mo').classList.add('open');
+    const _a = document.createElement('a'); _a.href=_mailto; _a.target='_blank';
+    document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
+    showToast('📧 Abriendo cliente de correo…');
   }, 100);
 }
 
