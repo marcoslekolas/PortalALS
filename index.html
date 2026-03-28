@@ -1233,9 +1233,21 @@ textarea.fi{resize:vertical;min-height:72px}
         <!-- Filtros multi-campo -->
         <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <div class="sbar" style="flex:2;min-width:180px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" id="fil-q" placeholder="Referencia, MRN, ubicación…" oninput="filtrarExp()"></div>
-          <select class="fi fs" style="width:auto;min-width:130px" onchange="filtrarExp()" id="fil-buque">
-            <option value="">Todos los buques</option>
-          </select>
+          <!-- Multi-select buques -->
+          <div id="fil-buque-wrap" style="position:relative;min-width:150px">
+            <button type="button" id="fil-buque-btn" onclick="toggleBuqueDropdown()"
+              class="fi fs" style="width:100%;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:6px;cursor:pointer;background:var(--w)">
+              <span id="fil-buque-lbl" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">Todos los buques</span>
+              <span style="font-size:10px;color:var(--g400);flex-shrink:0">▾</span>
+            </button>
+            <div id="fil-buque-drop" style="display:none;position:absolute;top:100%;left:0;min-width:220px;max-width:320px;background:var(--w);border:1px solid var(--g200);border-radius:var(--r);box-shadow:var(--sh1);z-index:200;max-height:260px;overflow-y:auto;padding:4px 0">
+              <div style="padding:6px 10px;border-bottom:1px solid var(--g100);display:flex;gap:8px">
+                <button type="button" onclick="selTodosBuques(true)" style="font-size:11px;color:var(--b600);background:none;border:none;cursor:pointer;padding:0">Todos</button>
+                <button type="button" onclick="selTodosBuques(false)" style="font-size:11px;color:var(--g500);background:none;border:none;cursor:pointer;padding:0">Ninguno</button>
+              </div>
+              <div id="fil-buque-opts"></div>
+            </div>
+          </div>
           <select class="fi fs" style="width:auto;min-width:130px" onchange="filtrarExp()" id="fil-empresa">
             <option value="">Todas las empresas</option>
           </select>
@@ -4503,20 +4515,64 @@ async function loadExp(){
 }
 
 function _poblarFiltrosExp(){
-  // Buques únicos
+  // Multi-select buques
   const buques=[...new Set(allE.map(e=>e.buques?.nombre).filter(Boolean))].sort();
-  const selB=document.getElementById('fil-buque');
-  if(selB){
-    const cur=selB.value;
-    selB.innerHTML='<option value="">Todos los buques</option>'+buques.map(b=>`<option ${b===cur?'selected':''}>${b}</option>`).join('');
+  const opts = document.getElementById('fil-buque-opts');
+  if(opts){
+    opts.innerHTML = buques.map(b=>`
+      <label style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:13px;transition:background .1s"
+        onmouseenter="this.style.background='var(--g50)'" onmouseleave="this.style.background=''">
+        <input type="checkbox" class="fil-buque-chk" value="${b}"
+          style="accent-color:var(--b600);width:15px;height:15px;cursor:pointer;flex-shrink:0"
+          onchange="onBuqueChkChange()">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b}</span>
+      </label>`).join('');
   }
-  // Empresas únicas
+  // Select empresas
   const empresas=[...new Set(allE.map(e=>e.empresas?.nombre).filter(Boolean))].sort();
   const selE=document.getElementById('fil-empresa');
   if(selE){
     const cur=selE.value;
     selE.innerHTML='<option value="">Todas las empresas</option>'+empresas.map(e=>`<option ${e===cur?'selected':''}>${e}</option>`).join('');
   }
+}
+
+function toggleBuqueDropdown(){
+  const drop = document.getElementById('fil-buque-drop');
+  if(!drop) return;
+  const open = drop.style.display !== 'none';
+  drop.style.display = open ? 'none' : '';
+  if(!open){
+    // Cerrar al clicar fuera
+    setTimeout(()=>{
+      function cerrar(e){ if(!document.getElementById('fil-buque-wrap')?.contains(e.target)){ drop.style.display='none'; document.removeEventListener('click',cerrar); } }
+      document.addEventListener('click', cerrar);
+    }, 50);
+  }
+}
+
+function onBuqueChkChange(){
+  _actualizarLabelBuque();
+  filtrarExp();
+}
+
+function _actualizarLabelBuque(){
+  const checks = [...document.querySelectorAll('.fil-buque-chk:checked')];
+  const lbl = document.getElementById('fil-buque-lbl');
+  if(!lbl) return;
+  if(!checks.length) lbl.textContent = 'Todos los buques';
+  else if(checks.length === 1) lbl.textContent = checks[0].value;
+  else lbl.textContent = `${checks.length} buques`;
+}
+
+function getBuquesFiltro(){
+  return [...document.querySelectorAll('.fil-buque-chk:checked')].map(c=>c.value);
+}
+
+function selTodosBuques(sel){
+  document.querySelectorAll('.fil-buque-chk').forEach(c=>c.checked=sel);
+  _actualizarLabelBuque();
+  filtrarExp();
 }
 function renderE(list){
   const hoy=new Date();
@@ -4546,7 +4602,7 @@ let _expFiltradas = []; // lista actualmente visible
 
 function filtrarExp(){
   const q   = (document.getElementById('fil-q')?.value||'').toLowerCase().trim();
-  const buq = document.getElementById('fil-buque')?.value||'';
+  const buqs= getBuquesFiltro(); // array, vacío = todos
   const emp = document.getElementById('fil-empresa')?.value||'';
   const est = document.getElementById('fil-est')?.value||'';
   const sta = document.getElementById('fil-sta')?.value||'';
@@ -4555,7 +4611,7 @@ function filtrarExp(){
   _expFiltradas = allE.filter(e=>{
     if(q && !([e.nº_expedicion,e.buques?.nombre,e.empresas?.nombre,e.nº_mrn,e.ubicacion,e.status_aduanero,e.tramite_aduanero]
       .map(v=>(v||'').toLowerCase()).some(v=>v.includes(q)))) return false;
-    if(buq && e.buques?.nombre!==buq) return false;
+    if(buqs.length && !buqs.includes(e.buques?.nombre)) return false;
     if(emp && e.empresas?.nombre!==emp) return false;
     if(est && e.estado_semaforo!==est) return false;
     if(sta && e.status_aduanero!==sta) return false;
@@ -4569,9 +4625,11 @@ function filtrarExp(){
 }
 
 function resetFiltrosExp(){
-  ['fil-q','fil-buque','fil-empresa','fil-est','fil-sta','fil-tra','fil-ubic'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el){ el.nodeName==='INPUT'?el.value='':el.value=''; }
+  document.getElementById('fil-q').value='';
+  document.querySelectorAll('.fil-buque-chk').forEach(c=>c.checked=false);
+  _actualizarLabelBuque();
+  ['fil-empresa','fil-est','fil-sta','fil-tra','fil-ubic'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
   });
   filtrarExp();
 }
@@ -4639,7 +4697,9 @@ async function loteNotifCliente(){
   const ccEmail  = [...ccSet].join(',');
 
   // Asunto con buque
-  const asunto = `Aviso mercancía en almacén — Buque ${buques} · ${exps.length} expedición${exps.length!==1?'es':''}`;
+  const asunto = buques.includes(',')
+    ? `Aviso mercancía en almacén — Buques: ${buques} · ${exps.length} expedición${exps.length!==1?'es':''}`
+    : `Aviso mercancía en almacén — Buque ${buques} · ${exps.length} expedición${exps.length!==1?'es':''}`;
 
   // Detalle por expedición — tabla de texto
   const sepLinea = '─'.repeat(52);
