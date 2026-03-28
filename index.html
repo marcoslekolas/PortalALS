@@ -4617,70 +4617,90 @@ async function loteNotifCliente(){
   if(!_selExpLote.size){ showToast('Selecciona al menos una expedición'); return; }
   const ids = [..._selExpLote];
   const {data:exps} = await sb.from('expediciones')
-    .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,empresas(nombre,email_confronta,otros_emails),buques(nombre)')
+    .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,tramite_aduanero,status_aduanero,nº_mrn,empresas(nombre,email_confronta,otros_emails),buques(nombre)')
     .in('id', ids);
   if(!exps?.length){ showToast('No se encontraron las expediciones'); return; }
 
-  const plantilla = _emailPlantillas['notif_cliente'];
   const totalBultos = exps.reduce((a,e)=>a+(e.bultos||0),0);
-  const totalKilos  = exps.reduce((a,e)=>a+(e.kilos||0),0);
-  const buques = [...new Set(exps.map(e=>e.buques?.nombre||'—'))].join(', ');
-  const expLines = exps.map(e=>
-    `  · ${e.nº_expedicion} — ${e.buques?.nombre||'—'} · ${e.bultos||0} btos · ${e.kilos||0} kg · ${e.ubicacion||'—'}`
-  ).join('\n');
+  const totalKilos  = exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+  const buques      = [...new Set(exps.map(e=>e.buques?.nombre).filter(Boolean))].join(', ');
+  const empresaNombre = [...new Set(exps.map(e=>e.empresas?.nombre).filter(Boolean))].join(', ') || 'cliente';
+  const fecha       = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
 
-  // Recoger emails únicos de todas las empresas de la selección
+  // Recoger emails
   const emailsSet = new Set();
   const ccSet = new Set();
   exps.forEach(e=>{
     if(e.empresas?.email_confronta) emailsSet.add(e.empresas.email_confronta);
     (e.empresas?.otros_emails||[]).forEach(m=>{ if(m) ccSet.add(m); });
   });
-  // Los emails principales van en TO; los otros_emails van en CC
-  emailsSet.forEach(m=>ccSet.delete(m)); // evitar duplicados TO/CC
+  emailsSet.forEach(m=>ccSet.delete(m));
+  const toEmail  = [...emailsSet].join(',') || '';
+  const ccEmail  = [...ccSet].join(',');
 
-  const toEmail = [...emailsSet].join(',') || 'als@alsalgeciras.com';
-  const ccEmail = [...ccSet].join(',');
+  // Asunto con buque
+  const asunto = `Aviso mercancía en almacén — Buque ${buques} · ${exps.length} expedición${exps.length!==1?'es':''}`;
 
-  const vars = {
-    '{{expedicion}}': exps.map(e=>e.nº_expedicion).join(', '),
-    '{{buque}}': buques,
-    '{{bultos}}': totalBultos,
-    '{{kilos}}': totalKilos,
-    '{{ubicacion}}': [...new Set(exps.map(e=>e.ubicacion||'—'))].join(', '),
-    '{{estado}}': [...new Set(exps.map(e=>e.estado_semaforo||'—'))].join(', '),
-    '{{fecha}}': new Date().toLocaleDateString('es-ES'),
-  };
+  // Detalle por expedición — tabla de texto
+  const sepLinea = '─'.repeat(52);
+  const detalle = exps.map((e,i)=>`  ${i+1}. ${e.nº_expedicion}
+     • Buque:       ${e.buques?.nombre||'—'}
+     • Bultos:      ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg
+     • Ubicación:   ${e.ubicacion||'—'}
+     • Estado:      ${e.estado_semaforo||'—'}
+     • Trámite:     ${e.tramite_aduanero||'—'}
+     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}`
+  ).join('\n\n');
 
-  let asunto = plantilla?.asunto || `Aviso mercancía — ${exps.length} expediciones`;
-  let cuerpo  = plantilla?.cuerpo ||
-    `Estimado cliente,\n\nLe informamos del estado de sus expediciones:\n\n${expLines}\n\nAtentamente,\nALGECIRAS LOGISTIC SOLUTIONS`;
+  // Cuerpo completo con firma de la plantilla
+  const firma = `Atentamente,
 
-  Object.entries(vars).forEach(([k,v])=>{ asunto=asunto.replaceAll(k,v); cuerpo=cuerpo.replaceAll(k,v); });
+Departamento de Operaciones
+ALGECIRAS LOGISTIC SOLUTIONS (ALS)
+📞 +34 956 58 13 16 · als@alsalgeciras.com
+OPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40`;
 
-  // Si la plantilla no incluye el detalle de expediciones, añadirlo al final
-  if(!cuerpo.includes(exps[0]?.nº_expedicion)){
-    cuerpo += `\n\n--- Detalle de expediciones ---\n${expLines}`;
-  }
+  const cuerpo =
+`Estimado cliente,
 
-  // Vista previa antes de abrir el cliente de correo
+Le comunicamos que las siguientes expediciones se encuentran bajo control logístico, documental y en trámite para su próximo embarque.
+
+BUQUE: ${buques}
+FECHA: ${fecha}
+RESUMEN: ${exps.length} expedición${exps.length!==1?'es':', '} · ${totalBultos} bultos · ${totalKilos} kg
+
+${sepLinea}
+DETALLE DE EXPEDICIONES
+${sepLinea}
+
+${detalle}
+
+${sepLinea}
+TOTALES: ${totalBultos} bultos · ${totalKilos} kg
+${sepLinea}
+
+Quedamos a su disposición para cualquier consulta relacionada con el despacho aduanero o la retirada de la mercancía.
+
+${firma}`;
+
+  // Vista previa editable
   document.getElementById('m-title').textContent = `📧 Notificar cliente — ${exps.length} expedicion${exps.length!==1?'es':''}`;
   document.getElementById('m-body').innerHTML = `
-    <div class="info-box">Se abrirá <strong>un único email</strong> con las ${exps.length} expediciones seleccionadas.</div>
+    <div class="info-box">Revisa y ajusta el email antes de abrirlo en el cliente de correo.</div>
     <div class="fg2"><label class="fl2">Para</label>
       <input id="lnc-to" class="fi" value="${toEmail}" placeholder="email@empresa.com">
     </div>
-    ${ccEmail?`<div class="fg2"><label class="fl2">CC</label>
-      <input id="lnc-cc" class="fi" value="${ccEmail}">
-    </div>`:'<div class="fg2"><label class="fl2">CC (opcional)</label><input id="lnc-cc" class="fi" placeholder="cc@empresa.com"></div>'}
+    <div class="fg2"><label class="fl2">CC (opcional)</label>
+      <input id="lnc-cc" class="fi" value="${ccEmail}" placeholder="cc@empresa.com">
+    </div>
     <div class="fg2"><label class="fl2">Asunto</label>
       <input id="lnc-asunto" class="fi" value="${asunto.replace(/"/g,'&quot;')}">
     </div>
     <div class="fg2"><label class="fl2">Cuerpo</label>
-      <textarea id="lnc-cuerpo" class="fi" style="min-height:200px;font-size:12px;font-family:var(--mono);line-height:1.6">${cuerpo}</textarea>
+      <textarea id="lnc-cuerpo" class="fi" style="min-height:260px;font-size:12px;font-family:var(--mono);line-height:1.6">${cuerpo.replace(/</g,'&lt;')}</textarea>
     </div>
     <div style="font-size:11px;color:var(--g400);margin-top:4px">
-      ${exps.length} expedición(es) · ${totalBultos} bultos · ${totalKilos} kg · ${buques}
+      ${empresaNombre} · ${buques} · ${totalBultos} btos · ${totalKilos} kg
     </div>`;
   document.getElementById('m-foot').innerHTML = `
     <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
