@@ -7829,41 +7829,20 @@ async function openBuque(id){
     <hr class="fdiv">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
       <div style="font-size:13px;font-weight:700;color:var(--g900)">Expediciones (${(exps||[]).length})</div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
-          <input type="checkbox" id="chk-all-bq" style="accent-color:var(--b600);width:16px;height:16px" onchange="toggleTodasExpBuque(this)">
-          <span style="color:var(--g600)">Selec. todas</span>
-        </label>
-        <span id="bq-sel-count" style="font-size:12px;color:var(--b600);font-weight:700;display:none"></span>
-        <button id="bq-btn-notif" class="btn btn-s btn-sm" style="display:none" onclick="notifClienteBuque()">📧 Notif. cliente</button>
-        <button class="btn btn-p btn-sm" onclick="abrirExpEnBuque('${b.id}','${b.nombre}')">+ Nueva expedición</button>
-      </div>
+      <button class="btn btn-p btn-sm" onclick="abrirExpEnBuque('${b.id}','${b.nombre}')">+ Nueva expedición</button>
     </div>
     <input type="hidden" id="bq-modal-nombre" value="${(b.nombre||'').replace(/"/g,'&quot;')}">
-    <input type="hidden" id="bq-modal-exps" value="${JSON.stringify((exps||[]).map(e=>({id:e.id,ref:e.nº_expedicion,bultos:e.bultos,kilos:e.kilos,ubicacion:e.ubicacion,estado:e.estado_semaforo,tramite:e.tramite_aduanero,status:e.status_aduanero,mrn:e.nº_mrn}))).replace(/"/g,'&quot;')}">
-    <div id="bq-exp-list">
-    ${(exps||[]).map(e=>`
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--g200);border-radius:var(--r);margin-bottom:5px;transition:background .12s" onmouseenter="this.style.background='var(--g50)'" onmouseleave="this.style.background=''">
-        <label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0" onclick="event.stopPropagation()">
-          <input type="checkbox" class="bq-exp-chk" data-id="${e.id}" style="accent-color:var(--b600);width:18px;height:18px;cursor:pointer" onchange="toggleExpBuque()">
-        </label>
-        <div style="flex:1;cursor:pointer;min-width:0" onclick="openExpDesdeBuque('${e.id}','${b.id}')">
-          <div style="font-weight:600;font-size:13px">${e.nº_expedicion}</div>
-          <div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
-          ${bdg(e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo)}
-          ${(e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url)?'<span title="Tiene fotos" style="font-size:11px">📸</span>':''}
-        </div>
-      </div>`).join('')||'<div class="empty" style="padding:20px"><div class="empty-txt">Sin expediciones</div></div>'}
-    </div>`;
+    ${(exps||[]).map(e=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid var(--g200);border-radius:var(--r);margin-bottom:5px;cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--g50)'" onmouseleave="this.style.background=''" onclick="openExpDesdeBuque('${e.id}','${b.id}')">
+      <div><div style="font-weight:600;font-size:13px">${e.nº_expedicion}</div><div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div></div>
+      ${bdg(e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo)}${(e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url)?'<span title="Tiene fotos" style="font-size:11px;margin-left:4px">📸</span>':''}
+    </div>`).join('')||'<div class="empty" style="padding:20px"><div class="empty-txt">Sin expediciones</div></div>'}`;
   // Info facturación en ficha de buque
   const factBadge = b.email_facturacion_sent
     ? `<span class="badge bg" title="Email enviado el ${b.email_facturacion_fecha ? new Date(b.email_facturacion_fecha).toLocaleDateString('es-ES') : '—'}">📧 Email fact. ${b.email_facturacion_fecha ? new Date(b.email_facturacion_fecha).toLocaleDateString('es-ES') : ''}</span>`
     : (b.estado_operacion==='Embarcado' ? '<span class="badge bb">⏳ Fact. pendiente</span>' : '');
   const factEstado = b.estado_facturacion==='facturado' ? '<span class="badge bg" style="margin-left:4px">✅ Facturado</span>' : '';
 
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="notifClienteBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📨 Notif. cliente</button>`:''} ${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button>`;
   // Añadir badge de facturación en el modal body si procede
   if(factBadge||factEstado){
     const mbody = document.getElementById('m-body');
@@ -7893,34 +7872,15 @@ async function openExpDesdeBuque(expId,buqueId){
   },60);
 }
 
-// ── Selección y notificación cliente desde ficha buque ────────────
-function toggleExpBuque(){
-  const checks = document.querySelectorAll('.bq-exp-chk');
-  const sel = [...checks].filter(c=>c.checked).length;
-  const countEl = document.getElementById('bq-sel-count');
-  const btnNotif = document.getElementById('bq-btn-notif');
-  const chkAll = document.getElementById('chk-all-bq');
-  if(countEl) { countEl.textContent = sel>0 ? `${sel} sel.` : ''; countEl.style.display = sel>0?'':'none'; }
-  if(btnNotif) btnNotif.style.display = sel>0 ? '' : 'none';
-  if(chkAll) chkAll.indeterminate = sel>0 && sel<checks.length;
-}
-
-function toggleTodasExpBuque(chk){
-  document.querySelectorAll('.bq-exp-chk').forEach(c=>c.checked=chk.checked);
-  toggleExpBuque();
-}
-
-async function notifClienteBuque(){
-  // Obtener IDs seleccionados
-  const ids = [...document.querySelectorAll('.bq-exp-chk:checked')].map(c=>c.dataset.id);
-  if(!ids.length){ showToast('Selecciona al menos una expedición'); return; }
-
-  const buqueNombre = document.getElementById('bq-modal-nombre')?.value || '';
-  // Cargar datos completos de las expediciones seleccionadas desde BD
+// ── Notificación cliente desde ficha buque ────────────────────────
+async function notifClienteBuque(buqueId, buqueNombre){
+  showToast('⏳ Cargando expediciones…');
   const {data:exps} = await sb.from('expediciones')
     .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,tramite_aduanero,status_aduanero,nº_mrn,empresas(nombre,email_confronta,otros_emails),buques(nombre)')
-    .in('id', ids);
-  if(!exps?.length){ showToast('Error cargando expediciones'); return; }
+    .eq('buque_id', buqueId)
+    .neq('estado_semaforo','🚢 EMBARCADO');
+
+  if(!exps?.length){ showToast('No hay expediciones activas para este buque'); return; }
 
   const totalBultos = exps.reduce((a,e)=>a+(e.bultos||0),0);
   const totalKilos  = exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
@@ -7939,10 +7899,9 @@ async function notifClienteBuque(){
   const ccEmail = [...ccSet].join(',');
 
   const asunto = `Aviso mercancía en almacén — Buque ${buqueNombre} · ${exps.length} expedición${exps.length!==1?'es':''}`;
-
   const sepLinea = '─'.repeat(52);
   const detalle = exps.map((e,i)=>`  ${i+1}. ${e.nº_expedicion}
-     • Buque:       ${e.buques?.nombre||buqueNombre||'—'}
+     • Buque:       ${buqueNombre}
      • Bultos:      ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg
      • Ubicación:   ${e.ubicacion||'—'}
      • Estado:      ${e.estado_semaforo||'—'}
@@ -7979,10 +7938,9 @@ Quedamos a su disposición para cualquier consulta relacionada con el despacho a
 
 ${firma}`;
 
-  // Cerrar ficha buque y abrir modal email
   closeModal();
   setTimeout(()=>{
-    document.getElementById('m-title').textContent = `📧 Notificar cliente — ${buqueNombre}`;
+    document.getElementById('m-title').textContent = `📨 Notif. cliente — ${buqueNombre}`;
     document.getElementById('m-body').innerHTML = `
       <div class="info-box">Revisa y ajusta el email antes de abrirlo en el cliente de correo.</div>
       <div class="fg2"><label class="fl2">Para</label>
@@ -7998,7 +7956,7 @@ ${firma}`;
         <textarea id="lnc-cuerpo" class="fi" style="min-height:260px;font-size:12px;font-family:var(--mono);line-height:1.6">${cuerpo.replace(/</g,'&lt;')}</textarea>
       </div>
       <div style="font-size:11px;color:var(--g400);margin-top:4px">
-        ${empresaNombre} · ${buqueNombre} · ${totalBultos} btos · ${totalKilos} kg
+        ${empresaNombre} · ${buqueNombre} · ${exps.length} exp. · ${totalBultos} btos · ${totalKilos} kg
       </div>`;
     document.getElementById('m-foot').innerHTML = `
       <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
