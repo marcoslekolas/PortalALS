@@ -1291,7 +1291,13 @@ textarea.fi{resize:vertical;min-height:72px}
           <th>Referencia</th><th>Buque</th><th>Empresa</th><th>Carga</th><th>Estado</th><th>Status Adua.</th><th>Trámite</th><th>Ubic.</th><th>F. Máx. Desp.</th>
         </tr></thead><tbody id="exp-tbody"></tbody></table></div>
       </div>
-      <div class="view" id="view-kanban"><div class="kb-board" id="kb-board"></div></div>
+      <div class="view" id="view-kanban">
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <div class="sbar" style="flex:1;min-width:180px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" id="kb-q" placeholder="Filtrar por buque…" oninput="filtrarKanban(this.value)"></div>
+          <span id="kb-count" style="font-size:12px;color:var(--g500)"></span>
+        </div>
+        <div class="kb-board" id="kb-board"></div>
+      </div>
       <div class="view" id="view-calendario">
         <!-- Leyenda de estados -->
         <div class="cal-legend">
@@ -4846,7 +4852,6 @@ async function loadKanban(){
       else if(e.estado_carga==='🚛 CARGADO CAMIÓN') e.estado_semaforo='🚛 CARGADO CAMIÓN';
       else e.estado_semaforo='⏳ EN TRÁNSITO';
     }
-    // Si estado_carga es cargado camión, forzar semaforo
     if(e.estado_carga==='🚛 CARGADO CAMIÓN') e.estado_semaforo='🚛 CARGADO CAMIÓN';
   });
 
@@ -4859,6 +4864,13 @@ async function loadKanban(){
     bMap[e.buque_id].exps.push(e);
   });
 
+  // Guardar para filtrado sin recargar
+  window._kbData = Object.values(bMap).filter(b=>b.exps.length>0);
+  // Limpiar filtro al recargar
+  const kbQ = document.getElementById('kb-q');
+  if(kbQ) kbQ.value='';
+  renderKanban(window._kbData);
+
   const ESTADOS=[
     {key:'⏳ EN TRÁNSITO',          lbl:'En tránsito',  icon:'⏳', col:'var(--b500)'},
     {key:'⌛ ESPERANDO ALMACÉN',     lbl:'Esp. almacén', icon:'⌛', col:'var(--b400)'},
@@ -4867,9 +4879,35 @@ async function loadKanban(){
     {key:'✅ AUTORIZADO',           lbl:'Autorizado',    icon:'✅', col:'var(--gr500)'},
     {key:'🚛 CARGADO CAMIÓN',       lbl:'Cargado',       icon:'🚛', col:'var(--gr600)'},
   ];
+  window._kbEstados = ESTADOS;
+}
 
-  kb.innerHTML=Object.values(bMap)
-    .filter(b=>b.exps.length>0)
+function filtrarKanban(q){
+  if(!window._kbData) return;
+  const s = (q||'').toLowerCase().trim();
+  const lista = s ? window._kbData.filter(b=>(b.nombre||'').toLowerCase().includes(s)) : window._kbData;
+  renderKanban(lista);
+}
+
+function renderKanban(lista){
+  const kb = document.getElementById('kb-board');
+  if(!kb) return;
+  const ESTADOS = window._kbEstados || [
+    {key:'⏳ EN TRÁNSITO',          lbl:'En tránsito',  icon:'⏳', col:'var(--b500)'},
+    {key:'⌛ ESPERANDO ALMACÉN',     lbl:'Esp. almacén', icon:'⌛', col:'var(--b400)'},
+    {key:'📦 UBICADA',              lbl:'Ubicada',       icon:'📦', col:'var(--tl500)'},
+    {key:'🚨 EN ALMACÉN - REVISAR', lbl:'Revisar',       icon:'🚨', col:'var(--rd500)'},
+    {key:'✅ AUTORIZADO',           lbl:'Autorizado',    icon:'✅', col:'var(--gr500)'},
+    {key:'🚛 CARGADO CAMIÓN',       lbl:'Cargado',       icon:'🚛', col:'var(--gr600)'},
+  ];
+
+  // Contador
+  const countEl = document.getElementById('kb-count');
+  if(countEl) countEl.textContent = lista.length !== (window._kbData||[]).length
+    ? `${lista.length} de ${(window._kbData||[]).length} buques`
+    : `${lista.length} buque${lista.length!==1?'s':''}`;
+
+  kb.innerHTML = lista
     .map(b=>{
       const totalExp=b.exps.length;
       const autorizado=b.exps.filter(e=>e.estado_semaforo==='✅ AUTORIZADO'||e.estado_semaforo==='🚛 CARGADO CAMIÓN').length;
