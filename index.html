@@ -4479,7 +4479,7 @@ function renderE(list){
     // Corregir semáforo visualmente si es Landed/UBICADA (pending DB fix)
     const semDisplay=e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo;
     return`<tr onclick="openExpD('${e.id}')">
-      <td onclick="event.stopPropagation()"><input type="checkbox" style="accent-color:var(--b600)" onchange="toggleExpLote('${e.id}',this)"></td>
+      <td onclick="event.stopPropagation()" style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="toggleExpLote('${e.id}',this)"></label></td>
       <td><div class="fw">${e.nº_expedicion}${(e.ubicacion||'').toLowerCase().includes('aeropuerto')?'<span class="als-awb-track" data-awb="'+e.nº_expedicion+'" style="cursor:pointer;font-size:10px;color:var(--b500);margin-left:3px" title="Rastrear en portal del carrier">✈️</span>':''}</div></td>
       <td class="sm">${e.buques?.nombre||'—'}</td>
       <td class="sm">${e.empresas?.nombre||'—'}</td>
@@ -7693,6 +7693,7 @@ async function openExpD(id){
     ${e.created_by_nombre?`<div style="font-size:11px;color:var(--g400);margin-bottom:12px">Creado por <strong>${e.created_by_nombre}</strong>${e.updated_at?` · Última edición: ${fdt(e.updated_at)}`:''}</div>`:''}
     <hr class="fdiv">
     <div class="fg2"><label class="fl2">Nº MRN</label><input id="mrn-inp" class="fi" value="${e.nº_mrn||''}" placeholder="26ES…"><div style="font-size:10px;color:var(--g400);margin-top:3px">💡 Si empieza por <code style="background:var(--g100);padding:1px 4px;border-radius:3px;font-size:10px">-</code> no se incluye en el email de confronta</div></div>
+    <div class="fg2"><label class="fl2">Referencia / Nº expedición</label><input id="ref-inp" class="fi" value="${(e.nº_expedicion||'').replace(/"/g,'&quot;')}" placeholder="Referencia de la expedición"></div>
     <div class="fr2">
       <div class="fg2"><label class="fl2">Trámite aduanero</label><select id="tra-sel" class="fi fs" onchange="saveTra('${e.id}',this.value)"><option ${e.tramite_aduanero==='Pendiente despachar'?'selected':''}>Pendiente despachar</option><option ${e.tramite_aduanero==='Despachado'?'selected':''}>Despachado</option></select></div>
       <div class="fg2"><label class="fl2">Docs. Puerto</label><select id="docs-sel" class="fi fs" onchange="saveDocs('${e.id}',this.value)">${(()=>{const dv=Array.isArray(e.docs_puerto)?e.docs_puerto[0]:e.docs_puerto;return['No requiere','Pendiente','En progreso','Sellada'].map(o=>`<option ${(dv||'No requiere')===o?'selected':''}>${o}</option>`).join('');})()}</select></div>
@@ -7817,6 +7818,7 @@ function semaforoDeUbicacion(ubic){
 
 async function guardarExpedicion(id){if(!checkOnline())return;
   const mrn=(document.getElementById('mrn-inp')?.value||'').trim()||null;
+  const ref=(document.getElementById('ref-inp')?.value||'').trim()||null;
   const status=document.getElementById('sta-sel')?.value||null;
   const fmax=document.getElementById('fmax-inp')?.value||null;
   const tra=document.getElementById('tra-sel')?.value||null;
@@ -7824,6 +7826,7 @@ async function guardarExpedicion(id){if(!checkOnline())return;
   const ubic=document.getElementById('ubic-sel')?.value||null;
   const obj={};
   if(mrn!==undefined) obj['nº_mrn']=mrn;
+  if(ref) obj['nº_expedicion']=ref;
   if(status) obj.status_aduanero=status;
   obj.fecha_max_despacho=fmax||null;
   if(tra) obj.tramite_aduanero=tra;
