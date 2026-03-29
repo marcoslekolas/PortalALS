@@ -1468,47 +1468,42 @@ async function abrirEmail(){
   var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL;
   if(!sel.length){toast('Sin entradas. Selecciona una o varias en la tabla.');return;}
 
-  // ── Validación: todos deben tener el mismo cliente ──────
-  // Identificar cliente de cada entrada (campo cliente si existe, sino consignatario)
+  // Validar mismo cliente
   var clientes=Array.from(new Set(sel.map(function(e){
     return (e.cliente||e.consignatario||'').trim().toLowerCase();
   }).filter(Boolean)));
   if(clientes.length>1){
-    toast('⚠️ Selección incompatible: las entradas pertenecen a '+clientes.length+' clientes distintos. Selecciona solo entradas del mismo cliente.');
+    toast('⚠️ Selección incompatible: las entradas pertenecen a '+clientes.length+' clientes distintos.');
     return;
   }
 
-  // Cliente representativo (primer valor real)
   var clienteNombre=sel.map(function(e){return e.cliente||e.consignatario||'';}).filter(Boolean)[0]||'';
 
-  // Cargar empresas para buscar email del cliente
-  var empresas=[];
-  try{var er=await sb.from('empresas').select('id,nombre,email_confronta,otros_emails').order('nombre');empresas=er.data||[];}catch(e){}
+  // Buscar email del cliente en la BD
+  var emailDest='';
+  try{
+    var er=await sb.from('empresas').select('nombre,email_confronta').order('nombre');
+    var empresas=er.data||[];
+    if(clienteNombre&&empresas.length){
+      var q=clienteNombre.toLowerCase();
+      var match=empresas.filter(function(emp){
+        return(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase().substring(0,5));
+      })[0]||null;
+      if(match) emailDest=match.email_confronta||'';
+    }
+  }catch(e){}
 
-  // Buscar empresa del cliente
-  var matchCli=null;
-  if(clienteNombre&&empresas.length){
-    var q=clienteNombre.toLowerCase();
-    matchCli=empresas.filter(function(emp){
-      return(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase().substring(0,5));
-    })[0]||null;
+  if(!emailDest){
+    toast('⚠️ No se encontró email para "'+clienteNombre+'". Configúralo en la ficha de empresa.');
+    return;
   }
-
-  var empOpts=empresas.map(function(emp){
-    var sel2=matchCli&&matchCli.id===emp.id?'selected':'';
-    return'<option value="'+emp.id+'" data-email="'+(emp.email_confronta||'')+'" '+sel2+'>'+emp.nombre+(emp.email_confronta?' — '+emp.email_confronta:' ⚠️ sin email')+'</option>';
-  }).join('');
-
-  // Email inicial del cliente
-  var emailInicial=matchCli?matchCli.email_confronta||'':'';
 
   var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
   var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
   var totalKg=sel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
   var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
 
-  // ── Construir cuerpo del email ──────────────────────────
-  // Agrupar por buque
+  // Construir cuerpo agrupado por buque
   var byBuque={};
   sel.forEach(function(e){
     var bkey=e.buque||'(Sin buque asignado)';
@@ -1520,7 +1515,6 @@ async function abrirEmail(){
     var exps=byBuque[buque];
     var bloque='  Buque: '+buque+'\n';
     exps.forEach(function(e){
-      // Mostrar consignatario solo si difiere del cliente
       var diffCons=(e.consignatario||'').toLowerCase()!==(clienteNombre||'').toLowerCase();
       var consStr=diffCons?' | Consignatario: '+(e.consignatario||'—'):'';
       var obsStr=e.observaciones?'\n    Obs: '+e.observaciones:'';
@@ -1553,36 +1547,13 @@ async function abrirEmail(){
     '──────────────────────────────────────────────────────',NL,
     hoy
   ].join('');
-  document.getElementById('m-title').textContent='Notificar a '+clienteNombre;
-  document.getElementById('m-body').innerHTML=
-    '<div class="info-box" style="margin-bottom:12px">'+sel.length+' expedición'+(sel.length>1?'es':'')+' de <strong>'+clienteNombre+'</strong>'+(ids.length===0?' (sin selección — todas las entradas)':'')+'. El email irá al email del <strong>cliente</strong>.</div>'+
-    '<div class="fg"><label class="fl">Cliente (empresa facturación)</label>'+
-    '<select id="em-emp" class="fi fs" onchange="emEmpChange(this)">'+
-    '<option value="">— Sin vincular —</option>'+empOpts+'</select></div>'+
-    '<div class="fg"><label class="fl">Email cliente</label>'+
-    '<input id="em-email" class="fi" type="email" placeholder="email@empresa.com" value="'+emailInicial+'"></div>'+
-    '<div class="fg"><label class="fl">CC</label><input id="em-cc" class="fi" placeholder="als@alsalgeciras.com"></div>'+
-    '<div class="fdiv"></div>'+
-    '<div class="sect">Cuerpo del email <span style="font-size:10px;color:var(--g400);font-weight:400">(editable)</span></div>'+
-    '<textarea id="em-body" class="fi" style="min-height:240px;font-family:var(--mono);font-size:11px;line-height:1.6;resize:vertical">'+cuerpo+'</textarea>';
-  window._emailCliente = clienteNombre;
-  document.getElementById('m-foot').innerHTML=
-    '<button class="btn btn-s" onclick="closeModal()">Cancelar</button>'+
-    '<button class="btn btn-p" onclick="enviarEmail()">📧 Abrir cliente correo</button>';
-  openModal();
-}
-function enviarEmail(){
-  var textarea=document.getElementById('em-body');
-  var bodyCoded=textarea?encodeURIComponent(textarea.value):'';
-  var dest=document.getElementById('em-email').value.trim();
-  if(!dest){toast('⚠️ Introduce el email del cliente');return;}
-  var cc=document.getElementById('em-cc').value.trim()||'als@alsalgeciras.com';
-  var cliente=window._emailCliente||'';
-  var asunto=encodeURIComponent('Situación expediciones aeropuerto — '+(cliente||'ALS')+' · '+new Date().toLocaleDateString('es-ES'));
-  var mailtoUrl='mailto:'+dest+'?cc='+encodeURIComponent(cc)+'&subject='+asunto+'&body='+bodyCoded;
-  closeModal();
-  window.location.href=mailtoUrl;
-  toast('📧 Abriendo cliente de correo...');
+
+  var cc='als@alsalgeciras.com';
+  var asunto=encodeURIComponent('Situación expediciones aeropuerto — '+(clienteNombre||'ALS')+' · '+new Date().toLocaleDateString('es-ES'));
+  var mailtoUrl='mailto:'+emailDest+'?cc='+encodeURIComponent(cc)+'&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
+  var a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  toast('📧 Abriendo cliente de correo…');
 }
 
 // ── CONSIGNATARIO AUTOCOMPLETE ────────────────────────────
