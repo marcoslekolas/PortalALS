@@ -899,7 +899,7 @@ textarea.fi{resize:vertical;min-height:72px}
     <div style="font-size:10px;color:var(--g400);font-family:var(--mono);padding:4px 8px;background:var(--g100);border-radius:var(--r);margin-right:8px" title="Versión del portal ALS">v3.3.0</div><div class="hm-contact">
       <span>📞 +34 956 58 13 16</span>
       <span>📠 +34 956 676591</span>
-      <span>✉️ <a href="/cdn-cgi/l/email-protection#b9d8d5caf9d8d5cad8d5dedcdad0cbd8ca97dad6d4" style="color:inherit;text-decoration:none"><span class="__cf_email__" data-cfemail="a8c9c4dbe8c9c4dbc9c4cfcdcbc1dac9db86cbc7c5">[email&#160;protected]</span></a></span>
+      <span>✉️ <a href="/cdn-cgi/l/email-protection#355459467554594654595250565c4754461b565a58" style="color:inherit;text-decoration:none"><span class="__cf_email__" data-cfemail="3b5a57487b5a57485a575c5e5852495a4815585456">[email&#160;protected]</span></a></span>
       <span>📍 36.183099, -5.433061</span>
     </div>
     <div style="display:flex;align-items:center;gap:10px">
@@ -4687,13 +4687,11 @@ async function loteNotifCliente(){
 
   const totalBultos = exps.reduce((a,e)=>a+(e.bultos||0),0);
   const totalKilos  = exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
-  const nombresBuques = [...new Set(exps.map(e=>e.buques?.nombre).filter(Boolean))];
-  const buques = nombresBuques.join(', ');
-  const multiBuque = nombresBuques.length > 1;
+  const buques      = [...new Set(exps.map(e=>e.buques?.nombre).filter(Boolean))].join(', ');
   const empresaNombre = [...new Set(exps.map(e=>e.empresas?.nombre).filter(Boolean))].join(', ') || 'cliente';
-  const fecha = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  const fecha       = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
 
-  // Emails
+  // Recoger emails
   const emailsSet = new Set();
   const ccSet = new Set();
   exps.forEach(e=>{
@@ -4701,16 +4699,26 @@ async function loteNotifCliente(){
     (e.empresas?.otros_emails||[]).forEach(m=>{ if(m) ccSet.add(m); });
   });
   emailsSet.forEach(m=>ccSet.delete(m));
-  const toEmail = [...emailsSet].join(',') || '';
-  const ccEmail = [...ccSet].join(',');
+  const toEmail  = [...emailsSet].join(',') || '';
+  const ccEmail  = [...ccSet].join(',');
 
-  // Asunto
-  const asunto = multiBuque
+  // Asunto con buque
+  const asunto = buques.includes(',')
     ? `Aviso mercancía en almacén — Buques: ${buques} · ${exps.length} expedición${exps.length!==1?'es':''}`
     : `Aviso mercancía en almacén — Buque ${buques} · ${exps.length} expedición${exps.length!==1?'es':''}`;
 
-  const sep  = '─'.repeat(52);
-  const sep2 = '═'.repeat(52);
+  // Detalle por expedición — tabla de texto
+  const sepLinea = '─'.repeat(52);
+  const detalle = exps.map((e,i)=>`  ${i+1}. ${e.nº_expedicion}
+     • Buque:       ${e.buques?.nombre||'—'}
+     • Bultos:      ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg
+     • Ubicación:   ${e.ubicacion||'—'}
+     • Estado:      ${e.estado_semaforo||'—'}
+     • Trámite:     ${e.tramite_aduanero||'—'}
+     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}`
+  ).join('\n\n');
+
+  // Cuerpo completo con firma de la plantilla
   const firma = `Atentamente,
 
 Departamento de Operaciones
@@ -4718,74 +4726,30 @@ ALGECIRAS LOGISTIC SOLUTIONS (ALS)
 📞 +34 956 58 13 16 · als@alsalgeciras.com
 OPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40`;
 
-  // Agrupar expediciones por buque
-  const porBuque = {};
-  exps.forEach(e=>{
-    const bn = e.buques?.nombre || '(Sin buque)';
-    if(!porBuque[bn]) porBuque[bn] = [];
-    porBuque[bn].push(e);
-  });
-
-  // Construir bloque de detalle — agrupado si hay más de un buque
-  let bloqueDetalle = '';
-  if(multiBuque){
-    // Primero el resumen por buques
-    bloqueDetalle += `${sep2}\nRESUMEN POR BUQUE\n${sep2}\n\n`;
-    Object.entries(porBuque).forEach(([bn, bExps])=>{
-      const bBultos = bExps.reduce((a,e)=>a+(e.bultos||0),0);
-      const bKilos  = bExps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
-      bloqueDetalle += `  🚢 ${bn}\n`;
-      bloqueDetalle += `     ${bExps.length} expedición${bExps.length!==1?'es':''} · ${bBultos} bultos · ${bKilos} kg\n\n`;
-    });
-    bloqueDetalle += `${sep2}\nTOTAL GLOBAL: ${exps.length} expediciones · ${totalBultos} bultos · ${totalKilos} kg\n${sep2}\n`;
-
-    // Luego el detalle por buque
-    Object.entries(porBuque).forEach(([bn, bExps])=>{
-      const bBultos = bExps.reduce((a,e)=>a+(e.bultos||0),0);
-      const bKilos  = bExps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
-      bloqueDetalle += `\n${sep}\n🚢 ${bn} — ${bExps.length} exp. · ${bBultos} btos · ${bKilos} kg\n${sep}\n\n`;
-      bExps.forEach((e,i)=>{
-        bloqueDetalle += `  ${i+1}. ${e.nº_expedicion}\n`;
-        bloqueDetalle += `     • Bultos:    ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg\n`;
-        bloqueDetalle += `     • Ubicación: ${e.ubicacion||'—'}\n`;
-        bloqueDetalle += `     • Estado:    ${e.estado_semaforo||'—'}\n`;
-        bloqueDetalle += `     • Trámite:   ${e.tramite_aduanero||'—'}\n`;
-        bloqueDetalle += `     • Status:    ${e.status_aduanero||'—'}\n`;
-        if(e.nº_mrn) bloqueDetalle += `     • MRN:       ${e.nº_mrn}\n`;
-        bloqueDetalle += '\n';
-      });
-    });
-  } else {
-    // Un solo buque — formato simple
-    bloqueDetalle += `${sep}\nDETALLE DE EXPEDICIONES\n${sep}\n\n`;
-    exps.forEach((e,i)=>{
-      bloqueDetalle += `  ${i+1}. ${e.nº_expedicion}\n`;
-      bloqueDetalle += `     • Bultos:    ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg\n`;
-      bloqueDetalle += `     • Ubicación: ${e.ubicacion||'—'}\n`;
-      bloqueDetalle += `     • Estado:    ${e.estado_semaforo||'—'}\n`;
-      bloqueDetalle += `     • Trámite:   ${e.tramite_aduanero||'—'}\n`;
-      bloqueDetalle += `     • Status:    ${e.status_aduanero||'—'}\n`;
-      if(e.nº_mrn) bloqueDetalle += `     • MRN:       ${e.nº_mrn}\n`;
-      bloqueDetalle += '\n';
-    });
-    bloqueDetalle += `${sep}\nTOTALES: ${totalBultos} bultos · ${totalKilos} kg\n${sep}`;
-  }
-
   const cuerpo =
 `Estimado cliente,
 
 Le comunicamos que las siguientes expediciones se encuentran bajo control logístico, documental y en trámite para su próximo embarque.
 
-${multiBuque ? `BUQUES: ${buques}` : `BUQUE: ${buques}`}
+BUQUE: ${buques}
 FECHA: ${fecha}
-RESUMEN: ${exps.length} expedición${exps.length!==1?'es':''} · ${totalBultos} bultos · ${totalKilos} kg
+RESUMEN: ${exps.length} expedición${exps.length!==1?'es':', '} · ${totalBultos} bultos · ${totalKilos} kg
 
-${bloqueDetalle}
+${sepLinea}
+DETALLE DE EXPEDICIONES
+${sepLinea}
+
+${detalle}
+
+${sepLinea}
+TOTALES: ${totalBultos} bultos · ${totalKilos} kg
+${sepLinea}
 
 Quedamos a su disposición para cualquier consulta relacionada con el despacho aduanero o la retirada de la mercancía.
 
 ${firma}`;
 
+  // Abrir directamente el cliente de correo
   if(!toEmail){ showToast('⚠️ No hay email configurado para las empresas seleccionadas'); return; }
   let _mailto = `mailto:${toEmail}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
   if(ccEmail) _mailto += `&cc=${encodeURIComponent(ccEmail)}`;
@@ -5518,120 +5482,75 @@ async function loadAlmacen(){
   document.getElementById('alm-lis').innerHTML=lis.length?lis.map(rL).join(''):'<div class="empty"><div class="empty-txt">No hay autorizadas</div></div>';
 }
 
-// ── OCR AWB/BL — prellenado automático formulario expedición ─────
+// ── OCR AWB/BL — prellenado formulario nueva expedición ──────────
 async function procesarOCR_AWB(input){
   const file = input?.files?.[0];
   if(!file) return;
-  const status = document.getElementById('ne-ocr-status');
-  const setStatus = (html)=>{ if(status){ status.style.display=''; status.innerHTML=html; } };
-  setStatus('<div class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:middle;margin-right:6px"></div> Leyendo documento…');
-
+  const st = document.getElementById('ne-ocr-st');
+  const setS = html => { if(st){ st.style.display=''; st.innerHTML=html; } };
+  setS('<div class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:middle;margin-right:5px"></div>Leyendo documento…');
   try {
     let base64, mediaType;
-    if(file.type==='application/pdf'){
+    if(file.type === 'application/pdf'){
       const ab = await file.arrayBuffer();
       base64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
       mediaType = 'application/pdf';
     } else {
-      setStatus('🗜️ Comprimiendo imagen…');
-      const compressed = await compFoto(file, 1800, 0.85);
-      base64 = await new Promise((res,rej)=>{
-        const r=new FileReader();
-        r.onload=()=>res(r.result.split(',')[1]);
-        r.onerror=()=>rej(new Error('Error leyendo archivo'));
-        r.readAsDataURL(compressed);
-      });
-      mediaType='image/jpeg';
+      setS('🗜️ Comprimiendo…');
+      const comp = await compFoto(file, 1800, 0.85);
+      base64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=()=>rej(new Error('Error')); r.readAsDataURL(comp); });
+      mediaType = 'image/jpeg';
     }
-
-    setStatus('🔑 Obteniendo credenciales…');
+    setS('🔑 Obteniendo credenciales…');
     const orKey = await getORKey();
-    if(!orKey) throw new Error('API key no configurada. El administrador debe guardarla en Clasificador TARIC.');
-
-    setStatus('🧠 IA analizando el documento…');
-    const prompt = `Analiza este documento de transporte (AWB aéreo o BL marítimo) y extrae los datos clave.
+    if(!orKey) throw new Error('API key no configurada. Configúrala en Clasificador TARIC.');
+    setS('🧠 IA analizando el documento…');
+    const prompt = `Analiza este documento de transporte (AWB aéreo o Bill of Lading marítimo) y extrae los datos clave.
 Devuelve ÚNICAMENTE un JSON sin texto adicional ni markdown:
-{
-  "referencia": "número AWB formato 123-12345678 o número BL, o null",
-  "consignatario": "nombre completo del consignatario/destinatario, o null",
-  "buque_vuelo": "nombre del buque o número de vuelo, o null",
-  "bultos": número entero de bultos/packages, o null,
-  "kilos": peso bruto total en kg como decimal, o null,
-  "origen": "código IATA 3 letras del puerto/aeropuerto de origen, o null",
-  "destino": "código IATA 3 letras del puerto/aeropuerto de destino, o null",
-  "eta": "fecha estimada llegada en formato YYYY-MM-DD, o null",
-  "descripcion": "descripción breve de la mercancía, o null",
-  "confianza": número 0-100
-}`;
-
-    const models = [
-      'mistralai/mistral-small-3.2-24b-instruct:free',
-      'mistralai/mistral-small-3.2-24b-instruct',
-    ];
+{"referencia":"número AWB formato 123-12345678 o número BL, o null","consignatario":"nombre completo del consignatario, o null","buque_vuelo":"nombre del buque o número de vuelo, o null","bultos":número entero o null,"kilos":peso bruto kg decimal o null,"origen":"código IATA 3 letras origen, o null","destino":"código IATA 3 letras destino, o null","eta":"fecha llegada YYYY-MM-DD o null","confianza":número 0-100}`;
+    const models = ['mistralai/mistral-small-3.2-24b-instruct:free','mistralai/mistral-small-3.2-24b-instruct'];
     let parsed = null;
     for(const model of models){
       try {
         const resp = await fetch('https://openrouter.ai/api/v1/chat/completions',{
           method:'POST',
-          headers:{'Content-Type':'application/json','Authorization':`Bearer ${orKey}`,
-            'HTTP-Referer':'https://marcoslekolas.github.io/PortalALS/','X-Title':'ALS Portal OCR AWB/BL'},
-          body:JSON.stringify({model,max_tokens:600,messages:[{role:'user',content:[
-            {type:'text',text:prompt},
-            {type:'image_url',image_url:{url:`data:${mediaType};base64,${base64}`}}
-          ]}]})
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+orKey,'HTTP-Referer':'https://marcoslekolas.github.io/PortalALS/','X-Title':'ALS OCR AWB'},
+          body:JSON.stringify({model,max_tokens:400,messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:'data:'+mediaType+';base64,'+base64}}]}]})
         });
         if(!resp.ok) continue;
         const data = await resp.json();
         const txt = (data.choices?.[0]?.message?.content||'').replace(/```json|```/g,'').trim();
-        parsed = JSON.parse(txt);
-        break;
+        parsed = JSON.parse(txt); break;
       } catch(e){ continue; }
     }
-    if(!parsed) throw new Error('No se pudo analizar el documento. Prueba con una imagen más clara.');
-
+    if(!parsed) throw new Error('No se pudo analizar. Prueba con una imagen más clara.');
     // Prerellenar campos
     let n = 0;
-    const fill = (id,val)=>{ const el=document.getElementById(id); if(el&&val!=null){el.value=val;n++;} };
+    const fill = (id,val) => { const el=document.getElementById(id); if(el&&val!=null&&val!==''){ el.value=val; n++; } };
     fill('ne-ref', parsed.referencia);
     fill('ne-bul', parsed.bultos);
     fill('ne-kg',  parsed.kilos);
     fill('ne-fmax',parsed.eta);
-
-    // Buque — buscar coincidencia en el select
     if(parsed.buque_vuelo){
       const sel=document.getElementById('ne-bq');
-      if(sel){
-        const q=(parsed.buque_vuelo||'').toLowerCase().slice(0,7);
-        const opt=Array.from(sel.options).find(o=>o.text.toLowerCase().includes(q));
-        if(opt){sel.value=opt.value;n++;}
-      }
+      if(sel){ const q=(parsed.buque_vuelo||'').toLowerCase().slice(0,7); const opt=Array.from(sel.options).find(o=>o.text.toLowerCase().includes(q)); if(opt){sel.value=opt.value;n++;} }
     }
-    // Empresa — buscar coincidencia en el select
     if(parsed.consignatario){
       const sel=document.getElementById('ne-emp');
-      if(sel){
-        const q=(parsed.consignatario||'').toLowerCase().slice(0,8);
-        const opt=Array.from(sel.options).find(o=>o.text.toLowerCase().includes(q));
-        if(opt){sel.value=opt.value;n++;}
-      }
+      if(sel){ const q=(parsed.consignatario||'').toLowerCase().slice(0,8); const opt=Array.from(sel.options).find(o=>o.text.toLowerCase().includes(q)); if(opt){sel.value=opt.value;n++;} }
     }
-    // Ubicación automática por aeropuerto destino
     if(parsed.destino){
-      const apto=parsed.destino.toUpperCase();
       const map={'AGP':'Aeropuerto-Málaga AGP','SVQ':'Aeropuerto-Sevilla SVQ','MAD':'Aeropuerto-Madrid MAD'};
-      if(map[apto]){const sel=document.getElementById('ne-ubic');if(sel){sel.value=map[apto];onNeUbicChange(sel);n++;}}
+      const v=map[(parsed.destino||'').toUpperCase()];
+      if(v){ const sel=document.getElementById('ne-ubic'); if(sel){sel.value=v;onNeUbicChange(sel);n++;} }
     }
-
     const conf=parsed.confianza||0;
     const cc=conf>=80?'var(--gr600)':conf>=50?'var(--am600)':'var(--rd600)';
-    const extras=[];
-    if(parsed.origen||parsed.destino) extras.push(`${parsed.origen||'?'} → ${parsed.destino||'?'}`);
-    if(parsed.descripcion) extras.push(parsed.descripcion);
-    setStatus(`✅ ${n} campo${n!==1?'s':''} rellenado${n!==1?'s':''} · Confianza: <strong style="color:${cc}">${conf}%</strong>${extras.length?' · '+extras.join(' · '):''}`);
-
+    const ruta=(parsed.origen&&parsed.destino)?' · '+parsed.origen+' → '+parsed.destino:'';
+    setS('✅ '+n+' campo'+(n!==1?'s':'')+' rellenado'+(n!==1?'s':'')+' · Confianza: <strong style="color:'+cc+'">'+conf+'%</strong>'+ruta);
   } catch(e){
-    setStatus(`❌ ${e.message}`);
-    console.error('OCR AWB/BL error:',e);
+    setS('❌ '+e.message);
+    console.error('OCR AWB error:',e);
   }
 }
 
@@ -7860,16 +7779,7 @@ const MODALS={
     }).join('');
     const eO=(emps||[]).map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('');
     const buqueLocked=!!buqueIdPresel;
-    return`<div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:12px;color:var(--b700);font-weight:600">📎 Leer AWB / BL con IA</span>
-      <span style="font-size:11px;color:var(--b600);flex:1">Adjunta el PDF o foto del documento para prerellenar el formulario automáticamente</span>
-      <label style="cursor:pointer">
-        <input type="file" id="ne-ocr-fi" accept="image/*,application/pdf" style="display:none" onchange="procesarOCR_AWB(this)">
-        <span class="btn btn-s btn-sm" onclick="document.getElementById('ne-ocr-fi').click()">📄 Seleccionar documento</span>
-      </label>
-      <div id="ne-ocr-status" style="font-size:11px;color:var(--b600);width:100%;display:none"></div>
-    </div>
-    <div class="fr2"><div class="fg2"><label class="fl2">Nº Expedición / Referencia *</label><input id="ne-ref" class="fi" placeholder="AWB, DHL, SEUR, TNT…"></div><div class="fg2"><label class="fl2">Buque</label><select id="ne-bq" class="fi fs" ${buqueLocked?'disabled style="opacity:.7;background:var(--g50)"':''}><option value="">— Seleccionar —</option>${bO}</select>${buqueLocked?`<input type="hidden" id="ne-bq-hidden" value="${buqueIdPresel}">`:''}</div></div>
+    return`<div class="fr2"><div class="fg2"><label class="fl2">Nº Expedición / Referencia *</label><input id="ne-ref" class="fi" placeholder="AWB, DHL, SEUR, TNT…"></div><div class="fg2"><label class="fl2">Buque</label><select id="ne-bq" class="fi fs" ${buqueLocked?'disabled style="opacity:.7;background:var(--g50)"':''}><option value="">— Seleccionar —</option>${bO}</select>${buqueLocked?`<input type="hidden" id="ne-bq-hidden" value="${buqueIdPresel}">`:''}</div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Empresa</label><select id="ne-emp" class="fi fs"><option value="">— Seleccionar —</option>${eO}</select></div><div class="fg2"><label class="fl2">Status aduanero</label><select id="ne-sta" class="fi fs"><option>Comunitario</option><option>DAE</option><option>T1</option><option>Terceros</option><option>X</option></select></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Bultos</label><input id="ne-bul" class="fi" type="number" min="0" value="1"></div><div class="fg2"><label class="fl2">Kilos</label><input id="ne-kg" class="fi" type="number" min="0" step="0.01" value="0"></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Nº MRN</label><input id="ne-mrn" class="fi" placeholder="26ES…"><div style="font-size:10px;color:var(--g400);margin-top:3px">💡 Si empieza por <code style="background:var(--g100);padding:1px 4px;border-radius:3px;font-size:10px">-</code> no se incluye en el email de confronta</div></div><div class="fg2"><label class="fl2">Trámite aduanero</label><select id="ne-tra" class="fi fs"><option>Pendiente despachar</option><option>Despachado</option></select></div></div>
@@ -7894,7 +7804,20 @@ const MODALS={
       await crearAirportCargoDesdeExpedicion(data, obj);
     }
   },
-  after:()=>{}
+  after:()=>{
+    // Inyectar banner OCR AWB/BL al inicio del formulario
+    const mb = document.getElementById('m-body');
+    if(!mb) return;
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+    banner.innerHTML =
+      '<span style="font-size:12px;color:var(--b700);font-weight:600">📎 Leer AWB / BL con IA</span>'+
+      '<span style="font-size:11px;color:var(--b600);flex:1">Adjunta el PDF o foto del preaviso para prerellenar automáticamente</span>'+
+      '<button type="button" class="btn btn-s btn-sm" onclick="document.getElementById(\'ne-ocr-fi\').click()">📄 Seleccionar documento</button>'+
+      '<input type="file" id="ne-ocr-fi" accept="image/*,application/pdf" style="display:none" onchange="procesarOCR_AWB(this)">'+
+      '<div id="ne-ocr-st" style="font-size:11px;color:var(--b600);width:100%;display:none"></div>';
+    mb.insertBefore(banner, mb.firstChild);
+  }
 },
 'nueva-incidencia':{t:'⚠️ Nueva incidencia',btn:'⚠️ Crear',
   body:async(expId)=>{
