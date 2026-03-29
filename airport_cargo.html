@@ -1346,6 +1346,13 @@ async function showForm(e){
   var aptOpts=['AGP','SVQ','MAD'].map(function(a){return'<option '+((e?e.aeropuerto||'AGP':'AGP')===a?'selected':'')+'>'+a+'</option>';}).join('');
   document.getElementById('m-body').innerHTML=
     (isEdit&&!e.fecha_retirada?'<div class="warn-box">⚠️ Sin fecha de retirada — rellénala para calcular los costes.</div>':'')+
+    (!isEdit?'<div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+      '<span style="font-size:12px;color:var(--b700);font-weight:600">📎 Leer AWB con IA</span>'+
+      '<span style="font-size:11px;color:var(--b600);flex:1">Adjunta el PDF o foto del AWB para prerellenar automáticamente</span>'+
+      '<input type="file" id="ac-ocr-fi" accept="image/*,application/pdf" style="display:none" onchange="procesarOCR_AWB_airport(this)">'+
+      '<button type="button" class="btn btn-s btn-sm" onclick="document.getElementById(\'ac-ocr-fi\').click()">📄 Seleccionar documento</button>'+
+      '<div id="ac-ocr-status" style="font-size:11px;color:var(--b600);width:100%;display:none"></div>'+
+    '</div>':'')+
     '<div class="fr2">'+
     '<div class="fg"><label class="fl">AWB *</label><input id="f-awb" class="fi" value="'+(e?e.awb||'':'')+'" placeholder="123-12345678" style="font-family:var(--mono)"></div>'+
     '<div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="'+(e?e.consignatario||'':'')+'" placeholder="Escribe para filtrar..." list="cons-list" autocomplete="off" oninput="onConsInput()"></div>'+
@@ -1554,6 +1561,120 @@ async function abrirEmail(){
   var a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   toast('📧 Abriendo cliente de correo…');
+}
+
+// ── OCR AWB — prellenado automático Airport Cargo ────────────────
+async function procesarOCR_AWB_airport(input){
+  const file = input?.files?.[0];
+  if(!file) return;
+  const status = document.getElementById('ac-ocr-status');
+  const setStatus = (html)=>{ if(status){ status.style.display=''; status.innerHTML=html; } };
+  setStatus('<div class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:middle;margin-right:6px"></div> Leyendo documento…');
+
+  try {
+    let base64, mediaType;
+    if(file.type==='application/pdf'){
+      const ab = await file.arrayBuffer();
+      base64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+      mediaType = 'application/pdf';
+    } else {
+      setStatus('🗜️ Comprimiendo imagen…');
+      // Compresión simple sin depender de compFoto del portal
+      const img = await createImageBitmap(file);
+      const canvas = document.createElement('canvas');
+      const MAX = 1800;
+      const scale = Math.min(1, MAX/Math.max(img.width, img.height));
+      canvas.width = Math.round(img.width*scale);
+      canvas.height = Math.round(img.height*scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+      mediaType = 'image/jpeg';
+    }
+
+    setStatus('🔑 Obteniendo credenciales…');
+    // Obtener key de Supabase (misma tabla que el portal principal)
+    let orKey = localStorage.getItem('als_openrouter_key') || '';
+    if(!orKey){
+      try {
+        const {data} = await sb.from('als_config').select('valor').eq('clave','gemini_api_key').single();
+        if(data?.valor) orKey = data.valor;
+      } catch(e){}
+    }
+    if(!orKey) throw new Error('API key no configurada en el sistema.');
+
+    setStatus('🧠 IA analizando el AWB…');
+    const prompt = `Analiza este AWB (Air Waybill) o documento de transporte y extrae los datos clave.
+Devuelve ÚNICAMENTE un JSON sin texto adicional ni markdown:
+{
+  "awb": "número AWB en formato 123-12345678, o null",
+  "consignatario": "nombre completo del consignatario/destinatario, o null",
+  "buque_vuelo": "número de vuelo o nombre del buque, o null",
+  "bultos": número entero de bultos/pieces, o null,
+  "kilos": peso bruto total en kg como decimal, o null,
+  "origen": "código IATA 3 letras del aeropuerto/puerto de origen, o null",
+  "destino": "código IATA 3 letras del aeropuerto/puerto de destino, o null",
+  "eta": "fecha estimada llegada en formato YYYY-MM-DD, o null",
+  "confianza": número 0-100
+}`;
+
+    const models = [
+      'mistralai/mistral-small-3.2-24b-instruct:free',
+      'mistralai/mistral-small-3.2-24b-instruct',
+    ];
+    let parsed = null;
+    for(const model of models){
+      try {
+        const resp = await fetch('https://openrouter.ai/api/v1/chat/completions',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':`Bearer ${orKey}`,
+            'HTTP-Referer':'https://marcoslekolas.github.io/PortalALS/','X-Title':'ALS Airport Cargo OCR AWB'},
+          body:JSON.stringify({model,max_tokens:500,messages:[{role:'user',content:[
+            {type:'text',text:prompt},
+            {type:'image_url',image_url:{url:`data:${mediaType};base64,${base64}`}}
+          ]}]})
+        });
+        if(!resp.ok) continue;
+        const data = await resp.json();
+        const txt=(data.choices?.[0]?.message?.content||'').replace(/```json|```/g,'').trim();
+        parsed = JSON.parse(txt);
+        break;
+      } catch(e){ continue; }
+    }
+    if(!parsed) throw new Error('No se pudo analizar. Prueba con una imagen más clara.');
+
+    // Prerellenar campos del formulario Airport Cargo
+    let n = 0;
+    const fill = (id,val)=>{ const el=document.getElementById(id); if(el&&val!=null){el.value=val;n++;} };
+    fill('f-awb',  parsed.awb);
+    fill('f-cons', parsed.consignatario);
+    fill('f-buque',parsed.buque_vuelo);
+    fill('f-blt',  parsed.bultos);
+    fill('f-kg',   parsed.kilos);
+    if(parsed.eta){ fill('f-ll', parsed.eta); }
+
+    // Aeropuerto destino
+    if(parsed.destino){
+      const apto = parsed.destino.toUpperCase();
+      const sel = document.getElementById('f-apto');
+      if(sel){
+        const opt = Array.from(sel.options).find(o=>o.value===apto||o.text===apto);
+        if(opt){sel.value=opt.value;n++;}
+      }
+    }
+
+    // Trigger autocomplete de consignatario
+    if(parsed.consignatario) onConsInput();
+    // Trigger cálculo live
+    setTimeout(liveCalc, 100);
+
+    const conf=parsed.confianza||0;
+    const cc=conf>=80?'var(--gr600)':conf>=50?'var(--am600)':'var(--rd600)';
+    setStatus(`✅ ${n} campo${n!==1?'s':''} rellenado${n!==1?'s':''} · Confianza: <strong style="color:${cc}">${conf}%</strong>${parsed.origen&&parsed.destino?' · '+parsed.origen+' → '+parsed.destino:''}`);
+
+  } catch(e){
+    setStatus(`❌ ${e.message}`);
+    console.error('OCR AWB airport error:',e);
+  }
 }
 
 // ── CONSIGNATARIO AUTOCOMPLETE ────────────────────────────
