@@ -1117,6 +1117,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="nav-item" onclick="nav('incidencias',this)"><span class="ni">⚠️</span><span class="nav-item-txt">Incidencias</span></div>
         <div class="nav-item" onclick="nav('empresas',this)"><span class="ni">🏢</span><span class="nav-item-txt">Empresas</span></div>
         <div class="nav-item" onclick="nav('estadisticas',this)"><span class="ni">📈</span><span class="nav-item-txt">Estadísticas</span></div>
+        <div class="nav-item" onclick="nav('ejecutivo',this)"><span class="ni">🏆</span><span class="nav-item-txt">Dashboard Ejecutivo</span></div>
         <div class="nav-item" id="nav-facturacion" onclick="nav('facturacion',this)"><span class="ni">💶</span><span class="nav-item-txt">Facturación<span class="nb" id="badge-fact" style="display:none">0</span></span></div>
         <!-- Configuración eliminada del sidebar — accesible solo desde home (admin) -->
       </div>
@@ -1553,6 +1554,51 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="kpi-grid" id="st-kpis"></div>
         <div class="cg" id="st-charts"></div>
       </div>
+
+      <div class="view" id="view-ejecutivo">
+        <!-- Selector de período -->
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+          <select id="ej-año" class="fi fs" style="width:auto" onchange="loadEjecutivo()">
+            <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
+          </select>
+          <select id="ej-meses" class="fi fs" style="width:auto" onchange="loadEjecutivo()">
+            <option value="3">Últimos 3 meses</option>
+            <option value="6">Últimos 6 meses</option>
+            <option value="12">Año completo</option>
+          </select>
+          <button class="btn btn-s btn-sm" onclick="loadEjecutivo()">↺ Actualizar</button>
+          <span id="ej-info" style="font-size:11px;color:var(--g500);margin-left:auto"></span>
+        </div>
+        <!-- KPIs principales -->
+        <div class="kpi-grid" id="ej-kpis" style="margin-bottom:20px"></div>
+        <!-- Gráfica mensual -->
+        <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
+          <div class="pt" style="margin-bottom:14px">📊 Expediciones por mes</div>
+          <div id="ej-chart-bars" style="display:flex;gap:6px;align-items:flex-end;height:120px;overflow-x:auto"></div>
+          <div id="ej-chart-labels" style="display:flex;gap:6px;margin-top:6px"></div>
+        </div>
+        <!-- Desglose por status -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+          <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px">
+            <div class="pt" style="font-size:13px;margin-bottom:10px">🏷️ Por status aduanero</div>
+            <div id="ej-status-list"></div>
+          </div>
+          <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px">
+            <div class="pt" style="font-size:13px;margin-bottom:10px">⏱️ Tiempo medio en almacén</div>
+            <div id="ej-tiempo-list"></div>
+          </div>
+        </div>
+        <!-- Top empresas -->
+        <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px">
+          <div class="pt" style="font-size:13px;margin-bottom:10px">🏢 Top clientes por volumen</div>
+          <div id="ej-empresas-list"></div>
+        </div>
+        <!-- Incidencias -->
+        <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px">
+          <div class="pt" style="font-size:13px;margin-bottom:10px">⚠️ Incidencias del período</div>
+          <div id="ej-incidencias-list"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1682,6 +1728,124 @@ function showToast(msg){
 let lastAlertCheck=new Date().toISOString();
 // ── Notificaciones del sistema (PWA) ──────────────────────────
 let _notifPermiso = null;
+
+// ═══════════════════════════════════════════════════════════════
+// M1 — OFFLINE: Cola IndexedDB para confirmaciones sin red
+// ═══════════════════════════════════════════════════════════════
+const ALS_DB_NAME = 'als_offline_v1';
+const ALS_DB_STORE = 'cola_sync';
+let _alsDB = null;
+
+async function initOfflineDB(){
+  if(_alsDB) return _alsDB;
+  return new Promise((res,rej)=>{
+    const req = indexedDB.open(ALS_DB_NAME, 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(ALS_DB_STORE)){
+        const s = db.createObjectStore(ALS_DB_STORE, {keyPath:'id',autoIncrement:true});
+        s.createIndex('tipo','tipo',{unique:false});
+        s.createIndex('ts','ts',{unique:false});
+      }
+    };
+    req.onsuccess = e => { _alsDB=e.target.result; res(_alsDB); };
+    req.onerror  = e => { console.warn('IndexedDB error:',e); rej(e); };
+  });
+}
+
+async function offlineEnqueue(tipo, payload){
+  try {
+    const db = await initOfflineDB();
+    const tx = db.transaction(ALS_DB_STORE,'readwrite');
+    tx.objectStore(ALS_DB_STORE).add({tipo, payload, ts:Date.now()});
+    return new Promise((res,rej)=>{ tx.oncomplete=()=>res(true); tx.onerror=()=>rej(); });
+  } catch(e){ console.warn('offlineEnqueue:',e); return false; }
+}
+
+async function offlineGetPendientes(){
+  try {
+    const db = await initOfflineDB();
+    return new Promise((res,rej)=>{
+      const req = db.transaction(ALS_DB_STORE,'readonly').objectStore(ALS_DB_STORE).getAll();
+      req.onsuccess = ()=>res(req.result||[]);
+      req.onerror   = ()=>rej([]);
+    });
+  } catch(e){ return []; }
+}
+
+async function offlineDelete(id){
+  try {
+    const db = await initOfflineDB();
+    return new Promise((res)=>{
+      const tx = db.transaction(ALS_DB_STORE,'readwrite');
+      tx.objectStore(ALS_DB_STORE).delete(id);
+      tx.oncomplete=()=>res(true); tx.onerror=()=>res(false);
+    });
+  } catch(e){ return false; }
+}
+
+async function offlineSyncPendientes(){
+  if(!navigator.onLine) return;
+  const pendientes = await offlineGetPendientes();
+  if(!pendientes.length) return;
+  let ok=0,err=0;
+  for(const item of pendientes){
+    try {
+      if(item.tipo==='confirmar_llegada'){
+        const p = item.payload;
+        await sb.from('expediciones').update({
+          ubicacion: p.ubicacion||'Almacén-Sin Ubicar',
+          estado_semaforo:'⌛ ESPERANDO ALMACÉN',
+          estado_carga:'⌛ ESPERANDO ALMACÉN',
+          notif_llegada_sent:true
+        }).eq('id',p.expId);
+        await logAct('expediciones',p.expId,p.ref,'editar','ubicacion','Pendiente recibir',p.ubicacion||'Almacén-Sin Ubicar');
+      } else if(item.tipo==='cambiar_ubicacion'){
+        const p = item.payload;
+        await sb.from('expediciones').update({ubicacion:p.ubicacion}).eq('id',p.expId);
+        await logAct('expediciones',p.expId,p.ref,'editar','ubicacion',p.anterior,p.ubicacion);
+      }
+      await offlineDelete(item.id);
+      ok++;
+    } catch(e){ err++; console.warn('sync error:',item,e); }
+  }
+  if(ok>0) showToast(`📶 Sincronizados ${ok} registro${ok>1?'s':''} offline`);
+  if(err>0) showToast(`⚠️ ${err} registro${err>1?'s':''} pendientes de sync`);
+}
+
+function checkOnline(){
+  if(navigator.onLine) return true;
+  showToast('📵 Sin conexión — la acción se guardará para sincronizar cuando haya red');
+  return false;
+}
+
+// Sincronizar al recuperar conexión
+window.addEventListener('online', ()=>{
+  showToast('📶 Conexión recuperada — sincronizando…');
+  setTimeout(offlineSyncPendientes, 1000);
+});
+
+// ── Badge pendientes offline en topbar ──────────────────────────
+function _actualizarBadgeOffline(){
+  offlineGetPendientes().then(p=>{
+    let badge = document.getElementById('tb-offline-badge');
+    if(p.length>0){
+      if(!badge){
+        const tb = document.getElementById('topbar');
+        if(tb){
+          badge=document.createElement('span');
+          badge.id='tb-offline-badge';
+          badge.style.cssText='font-size:11px;font-weight:600;background:var(--am500);color:#fff;padding:2px 8px;border-radius:20px;cursor:pointer';
+          badge.title='Registros pendientes de sincronizar';
+          badge.onclick=offlineSyncPendientes;
+          tb.appendChild(badge);
+        }
+      }
+      if(badge) badge.textContent=`📵 ${p.length} offline`;
+    } else if(badge){ badge.remove(); }
+  });
+}
+setInterval(_actualizarBadgeOffline, 15000);
 async function pedirPermisoNotif(){
   if(!('Notification' in window)) return false;
   if(Notification.permission === 'granted'){ _notifPermiso=true; return true; }
@@ -2482,27 +2646,29 @@ async function checkAlertasDespacho(){
       const d=new Date(e.fecha_max_despacho);
       return d<new Date(now.getTime()+48*3600000);
     });
-    if(!urgentes.length)return;
+    if(!urgentes.length){ const c=document.getElementById('alerta-despacho-banner'); if(c){c.innerHTML='';c.style.display='none';} return; }
     const vencidas=urgentes.filter(e=>new Date(e.fecha_max_despacho)<now);
     const proximas=urgentes.filter(e=>new Date(e.fecha_max_despacho)>=now);
-    // Notificación del sistema para vencidas
-    if(vencidas.length){
-      notifSistema(
-        `🚨 ${vencidas.length} expedición${vencidas.length>1?'es':''} vencidas`,
-        vencidas.slice(0,3).map(e=>e.nº_expedicion).join(', ')+(vencidas.length>3?'…':'')
-      );
-    } else if(proximas.length){
-      notifSistema(
-        `⚠️ ${proximas.length} expedición${proximas.length>1?'es':''} vencen pronto`,
-        proximas.slice(0,3).map(e=>e.nº_expedicion+' ('+Math.round((new Date(e.fecha_max_despacho)-now)/86400000)+'d)').join(', ')
-      );
+
+    // Notificación push solo una vez por sesión por alerta
+    const yaNotifKey = 'als_notif_desp_'+now.toDateString();
+    if(!sessionStorage.getItem(yaNotifKey)){
+      if(vencidas.length){
+        notifSistema(`🚨 ${vencidas.length} expedición${vencidas.length>1?'es':''} vencidas`,
+          vencidas.slice(0,3).map(e=>e.nº_expedicion).join(', ')+(vencidas.length>3?'…':''));
+      } else if(proximas.length){
+        notifSistema(`⚠️ ${proximas.length} expedición${proximas.length>1?'es':''} vencen pronto`,
+          proximas.slice(0,3).map(e=>e.nº_expedicion+' ('+Math.round((new Date(e.fecha_max_despacho)-now)/86400000)+'d)').join(', '));
+      }
+      sessionStorage.setItem(yaNotifKey,'1');
     }
+
     const cont=document.getElementById('alerta-despacho-banner');
     if(!cont)return;
     cont.innerHTML=`<div style="background:${vencidas.length?'var(--rd50)':'var(--am50)'};border:1px solid ${vencidas.length?'#fecaca':'#fde68a'};border-radius:var(--rl);padding:12px 16px;margin-bottom:14px">
-      <div style="font-weight:700;color:${vencidas.length?'var(--rd600)':'var(--am600)'};font-size:13px;margin-bottom:8px">
-        ${vencidas.length?`🚨 ${vencidas.length} expedición${vencidas.length>1?'es':''} con fecha de despacho VENCIDA`:''}
-        ${proximas.length?`⚠️ ${proximas.length} expedición${proximas.length>1?'es':''} con fecha de despacho en las próximas 48h`:''}
+      <div style="font-weight:700;color:${vencidas.length?'var(--rd600)':'var(--am600)'};font-size:13px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
+        <span>${vencidas.length?`🚨 ${vencidas.length} expedición${vencidas.length>1?'es':''} con fecha de despacho VENCIDA`:`⚠️ ${proximas.length} expedición${proximas.length>1?'es':''} vencen en las próximas 48h`}</span>
+        <button onclick="nav('alertas',null)" class="btn btn-sm" style="font-size:10px;padding:3px 8px;background:${vencidas.length?'var(--rd600)':'var(--am600)'};color:#fff;border-color:transparent">Ver todas →</button>
       </div>
       ${urgentes.slice(0,5).map(e=>{
         const d=new Date(e.fecha_max_despacho);
@@ -2521,6 +2687,9 @@ async function checkAlertasDespacho(){
   }catch(e){console.warn('checkAlertasDespacho:',e);}
 }
 
+// Check automático cada 10 min mientras la app está activa
+setInterval(()=>{ if(CU && MOD==='operativa') checkAlertasDespacho(); }, 10*60*1000);
+
 // ═══════════════════════════════════════════════════════════════
 // HISTORIAL DE EXPEDICIÓN — carga el log filtrado
 // ═══════════════════════════════════════════════════════════════
@@ -2534,13 +2703,54 @@ async function loadHistorialExp(expId){
       .eq('tabla','expediciones')
       .eq('registro_id',expId)
       .order('created_at',{ascending:false})
-      .limit(20);
+      .limit(40);
     if(!data||!data.length){cont.innerHTML='<div style="font-size:12px;color:var(--g400);padding:8px 0">Sin cambios registrados</div>';return;}
-    cont.innerHTML=data.map(l=>`<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--g100);font-size:11px">
-      <div style="color:var(--g400);white-space:nowrap;flex-shrink:0">${fdt(l.created_at)}</div>
-      <div style="color:var(--b600);font-weight:600;flex-shrink:0">${l.usuario_nombre||'—'}</div>
-      <div style="color:var(--g700)">${l.campo_modificado||l.accion||''} ${l.valor_nuevo?'→ <strong>'+l.valor_nuevo+'</strong>':''}</div>
-    </div>`).join('');
+
+    // Separar movimientos de ubicación del resto
+    const movUbic = data.filter(l=>l.campo_modificado==='ubicacion');
+    const otrosCambios = data.filter(l=>l.campo_modificado!=='ubicacion');
+
+    let html = '';
+
+    // Línea de tiempo de ubicaciones
+    if(movUbic.length){
+      html += `<div style="margin-bottom:10px">
+        <div style="font-size:10px;font-weight:700;color:var(--b600);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">📍 Movimientos de ubicación</div>
+        <div style="position:relative;padding-left:16px">
+          <div style="position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--g200);border-radius:2px"></div>
+          ${movUbic.map((l,i)=>{
+            const icon = i===0 ? '🔵' : '⚪';
+            const destino = l.valor_nuevo||'—';
+            const icUbic = destino.includes('Aeropuerto')?'✈️':destino.includes('Almacén')?'📦':destino.includes('Camión')?'🚛':destino.includes('bordo')?'🚢':destino.includes('Landed')?'⚓':'📍';
+            return `<div style="display:flex;gap:8px;margin-bottom:6px;align-items:flex-start">
+              <span style="font-size:10px;margin-top:1px;flex-shrink:0">${icUbic}</span>
+              <div style="min-width:0">
+                <div style="font-size:12px;font-weight:600;color:var(--g900)">${destino}</div>
+                <div style="font-size:10px;color:var(--g400)">${fdt(l.created_at)} · ${l.usuario_nombre||'—'}</div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+
+    // Resto de cambios colapsables
+    if(otrosCambios.length){
+      html += `<details style="margin-top:4px">
+        <summary style="font-size:10px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;cursor:pointer;list-style:none;display:flex;align-items:center;gap:4px">
+          ▸ Otros cambios (${otrosCambios.length})
+        </summary>
+        <div style="margin-top:6px">
+        ${otrosCambios.map(l=>`<div style="display:flex;gap:10px;padding:4px 0;border-bottom:1px solid var(--g100);font-size:11px">
+          <div style="color:var(--g400);white-space:nowrap;flex-shrink:0">${fdt(l.created_at)}</div>
+          <div style="color:var(--b600);font-weight:600;flex-shrink:0">${l.usuario_nombre||'—'}</div>
+          <div style="color:var(--g700)">${l.campo_modificado||l.accion||''} ${l.valor_nuevo?'→ <strong>'+l.valor_nuevo+'</strong>':''}</div>
+        </div>`).join('')}
+        </div>
+      </details>`;
+    }
+
+    cont.innerHTML = html || '<div style="font-size:12px;color:var(--g400);padding:8px 0">Sin cambios registrados</div>';
   }catch(e){cont.innerHTML='<div style="font-size:12px;color:var(--g400);padding:8px 0">Log no disponible</div>';}
 }
 
@@ -3294,7 +3504,7 @@ async function logActMod(tabla, rid, rnom, accion, campo, vant, vnew, modulo){
   } catch(e){ console.warn('logActMod error:', e.message); }
 }
 
-const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas'};
+const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas',ejecutivo:'Dashboard Ejecutivo'};
 let CV='dashboard';
 function nav(view,el){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -4198,6 +4408,7 @@ async function loadView(view){
     case 'usuarios':await loadUsuarios();break;
     case 'log':await loadLog();break;
     case 'estadisticas':await loadStats();break;
+    case 'ejecutivo':await loadEjecutivo();break;
     case 'facturacion':await loadFacturacion();break;
     case 'permisos':await loadPermisos();break;
     case 'versiones':loadVersiones();break;
@@ -7732,6 +7943,193 @@ async function exportarStatsCSV(){
   showToast('✅ CSV exportado');
 }
 
+// ═══════════════════════════════════════════════════════════════
+// M5 — DASHBOARD EJECUTIVO: KPIs mensuales comparativos
+// ═══════════════════════════════════════════════════════════════
+async function loadEjecutivo(){
+  const año  = parseInt(document.getElementById('ej-año')?.value || new Date().getFullYear());
+  const meses= parseInt(document.getElementById('ej-meses')?.value || 3);
+  const info = document.getElementById('ej-info');
+  if(info) info.textContent = 'Cargando…';
+
+  // Rango de fechas: últimos N meses del año seleccionado
+  const ahora = new Date();
+  const mesActual = ahora.getMonth() + 1;
+  const mesInicio = Math.max(1, mesActual - meses + 1);
+  const fechaDesde = `${año}-${String(mesInicio).padStart(2,'0')}-01`;
+  const fechaHasta = `${año}-12-31`;
+
+  const [
+    {data:exps},
+    {data:buquesData},
+    {data:incsData},
+    {data:logData}
+  ] = await Promise.all([
+    sb.from('expediciones')
+      .select('id,nº_expedicion,bultos,kilos,estado_semaforo,tramite_aduanero,status_aduanero,created_at,empresas(nombre),buques(nombre)')
+      .gte('created_at', fechaDesde)
+      .lte('created_at', fechaHasta)
+      .order('created_at',{ascending:true}),
+    sb.from('buques')
+      .select('id,nombre,eta_buque,estado_operacion')
+      .gte('eta_buque', fechaDesde)
+      .lte('eta_buque', fechaHasta),
+    sb.from('incidencias')
+      .select('id,tipo,estado,created_at')
+      .gte('created_at', fechaDesde),
+    sb.from('activity_log')
+      .select('created_at,campo_modificado,valor_anterior,valor_nuevo,registro_id')
+      .eq('campo_modificado','ubicacion')
+      .gte('created_at', fechaDesde)
+      .limit(500)
+  ]);
+
+  const E = exps || [];
+  const B = buquesData || [];
+  const INC = incsData || [];
+  const LOG = logData || [];
+
+  // ── KPIs principales ─────────────────────────────────────────
+  const totalExps   = E.length;
+  const totalBultos = E.reduce((a,e)=>a+(e.bultos||0),0);
+  const totalKilos  = E.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+  const despachadas = E.filter(e=>e.tramite_aduanero==='Despachado').length;
+  const pctDespacho = totalExps ? Math.round(despachadas/totalExps*100) : 0;
+  const totalBuques = B.length;
+  const incAbiertas = INC.filter(i=>i.estado!=='Cerrada').length;
+
+  // Tiempo medio en almacén (días entre 1ª ubicación almacén → última ubicación salida)
+  const tiemposMedio = [];
+  const porExp = {};
+  LOG.forEach(l=>{
+    if(!porExp[l.registro_id]) porExp[l.registro_id]=[];
+    porExp[l.registro_id].push(l);
+  });
+  Object.values(porExp).forEach(movs=>{
+    movs.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+    const entrada = movs.find(m=>(m.valor_nuevo||'').includes('Almacén'));
+    const salida  = movs.slice().reverse().find(m=>(m.valor_nuevo||'').includes('Camión')||(m.valor_nuevo||'').includes('bordo'));
+    if(entrada && salida){
+      const dias = (new Date(salida.created_at) - new Date(entrada.created_at)) / 86400000;
+      if(dias>=0 && dias<365) tiemposMedio.push(dias);
+    }
+  });
+  const tiempoMedio = tiemposMedio.length
+    ? Math.round(tiemposMedio.reduce((a,v)=>a+v,0)/tiemposMedio.length*10)/10
+    : null;
+
+  // ── Renderizar KPIs ───────────────────────────────────────────
+  const kpiGrid = document.getElementById('ej-kpis');
+  if(kpiGrid) kpiGrid.innerHTML = [
+    {lbl:'Expediciones',val:totalExps,sub:`${meses} meses`,cls:'bl'},
+    {lbl:'Bultos gestionados',val:totalBultos.toLocaleString('es-ES'),sub:`${totalKilos.toLocaleString('es-ES')} kg`,cls:'bl'},
+    {lbl:'Buques operados',val:totalBuques,sub:`${año}`,cls:'bl'},
+    {lbl:'% Despachadas',val:pctDespacho+'%',sub:`${despachadas} de ${totalExps}`,cls:pctDespacho>=80?'gr':pctDespacho>=50?'am':'rd'},
+    {lbl:'Tiempo medio almacén',val:tiempoMedio!==null?tiempoMedio+'d':'—',sub:tiemposMedio.length?`sobre ${tiemposMedio.length} exp.`:'sin datos',cls:'am'},
+    {lbl:'Incidencias abiertas',val:incAbiertas,sub:`${INC.length} totales`,cls:incAbiertas>0?'rd':'gr'},
+  ].map(k=>`<div class="kpi ${k.cls}">
+    <div class="kpi-lbl">${k.lbl}</div>
+    <div class="kpi-val">${k.val}</div>
+    <div class="kpi-sub">${k.sub}</div>
+  </div>`).join('');
+
+  // ── Gráfica de barras mensuales ───────────────────────────────
+  const porMes = {};
+  const MESES_CORTO=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  for(let m=mesInicio;m<=mesActual;m++) porMes[m]={exp:0,blt:0,kg:0};
+  E.forEach(e=>{
+    const m = new Date(e.created_at).getMonth()+1;
+    if(porMes[m]){ porMes[m].exp++; porMes[m].blt+=(e.bultos||0); porMes[m].kg+=(parseFloat(e.kilos)||0); }
+  });
+  const maxExp = Math.max(...Object.values(porMes).map(v=>v.exp),1);
+  const barsEl   = document.getElementById('ej-chart-bars');
+  const labelsEl = document.getElementById('ej-chart-labels');
+  if(barsEl){
+    barsEl.innerHTML = Object.entries(porMes).map(([m,v])=>{
+      const h = Math.round((v.exp/maxExp)*100);
+      return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:32px">
+        <span style="font-size:10px;font-weight:700;color:var(--b600)">${v.exp||''}</span>
+        <div style="width:100%;max-width:40px;height:${h}px;min-height:4px;background:var(--b600);border-radius:4px 4px 0 0;transition:height .3s;cursor:pointer"
+          title="${MESES_CORTO[m-1]}: ${v.exp} exp · ${v.blt} btos · ${v.kg}kg"></div>
+      </div>`;
+    }).join('');
+  }
+  if(labelsEl){
+    labelsEl.innerHTML = Object.keys(porMes).map(m=>
+      `<div style="flex:1;text-align:center;font-size:10px;color:var(--g500);min-width:32px">${MESES_CORTO[m-1]}</div>`
+    ).join('');
+  }
+
+  // ── Por status aduanero ───────────────────────────────────────
+  const porStatus = {};
+  E.forEach(e=>{ const s=e.status_aduanero||'Sin status'; porStatus[s]=(porStatus[s]||0)+1; });
+  const statusEl = document.getElementById('ej-status-list');
+  if(statusEl) statusEl.innerHTML = Object.entries(porStatus)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([s,n])=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--g100)">
+      <span class="badge bgr" style="min-width:70px;justify-content:center">${s}</span>
+      <div style="flex:1;background:var(--g100);border-radius:3px;height:6px;overflow:hidden">
+        <div style="width:${Math.round(n/totalExps*100)}%;height:100%;background:var(--b600);border-radius:3px"></div>
+      </div>
+      <span style="font-size:12px;font-weight:700;color:var(--g700);min-width:24px;text-align:right">${n}</span>
+    </div>`).join('') || '<div style="font-size:12px;color:var(--g400)">Sin datos</div>';
+
+  // ── Tiempo por status ─────────────────────────────────────────
+  const tiempoEl = document.getElementById('ej-tiempo-list');
+  if(tiempoEl){
+    const resumen = tiempoMedio!==null
+      ? `<div style="font-size:28px;font-weight:700;color:var(--am600);margin:6px 0">${tiempoMedio} días</div>
+         <div style="font-size:11px;color:var(--g500)">promedio entrada almacén → salida</div>
+         <div style="font-size:11px;color:var(--g500);margin-top:4px">Basado en ${tiemposMedio.length} expediciones con trazabilidad completa</div>
+         <div style="margin-top:10px;font-size:11px;color:var(--g600)">
+           <span style="color:var(--gr600)">✅ &lt;3 días</span>: ${tiemposMedio.filter(d=>d<3).length} exp. &nbsp;
+           <span style="color:var(--am600)">⚠️ 3-7 días</span>: ${tiemposMedio.filter(d=>d>=3&&d<7).length} exp. &nbsp;
+           <span style="color:var(--rd600)">🚨 &gt;7 días</span>: ${tiemposMedio.filter(d=>d>=7).length} exp.
+         </div>`
+      : '<div style="font-size:13px;color:var(--g400);margin-top:8px">Sin datos suficientes de trazabilidad</div>';
+    tiempoEl.innerHTML = resumen;
+  }
+
+  // ── Top empresas ──────────────────────────────────────────────
+  const porEmp = {};
+  E.forEach(e=>{ const n=e.empresas?.nombre||'Sin empresa'; if(!porEmp[n]) porEmp[n]={exp:0,blt:0,kg:0}; porEmp[n].exp++; porEmp[n].blt+=(e.bultos||0); porEmp[n].kg+=(parseFloat(e.kilos)||0); });
+  const empEl = document.getElementById('ej-empresas-list');
+  if(empEl) empEl.innerHTML = Object.entries(porEmp)
+    .sort((a,b)=>b[1].exp-a[1].exp).slice(0,8)
+    .map(([n,v],i)=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--g100);font-size:12px">
+      <span style="font-size:11px;font-weight:700;color:var(--g400);min-width:16px">${i+1}</span>
+      <span style="flex:1;font-weight:600;color:var(--g900)">${n}</span>
+      <span class="badge bb">${v.exp} exp.</span>
+      <span style="color:var(--g500)">${v.blt} btos</span>
+      <span style="color:var(--g500)">${v.kg.toLocaleString('es-ES')} kg</span>
+    </div>`).join('') || '<div style="font-size:12px;color:var(--g400)">Sin datos</div>';
+
+  // ── Incidencias por tipo ──────────────────────────────────────
+  const porTipoInc = {};
+  INC.forEach(i=>{ const t=i.tipo||'Otro'; porTipoInc[t]=(porTipoInc[t]||0)+1; });
+  const incEl = document.getElementById('ej-incidencias-list');
+  if(incEl) incEl.innerHTML = INC.length ? `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div class="kpi rd" style="flex:1;min-width:100px;padding:10px 12px">
+        <div class="kpi-lbl">Abiertas</div><div class="kpi-val" style="font-size:20px">${incAbiertas}</div>
+      </div>
+      <div class="kpi gr" style="flex:1;min-width:100px;padding:10px 12px">
+        <div class="kpi-lbl">Cerradas</div><div class="kpi-val" style="font-size:20px">${INC.length-incAbiertas}</div>
+      </div>
+      <div class="kpi bl" style="flex:1;min-width:100px;padding:10px 12px">
+        <div class="kpi-lbl">Total</div><div class="kpi-val" style="font-size:20px">${INC.length}</div>
+      </div>
+    </div>
+    ${Object.entries(porTipoInc).sort((a,b)=>b[1]-a[1]).map(([t,n])=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--g100)">
+        <span style="flex:1;color:var(--g700)">${t}</span>
+        <span style="font-weight:700;color:var(--rd600)">${n}</span>
+      </div>`).join('')}`
+    : '<div style="font-size:12px;color:var(--gr600)">✅ Sin incidencias en el período</div>';
+
+  if(info) info.textContent = `${totalExps} exp · ${totalBuques} buques · ${meses} meses`;
+}
+
 // ── MODALES ──────────────────────────────────────────────────
 const MODALS={
 'nuevo-buque':{t:'🚢 Nuevo buque',btn:'🚢 Crear buque',
@@ -8883,14 +9281,27 @@ async function abrirScannerQR(){
   ov.id = 'scanner-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
   ov.innerHTML = `
-    <div style="background:rgba(0,0,0,.85);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-      <div style="color:#fff;font-weight:700;font-size:15px">📷 Escáner de autorización</div>
-      <button onclick="cerrarScannerQR()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:10px;padding:12px 22px;font-size:16px;font-weight:700;cursor:pointer;min-width:80px;min-height:48px">✕ Cerrar</button>
+    <div style="background:rgba(0,0,0,.85);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;flex-wrap:wrap">
+      <div style="color:#fff;font-weight:700;font-size:15px">📷 Escáner QR</div>
+      <div style="display:flex;gap:6px">
+        <button id="sc-mode-autorizar" onclick="_setScannerMode('autorizar')"
+          style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;min-height:40px">
+          ✅ Autorización
+        </button>
+        <button id="sc-mode-bulto" onclick="_setScannerMode('bulto')"
+          style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;min-height:40px">
+          📦 Bulto suelto
+        </button>
+        <button onclick="cerrarScannerQR()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:8px 16px;font-size:14px;font-weight:700;cursor:pointer;min-height:40px">✕</button>
+      </div>
+    </div>
+    <div id="sc-mode-label" style="background:rgba(59,130,246,.3);color:#93c5fd;font-size:12px;font-weight:600;text-align:center;padding:6px;letter-spacing:.05em">
+      MODO: VERIFICACIÓN DE AUTORIZACIÓN
     </div>
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto">
       <div id="qr-reader" style="width:100%;max-width:500px"></div>
       <div id="scanner-result" style="width:100%;max-width:500px;padding:16px;color:#fff;text-align:center">
-        <div style="font-size:13px;color:#9ca3af">Apunta al código QR de la expedición</div>
+        <div style="font-size:13px;color:#9ca3af">Apunta al código QR de la expedición o bulto</div>
         <div style="font-size:11px;color:#6b7280;margin-top:6px">O introduce la referencia manualmente:</div>
         <div style="display:flex;gap:8px;margin-top:8px;padding:0 16px">
           <input id="scan-manual-inp" placeholder="Ref. expedición…"
@@ -8903,23 +9314,20 @@ async function abrirScannerQR(){
     </div>`;
 
   document.body.appendChild(ov);
+  window._scannerMode = 'autorizar';
 
-  // Cargar html5-qrcode si no está disponible (está en CDN JSDelivr — permitido en CSP)
   if(!window.Html5Qrcode){
     await new Promise((resolve, reject)=>{
       const s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';
-      s.onload = resolve;
-      s.onerror = reject;
+      s.onload = resolve; s.onerror = reject;
       document.head.appendChild(s);
     }).catch(()=>{});
   }
 
   if(!window.Html5Qrcode){
     document.getElementById('scanner-result').innerHTML = `
-      <div style="color:#f87171;font-size:13px;padding:16px">
-        ❌ No se pudo cargar el escáner.<br>Usa la búsqueda manual de abajo.
-      </div>`;
+      <div style="color:#f87171;font-size:13px;padding:16px">❌ No se pudo cargar el escáner.<br>Usa la búsqueda manual.</div>`;
     return;
   }
 
@@ -8929,15 +9337,33 @@ async function abrirScannerQR(){
       { facingMode: 'environment' },
       { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
       (decodedText) => _procesarQRLeido(decodedText),
-      () => {} // ignorar errores de frame
+      () => {}
     );
   } catch(e){
     document.getElementById('scanner-result').innerHTML = `
-      <div style="color:#f87171;font-size:13px;padding:16px">
-        ❌ Sin acceso a la cámara: ${e.message||e}<br><br>
-        Usa la búsqueda manual de abajo.
-      </div>`;
+      <div style="color:#f87171;font-size:13px;padding:16px">❌ Sin acceso a la cámara: ${e.message||e}<br><br>Usa la búsqueda manual.</div>`;
   }
+}
+
+function _setScannerMode(mode){
+  window._scannerMode = mode;
+  const lblEl = document.getElementById('sc-mode-label');
+  const btnA = document.getElementById('sc-mode-autorizar');
+  const btnB = document.getElementById('sc-mode-bulto');
+  if(mode === 'autorizar'){
+    if(lblEl){ lblEl.textContent='MODO: VERIFICACIÓN DE AUTORIZACIÓN'; lblEl.style.background='rgba(59,130,246,.3)'; lblEl.style.color='#93c5fd'; }
+    if(btnA){ btnA.style.background='#3b82f6'; }
+    if(btnB){ btnB.style.background='rgba(255,255,255,.15)'; }
+  } else {
+    if(lblEl){ lblEl.textContent='MODO: IDENTIFICAR BULTO SUELTO'; lblEl.style.background='rgba(245,158,11,.3)'; lblEl.style.color='#fcd34d'; }
+    if(btnA){ btnA.style.background='rgba(255,255,255,.15)'; }
+    if(btnB){ btnB.style.background='#f59e0b'; }
+  }
+  _ultimoQRLeido = null;
+  const res = document.getElementById('scanner-result');
+  if(res) res.innerHTML=`<div style="font-size:13px;color:#9ca3af;padding:8px">
+    ${mode==='bulto'?'📦 Escanea el QR de cualquier bulto para identificar su expedición':'✅ Escanea el QR de una expedición para verificar autorización'}
+  </div>`;
 }
 
 async function _verificarManualScanner(){
@@ -8982,9 +9408,52 @@ async function _procesarQRLeido(texto){
   const res = document.getElementById('scanner-result');
   if(!res) return;
 
-  // Formato ALS-EXP:{uuid}
+  // ── Modo bulto suelto: ALS-BLT:{expId}:{n}:{total} ──────────
+  const matchBlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):(\d+):(\d+)$/i);
+  if(matchBlt && window._scannerMode === 'bulto'){
+    const expId = matchBlt[1];
+    const numBulto = matchBlt[2];
+    const totalBultos = matchBlt[3];
+    res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Identificando bulto…</div>';
+    const {data:e, error} = await sb.from('expediciones')
+      .select('id,nº_expedicion,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
+      .eq('id', expId).single();
+    if(error||!e){
+      res.innerHTML = `<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada</div>`;
+      return;
+    }
+    if(navigator.vibrate) navigator.vibrate([100,50,200]);
+    res.innerHTML = `
+      <div style="background:rgba(245,158,11,.15);border:2px solid #f59e0b;border-radius:10px;padding:14px;margin:8px 16px">
+        <div style="font-size:22px;margin-bottom:6px">📦</div>
+        <div style="font-size:13px;font-weight:700;color:#fcd34d;margin-bottom:4px">BULTO ${numBulto} de ${totalBultos}</div>
+        <div style="font-size:15px;font-weight:800;color:#fff;font-family:monospace">${e.nº_expedicion}</div>
+        <div style="font-size:12px;color:#d1d5db;margin-top:4px">${e.empresas?.nombre||'—'} · ${e.buques?.nombre||'—'}</div>
+        <div style="font-size:11px;color:#9ca3af;margin-top:2px">${e.bultos||0} btos totales · ${e.kilos||0} kg · 📍 ${e.ubicacion||'—'}</div>
+        <div style="font-size:11px;color:#9ca3af;margin-top:4px">${e.estado_semaforo||'—'}</div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:10px 16px">
+        <button id="sc-btn-blt-ficha" style="background:#3b82f6;color:#fff;border:none;border-radius:12px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;min-height:48px;flex:1;max-width:180px">👁 Abrir expedición</button>
+        <button id="sc-btn-blt-sig" style="background:#6b7280;color:#fff;border:none;border-radius:12px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;min-height:48px">🔄 Sig.</button>
+      </div>`;
+    requestAnimationFrame(()=>{
+      const btnFicha = document.getElementById('sc-btn-blt-ficha');
+      const btnSig   = document.getElementById('sc-btn-blt-sig');
+      if(btnFicha) btnFicha.addEventListener('click',()=>{ cerrarScannerQR(); setTimeout(()=>openExpD(expId),200); });
+      if(btnSig)   btnSig.addEventListener('click',()=>{ _ultimoQRLeido=null; res.innerHTML='<div style="font-size:13px;color:#9ca3af;padding:8px">📦 Escanea el siguiente bulto</div>'; });
+    });
+    return;
+  }
+
+  // ── Modo autorización: ALS-EXP:{uuid} ────────────────────────
   const match = texto.match(/^ALS-EXP:([a-f0-9-]{36})$/i);
   if(!match){
+    // Si es un ALS-BLT en modo autorización, extraer la expedición
+    const bltAlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):/i);
+    if(bltAlt){
+      const fakeQR = `ALS-EXP:${bltAlt[1]}`;
+      return _procesarQRLeido(fakeQR);
+    }
     res.innerHTML = `<div style="color:#fbbf24;font-size:13px;padding:8px">
       ⚠️ QR no reconocido como expedición ALS<br>
       <span style="font-size:10px;color:#6b7280">${texto.substring(0,60)}</span></div>`;
