@@ -2463,6 +2463,10 @@ async function doLogin(){
     // Check if must change password
     if(CU.must_change_password){showChangePwd();return;}
     iniciarVerificacionSesion();
+    // Morning Briefing — mostrar antes de navegar al módulo
+    if(['admin','oficina','aduanas'].includes(CU.rol)){
+      cargarMorningBriefing();
+    }
     showHome();
     setTimeout(()=>showToast('👋 Bienvenido, '+CU.nombre.split(' ')[0]), 600);
   }catch(e){
@@ -2604,8 +2608,6 @@ function showHome(){
       </div>
     </div>`;
 
-  // Morning Briefing popup
-  if(['admin','oficina','aduanas'].includes(CU?.rol)) cargarMorningBriefing();
 
   if(['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol))
     c.innerHTML+=`<div class="hm-card hm-card-alm" onclick="enterMod('almacen')">
@@ -9449,13 +9451,14 @@ async function abrirLineaVida(expId, expRef){
 
 // ── Morning Briefing — popup al login ───────────────────────────────
 async function cargarMorningBriefing(){
-  const ov    = document.getElementById('brief-overlay');
+  // Mostrar overlay INMEDIATAMENTE — sin esperar async
+  const ov = document.getElementById('brief-overlay');
+  if(!ov){ console.warn('[Briefing] brief-overlay no encontrado en DOM'); return; }
   const body  = document.getElementById('brief-body');
   const sal   = document.getElementById('brief-saludo');
   const fecha = document.getElementById('brief-fecha');
-  if(!ov || !body) return;
 
-  // Personalizar saludo
+  // Personalizar saludo y mostrar popup de inmediato
   const hora = new Date().getHours();
   const nombre = (CU?.nombre||'').split(' ')[0];
   if(sal) sal.textContent = (hora<12?'Buenos días':hora<19?'Buenas tardes':'Buenas noches')+', '+nombre+' 👋';
@@ -9463,6 +9466,7 @@ async function cargarMorningBriefing(){
     '<br><span style="font-size:10px">'+new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})+'</span>';
 
   ov.style.display = 'flex';
+  console.log('[Briefing] Popup mostrado para:', CU?.nombre, '| rol:', CU?.rol);
 
   try {
     // Datos para el resumen
