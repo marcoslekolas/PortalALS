@@ -343,11 +343,6 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .cal-day.today{border-color:var(--b500);border-width:2px}
 .cal-day.om{background:var(--g50);opacity:.4}
 .cal-day.drag-over{background:var(--b50);outline:2px dashed var(--b500)}
-.kbn-exp-card{transition:opacity .15s,transform .15s;cursor:grab}
-.kbn-exp-card:active{cursor:grabbing}
-.kbn-exp-card.dragging{opacity:.4;transform:scale(.97)}
-.kbn-col-drop{transition:background .15s}
-.kbn-col-drop.drag-over{background:var(--b50);outline:2px dashed var(--b500);border-radius:8px}
 .cal-dn{font-size:12px;font-weight:600;color:var(--g600);margin-bottom:4px}
 .cal-dn-today{background:var(--b600);color:#fff;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
 /* Cal event tags with status colors */
@@ -5587,10 +5582,7 @@ function renderKanban(lista){
           ${ESTADOS.map(st=>{
             const cnt=counts[st.key]||0;
             const active=cnt>0;
-            return`<div class="kbn-col-drop" style="flex:1;min-width:68px;padding:10px 4px;text-align:center;border-right:1px solid var(--g100);${active?'background:var(--w)':''}"
-              ondragover="kbnDragOver(event,this)"
-              ondragleave="kbnDragLeave(this)"
-              ondrop="kbnDrop(event,'${st.key}',this)">
+            return`<div style="flex:1;min-width:68px;padding:10px 4px;text-align:center;border-right:1px solid var(--g100);${active?'background:var(--w)':''}">
               <div style="font-size:16px;line-height:1">${st.icon}</div>
               <div style="font-size:22px;font-weight:800;color:${active?st.col:'var(--g300)'};margin:3px 0;line-height:1">${cnt}</div>
               <div style="font-size:9px;color:${active?'var(--g600)':'var(--g300)'};font-weight:600;text-transform:uppercase;letter-spacing:.3px;line-height:1.2">${st.lbl}</div>
@@ -5603,12 +5595,8 @@ function renderKanban(lista){
           <tbody>${b.exps.map(e=>{
             const sinU=e.ubicacion==='Almacén-Sin Ubicar';
             const landed=e.ubicacion==='Landed';
-            return`<tr class="kbn-exp-card" draggable="true"
-              ondragstart="kbnDragStart('${e.id}','${e.estado_semaforo}',this)"
-              ondragend="kbnDragEnd(this)"
-              onclick="openExpD('${e.id}')"
-              style="${sinU?'background:#fff8e1':landed?'background:#fffbeb':''}">
-              <td class="fw">${e.nº_expedicion} <span style="font-size:10px;color:var(--g300)" title="Arrastra para cambiar estado">⠿</span></td>
+            return`<tr onclick="openExpD('${e.id}')" style="${sinU?'background:#fff8e1':landed?'background:#fffbeb':''}">
+              <td class="fw">${e.nº_expedicion}</td>
               <td>${bdg(e.estado_semaforo)}</td>
               <td style="font-family:var(--mono);font-size:10px;color:var(--g500)">${e.nº_mrn||'—'}</td>
               <td class="sm" style="${sinU?'color:var(--am600);font-weight:700':landed?'color:var(--am600)':''}">${sinU?'⚠️ ':landed?'⚓ ':''} ${e.ubicacion||'—'}</td>
@@ -9773,59 +9761,6 @@ Máximo 5 resultados. Si no hay coincidencias claras, devuelve {"resultados":[]}
   }
 }
 
-
-// ── Kanban D&D — mover expedición entre estados ──────────────────────
-let _kbnDragExpId = null;
-let _kbnDragEstadoOrig = null;
-
-function kbnDragStart(expId, estadoActual, el){
-  _kbnDragExpId = expId;
-  _kbnDragEstadoOrig = estadoActual;
-  el.classList.add('dragging');
-  event.dataTransfer.effectAllowed = 'move';
-}
-
-function kbnDragEnd(el){
-  el.classList.remove('dragging');
-}
-
-function kbnDragOver(e, col){
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  col.classList.add('drag-over');
-}
-
-function kbnDragLeave(col){
-  col.classList.remove('drag-over');
-}
-
-async function kbnDrop(e, nuevoEstado, col){
-  e.preventDefault();
-  col.classList.remove('drag-over');
-  if(!_kbnDragExpId || nuevoEstado === _kbnDragEstadoOrig) return;
-
-  // Estados protegidos — no se pueden asignar por D&D
-  const protegidos = ['🚢 EMBARCADO','🚛 CARGADO CAMIÓN'];
-  if(protegidos.includes(nuevoEstado)){
-    showToast('⛔ Este estado requiere confirmación explícita');
-    return;
-  }
-
-  const expId = _kbnDragExpId;
-  _kbnDragExpId = null;
-
-  try{
-    await sb.from('expediciones').update({
-      estado_semaforo: nuevoEstado,
-      estado_carga: nuevoEstado
-    }).eq('id', expId);
-    await logAct('expediciones', expId, '', 'editar', 'estado_semaforo', _kbnDragEstadoOrig, nuevoEstado);
-    showToast('✅ Estado actualizado → ' + nuevoEstado);
-    loadKanban();
-  } catch(ex){
-    showToast('❌ Error al actualizar: ' + ex.message);
-  }
-}
 
 
 // ── Panel de rendimiento por usuario ────────────────────────────────
