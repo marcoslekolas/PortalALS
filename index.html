@@ -896,7 +896,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="pill-txt">Customs Way</div>
       </div>
     </div>
-    <div style="font-size:10px;color:var(--g400);font-family:var(--mono);padding:4px 8px;background:var(--g100);border-radius:var(--r);margin-right:8px" title="Versión del portal ALS">v3.3.0</div><div class="hm-contact">
+    <div style="font-size:10px;color:var(--g400);font-family:var(--mono);padding:4px 8px;background:var(--g100);border-radius:var(--r);margin-right:8px" title="Versión del portal ALS" id="hm-version">—</div><div class="hm-contact">
       <span>📞 +34 956 58 13 16</span>
       <span>📠 +34 956 676591</span>
       <span>✉️ <a href="/cdn-cgi/l/email-protection#355459467554594654595250565c4754461b565a58" style="color:inherit;text-decoration:none"><span class="__cf_email__" data-cfemail="3b5a57487b5a57485a575c5e5852495a4815585456">[email&#160;protected]</span></a></span>
@@ -1988,35 +1988,105 @@ function iniciarRealtime(){
   }
 }
 
+// ── Cola de cambios Realtime — maneja ráfagas de 20 usuarios ────────
+const _rtQueue = new Map(); // expId → payload más reciente
+let _rtFlushTimer = null;
+let _rtPendingCount = 0;
+
 function _onRealtimeExpedicion(payload){
   if(!CU || !MOD) return;
-  const vistasActivas = ['expediciones','dashboard','alertas','kanban','calendario'];
-  const vistasAlmacen = ['alm-llegadas','alm-auth'];
 
-  // Mostrar indicador sutil de actualización
+  const expId = payload.new?.id || payload.old?.id;
+  const evento = payload.eventType; // INSERT, UPDATE, DELETE
+
+  // Ignorar cambios propios (mismo usuario, últimos 3s)
+  if(payload.new?.updated_by === CU?.id){
+    const ts = payload.new?.updated_at ? new Date(payload.new.updated_at).getTime() : 0;
+    if(Date.now() - ts < 3000) return;
+  }
+
+  // Acumular en cola — si el mismo registro cambia varias veces en la ráfaga,
+  // solo procesamos el último estado
+  if(expId) _rtQueue.set(expId, {payload, evento, ts: Date.now()});
+  _rtPendingCount++;
+
+  // Actualizar indicador con contador de cambios pendientes
+  _rtUpdateDot();
+
+  // Debounce adaptativo:
+  // - Ráfaga pequeña (1-3 cambios): aplicar en 1.5s
+  // - Ráfaga media (4-10): aplicar en 3s
+  // - Ráfaga grande (>10): aplicar en 5s — evita recargas en cadena
+  const delay = _rtPendingCount <= 3 ? 1500 : _rtPendingCount <= 10 ? 3000 : 5000;
+  clearTimeout(_rtFlushTimer);
+  _rtFlushTimer = setTimeout(_rtFlush, delay);
+}
+
+function _rtFlush(){
+  const count = _rtQueue.size;
+  _rtQueue.clear();
+  _rtPendingCount = 0;
+  _rtUpdateDot();
+
+  if(count === 0) return;
+
+  // Mostrar indicador discreto de actualización
   const ts = Date.now();
-  if(!window._lastRealtimeToast || ts - window._lastRealtimeToast > 5000){
+  if(!window._lastRealtimeToast || ts - window._lastRealtimeToast > 4000){
     window._lastRealtimeToast = ts;
-    // Toast discreto no intrusivo
     const t = document.createElement('div');
-    t.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(37,99,235,.9);color:#fff;font-size:11px;font-weight:600;padding:5px 14px;border-radius:20px;z-index:9999;pointer-events:none;opacity:0;transition:opacity .3s';
-    t.textContent = '🔄 Datos actualizados';
+    t.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(37,99,235,.88);color:#fff;font-size:11px;font-weight:600;padding:5px 14px;border-radius:20px;z-index:9999;pointer-events:none;opacity:0;transition:opacity .3s';
+    t.textContent = count === 1 ? '🔄 1 expedición actualizada' : `🔄 ${count} expediciones actualizadas`;
     document.body.appendChild(t);
     requestAnimationFrame(()=>{ t.style.opacity='1'; });
     setTimeout(()=>{ t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 2500);
   }
 
-  // Recargar vista si es relevante
-  if(MOD==='operativa' && vistasActivas.includes(CV)){
-    // Debounce — no recargar más de 1 vez cada 2s
-    clearTimeout(window._realtimeReloadTimer);
-    window._realtimeReloadTimer = setTimeout(()=>{ loadView(CV); }, 2000);
-  }
-  if(MOD==='almacen' && vistasAlmacen.includes(CV)){
-    clearTimeout(window._realtimeAlmTimer);
-    window._realtimeAlmTimer = setTimeout(()=>{ loadView(CV); }, 2000);
+  // Recargar vista actual
+  const vistasActivas = ['expediciones','dashboard','alertas','kanban','calendario'];
+  const vistasAlmacen = ['alm-llegadas','alm-auth','alm-fotos'];
+  if(MOD==='operativa' && vistasActivas.includes(CV)) loadView(CV);
+  if(MOD==='almacen' && vistasAlmacen.includes(CV)) loadView(CV);
+
+  // Si hay un modal de expedición abierto y fue actualizada, refrescarla
+  const mo = document.getElementById('mo');
+  if(mo && mo.classList.contains('open')){
+    const titleEl = document.getElementById('m-title');
+    const textoTitle = titleEl?.textContent || '';
+    // Buscar si algún ID en la cola corresponde a la expedición abierta
+    // (identificamos por el texto del título que contiene la referencia)
+    // Recargamos el modal discretamente si la expedición está en la cola
+    if(_rtQueue.size === 0 && count > 0 && window._modalExpId){
+      // Pequeño delay para no interrumpir edición activa
+      setTimeout(()=>{
+        if(document.getElementById('mo')?.classList.contains('open') && window._modalExpId){
+          openExpD(window._modalExpId, true);
+        }
+      }, 500);
+    }
   }
 }
+
+function _rtUpdateDot(){
+  const dot = document.getElementById('rt-indicator');
+  if(!dot) return;
+  if(_rtPendingCount > 0){
+    dot.style.background = '#f59e0b';
+    dot.title = `Realtime: procesando ${_rtPendingCount} cambio${_rtPendingCount>1?'s':''}…`;
+  } else if(_realtimeChannel){
+    dot.style.background = '#22c55e';
+    dot.title = 'Realtime: conectado — actualizaciones en tiempo real activas';
+  }
+}
+
+// Reconexión automática si el canal se cae
+function _rtReconectar(){
+  if(_realtimeChannel) return;
+  console.log('[ALS Realtime] Reconectando…');
+  iniciarRealtime();
+}
+// Verificar cada 30s que el canal sigue activo
+setInterval(()=>{ if(CU && MOD && !_realtimeChannel) _rtReconectar(); }, 30000);
 
 function detenerRealtime(){
   if(_realtimeChannel){
@@ -2032,6 +2102,10 @@ function mostrarEstadoRealtime(){
   const estado = _realtimeChannel ? 'Realtime activo — cambios en tiempo real' : 'Realtime desconectado — recarga la página';
   showToast((_realtimeChannel ? '🟢 ' : '🔴 ') + estado);
 }
+
+// ── Versión de la aplicación — cambiar aquí en cada release ─────────
+const APP_VERSION = 'v3.5.0';
+const APP_VERSION_DATE = '30/03/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
@@ -2460,6 +2534,9 @@ async function doChangePwd(){
 }
 
 function showHome(){
+  // Actualizar versión en la pantalla de inicio
+  const vEl = document.getElementById('hm-version');
+  if(vEl) vEl.textContent = APP_VERSION;
   // Detectar si airport_cargo solicitó navegar a un módulo específico
   try {
     var gotoMod = localStorage.getItem('als_goto_mod');
@@ -8800,6 +8877,7 @@ async function openModal(key,extraParam){
   if(m.after)m.after();
 }
 function closeModal(){
+  window._modalExpId = null;
   const mbox=document.getElementById('mbox');
   const parentBuque=mbox?.dataset?.parentBuque;
   document.getElementById('mo').classList.remove('open');
@@ -9111,6 +9189,7 @@ async function openExpD(id, forceOpen=false){
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
   document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR</button><button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  window._modalExpId = e.id; // para refresh Realtime
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
 }
