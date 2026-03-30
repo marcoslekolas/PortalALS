@@ -1376,11 +1376,18 @@ textarea.fi{resize:vertical;min-height:72px}
       </div>
       <div class="view" id="view-empresas">
         <div class="ph"><div class="pt">Empresas</div><button class="btn btn-p" onclick="openModal('nueva-empresa')">+ Nueva empresa</button></div>
-        <!-- Buscador + barra alfabética -->
-        <div style="margin-bottom:10px">
-          <input id="emp-search" class="fi" placeholder="🔍 Buscar empresa…" oninput="filtrarEmpresas()" style="margin-bottom:8px">
-          <div id="emp-alpha-bar" style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0"></div>
+        <!-- Filtros -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+          <input id="emp-search" class="fi" placeholder="🔍 Buscar empresa…" oninput="_renderEmpresas()" style="flex:1;min-width:180px">
+          <div style="display:flex;gap:4px;flex-shrink:0" id="emp-rol-btns">
+            <button id="emp-rol-todas"  onclick="setEmpRol('')"            class="btn btn-p btn-sm">Todas</button>
+            <button id="emp-rol-cliente" onclick="setEmpRol('cliente')"     class="btn btn-s btn-sm">🏢 Cliente</button>
+            <button id="emp-rol-consig"  onclick="setEmpRol('consignatario')" class="btn btn-s btn-sm">📋 Consignatario</button>
+            <button id="emp-rol-transp"  onclick="setEmpRol('transportista')" class="btn btn-s btn-sm">🚛 Transportista</button>
+          </div>
         </div>
+        <!-- Barra alfabética -->
+        <div id="emp-alpha-bar" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px"></div>
         <div style="font-size:11px;color:var(--g400);margin-bottom:8px" id="emp-count"></div>
         <div class="tc"><table class="tbl"><thead><tr><th>Empresa</th><th>Rol</th><th>Contacto</th><th>Email confronta</th><th>Teléfono</th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
       </div>
@@ -7559,70 +7566,86 @@ async function openIncD(id){
 }
 async function saveInc(id){const obj={descripcion:gv('ic-d'),estado:gv('ic-e'),responsable_id:gv('ic-r')||null,resolucion:gv('ic-res')};if(gv('ic-e')==='Cerrada')obj.fecha_cierre=new Date().toISOString();await sb.from('incidencias').update(obj).eq('id',id);await logAct('incidencias',id,'','editar','estado',null,gv('ic-e'));showToast('Incidencia guardada');closeModal();loadView(CV);}
 
-let _empData = []; // cache de empresas para filtrado local
-let _empLetraActiva = ''; // letra seleccionada en barra alfabética
+let _empData = [];
+let _empLetraActiva = '';
+let _empRolActivo = '';
+// Mapa: letra → tiene empresas en el subconjunto filtrado por rol
+let _empLetrasConDatos = new Set();
 
 async function loadEmpresas(){
   const {data} = await sb.from('empresas').select('*').order('nombre');
   _empData = data || [];
   _empLetraActiva = '';
-  // Construir barra alfabética con las letras que tienen empresas
-  const letrasPresentes = new Set(_empData.map(e => (e.nombre||'').charAt(0).toUpperCase()).filter(Boolean));
-  const todas = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-  const bar = document.getElementById('emp-alpha-bar');
-  if(bar){
-    // Botón "Todas"
-    const btnTodas = `<button onclick="setEmpLetra('')" id="emp-btn-todas"
-      style="min-width:36px;min-height:32px;padding:4px 8px;border-radius:6px;border:1px solid var(--g200);
-      background:var(--b600);color:#fff;font-size:12px;font-weight:700;cursor:pointer">
-      Todas
-    </button>`;
-    const btnsLetras = todas.map(l => {
-      const tiene = letrasPresentes.has(l);
-      return `<button onclick="setEmpLetra('${l}')" id="emp-btn-${l}"
-        style="min-width:28px;min-height:32px;padding:4px 6px;border-radius:6px;border:1px solid var(--g200);
-        background:${tiene?'var(--w)':'var(--g50)'};color:${tiene?'var(--g900)':'var(--g300)'};
-        font-size:12px;font-weight:${tiene?'700':'400'};cursor:${tiene?'pointer':'default'};
-        pointer-events:${tiene?'auto':'none'}">${l}
-      </button>`;
-    }).join('');
-    bar.innerHTML = btnTodas + btnsLetras;
-  }
+  _empRolActivo = '';
+  _rebuilAlphaBar();
+  _renderEmpresas();
+}
+
+function setEmpRol(rol){
+  _empRolActivo = rol;
+  _empLetraActiva = ''; // reset letra al cambiar rol
+  // Actualizar estilos botones de rol
+  ['todas','cliente','consig','transp'].forEach(k=>{
+    const btn = document.getElementById('emp-rol-'+k);
+    if(!btn) return;
+    const esActivo = (k==='todas' && rol==='') || (k==='cliente' && rol==='cliente') ||
+      (k==='consig' && rol==='consignatario') || (k==='transp' && rol==='transportista');
+    btn.className = 'btn btn-sm ' + (esActivo ? 'btn-p' : 'btn-s');
+  });
+  _rebuilAlphaBar();
   _renderEmpresas();
 }
 
 function setEmpLetra(letra){
   _empLetraActiva = letra;
-  // Actualizar estilos de la barra
-  document.getElementById('emp-btn-todas').style.background = letra===''?'var(--b600)':'var(--w)';
-  document.getElementById('emp-btn-todas').style.color = letra===''?'#fff':'var(--g700)';
-  'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(l=>{
-    const btn = document.getElementById('emp-btn-'+l);
-    if(!btn) return;
-    const activo = l === letra;
-    if(activo){ btn.style.background='var(--b600)'; btn.style.color='#fff'; }
-    else { btn.style.background=btn.dataset.tiene?'var(--w)':'var(--g50)'; btn.style.color=btn.dataset.tiene?'var(--g900)':'var(--g300)'; }
-  });
-  // Limpiar búsqueda al seleccionar letra
+  _rebuilAlphaBar(); // re-renderiza con letra activa
   const inp = document.getElementById('emp-search');
   if(inp) inp.value = '';
   _renderEmpresas();
-  // Scroll arriba
   const tc = document.querySelector('#view-empresas .tc');
   if(tc) tc.scrollTop = 0;
 }
 
-function filtrarEmpresas(){
-  _empLetraActiva = ''; // al buscar texto, desactivar letra
-  // Desactivar todos los botones de letra
-  const btnTodas = document.getElementById('emp-btn-todas');
-  if(btnTodas){ btnTodas.style.background='var(--w)'; btnTodas.style.color='var(--g700)'; }
-  _renderEmpresas();
+function _getEmpFiltradoPorRol(){
+  if(!_empRolActivo) return _empData;
+  return _empData.filter(e => (e.rol||[]).map(r=>r.toLowerCase()).includes(_empRolActivo.toLowerCase()));
+}
+
+function _rebuilAlphaBar(){
+  // Calcular letras con datos según rol activo
+  const base = _getEmpFiltradoPorRol();
+  _empLetrasConDatos = new Set(base.map(e=>(e.nombre||'').charAt(0).toUpperCase()).filter(Boolean));
+
+  const bar = document.getElementById('emp-alpha-bar');
+  if(!bar) return;
+
+  // Botón "Todas letras"
+  const activaTodas = _empLetraActiva === '';
+  let html = `<button onclick="setEmpLetra('')" id="emp-btn-todas"
+    style="min-width:34px;min-height:28px;padding:3px 8px;border-radius:6px;
+    border:1px solid ${activaTodas?'var(--b600)':'var(--g200)'};
+    background:${activaTodas?'var(--b600)':'var(--w)'};
+    color:${activaTodas?'#fff':'var(--g600)'};
+    font-size:11px;font-weight:700;cursor:pointer">·</button>`;
+
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(l=>{
+    const tiene = _empLetrasConDatos.has(l);
+    const activa = l === _empLetraActiva;
+    html += `<button onclick="${tiene?`setEmpLetra('${l}')`:'void(0)'}" id="emp-btn-${l}"
+      style="min-width:26px;min-height:28px;padding:3px 4px;border-radius:6px;
+      border:1px solid ${activa?'var(--b600)':tiene?'var(--g200)':'transparent'};
+      background:${activa?'var(--b600)':tiene?'var(--w)':'transparent'};
+      color:${activa?'#fff':tiene?'var(--g900)':'var(--g300)'};
+      font-size:12px;font-weight:${tiene?'700':'400'};
+      cursor:${tiene?'pointer':'default'};
+      pointer-events:${tiene?'auto':'none'}">${l}</button>`;
+  });
+  bar.innerHTML = html;
 }
 
 function _renderEmpresas(){
   const q = (document.getElementById('emp-search')?.value||'').toLowerCase().trim();
-  let lista = _empData;
+  let lista = _getEmpFiltradoPorRol();
   if(_empLetraActiva){
     lista = lista.filter(e=>(e.nombre||'').charAt(0).toUpperCase()===_empLetraActiva);
   }
@@ -7634,9 +7657,10 @@ function _renderEmpresas(){
     );
   }
   const countEl = document.getElementById('emp-count');
+  const base = _getEmpFiltradoPorRol();
   if(countEl) countEl.textContent = lista.length === _empData.length
     ? _empData.length + ' empresas'
-    : lista.length + ' de ' + _empData.length + ' empresas';
+    : lista.length + ' de ' + base.length + (_empRolActivo?' ('+_empRolActivo+')':'') + ' empresas';
 
   document.getElementById('emp-tbody').innerHTML = lista.map(e=>
     `<tr onclick="openEmpD('${e.id}')">
