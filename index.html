@@ -8993,32 +8993,6 @@ const MODALS={
     }
   },
   after:()=>{
-    // Autocompletado inteligente al seleccionar empresa
-    const empSel = document.getElementById('ne-emp');
-    if(empSel){
-      empSel.addEventListener('change', async function(){
-        const empId = this.value;
-        if(!empId) return;
-        try{
-          // Buscar la expedición más reciente de esta empresa para prerellenar
-          const {data:hist} = await sb.from('expediciones')
-            .select('status_aduanero,tramite_aduanero,ubicacion,docs_puerto')
-            .eq('empresa_id', empId)
-            .order('created_at',{ascending:false})
-            .limit(1)
-            .single();
-          if(!hist) return;
-          // Prerellenar con valores históricos de la empresa
-          const staSel = document.getElementById('ne-sta');
-          const traSel = document.getElementById('ne-tra');
-          const docsSel = document.getElementById('ne-docs');
-          if(staSel && hist.status_aduanero) staSel.value = hist.status_aduanero;
-          if(traSel && hist.tramite_aduanero) traSel.value = hist.tramite_aduanero;
-          if(docsSel && hist.docs_puerto) docsSel.value = Array.isArray(hist.docs_puerto)?hist.docs_puerto[0]:hist.docs_puerto;
-          showToast('💡 Campos prerrellenados con historial de la empresa');
-        } catch(ex){ /* sin historial — no pasa nada */ }
-      });
-    }
     // Inyectar banner OCR AWB/BL al inicio del formulario
     const mb = document.getElementById('m-body');
     if(!mb) return;
