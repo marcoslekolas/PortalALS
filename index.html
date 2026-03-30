@@ -9517,6 +9517,39 @@ async function _verificarManualScanner(){
   await _mostrarResultadoScan(exps[0], res);
 }
 
+// ── Abrir expedición desde escáner (salta guardas de módulo) ─────────
+async function abrirExpDesdeScanner(expId){
+  cerrarScannerQR();
+  // Cambiar a módulo operativa si hace falta, sin await (no es async)
+  if(MOD !== 'operativa'){
+    MOD = 'operativa';
+    const navOp  = document.getElementById('nav-op');
+    const navAlm = document.getElementById('nav-alm');
+    const navAdm = document.getElementById('nav-adm');
+    const app    = document.getElementById('app');
+    const home   = document.getElementById('screen-home');
+    if(home) home.style.display = 'none';
+    if(app)  app.style.display  = 'flex';
+    if(navOp)  navOp.style.display  = 'flex';
+    if(navAlm) navAlm.style.display = 'none';
+    if(navAdm) navAdm.style.display = 'none';
+    const bcMod = document.getElementById('bc-mod');
+    if(bcMod) bcMod.textContent = 'Operativa';
+    // Cargar dashboard como fondo
+    CV = 'dashboard';
+  }
+  // Abrir la ficha directamente (150ms para que el DOM se estabilice)
+  setTimeout(async ()=>{
+    const {data:e} = await sb.from('expediciones')
+      .select('*,buques(id,nombre),empresas(nombre,email_confronta)')
+      .eq('id', expId).single();
+    const {data:incs} = await sb.from('incidencias').select('*').eq('expedicion_id', expId);
+    if(!e){ showToast('❌ Expedición no encontrada'); return; }
+    // Llamar directamente al cuerpo de openExpD sin pasar por la guarda de módulo
+    openExpD(expId);
+  }, 150);
+}
+
 function cerrarScannerQR(){
   const ov = document.getElementById('scanner-overlay');
   if(ov) ov.remove(); // Primero quitar overlay para feedback inmediato
@@ -9589,13 +9622,7 @@ async function _procesarQRLeido(texto){
     requestAnimationFrame(()=>{
       const btnFicha = document.getElementById('sc-btn-blt-ficha');
       const btnSig   = document.getElementById('sc-btn-blt-sig');
-      if(btnFicha) btnFicha.addEventListener('click', async ()=>{
-        cerrarScannerQR();
-        // Navegar a operativa y abrir la ficha de expedición
-        // Si estamos en almacén, navegar a operativa para que openExpD no quede bloqueado
-        if(MOD !== 'operativa') await enterMod('operativa');
-        setTimeout(()=>openExpD(expId), 350);
-      });
+      if(btnFicha) btnFicha.addEventListener('click', ()=>{ abrirExpDesdeScanner(expId); });
       if(btnSig) btnSig.addEventListener('click',()=>{
         _ultimoQRLeido=null;
         // Restaurar cámara
