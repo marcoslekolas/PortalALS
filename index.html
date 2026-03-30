@@ -8591,7 +8591,7 @@ async function notifClienteBuque(buqueId, buqueNombre){
      • Ubicación:   ${e.ubicacion||'—'}
      • Estado:      ${e.estado_semaforo||'—'}
      • Trámite:     ${e.tramite_aduanero||'—'}
-     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}`
+     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}\n     🔍 Seguimiento: https://marcoslekolas.github.io/PortalALS/tracking.html?exp=${e.id}`
   ).join('\n\n');
 
   const firma = `Atentamente,
@@ -8908,7 +8908,8 @@ async function notifCliente(id,emailDest,ref){
   const bloqueAviso=listaInc?'🚨 INCIDENCIAS:\n'+listaInc:'ℹ️ Mercancía recibida correctamente.';
   const todosEmails=[emailDest,...(e.empresas?.otros_emails||[])].filter(Boolean).join(',');
   const asunto=encodeURIComponent('Recepción: '+e.buques?.nombre+' // Exp: '+e.nº_expedicion);
-  const cuerpo=encodeURIComponent('Estimado cliente,\n\nLe informamos que su mercancía ha sido recibida.\n\n🚢 Buque: '+e.buques?.nombre+'\n🆔 Expedición: '+e.nº_expedicion+'\n📦 Bultos: '+e.bultos+'\n⚖️ Kilos: '+e.kilos+' kg\n📍 Ubicación: '+e.ubicacion+'\n🚦 Status: '+e.status_aduanero+'\n\n'+bloqueAviso+'\n\nAtentamente,\nDepartamento de Operaciones');
+  const trackingUrl='https://marcoslekolas.github.io/PortalALS/tracking.html?exp='+id;
+  const cuerpo=encodeURIComponent('Estimado cliente,\n\nLe informamos que su mercancía ha sido recibida.\n\n🚢 Buque: '+e.buques?.nombre+'\n🆔 Expedición: '+e.nº_expedicion+'\n📦 Bultos: '+e.bultos+'\n⚖️ Kilos: '+e.kilos+' kg\n📍 Ubicación: '+e.ubicacion+'\n🚦 Status: '+e.status_aduanero+'\n\n'+bloqueAviso+'\n\n──────────────────────────────\n🔍 SEGUIMIENTO EN TIEMPO REAL:\n'+trackingUrl+'\n──────────────────────────────\n\nAcceda al enlace en cualquier momento para consultar el estado actualizado de su expedición.\n\nAtentamente,\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n📞 +34 956 58 13 16 · als@alsalgeciras.com');
   const cc=encodeURIComponent('marcosvalenciamancilla@gmail.com');
   await sb.from('expediciones').update({notif_cliente_sent:true,fecha_aviso_cliente:new Date().toISOString()}).eq('id',id);
   await logAct('expediciones',id,e.nº_expedicion,'email_cliente','notif_cliente_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
