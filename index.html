@@ -9481,6 +9481,7 @@ async function abrirScannerQR(){
 }
 
 function _setScannerMode(mode){
+  _scannerPausado = false; // al cambiar modo, permitir nuevas lecturas
   window._scannerMode = mode;
   const lblEl = document.getElementById('sc-mode-label');
   const btnA = document.getElementById('sc-mode-autorizar');
@@ -9526,6 +9527,7 @@ function abrirExpDesdeScanner(expId){
 }
 
 function cerrarScannerQR(){
+  _scannerPausado = false; // resetear para próxima apertura
   const ov = document.getElementById('scanner-overlay');
   if(ov) ov.remove();
   if(_html5QrScanner){
@@ -9554,8 +9556,10 @@ function cerrarScannerQR(){
 
 let _ultimoQRLeido = null;
 let _ultimoQRTs = 0;
+let _scannerPausado = false; // true mientras se muestra un resultado — evita parpadeo
 
 async function _procesarQRLeido(texto){
+  if(_scannerPausado) return; // resultado activo — ignorar lecturas de cámara
   const ahora = Date.now();
   if(texto === _ultimoQRLeido && ahora - _ultimoQRTs < 4000) return;
   _ultimoQRLeido = texto;
@@ -9664,6 +9668,7 @@ async function _procesarQRLeido(texto){
 }
 
 async function _mostrarResultadoScan(e, res){
+  _scannerPausado = true; // pausar lecturas mientras se muestra resultado
   const autorizada = e.estado_carga === '✅ AUTORIZADO';
   const color = autorizada ? '#22c55e' : '#ef4444';
   const bg = autorizada ? 'rgba(34,197,94,.15)' : 'rgba(239,68,68,.15)';
@@ -9707,6 +9712,7 @@ async function _mostrarResultadoScan(e, res){
     });
 
     if(btnSig) btnSig.addEventListener('click', ()=>{
+      _scannerPausado = false; // reanudar lecturas
       _ultimoQRLeido = null;
       res.innerHTML = `
         <div style="font-size:13px;color:#9ca3af;padding:8px">Apunta al siguiente QR</div>
