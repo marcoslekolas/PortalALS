@@ -1070,6 +1070,9 @@ textarea.fi{resize:vertical;min-height:72px}
         <button class="hdr-icon-btn" onclick="abrirMenuAduanas()" style="display:none" id="btn-to-taric" title="Módulo Aduanas">🏛️</button>
         <button id="btn-to-config" class="hdr-icon-btn" onclick="enterMod('configuracion')" style="display:none" title="Configuración">⚙️</button>
 
+        <!-- Indicador Realtime -->
+        <div id="rt-indicator" title="Realtime: desconectado" style="width:8px;height:8px;border-radius:50%;background:var(--g300);flex-shrink:0;cursor:default;transition:background .4s;display:none" onclick="mostrarEstadoRealtime()"></div>
+
         <!-- Dark mode -->
         <button id="dark-toggle" class="hdr-icon-btn" onclick="toggleDarkMode()" title="Modo oscuro/claro">🌙</button>
 
@@ -1399,11 +1402,15 @@ textarea.fi{resize:vertical;min-height:72px}
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.4.0</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.5.0</span>
         <span style="font-size:12px;color:var(--g400)">30/03/2026</span>
         <span class="badge bg">Actual</span>
       </div>
       <ul style="font-size:13px;color:var(--g700);margin:0;padding-left:20px;line-height:1.8">
+        <li>📸 Galería fotográfica: fecha, tipo y autor visible en cada foto</li>
+        <li>🟢 Indicador Realtime en header — estado de conexión en tiempo real</li>
+        <li>📅 Dashboard Ejecutivo: selector de rango libre de fechas</li>
+        <li>🕰️ Alertas expediciones sin movimiento: detecta mercancía parada +7 días en almacén</li>
         <li>🔲 QR albarán hardcodeado con logo ALS — funciona sin conexión</li>
         <li>🔍 Portal de seguimiento público por expedición y AWB (tracking.html)</li>
         <li>📧 Enlace de tracking incluido en todos los emails de notificación al cliente</li>
@@ -1579,15 +1586,29 @@ textarea.fi{resize:vertical;min-height:72px}
 
       <div class="view" id="view-ejecutivo">
         <!-- Selector de período -->
-        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-          <select id="ej-año" class="fi fs" style="width:auto" onchange="loadEjecutivo()">
-            <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+          <select id="ej-modo" class="fi fs" style="width:auto" onchange="toggleEjModo()">
+            <option value="preset">Período predefinido</option>
+            <option value="rango">Rango libre</option>
           </select>
-          <select id="ej-meses" class="fi fs" style="width:auto" onchange="loadEjecutivo()">
-            <option value="3">Últimos 3 meses</option>
-            <option value="6">Últimos 6 meses</option>
-            <option value="12">Año completo</option>
-          </select>
+          <!-- Modo predefinido -->
+          <div id="ej-preset-wrap" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="ej-año" class="fi fs" style="width:auto" onchange="loadEjecutivo()">
+              <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
+            </select>
+            <select id="ej-meses" class="fi fs" style="width:auto" onchange="loadEjecutivo()">
+              <option value="3">Últimos 3 meses</option>
+              <option value="6">Últimos 6 meses</option>
+              <option value="12">Año completo</option>
+            </select>
+          </div>
+          <!-- Modo rango libre -->
+          <div id="ej-rango-wrap" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:12px;color:var(--g500)">Desde</label>
+            <input type="date" id="ej-desde" class="fi" style="width:auto" onchange="loadEjecutivo()">
+            <label style="font-size:12px;color:var(--g500)">Hasta</label>
+            <input type="date" id="ej-hasta" class="fi" style="width:auto" onchange="loadEjecutivo()">
+          </div>
           <button class="btn btn-s btn-sm" onclick="loadEjecutivo()">↺ Actualizar</button>
           <span id="ej-info" style="font-size:11px;color:var(--g500);margin-left:auto"></span>
         </div>
@@ -1939,8 +1960,14 @@ function iniciarRealtime(){
         }
       )
       .subscribe((status)=>{
+        const dot = document.getElementById('rt-indicator');
         if(status==='SUBSCRIBED'){
           console.log('[ALS Realtime] Conectado — actualizaciones en tiempo real activas');
+          if(dot){ dot.style.background='#22c55e'; dot.style.display=''; dot.title='Realtime: conectado'; }
+        } else if(status==='CHANNEL_ERROR' || status==='TIMED_OUT'){
+          if(dot){ dot.style.background='#ef4444'; dot.style.display=''; dot.title='Realtime: error de conexión'; }
+        } else {
+          if(dot){ dot.style.background='#f59e0b'; dot.style.display=''; dot.title='Realtime: conectando…'; }
         }
       });
   } catch(ex){
@@ -1983,6 +2010,14 @@ function detenerRealtime(){
     try{ sb.removeChannel(_realtimeChannel); }catch(ex){}
     _realtimeChannel = null;
   }
+  const dot = document.getElementById('rt-indicator');
+  if(dot){ dot.style.display='none'; dot.style.background='var(--g300)'; }
+}
+
+function mostrarEstadoRealtime(){
+  const dot = document.getElementById('rt-indicator');
+  const estado = _realtimeChannel ? 'Realtime activo — cambios en tiempo real' : 'Realtime desconectado — recarga la página';
+  showToast((_realtimeChannel ? '🟢 ' : '🔴 ') + estado);
 }
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -3479,7 +3514,7 @@ async function verFotosExpedicion(expId, ref){
     data.forEach(f=>{
       todasUrls.push(f.storage_url);
       tipos[f.storage_url]=f.tipo;
-      fotosData[f.storage_url]={id:f.id, path:f.storage_path};
+      fotosData[f.storage_url]={id:f.id, path:f.storage_path, tipo:f.tipo, created_at:f.created_at, subida_por:f.subida_por};
     });
     [['llegada',exp?.foto_llegada_url],['carga',exp?.foto_carga_url],['embarque',exp?.foto_embarque_url]]
       .forEach(([tipo,url])=>{
@@ -4359,8 +4394,15 @@ function abrirGaleriaFotos(urls, titulo, fotosData, expId){
     hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.5);flex-shrink:0;gap:8px;flex-wrap:wrap';
 
     var title = document.createElement('div');
-    title.style.cssText = 'color:#fff;font-weight:600;font-size:14px;flex:1;min-width:0';
-    title.textContent = titulo + ' (' + (idx+1) + '/' + urlsArr.length + ')';
+    title.style.cssText = 'color:#fff;font-weight:600;font-size:14px;flex:1;min-width:0;min-width:0';
+    var fotoMeta = fotosData && fotosData[url] ? fotosData[url] : null;
+    var tipoLabel = fotoMeta && fotoMeta.tipo ? ({'llegada':'📥 Llegada','carga':'🚛 Carga','embarque':'🚢 Embarque','ocr':'🤖 OCR'}[fotoMeta.tipo] || fotoMeta.tipo) : '';
+    var fechaLabel = fotoMeta && fotoMeta.created_at ? new Date(fotoMeta.created_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    var userLabel = fotoMeta && fotoMeta.subida_por ? fotoMeta.subida_por : '';
+    title.innerHTML = '<div>' + titulo + ' (' + (idx+1) + '/' + urlsArr.length + ')</div>'
+      + (tipoLabel||fechaLabel||userLabel ? '<div style="font-size:11px;font-weight:400;color:rgba(255,255,255,.6);margin-top:2px">'
+        + [tipoLabel, fechaLabel, userLabel?'por '+userLabel:''].filter(Boolean).join(' · ')
+        + '</div>' : '');
     hdr.appendChild(title);
 
     var btns = document.createElement('div');
@@ -5926,6 +5968,40 @@ async function loadAlertas(){
           <div class="a-detail">Confirmado: ${ts} · ${a.usuario_nombre||'—'} · Pendiente asignar ubicación y gestión documental</div>
         </div>
         <span class="badge bb">LLEGADA</span>
+      </div>`;
+    });
+    html += `<div style="height:1px;background:var(--g200);margin:10px 0"></div>`;
+  }
+
+  // ── Expediciones sin movimiento (> 7 días en almacén sin cambios) ──
+  const hace7dias = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+  const {data:sinMov} = await sb.from('expediciones')
+    .select('id,nº_expedicion,ubicacion,estado_semaforo,updated_at,buques(nombre),empresas(nombre)')
+    .neq('estado_semaforo','🚢 EMBARCADO')
+    .neq('estado_semaforo','🚛 CARGADO CAMIÓN')
+    .neq('ubicacion','Pendiente recibir')
+    .like('ubicacion','Almacén%')
+    .lt('updated_at', hace7dias)
+    .order('updated_at', {ascending:true})
+    .limit(20);
+
+  if(sinMov && sinMov.length > 0){
+    html += `<div style="background:var(--am50);border:1px solid var(--am200,#fde68a);border-radius:var(--rl);padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:16px">🕰️</span>
+      <div style="font-size:12px;font-weight:700;color:var(--am600)">${sinMov.length} expedición${sinMov.length>1?'es sin':'  sin'} movimiento en almacén — más de 7 días sin cambios</div>
+    </div>`;
+    sinMov.forEach(e=>{
+      const dias = Math.floor((Date.now() - new Date(e.updated_at).getTime()) / 86400000);
+      html += `<div class="a-item wrn" style="cursor:pointer" onclick="openExpD('${e.id}');nav('expediciones',null)">
+        <div class="a-icon">🕰️</div>
+        <div class="a-info">
+          <div class="a-title">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</div>
+          <div class="a-detail">${e.empresas?.nombre||'—'} · 📍 ${e.ubicacion||'—'} · Sin cambios hace <strong>${dias} días</strong></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+          <span class="badge ba">${dias}d sin mov.</span>
+          <button class="btn btn-sm btn-p" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();openExpD('${e.id}')">Ver →</button>
+        </div>
       </div>`;
     });
     html += `<div style="height:1px;background:var(--g200);margin:10px 0"></div>`;
@@ -8202,18 +8278,45 @@ async function exportarStatsCSV(){
 // ═══════════════════════════════════════════════════════════════
 // M5 — DASHBOARD EJECUTIVO: KPIs mensuales comparativos
 // ═══════════════════════════════════════════════════════════════
+function toggleEjModo(){
+  const modo = document.getElementById('ej-modo')?.value;
+  const presetWrap = document.getElementById('ej-preset-wrap');
+  const rangoWrap  = document.getElementById('ej-rango-wrap');
+  if(modo === 'rango'){
+    if(presetWrap) presetWrap.style.display = 'none';
+    if(rangoWrap)  rangoWrap.style.display  = 'flex';
+    // Inicializar con mes actual si vacío
+    const hoy = new Date();
+    const d = document.getElementById('ej-desde');
+    const h = document.getElementById('ej-hasta');
+    if(d && !d.value) d.value = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-01`;
+    if(h && !h.value) h.value = hoy.toISOString().slice(0,10);
+  } else {
+    if(presetWrap) presetWrap.style.display = 'flex';
+    if(rangoWrap)  rangoWrap.style.display  = 'none';
+  }
+  loadEjecutivo();
+}
+
 async function loadEjecutivo(){
-  const año  = parseInt(document.getElementById('ej-año')?.value || new Date().getFullYear());
-  const meses= parseInt(document.getElementById('ej-meses')?.value || 3);
+  const modo = document.getElementById('ej-modo')?.value || 'preset';
   const info = document.getElementById('ej-info');
   if(info) info.textContent = 'Cargando…';
 
-  // Rango de fechas: últimos N meses del año seleccionado
-  const ahora = new Date();
-  const mesActual = ahora.getMonth() + 1;
-  const mesInicio = Math.max(1, mesActual - meses + 1);
-  const fechaDesde = `${año}-${String(mesInicio).padStart(2,'0')}-01`;
-  const fechaHasta = `${año}-12-31`;
+  let fechaDesde, fechaHasta;
+  if(modo === 'rango'){
+    fechaDesde = document.getElementById('ej-desde')?.value;
+    fechaHasta = document.getElementById('ej-hasta')?.value;
+    if(!fechaDesde || !fechaHasta){ if(info) info.textContent='Selecciona rango'; return; }
+  } else {
+    const año  = parseInt(document.getElementById('ej-año')?.value || new Date().getFullYear());
+    const meses= parseInt(document.getElementById('ej-meses')?.value || 3);
+    const ahora = new Date();
+    const mesActual = ahora.getMonth() + 1;
+    const mesInicio = Math.max(1, mesActual - meses + 1);
+    fechaDesde = `${año}-${String(mesInicio).padStart(2,'0')}-01`;
+    fechaHasta = `${año}-12-31`;
+  }
 
   const [
     {data:exps},
