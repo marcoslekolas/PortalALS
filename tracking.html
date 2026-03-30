@@ -346,16 +346,138 @@ function renderError(msg){
     </div>`;
 }
 
+// ── Render Airport Cargo ──────────────────────────────────────────────
+const STATUS_AWB = {
+  'T1':  {label:'T1 — En tránsito',        icon:'✈️',  color:'blue'},
+  'EXA': {label:'EXA — Exportación',        icon:'📤',  color:'blue'},
+  'IMP': {label:'IMP — Importación',        icon:'📥',  color:'amber'},
+  'DUA': {label:'DUA presentado',           icon:'📋',  color:'amber'},
+  'LEV': {label:'Levantado',               icon:'✅',  color:''},
+  'ENT': {label:'Entregado',               icon:'🚛',  color:''},
+};
+
+function renderAWB(e){
+  const st = STATUS_AWB[e.status] || {label: e.status||'—', icon:'📦', color:'blue'};
+  const fmt = d => d ? new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+
+  // Timeline airport cargo
+  const AWB_ESTADOS = [
+    {label:'Llegada al aeropuerto', icon:'✈️',  desc:'La mercancía ha llegado al aeropuerto de origen.'},
+    {label:'En handling',           icon:'🏭',  desc:`En gestión con ${e.handler||'el handler'}.`},
+    {label:'Trámite aduanero',      icon:'📋',  desc:'En proceso de despacho aduanero.'},
+    {label:'Levantado',             icon:'✅',  desc:'Despacho autorizado. Mercancía lista para retirada.'},
+    {label:'Entregado',             icon:'🚛',  desc:'Mercancía entregada al consignatario.'},
+  ];
+
+  const statusIdx = {'T1':1,'EXA':1,'IMP':2,'DUA':2,'LEV':3,'ENT':4};
+  const idx = statusIdx[e.status] ?? 1;
+
+  const tlHtml = AWB_ESTADOS.map((s,i) => {
+    const done = i < idx, active = i === idx, pending = i > idx;
+    return `
+      <div class="tl-item">
+        <div class="tl-dot ${active?'active':done?'done':'pending'}"></div>
+        <div class="tl-card ${active?'active':pending?'pending':''}">
+          <div class="tl-card-top">
+            <div class="tl-card-title">${s.icon} ${s.label}</div>
+            ${active?'<div class="tl-card-time">ACTUAL</div>':''}
+          </div>
+          ${active?`<div class="tl-card-desc">${s.desc}</div>`:''}
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('root').innerHTML = `
+    <div class="status-hero">
+      <div class="status-badge ${st.color}">
+        <span class="dot"></span>
+        ${st.icon} ${st.label}
+      </div>
+      <div class="hero-ref">${e.awb || '—'}</div>
+      <div class="hero-buque">✈️ Airport Cargo · <span>${e.aeropuerto||'AGP'}</span>${e.buque?` · Buque: <span>${e.buque}</span>`:''}</div>
+      <div class="hero-grid">
+        <div class="hero-stat">
+          <div class="hero-stat-val">${e.bultos??'—'}</div>
+          <div class="hero-stat-lbl">Bultos</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-val">${e.kilos_tasables!=null?Number(e.kilos_tasables).toLocaleString('es-ES'):'—'}</div>
+          <div class="hero-stat-lbl">Kg tasables</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-val">${e.handler||'—'}</div>
+          <div class="hero-stat-lbl">Handler</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">📍 Estado del envío</div>
+    <div class="timeline">${tlHtml}</div>
+
+    <div class="section-title">📋 Detalle AWB</div>
+    <div class="data-grid">
+      <div class="data-row">
+        <div class="data-lbl">AWB</div>
+        <div class="data-val">${e.awb||'—'}</div>
+      </div>
+      <div class="data-row">
+        <div class="data-lbl">Status aduanero</div>
+        <div class="data-val normal">${e.status||'—'}</div>
+      </div>
+      <div class="data-row">
+        <div class="data-lbl">Consignatario</div>
+        <div class="data-val normal">${e.consignatario||'—'}</div>
+      </div>
+      <div class="data-row">
+        <div class="data-lbl">Aeropuerto</div>
+        <div class="data-val">${e.aeropuerto||'—'}</div>
+      </div>
+      <div class="data-row">
+        <div class="data-lbl">Fecha llegada</div>
+        <div class="data-val">${fmt(e.fecha_llegada)}</div>
+      </div>
+      <div class="data-row">
+        <div class="data-lbl">Fecha retirada</div>
+        <div class="data-val">${fmt(e.fecha_retirada)}</div>
+      </div>
+      ${e.observaciones?`
+      <div class="data-row full">
+        <div class="data-lbl">Observaciones</div>
+        <div class="data-val normal">${e.observaciones}</div>
+      </div>`:''}
+    </div>
+  `;
+}
+
 // ── Main ──────────────────────────────────────────────────────────────
 async function main(){
   const params = new URLSearchParams(window.location.search);
   const expId = params.get('exp');
+  const awbId = params.get('awb');
 
-  if(!expId){
+  if(!expId && !awbId){
     renderError('No se especificó ninguna expedición en el enlace.');
     return;
   }
 
+  // ── Modo Airport Cargo ──
+  if(awbId){
+    try {
+      const {data:e, error} = await sb.from('airport_cargo').select('*').eq('id', awbId).single();
+      if(error || !e){ renderError('No se encontró el AWB solicitado.'); return; }
+      renderAWB(e);
+      setInterval(async () => {
+        const {data:fresh} = await sb.from('airport_cargo').select('*').eq('id', awbId).single();
+        if(fresh) renderAWB(fresh);
+      }, 120000);
+    } catch(e) {
+      renderError('Error al cargar los datos. Inténtelo de nuevo.');
+      console.error(e);
+    }
+    return;
+  }
+
+  // ── Modo Expedición portuaria ──
   try {
     const [{data:exp, error}, {data:incs}] = await Promise.all([
       sb.from('expediciones')
@@ -374,7 +496,6 @@ async function main(){
 
     render(exp, incs);
 
-    // Actualizar cada 2 minutos
     setInterval(async () => {
       const {data:fresh} = await sb.from('expediciones')
         .select('*,buques(nombre,eta_buque),empresas(nombre)')
