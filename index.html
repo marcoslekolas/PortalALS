@@ -1376,6 +1376,12 @@ textarea.fi{resize:vertical;min-height:72px}
       </div>
       <div class="view" id="view-empresas">
         <div class="ph"><div class="pt">Empresas</div><button class="btn btn-p" onclick="openModal('nueva-empresa')">+ Nueva empresa</button></div>
+        <!-- Buscador + barra alfabética -->
+        <div style="margin-bottom:10px">
+          <input id="emp-search" class="fi" placeholder="🔍 Buscar empresa…" oninput="filtrarEmpresas()" style="margin-bottom:8px">
+          <div id="emp-alpha-bar" style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0"></div>
+        </div>
+        <div style="font-size:11px;color:var(--g400);margin-bottom:8px" id="emp-count"></div>
         <div class="tc"><table class="tbl"><thead><tr><th>Empresa</th><th>Rol</th><th>Contacto</th><th>Email confronta</th><th>Teléfono</th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
       </div>
       <div class="view" id="view-usuarios">
@@ -7553,9 +7559,94 @@ async function openIncD(id){
 }
 async function saveInc(id){const obj={descripcion:gv('ic-d'),estado:gv('ic-e'),responsable_id:gv('ic-r')||null,resolucion:gv('ic-res')};if(gv('ic-e')==='Cerrada')obj.fecha_cierre=new Date().toISOString();await sb.from('incidencias').update(obj).eq('id',id);await logAct('incidencias',id,'','editar','estado',null,gv('ic-e'));showToast('Incidencia guardada');closeModal();loadView(CV);}
 
+let _empData = []; // cache de empresas para filtrado local
+let _empLetraActiva = ''; // letra seleccionada en barra alfabética
+
 async function loadEmpresas(){
-  const {data}=await sb.from('empresas').select('*').order('nombre');
-  document.getElementById('emp-tbody').innerHTML=(data||[]).map(e=>`<tr onclick="openEmpD('${e.id}')"><td><div class="fw">${e.nombre}</div></td><td>${(e.rol||[]).map(r=>`<span class="badge bb" style="margin-right:3px">${r}</span>`).join('')}</td><td>${e.persona_contacto||'—'}</td><td><a href="mailto:${e.email_confronta||''}" onclick="event.stopPropagation()" style="color:var(--b600);text-decoration:none">${e.email_confronta||'—'}</a></td><td>${e.telefono||'—'}</td></tr>`).join('')||'<tr><td colspan="5"><div class="empty"><div class="empty-txt">Sin empresas</div></div></td></tr>';
+  const {data} = await sb.from('empresas').select('*').order('nombre');
+  _empData = data || [];
+  _empLetraActiva = '';
+  // Construir barra alfabética con las letras que tienen empresas
+  const letrasPresentes = new Set(_empData.map(e => (e.nombre||'').charAt(0).toUpperCase()).filter(Boolean));
+  const todas = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  const bar = document.getElementById('emp-alpha-bar');
+  if(bar){
+    // Botón "Todas"
+    const btnTodas = `<button onclick="setEmpLetra('')" id="emp-btn-todas"
+      style="min-width:36px;min-height:32px;padding:4px 8px;border-radius:6px;border:1px solid var(--g200);
+      background:var(--b600);color:#fff;font-size:12px;font-weight:700;cursor:pointer">
+      Todas
+    </button>`;
+    const btnsLetras = todas.map(l => {
+      const tiene = letrasPresentes.has(l);
+      return `<button onclick="setEmpLetra('${l}')" id="emp-btn-${l}"
+        style="min-width:28px;min-height:32px;padding:4px 6px;border-radius:6px;border:1px solid var(--g200);
+        background:${tiene?'var(--w)':'var(--g50)'};color:${tiene?'var(--g900)':'var(--g300)'};
+        font-size:12px;font-weight:${tiene?'700':'400'};cursor:${tiene?'pointer':'default'};
+        pointer-events:${tiene?'auto':'none'}">${l}
+      </button>`;
+    }).join('');
+    bar.innerHTML = btnTodas + btnsLetras;
+  }
+  _renderEmpresas();
+}
+
+function setEmpLetra(letra){
+  _empLetraActiva = letra;
+  // Actualizar estilos de la barra
+  document.getElementById('emp-btn-todas').style.background = letra===''?'var(--b600)':'var(--w)';
+  document.getElementById('emp-btn-todas').style.color = letra===''?'#fff':'var(--g700)';
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(l=>{
+    const btn = document.getElementById('emp-btn-'+l);
+    if(!btn) return;
+    const activo = l === letra;
+    if(activo){ btn.style.background='var(--b600)'; btn.style.color='#fff'; }
+    else { btn.style.background=btn.dataset.tiene?'var(--w)':'var(--g50)'; btn.style.color=btn.dataset.tiene?'var(--g900)':'var(--g300)'; }
+  });
+  // Limpiar búsqueda al seleccionar letra
+  const inp = document.getElementById('emp-search');
+  if(inp) inp.value = '';
+  _renderEmpresas();
+  // Scroll arriba
+  const tc = document.querySelector('#view-empresas .tc');
+  if(tc) tc.scrollTop = 0;
+}
+
+function filtrarEmpresas(){
+  _empLetraActiva = ''; // al buscar texto, desactivar letra
+  // Desactivar todos los botones de letra
+  const btnTodas = document.getElementById('emp-btn-todas');
+  if(btnTodas){ btnTodas.style.background='var(--w)'; btnTodas.style.color='var(--g700)'; }
+  _renderEmpresas();
+}
+
+function _renderEmpresas(){
+  const q = (document.getElementById('emp-search')?.value||'').toLowerCase().trim();
+  let lista = _empData;
+  if(_empLetraActiva){
+    lista = lista.filter(e=>(e.nombre||'').charAt(0).toUpperCase()===_empLetraActiva);
+  }
+  if(q){
+    lista = lista.filter(e=>
+      (e.nombre||'').toLowerCase().includes(q) ||
+      (e.email_confronta||'').toLowerCase().includes(q) ||
+      (e.persona_contacto||'').toLowerCase().includes(q)
+    );
+  }
+  const countEl = document.getElementById('emp-count');
+  if(countEl) countEl.textContent = lista.length === _empData.length
+    ? _empData.length + ' empresas'
+    : lista.length + ' de ' + _empData.length + ' empresas';
+
+  document.getElementById('emp-tbody').innerHTML = lista.map(e=>
+    `<tr onclick="openEmpD('${e.id}')">
+      <td><div class="fw">${e.nombre}</div></td>
+      <td>${(e.rol||[]).map(r=>`<span class="badge bb" style="margin-right:3px">${r}</span>`).join('')}</td>
+      <td>${e.persona_contacto||'—'}</td>
+      <td><a href="mailto:${e.email_confronta||''}" onclick="event.stopPropagation()" style="color:var(--b600);text-decoration:none">${e.email_confronta||'—'}</a></td>
+      <td>${e.telefono||'—'}</td>
+    </tr>`
+  ).join('') || '<tr><td colspan="5"><div class="empty"><div class="empty-txt">Sin resultados</div></div></td></tr>';
 }
 async function openEmpD(id){
   const {data:e}=await sb.from('empresas').select('*').eq('id',id).single();if(!e)return;
