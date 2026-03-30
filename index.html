@@ -5966,7 +5966,7 @@ function tlNext(){window.tlMonth++;if(window.tlMonth>11){window.tlMonth=0;window
 function tlToday(){window.tlYear=null;window.tlMonth=null;loadTL();}
 
 async function loadAlertas(){
-  const [{data:al},{data:inc},{data:expSinDespachar}]=await Promise.all([
+  const [{data:al},{data:inc},{data:expSinDespachar},{data:expSinUbicar}]=await Promise.all([
     sb.from('v_alertas').select('*'),
     sb.from('incidencias').select('*,expediciones(id,nº_expedicion)').neq('estado','Cerrada'),
     // Expediciones en tránsito sin MRN — candidatas a alerta TARIC
@@ -5974,9 +5974,41 @@ async function loadAlertas(){
       .select('id,nº_expedicion,status_aduanero,tramite_aduanero,ubicacion,buques(nombre),fecha_max_despacho')
       .neq('tramite_aduanero','Despachado')
       .neq('ubicacion','Pendiente recibir')
-      .limit(30)
+      .limit(30),
+    // Expediciones sin ubicar — máxima prioridad
+    sb.from('expediciones')
+      .select('id,nº_expedicion,bultos,kilos,created_at,buques(nombre),empresas(nombre)')
+      .eq('ubicacion','Almacén-Sin Ubicar')
+      .neq('estado_semaforo','🚢 EMBARCADO')
+      .order('created_at',{ascending:true})
   ]);
   let html='';
+
+  // ── 🔴 PRIORIDAD MÁXIMA: Expediciones sin ubicar ────────────────────
+  if(expSinUbicar && expSinUbicar.length > 0){
+    html += `<div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:var(--rl);padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">🔴</span>
+      <div>
+        <div style="font-size:13px;font-weight:800;color:var(--rd600)">${expSinUbicar.length} expedición${expSinUbicar.length>1?'es':''} en almacén sin ubicar</div>
+        <div style="font-size:11px;color:var(--rd500);margin-top:2px">Requieren ubicación física inmediata</div>
+      </div>
+    </div>`;
+    expSinUbicar.forEach(e=>{
+      const dias = Math.floor((Date.now()-new Date(e.created_at).getTime())/86400000);
+      html += `<div class="a-item crit" style="cursor:pointer;border-left:3px solid var(--rd500)" onclick="openExpD('${e.id}');nav('expediciones',null)">
+        <div class="a-icon">📦</div>
+        <div class="a-info">
+          <div class="a-title">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</div>
+          <div class="a-detail">${e.empresas?.nombre||'—'} · ${e.bultos||0} btos · ${e.kilos||0} kg · Entrada hace ${dias} día${dias!==1?'s':''}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+          <span class="badge br">SIN UBICAR</span>
+          <button class="btn btn-sm btn-p" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();openExpD('${e.id}')">Ubicar →</button>
+        </div>
+      </div>`;
+    });
+    html += `<div style="height:1px;background:var(--g200);margin:10px 0"></div>`;
+  }
 
   // ── Alertas TARIC proactivas por medidas de control ────────────
   const medidasControl = {
