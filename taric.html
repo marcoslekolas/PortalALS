@@ -1736,6 +1736,7 @@ function mostrarResultado(r, container){
             <a href="${taricUrl}" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">🇪🇺 Ver en TARIC Online</a>
             <a href="${btiUrl}" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📋 Buscar IAV/BTI ↗</a>
             <a href="${aeatUrl}" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">🏛️ Consultar AEAT</a>
+            <button class="btn btn-p btn-sm" onclick="consultarVexcan('${r.codigo_taric.replace(/\s/g,'').substring(0,8)}','${(r.descripcion_nc||'').replace(/'/g,\"\\'\")}')">🔒 Consultar VEXCAN</button>
             <button class="btn btn-s btn-sm" onclick="copiarCodigo('${r.codigo_taric}')">📋 Copiar código</button>
           </div>
         </div>
@@ -3681,5 +3682,109 @@ const _navOriginal = nav;
 // nav already handles all views generically
 
 </script>
+
+<!-- ── Modal VEXCAN ─────────────────────────────────────────── -->
+<div id="vexcan-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--w);border-radius:16px;width:100%;max-width:640px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.2)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--g200);flex-shrink:0">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--g900)">🔒 Consulta VEXCAN</div>
+        <div style="font-size:11px;color:var(--g500);margin-top:2px">Verificación de medidas de control — AEAT Algeciras</div>
+      </div>
+      <button onclick="cerrarVexcan()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--g400);padding:4px">×</button>
+    </div>
+    <div style="padding:16px 20px;overflow-y:auto;flex:1" id="vexcan-body">
+      <div style="text-align:center;padding:20px;color:var(--g400)">Cargando…</div>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid var(--g200);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0">
+      <a id="vexcan-link" href="#" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none;display:none">🌐 Abrir en AEAT ↗</a>
+      <button onclick="cerrarVexcan()" class="btn btn-s btn-sm">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── VEXCAN — Medidas de control AEAT ─────────────────────────────────
+async function consultarVexcan(codigo8, descripcion){
+  const ov = document.getElementById('vexcan-overlay');
+  const body = document.getElementById('vexcan-body');
+  const link = document.getElementById('vexcan-link');
+  ov.style.display = 'flex';
+
+  const url = `https://www1.agenciatributaria.gob.es/wlpl/inwinvoc/es.aeat.dit.adu.adta.trans.bdm.TtCodNomIntQuery?codigoNomenclatura=${codigo8}`;
+  if(link){ link.href = url; link.style.display = ''; }
+
+  body.innerHTML = `<div style="margin-bottom:14px">
+    <div style="font-size:11px;color:var(--g400);margin-bottom:4px">Código TARIC</div>
+    <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--b700);letter-spacing:2px">${codigo8}</div>
+    <div style="font-size:12px;color:var(--g600);margin-top:4px">${descripcion}</div>
+  </div>
+  <div style="background:var(--b50);border:1px solid var(--b100);border-radius:10px;padding:14px;margin-bottom:14px">
+    <div style="font-size:12px;font-weight:700;color:var(--b700);margin-bottom:8px">🔒 ¿Qué es VEXCAN?</div>
+    <div style="font-size:12px;color:var(--g600);line-height:1.6">
+      <strong>VEXCAN</strong> (Verificación y Control Aduanero) es el sistema de la AEAT que gestiona los controles aduaneros en los puertos y fronteras españolas. 
+      Determina si una mercancía debe someterse a:<br><br>
+      • <strong>Control documental</strong> — revisión de documentación<br>
+      • <strong>Control físico</strong> — inspección de la mercancía<br>
+      • <strong>Análisis de laboratorio</strong> — muestras para análisis<br>
+      • <strong>Despacho automático</strong> — sin controles adicionales
+    </div>
+  </div>
+  <div style="background:var(--am50);border:1px solid #fde68a;border-radius:10px;padding:14px;margin-bottom:14px">
+    <div style="font-size:12px;font-weight:700;color:var(--am600);margin-bottom:8px">⚠️ Medidas habituales para este código</div>
+    <div id="vexcan-medidas" style="font-size:12px;color:var(--g600);line-height:1.6">Consultando IA…</div>
+  </div>
+  <div style="background:var(--g50);border:1px solid var(--g200);border-radius:10px;padding:14px">
+    <div style="font-size:12px;font-weight:700;color:var(--g700);margin-bottom:8px">📋 Cómo consultar el canal VEXCAN asignado</div>
+    <div style="font-size:12px;color:var(--g600);line-height:1.6">
+      1. Pulsa <strong>"Abrir en AEAT ↗"</strong> para ver la nomenclatura en la base de datos de la AEAT<br>
+      2. El canal VEXCAN se asigna en el momento del despacho — no es consultable previamente de forma pública<br>
+      3. En el portal GANA (AEAT) puedes ver el canal asignado una vez presentado el DUA<br>
+      4. Para consultas previas al despacho, contacta con la Aduana de Algeciras Marítima: <strong>aduana.algeciras@aeat.es</strong>
+    </div>
+  </div>`;
+
+  // Consultar IA para medidas habituales del código
+  try {
+    const orKey = await getOpenRouterKey();
+    if(orKey){
+      const resp = await fetch('https://openrouter.ai/api/v1/chat/completions',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+orKey,'Content-Type':'application/json','HTTP-Referer':'https://marcoslekolas.github.io','X-Title':'ALS TARIC'},
+        body: JSON.stringify({
+          model:'mistralai/mistral-small-3.2-24b-instruct',
+          max_tokens:400,
+          messages:[{role:'user',content:`Para el código TARIC ${codigo8} (${descripcion}), indica de forma concisa:
+1. Tipo de canal VEXCAN más habitual (verde/naranja/rojo) y por qué
+2. Controles aduaneros especiales habituales en España (sanitario, veterinario, fitosanitario, SOIVRE, CCAA, etc.)
+3. Documentos adicionales que suele requerir la Aduana de Algeciras
+Responde en español, formato lista, máximo 150 palabras. Si no conoces el código, di que no tienes datos suficientes.`}]
+        })
+      });
+      const data = await resp.json();
+      const txt = data.choices?.[0]?.message?.content || 'Sin datos disponibles para este código.';
+      const mEl = document.getElementById('vexcan-medidas');
+      if(mEl) mEl.innerHTML = txt.replace(/
+/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
+    } else {
+      const mEl = document.getElementById('vexcan-medidas');
+      if(mEl) mEl.textContent = 'Configura la API key de OpenRouter para obtener análisis de medidas VEXCAN.';
+    }
+  } catch(ex){
+    const mEl = document.getElementById('vexcan-medidas');
+    if(mEl) mEl.textContent = 'Error al consultar: '+ex.message;
+  }
+}
+
+function cerrarVexcan(){
+  document.getElementById('vexcan-overlay').style.display='none';
+}
+
+// Cerrar al clicar fuera
+document.getElementById('vexcan-overlay').addEventListener('click', function(e){
+  if(e.target === this) cerrarVexcan();
+});
+</script>
+
 </body>
 </html>

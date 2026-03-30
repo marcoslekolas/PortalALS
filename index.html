@@ -124,6 +124,10 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .hm-av{width:30px;height:30px;border-radius:50%;background:var(--b600);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--w)}
 .hm-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:32px 16px 48px}
 .hm-greeting{font-size:14px;color:var(--b600);font-weight:600;text-align:center;margin-top:8px;letter-spacing:.02em}
+.hm-brief-item{display:flex;align-items:flex-start;gap:8px;padding:4px 0;border-bottom:1px solid var(--b100)}
+.hm-brief-item:last-child{border-bottom:none}
+.hm-brief-num{font-size:18px;font-weight:800;color:var(--b700);min-width:28px;text-align:right;line-height:1.2}
+.hm-brief-lbl{font-size:12px;color:var(--g600);line-height:1.4}
 .hm-title{font-size:28px;font-weight:800;text-align:center;margin-bottom:4px;margin-top:4px;color:var(--g900);letter-spacing:-.5px}
 
 .hm-sub{font-size:15px;color:var(--g500);text-align:center;margin-bottom:36px}
@@ -913,6 +917,19 @@ textarea.fi{resize:vertical;min-height:72px}
     <div class="hm-greeting" id="hm-greeting">Buenos días</div>
     <div class="hm-title" id="hm-name-big">Portal ALS · CW</div>
     <div class="hm-sub">Selecciona el área de trabajo</div>
+    <!-- Morning Briefing -->
+    <div id="hm-briefing" style="width:100%;max-width:720px;margin:12px 0 4px;display:none">
+      <div style="background:var(--b50);border:1px solid var(--b100);border-radius:14px;padding:16px 20px;position:relative">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="font-size:16px">🧠</span>
+          <span style="font-size:12px;font-weight:700;color:var(--b700);text-transform:uppercase;letter-spacing:.06em">Resumen operativo del día</span>
+          <span style="margin-left:auto;font-size:10px;color:var(--g400)" id="hm-brief-ts"></span>
+        </div>
+        <div id="hm-brief-body" style="font-size:13px;color:var(--g700);line-height:1.7">
+          <div style="display:flex;align-items:center;gap:8px;color:var(--g400)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block"></div> Consultando datos operativos…</div>
+        </div>
+      </div>
+    </div>
     <div class="hm-cards" id="hm-cards"></div>
   </div>
 </div>
@@ -1415,11 +1432,16 @@ textarea.fi{resize:vertical;min-height:72px}
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.5.0</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.6.0</span>
         <span style="font-size:12px;color:var(--g400)">30/03/2026</span>
         <span class="badge bg">Actual</span>
       </div>
       <ul style="font-size:13px;color:var(--g700);margin:0;padding-left:20px;line-height:1.8">
+        <li>🧠 Morning Briefing: resumen operativo personalizado al iniciar sesión</li>
+        <li>📋 Línea de vida: historial cronológico completo de cada expedición con fotos</li>
+        <li>🔍 Detector de anomalías: expediciones con tiempo en almacén fuera de lo normal</li>
+        <li>📊 Dashboard Ejecutivo: comparativa ▲/▼ vs mismo período año anterior</li>
+        <li>📧 Email automático al cliente al confirmar embarque con foto y CC a als@alsalgeciras.com</li>
         <li>📸 Galería fotográfica: fecha, tipo y autor visible en cada foto</li>
         <li>🟢 Indicador Realtime en header — estado de conexión en tiempo real</li>
         <li>📅 Dashboard Ejecutivo: selector de rango libre de fechas</li>
@@ -2104,7 +2126,7 @@ function mostrarEstadoRealtime(){
 }
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.5.0';
+const APP_VERSION = 'v3.6.0';
 const APP_VERSION_DATE = '30/03/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -2597,6 +2619,9 @@ function showHome(){
         <div class="hm-card-cta">Entrar →</div>
       </div>
     </div>`;
+
+  // Morning Briefing
+  if(['admin','oficina','aduanas','almacen'].includes(CU?.rol)){ const bEl=document.getElementById('hm-briefing'); if(bEl) bEl.style.display=''; cargarMorningBriefing(); }
 
   if(['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol))
     c.innerHTML+=`<div class="hm-card hm-card-alm" onclick="enterMod('almacen')">
@@ -6052,6 +6077,58 @@ async function loadAlertas(){
     </div>`;
   });
 
+  // ── Detector de anomalías operativas ───────────────────────────────
+  try {
+    // 1. Expediciones en almacén más del doble del tiempo medio histórico
+    const {data:expTiempos} = await sb.from('expediciones')
+      .select('id,nº_expedicion,ubicacion,updated_at,empresas(nombre),buques(nombre)')
+      .like('ubicacion','Almacén%')
+      .neq('estado_semaforo','🚢 EMBARCADO')
+      .neq('estado_semaforo','🚛 CARGADO CAMIÓN')
+      .order('updated_at', {ascending:true})
+      .limit(100);
+
+    const anomalias = [];
+
+    if(expTiempos && expTiempos.length > 0){
+      // Calcular media de días en almacén
+      const diasLista = expTiempos.map(e=>Math.floor((Date.now()-new Date(e.updated_at).getTime())/86400000));
+      const media = diasLista.reduce((a,b)=>a+b,0) / diasLista.length;
+
+      expTiempos.forEach((e,i)=>{
+        const dias = diasLista[i];
+        if(dias > Math.max(media*2, 14)){ // más del doble de la media o más de 14 días
+          anomalias.push({
+            tipo:'tiempo',
+            exp: e,
+            msg: `${dias} días en almacén — media actual: ${Math.round(media)} días`,
+          });
+        }
+      });
+    }
+
+    if(anomalias.length > 0){
+      html += `<div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:var(--rl);padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">🔍</span>
+        <div style="font-size:12px;font-weight:700;color:#7c3aed">${anomalias.length} anomalía${anomalias.length>1?'s':''} detectada${anomalias.length>1?'s':''} — tiempo en almacén significativamente elevado</div>
+      </div>`;
+      anomalias.slice(0,10).forEach(an=>{
+        html += `<div class="a-item wrn" style="cursor:pointer;border-left:3px solid #7c3aed" onclick="openExpD('${an.exp.id}');nav('expediciones',null)">
+          <div class="a-icon">🔍</div>
+          <div class="a-info">
+            <div class="a-title">${an.exp.nº_expedicion} — ${an.exp.buques?.nombre||'—'}</div>
+            <div class="a-detail">${an.exp.empresas?.nombre||'—'} · 📍 ${an.exp.ubicacion||'—'} · ${an.msg}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+            <span class="badge" style="background:#ede9fe;color:#7c3aed;border:1px solid #ddd6fe">ANOMALÍA</span>
+            <button class="btn btn-sm btn-s" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();openExpD('${an.exp.id}')">Ver →</button>
+          </div>
+        </div>`;
+      });
+      html += `<div style="height:1px;background:var(--g200);margin:10px 0"></div>`;
+    }
+  } catch(ex){ console.warn('Detector anomalías:', ex); }
+
   // ── Llegadas recientes pendientes de gestión (últimas 24h) ──────────
   const hace24h = new Date(Date.now() - 24*60*60*1000).toISOString();
   const {data:llegadas} = await sb.from('activity_log')
@@ -7538,7 +7615,68 @@ async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Si
   // Auto-notificar a facturación si hay email configurado
   await sb.from('buques').update({estado_facturacion:'pendiente'}).eq('id',bid);
   enviarEmailFacturacionAuto(bid);
+  // Email automático al cliente con confirmación de embarque
+  await enviarEmailEmbarqueCliente(bid, fotoUrl);
   await loadAlmFotos('embarque');
+}
+
+// ── Email automático al cliente al confirmar embarque ─────────────────
+async function enviarEmailEmbarqueCliente(buqueId, fotoUrl){
+  try{
+    const {data:b} = await sb.from('buques')
+      .select('nombre,nº_escala,eta_buque,ec:cliente_id(nombre,email_confronta,otros_emails)')
+      .eq('id',buqueId).single();
+    if(!b) return;
+
+    const emailCliente = b.ec?.email_confronta;
+    if(!emailCliente){ showToast('ℹ️ Sin email cliente para notif. embarque'); return; }
+
+    const {data:exps} = await sb.from('expediciones')
+      .select('nº_expedicion,bultos,kilos,nº_mrn')
+      .eq('buque_id',buqueId)
+      .eq('estado_semaforo','🚢 EMBARCADO')
+      .neq('ubicacion','Landed');
+
+    const hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+    const totalBultos = (exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
+    const totalKilos  = (exps||[]).reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+
+    const detalle = (exps||[]).map(e=>
+      '  · Exp: '+e.nº_expedicion+' | '+e.bultos+' btos · '+e.kilos+' kg'+(e.nº_mrn?' | MRN: '+e.nº_mrn:'')
+    ).join('\n');
+
+    const cuerpo =
+      'Estimado cliente,\n\n'+
+      'Le confirmamos que su mercancía ha sido embarcada correctamente a bordo del buque.\n\n'+
+      '🚢 Buque: '+b.nombre+
+      (b.nº_escala?'\n🔢 Escala: '+b.nº_escala:'')+
+      '\n📅 Fecha embarque: '+hoy+
+      '\n\n── EXPEDICIONES EMBARCADAS ──────────────────\n'+
+      detalle+
+      '\n\n📦 Total: '+totalBultos+' bultos · '+totalKilos.toLocaleString('es-ES')+' kg'+
+      (fotoUrl?'\n📸 Foto de confirmación de embarque adjunta en este email.':'')+
+      '\n\n──────────────────────────────────────────────'+
+      '\n\nQuedamos a su disposición para cualquier consulta.\n\n'+
+      'Atentamente,\n\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n'+
+      '📞 +34 956 58 13 16 · als@alsalgeciras.com\n'+
+      'Operations 24/7 · Boardings +34 664 07 49 40';
+
+    const otros = (b.ec?.otros_emails||[]).filter(Boolean).join(',');
+    const cc = ['als@alsalgeciras.com', otros].filter(Boolean).join(',');
+    const asunto = encodeURIComponent('✅ Embarque confirmado — Buque '+b.nombre+' · '+hoy);
+    const mailto = 'mailto:'+emailCliente
+      +'?cc='+encodeURIComponent(cc)
+      +'&subject='+asunto
+      +'&body='+encodeURIComponent(cuerpo);
+
+    const a = document.createElement('a');
+    a.href = mailto; a.target = '_blank';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    showToast('📧 Email de embarque abierto — recuerda enviar');
+  } catch(ex){
+    console.warn('Email embarque error:', ex);
+    showToast('⚠️ No se pudo abrir el email de embarque: '+ex.message);
+  }
 }
 function onLandedFoto(){const f=document.getElementById('lnd-fi')?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn');if(btn)btn.style.display='';setupFotos('lnd-fi','lnd-pv',null);}}
 function onLandedBuqueFoto(bid){const f=document.getElementById('lnd-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn-'+bid);if(btn)btn.style.display='';setupFotos('lnd-fi-'+bid,'lnd-pv-'+bid,null);}}
@@ -8565,6 +8703,20 @@ async function loadEjecutivo(){
   const totalBuques = B.length;
   const incAbiertas = INC.filter(i=>i.estado!=='Cerrada').length;
 
+  // ── Comparativa año anterior ────────────────────────────────────
+  const fdAnterior = fechaDesde.replace(/^\d{4}/,(parseInt(fechaDesde.slice(0,4))-1).toString());
+  const fhAnterior = fechaHasta.replace(/^\d{4}/,(parseInt(fechaHasta.slice(0,4))-1).toString());
+  const {data:expsAnt} = await sb.from('expediciones').select('id,bultos,kilos')
+    .gte('created_at', fdAnterior).lte('created_at', fhAnterior);
+  const expAntN = (expsAnt||[]).length;
+  const bltAntN = (expsAnt||[]).reduce((a,e)=>a+(e.bultos||0),0);
+  const kgAntN  = (expsAnt||[]).reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+  const diffPct = (a,b) => b===0 ? null : Math.round((a-b)/b*100);
+  const pctExps = diffPct(totalExps,expAntN);
+  const pctBlt  = diffPct(totalBultos,bltAntN);
+  const pctKg   = diffPct(totalKilos,kgAntN);
+  const fmtPct  = v => v===null?'':v>0?`<span style="color:var(--gr600);font-size:11px;margin-left:4px">▲ +${v}% vs año ant.</span>`:`<span style="color:var(--rd500);font-size:11px;margin-left:4px">▼ ${v}% vs año ant.</span>`;
+
   // Tiempo medio en almacén (días entre 1ª ubicación almacén → última ubicación salida)
   const tiemposMedio = [];
   const porExp = {};
@@ -8588,8 +8740,8 @@ async function loadEjecutivo(){
   // ── Renderizar KPIs ───────────────────────────────────────────
   const kpiGrid = document.getElementById('ej-kpis');
   if(kpiGrid) kpiGrid.innerHTML = [
-    {lbl:'Expediciones',val:totalExps,sub:`${meses} meses`,cls:'bl'},
-    {lbl:'Bultos gestionados',val:totalBultos.toLocaleString('es-ES'),sub:`${totalKilos.toLocaleString('es-ES')} kg`,cls:'bl'},
+    {lbl:'Expediciones',val:totalExps,sub:fmtPct(pctExps)||`${meses} meses`,cls:'bl'},
+    {lbl:'Bultos gestionados',val:totalBultos.toLocaleString('es-ES'),sub:fmtPct(pctBlt)||`${totalKilos.toLocaleString('es-ES')} kg`,cls:'bl'},
     {lbl:'Buques operados',val:totalBuques,sub:`${año}`,cls:'bl'},
     {lbl:'% Despachadas',val:pctDespacho+'%',sub:`${despachadas} de ${totalExps}`,cls:pctDespacho>=80?'gr':pctDespacho>=50?'am':'rd'},
     {lbl:'Tiempo medio almacén',val:tiempoMedio!==null?tiempoMedio+'d':'—',sub:tiemposMedio.length?`sobre ${tiemposMedio.length} exp.`:'sin datos',cls:'am'},
@@ -8597,7 +8749,7 @@ async function loadEjecutivo(){
   ].map(k=>`<div class="kpi ${k.cls}">
     <div class="kpi-lbl">${k.lbl}</div>
     <div class="kpi-val">${k.val}</div>
-    <div class="kpi-sub">${k.sub}</div>
+    <div class="kpi-sub" style="font-size:11px">${k.sub||''}</div>
   </div>`).join('');
 
   // ── Gráfica de barras mensuales ───────────────────────────────
@@ -9188,7 +9340,7 @@ async function openExpD(id, forceOpen=false){
     </div>
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR</button><button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR</button><button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   window._modalExpId = e.id; // para refresh Realtime
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
@@ -9223,6 +9375,166 @@ async function revertirCarga(expId, expRef){
   showToast('↩ Carga revertida — expedición disponible para nueva carga');
   // Recargar la ficha para que los badges se actualicen
   openExpD(expId, true);
+}
+
+
+// ── Morning Briefing — resumen operativo personalizado por usuario ────
+async function cargarMorningBriefing(){
+  const body = document.getElementById('hm-brief-body');
+  const ts   = document.getElementById('hm-brief-ts');
+  if(!body) return;
+
+  try{
+    // Datos frescos de Supabase
+    const hoy = new Date().toISOString().slice(0,10);
+    const en48h = new Date(Date.now()+48*3600000).toISOString();
+
+    const [
+      {data:buquesProximos},
+      {data:expVencidas},
+      {data:expSinMov},
+      {data:incAbiertas},
+      {data:expEnAlmacen}
+    ] = await Promise.all([
+      sb.from('buques').select('nombre,eta_buque,estado_operacion')
+        .neq('estado_operacion','Finalizado')
+        .lte('eta_buque', en48h).gte('eta_buque', hoy),
+      sb.from('expediciones').select('nº_expedicion,fecha_max_despacho,buques(nombre)')
+        .neq('tramite_aduanero','Despachado')
+        .neq('ubicacion','Pendiente recibir')
+        .lte('fecha_max_despacho', new Date(Date.now()+7*86400000).toISOString().slice(0,10))
+        .not('fecha_max_despacho','is',null),
+      sb.from('expediciones').select('id')
+        .like('ubicacion','Almacén%')
+        .lt('updated_at', new Date(Date.now()-7*86400000).toISOString())
+        .neq('estado_semaforo','🚢 EMBARCADO'),
+      sb.from('incidencias').select('id').neq('estado','Cerrada'),
+      sb.from('expediciones').select('id')
+        .like('ubicacion','Almacén%')
+        .neq('estado_semaforo','🚢 EMBARCADO')
+    ]);
+
+    // Construir items del briefing
+    const items = [];
+
+    if(buquesProximos?.length)
+      items.push({n:buquesProximos.length, icon:'🚢', lbl:`buque${buquesProximos.length>1?'s':''} con ETA en las próximas 48h: <strong>${buquesProximos.map(b=>b.nombre).join(', ')}</strong>`, color:'var(--b600)'});
+
+    if(expVencidas?.length)
+      items.push({n:expVencidas.length, icon:'⚠️', lbl:`expedición${expVencidas.length>1?'es':''} con fecha máx. de despacho esta semana`, color:'var(--am600)'});
+
+    if(expSinMov?.length)
+      items.push({n:expSinMov.length, icon:'🕰️', lbl:`expedición${expSinMov.length>1?'es':''} sin movimiento en almacén más de 7 días`, color:'var(--am600)'});
+
+    if(incAbiertas?.length)
+      items.push({n:incAbiertas.length, icon:'🔴', lbl:`incidencia${incAbiertas.length>1?'s':''} abierta${incAbiertas.length>1?'s':''} sin cerrar`, color:'var(--rd600)'});
+
+    if(expEnAlmacen?.length)
+      items.push({n:expEnAlmacen.length, icon:'📦', lbl:`expedición${expEnAlmacen.length>1?'es':''} actualmente en almacén`, color:'var(--tl600)'});
+
+    if(!items.length){
+      body.innerHTML = '<div style="font-size:13px;color:var(--gr600);font-weight:600">✅ Todo en orden — sin alertas activas hoy</div>';
+    } else {
+      body.innerHTML = items.map(i=>
+        `<div class="hm-brief-item">
+          <span style="font-size:14px;flex-shrink:0">${i.icon}</span>
+          <div><span style="font-size:16px;font-weight:800;color:${i.color}">${i.n}</span>
+          <span style="font-size:13px;color:var(--g600);margin-left:6px">${i.lbl}</span></div>
+        </div>`
+      ).join('');
+    }
+
+    if(ts) ts.textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+
+  } catch(ex){
+    if(body) body.innerHTML = '<div style="font-size:12px;color:var(--g400)">No se pudo cargar el resumen operativo</div>';
+    console.warn('Morning Briefing error:', ex);
+  }
+}
+
+
+// ── Línea de vida de expedición ───────────────────────────────────────
+async function abrirLineaVida(expId, expRef){
+  // Abrir modal con toda la historia cronológica de la expedición
+  document.getElementById('m-title').innerHTML = '📋 Línea de vida — ' + expRef;
+  document.getElementById('m-body').innerHTML = '<div style="text-align:center;padding:20px;color:var(--g400)"><div class="spinner" style="display:inline-block;width:20px;height:20px;border-width:2px;margin-right:8px"></div>Cargando historial completo…</div>';
+  document.getElementById('m-foot').innerHTML = '<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>';
+  document.getElementById('mo').classList.add('open');
+
+  try{
+    const [{data:exp}, {data:log}, {data:incs}] = await Promise.all([
+      sb.from('expediciones').select('*,buques(nombre,eta_buque),empresas(nombre)').eq('id',expId).single(),
+      sb.from('activity_log').select('*').eq('tabla','expediciones').eq('registro_id',expId).order('created_at',{ascending:true}),
+      sb.from('incidencias').select('*').eq('expedicion_id',expId).order('created_at',{ascending:true})
+    ]);
+
+    if(!exp){ document.getElementById('m-body').innerHTML='<div class="empty">No encontrada</div>'; return; }
+
+    const fdt2 = d => d ? new Date(d).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+
+    // Construir eventos cronológicos
+    const eventos = [];
+
+    // Creación
+    eventos.push({ts:exp.created_at, icon:'🆕', titulo:'Expedición creada', detalle:`${exp.bultos||0} btos · ${exp.kilos||0} kg · ${exp.empresas?.nombre||'—'} · ${exp.buques?.nombre||'—'}`, color:'var(--b600)', foto:null});
+
+    // Cambios de activity_log
+    (log||[]).forEach(l=>{
+      const icon = l.campo_modificado==='ubicacion'?'📍':l.accion==='alerta_llegada'?'📦':l.campo_modificado==='hora_de_carga'?'🚛':l.campo_modificado==='nº_mrn'?'📋':l.campo_modificado==='estado_semaforo'?'🚦':'✏️';
+      const titulo = l.campo_modificado==='ubicacion'?('Ubicación → '+l.valor_nuevo):l.accion==='alerta_llegada'?'Llegada confirmada al almacén':l.campo_modificado==='hora_de_carga'?'Cargado en camión':l.campo_modificado==='nº_mrn'?'MRN registrado':l.campo_modificado==='estado_semaforo'?('Estado → '+l.valor_nuevo):(l.campo_modificado||l.accion||'Cambio');
+      eventos.push({ts:l.created_at, icon, titulo, detalle:'por '+l.usuario_nombre, color:'var(--g600)', foto:null});
+    });
+
+    // Fotos de la expedición
+    const {data:fotos} = await sb.from('fotos_operativas').select('*').eq('entidad','expediciones').eq('entidad_id',expId).order('created_at',{ascending:true});
+    (fotos||[]).forEach(f=>{
+      const tipoLabel = {'llegada':'Foto de llegada','carga':'Foto de carga','embarque':'Foto de embarque'}[f.tipo]||'Foto';
+      eventos.push({ts:f.created_at, icon:'📸', titulo:tipoLabel, detalle:'por '+(f.subida_por||'—'), color:'var(--tl600)', foto:f.storage_url});
+    });
+    if(exp.foto_llegada_url)   eventos.push({ts:exp.created_at, icon:'📸', titulo:'Foto de llegada (campo directo)', detalle:'', color:'var(--tl600)', foto:exp.foto_llegada_url});
+    if(exp.foto_embarque_url)  eventos.push({ts:null, icon:'🚢', titulo:'Foto de embarque', detalle:'', color:'var(--gr600)', foto:exp.foto_embarque_url});
+
+    // Incidencias
+    (incs||[]).forEach(i=>{
+      eventos.push({ts:i.created_at, icon:'⚠️', titulo:'Incidencia: '+i.tipo, detalle:i.descripcion||'', color:'var(--rd600)', foto:null, incEstado:i.estado});
+    });
+
+    // Ordenar cronológicamente
+    eventos.sort((a,b)=> (a.ts||'9999') < (b.ts||'9999') ? -1 : 1);
+
+    // Calcular duración total
+    const tsInicio = new Date(exp.created_at);
+    const tsFin = eventos[eventos.length-1]?.ts ? new Date(eventos[eventos.length-1].ts) : new Date();
+    const diasTotal = Math.round((tsFin-tsInicio)/86400000);
+
+    let html = `<div style="font-size:12px;color:var(--g500);margin-bottom:16px;background:var(--g50);border-radius:8px;padding:8px 12px">
+      <strong>${exp.nº_expedicion}</strong> · ${exp.empresas?.nombre||'—'} · ${exp.buques?.nombre||'—'} · ${diasTotal} días de ciclo
+    </div>
+    <div style="position:relative;padding-left:28px">
+      <div style="position:absolute;left:9px;top:0;bottom:0;width:2px;background:var(--g200);border-radius:2px"></div>`;
+
+    eventos.forEach((ev,i)=>{
+      const esUltimo = i===eventos.length-1;
+      html += `<div style="position:relative;margin-bottom:${esUltimo?'0':'16px'}">
+        <div style="position:absolute;left:-22px;top:3px;width:12px;height:12px;border-radius:50%;background:${ev.color};border:2px solid #fff;box-shadow:0 0 0 2px ${ev.color}33"></div>
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          <span style="font-size:15px;flex-shrink:0">${ev.icon}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700;color:var(--g900)">${ev.titulo}${ev.incEstado?` <span class="badge ${ev.incEstado==='Cerrada'?'bg':'br'}" style="font-size:10px">${ev.incEstado}</span>`:''}</div>
+            ${ev.detalle?`<div style="font-size:11px;color:var(--g500)">${ev.detalle}</div>`:''}
+            ${ev.ts?`<div style="font-size:10px;color:var(--g300);margin-top:2px">${fdt2(ev.ts)}</div>`:''}
+            ${ev.foto?`<div style="margin-top:6px"><img src="${ev.foto}" style="max-width:120px;max-height:80px;border-radius:6px;cursor:pointer;border:1px solid var(--g200)" onclick="abrirGaleriaFotos(['${ev.foto}'],'${ev.titulo}')"></div>`:''}
+          </div>
+        </div>
+      </div>`;
+    });
+
+    html += '</div>';
+    document.getElementById('m-body').innerHTML = html;
+
+  } catch(ex){
+    document.getElementById('m-body').innerHTML = '<div class="empty">Error: '+ex.message+'</div>';
+  }
 }
 
 function checkNbUnlock(){
