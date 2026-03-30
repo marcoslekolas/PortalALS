@@ -406,7 +406,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .fc-links{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--g200)}
 
 /* ── MODAL ── */
-.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:300;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(2px)}
+.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20000;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(2px)}
 .mo.open{display:flex}
 .modal{background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);width:100%;max-width:560px;max-height:92vh;overflow-y:auto;box-shadow:var(--shl)}
 .mh{padding:18px 22px;border-bottom:1px solid var(--g200);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--w);z-index:1}
@@ -9518,24 +9518,16 @@ async function _verificarManualScanner(){
 }
 
 // Abrir expedición desde escáner
-async function abrirExpDesdeScanner(expId){
-  // Ocultar overlay (sin eliminar) para que el modal sea visible
+function abrirExpDesdeScanner(expId){
+  // Ocultar overlay inmediatamente sin esperar stop de cámara
   const ov = document.getElementById('scanner-overlay');
   if(ov) ov.style.display = 'none';
-
-  // Detener cámara
-  if(_html5QrScanner){
-    const sc = _html5QrScanner; _html5QrScanner = null;
-    sc.stop().catch(()=>{}).finally(()=>{ try{ sc.clear && sc.clear(); }catch(e){} });
-  }
-  clearInterval(_scannerInterval); _scannerInterval = null;
+  // Detener cámara en background sin await
+  if(_html5QrScanner){ try{ _html5QrScanner.stop().catch(()=>{}); }catch(ex){} _html5QrScanner=null; }
+  clearInterval(_scannerInterval); _scannerInterval=null;
   if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream=null; }
-
-  // Abrir la ficha de expedición
-  await openExpD(expId, true);
-
-  // Eliminar overlay tras abrir el modal
-  if(ov) ov.remove();
+  // Abrir expedición — el modal tiene z-index 300, overlay oculto
+  openExpD(expId, true).then(()=>{ if(ov) ov.remove(); }).catch(err=>{ console.error('openExpD error:',err); showToast('❌ Error al abrir expedición: '+err.message); if(ov) ov.remove(); });
 }
 
 function cerrarScannerQR(){
