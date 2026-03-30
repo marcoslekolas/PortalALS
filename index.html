@@ -8707,6 +8707,9 @@ async function openExpD(id, forceOpen=false){
   } else {
     titleEl.textContent='📦 '+e.nº_expedicion;
   }
+  const btnRevertirCarga = (e.hora_de_carga && ['admin','oficina','aduanas'].includes(CU?.rol))
+    ? ' <button class="btn btn-w btn-sm" style="color:var(--am600);border-color:var(--am500);font-size:11px;padding:3px 9px" onclick="revertirCarga(\''+ e.id +'\',\''+ (e.nº_expedicion||'').replace(/'/g,"\\\\'") +'\')">↩ Revertir carga</button>'
+    : '';
   document.getElementById('m-body').innerHTML=`
     <div class="dg">
       <div class="df"><div class="dl">Buque</div><div class="dv" style="cursor:pointer;color:var(--b600)" onclick="closeModal();setTimeout(()=>openBuque('${e.buques?.id}'),60)">${e.buques?.nombre||'—'} ↗</div></div>
@@ -8730,7 +8733,7 @@ async function openExpD(id, forceOpen=false){
     </div>
     <div class="fr2">
       <div class="fg2"><label class="fl2">Ubicación</label><select id="ubic-sel" class="fi fs" onchange="saveUbic('${e.id}',this.value)">${UBICACIONES.map(u=>`<option ${e.ubicacion===u?'selected':''}>${u}</option>`).join('')}</select></div>
-      <div class="fg2"><label class="fl2">Carga camión</label><div style="font-size:13px;font-weight:500;padding:8px 0;color:${e.hora_de_carga?'var(--gr600)':'var(--g400)'}">${e.hora_de_carga?'🚛 Cargado: '+fdt(e.hora_de_carga):'Sin registrar'}</div></div>
+      <div class="fg2"><label class="fl2">Carga camión</label><div style="font-size:13px;font-weight:500;padding:8px 0;color:${e.hora_de_carga?(e.estado_carga==='🚛 CARGADO CAMIÓN'?'var(--gr600)':'var(--am600)'):'var(--g400)'}">${e.hora_de_carga?(e.estado_carga==='🚛 CARGADO CAMIÓN'?'🚛 Cargado: ':'⚠️ Intento fallido: ')+fdt(e.hora_de_carga):'Sin registrar'}${btnRevertirCarga}</div></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <button class="btn btn-w btn-sm" onclick="notifAduana('${e.id}','${e.nº_expedicion}')">🏢 Notif. Aduanas${e.notif_aduanas_sent?' ✓':''}</button>
@@ -8751,6 +8754,37 @@ async function openExpD(id, forceOpen=false){
   document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR</button><button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
+}
+
+
+// ── Revertir carga de camión ─────────────────────────────────────────
+async function revertirCarga(expId, expRef){
+  const conf = confirm(
+    '↩ Revertir carga de camión\n\n' +
+    'Expedición: ' + expRef + '\n\n' +
+    'Esto revertirá:\n' +
+    '• Estado → ✅ AUTORIZADO (lista para nueva carga)\n' +
+    '• Ubicación → Almacén-Sin Ubicar\n' +
+    '• Fecha de intento fallido → se conserva en ámbar\n\n' +
+    'La expedición quedará disponible para volver a ser escaneada y cargada.\n\n' +
+    '¿Confirmar?'
+  );
+  if(!conf) return;
+
+  await sb.from('expediciones').update({
+    estado_semaforo: '✅ AUTORIZADO',
+    estado_carga: '✅ AUTORIZADO',
+    ubicacion: 'Almacén-Sin Ubicar'
+  }).eq('id', expId);
+
+  await logAct('expediciones', expId, expRef, 'editar', 'hora_de_carga',
+    '🚛 CARGADO CAMIÓN',
+    '↩ Revertido por ' + (CU?.nombre||'—') + ' el ' + new Date().toLocaleString('es-ES')
+  );
+
+  showToast('↩ Carga revertida — intento fallido conservado en historial');
+  closeModal();
+  loadView(CV);
 }
 
 function checkNbUnlock(){
