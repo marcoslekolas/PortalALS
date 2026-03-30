@@ -1165,7 +1165,6 @@ textarea.fi{resize:vertical;min-height:72px}
     </nav>
     <div id="content">
       <div class="view" id="view-dashboard">
-        <div id="alerta-despacho-banner" style="display:none;margin-bottom:12px"></div>
         <!-- Filtros del dashboard -->
         <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px 20px;margin-bottom:20px;box-shadow:var(--sh0)">
           <div style="font-size:12px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">🔍 Filtros del dashboard</div>
@@ -1941,7 +1940,7 @@ async function checkAlertas(){
         mostrarBanner('🔔 Llegada al almacén: '+a.registro_nombre+' — requiere atención','amber');
         notifSistema('📦 Llegada al almacén', a.registro_nombre+' — requiere atención');
       });
-      const badge=document.getElementById('badge-al');
+      /* badge-al eliminado */
       if(badge){const cur=parseInt(badge.textContent||'0');badge.textContent=cur+data.length;badge.style.display='';}
     }
   }catch(e){}
@@ -1971,7 +1970,7 @@ function iniciarRealtime(){
             const ref = payload.new?.registro_nombre || 'expedición';
             mostrarBanner('📦 Nueva llegada al almacén: ' + ref + ' — requiere atención', 'amber');
             notifSistema('📦 Llegada al almacén', ref + ' — requiere gestión operativa');
-            const badge = document.getElementById('badge-al');
+      /* badge-al eliminado */
             if(badge){ const cur=parseInt(badge.textContent||'0'); badge.textContent=cur+1; badge.style.display=''; }
             // Si está en la vista de alertas, recargarla
             if(CV==='alertas') loadAlertas();
@@ -2995,7 +2994,8 @@ document.addEventListener('keydown', e=>{
 // ═══════════════════════════════════════════════════════════════
 // ALERTAS FECHA MÁX. DESPACHO — banner en dashboard
 // ═══════════════════════════════════════════════════════════════
-async function checkAlertasDespacho(){
+async function checkAlertasDespacho(){ return; // desactivado
+  // ORIGINAL:
   try{
     const {data}=await sb.from('expediciones')
       .select('id,nº_expedicion,fecha_max_despacho,estado_semaforo,tramite_aduanero,buques(nombre)')
@@ -4855,7 +4855,7 @@ function resetDashFilters(){
 
 async function loadDash(){
   await initDashFilters();
-  checkAlertasDespacho();
+  // checkAlertasDespacho(); // desactivado
   const año  = document.getElementById('df-año')?.value||'';
   const mes  = document.getElementById('df-mes')?.value||'';
   const cliId= document.getElementById('df-cli')?.value||'';
@@ -4939,7 +4939,7 @@ async function loadDash(){
   const alc         = allExps.filter(e=>!e.nº_mrn && e.ubicacion && e.ubicacion!=='Pendiente recibir').length;
   const totalBultos = Efilt.reduce((a,e)=>a+(e.bultos||0),0);
   const totalKilos  = Efilt.reduce((a,e)=>a+(e.kilos||0),0);
-  if(alc>0){document.getElementById('badge-al').textContent=alc;document.getElementById('badge-al').style.display='';}
+      /* badge-al eliminado */
 
   const filtros=[];
   if(año)filtros.push(año);
