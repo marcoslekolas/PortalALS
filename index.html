@@ -1051,10 +1051,13 @@ textarea.fi{resize:vertical;min-height:72px}
 
       <div class="h-right">
         <!-- Búsqueda global -->
-        <div id="global-search-wrap" style="position:relative;display:none;z-index:9999">
-          <input id="global-search" class="fi hdr-search" type="text" placeholder="🔍 Buscar expedición, buque..."
-            oninput="busquedaGlobal(this.value)" onblur="setTimeout(()=>cerrarBusqueda(),200)">
-          <div id="global-results" style="display:none;position:absolute;top:40px;right:0;width:340px;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);box-shadow:var(--shl);z-index:9999;max-height:320px;overflow-y:auto"></div>
+        <!-- Búsqueda global — abre overlay -->
+        <div id="global-search-wrap" style="display:none">
+          <button class="hdr-icon-btn" onclick="abrirBusquedaGlobal()" title="Búsqueda global (Ctrl+K)" id="btn-busqueda-global"
+            style="display:flex;align-items:center;gap:6px;padding:0 10px;width:auto;font-size:12px;color:var(--g500);border-color:var(--g200)">
+            🔍 <span class="nav-item-txt" style="font-size:12px">Buscar</span>
+            <kbd style="font-size:10px;background:var(--g100);border:1px solid var(--g200);border-radius:4px;padding:1px 5px;color:var(--g400);font-family:var(--mono)">⌘K</kbd>
+          </button>
         </div>
 
         <!-- ISO certs -->
@@ -1664,6 +1667,17 @@ textarea.fi{resize:vertical;min-height:72px}
 })();
 
 // ── ALS App Code (global scope) ──
+
+// Precargar imagen QR estática del albarán como base64
+let _qrAlbBase64 = '';
+(function(){
+  const url = 'https://raw.githubusercontent.com/marcoslekolas/PortalALS/main/QRALS.png';
+  fetch(url).then(r=>r.blob()).then(blob=>{
+    const reader = new FileReader();
+    reader.onload = ()=>{ _qrAlbBase64 = reader.result; };
+    reader.readAsDataURL(blob);
+  }).catch(()=>{ console.warn('QR albarán no disponible offline'); });
+})();
 
 const UBICACIONES=['Pendiente recibir','Almacén-Sin Ubicar','Almacén-1ª Planta','Almacén-Planta Baja','Almacén-ADT','Almacén-LAME','A bordo','Camión cargado','Landed','Puerto','Aeropuerto-Málaga AGP','Aeropuerto-Sevilla SVQ','Aeropuerto-Madrid MAD'];
 const ROLES_LABELS={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
@@ -2549,84 +2563,212 @@ function volverHome(){
 // ═══════════════════════════════════════════════════════════════
 // BÚSQUEDA GLOBAL
 // ═══════════════════════════════════════════════════════════════
-let _searchTimer=null;
-async function busquedaGlobal(q){
-  clearTimeout(_searchTimer);
-  const res=document.getElementById('global-results');
-  if(!res)return;
-  if(!q||q.length<2){res.style.display='none';return;}
-  _searchTimer=setTimeout(async()=>{
-    try{
-      const [rb,re,remp,rmrn,rinc]=await Promise.all([
-        // Buques: por nombre o escala APBA
-        sb.from('buques').select('id,nombre,imo,estado_operacion,nº_escala')
-          .or(`nombre.ilike.%${q}%,nº_escala.ilike.%${q}%`).limit(4),
-        // Expediciones: por referencia
-        sb.from('expediciones').select('id,nº_expedicion,buques(nombre),estado_semaforo')
-          .ilike('nº_expedicion','%'+q+'%').limit(4),
-        // Empresas: por nombre o email
-        sb.from('empresas').select('id,nombre,email_confronta')
-          .or(`nombre.ilike.%${q}%,email_confronta.ilike.%${q}%`).limit(3),
-        // Expediciones: por MRN
-        sb.from('expediciones').select('id,nº_expedicion,nº_mrn,buques(nombre),estado_semaforo')
-          .ilike('nº_mrn','%'+q+'%').limit(3),
-        // Incidencias: por descripción
-        sb.from('incidencias').select('id,tipo,descripcion,estado,expediciones(id,nº_expedicion)')
-          .ilike('descripcion','%'+q+'%').limit(3),
-      ]);
-      const rows=[];
-      (rb.data||[]).forEach(b=>rows.push({
-        tipo:'🚢 Buque', titulo:b.nombre,
-        sub: b.nº_escala ? `Escala: ${b.nº_escala}` : (b.imo||'Sin IMO'),
-        est:b.estado_operacion||'—', action:`openBuque('${b.id}')`
-      }));
-      (re.data||[]).forEach(e=>rows.push({
-        tipo:'📦 Expedición', titulo:e.nº_expedicion,
-        sub:e.buques?.nombre||'Sin buque', est:e.estado_semaforo||'—',
-        action:`openExpD('${e.id}')`
-      }));
-      // MRN — solo añadir si no está ya en resultados por referencia
-      const refsYa=new Set((re.data||[]).map(e=>e.id));
-      (rmrn.data||[]).filter(e=>!refsYa.has(e.id)).forEach(e=>rows.push({
-        tipo:'📋 MRN', titulo:e.nº_mrn,
-        sub:`Exp: ${e.nº_expedicion} · ${e.buques?.nombre||'—'}`,
-        est:e.estado_semaforo||'—', action:`openExpD('${e.id}')`
-      }));
-      (remp.data||[]).forEach(e=>rows.push({
-        tipo:'🏢 Empresa', titulo:e.nombre,
-        sub:e.email_confronta||'Sin email', est:'',
-        action:`openEmpD('${e.id}')`
-      }));
-      (rinc.data||[]).forEach(i=>rows.push({
-        tipo:'⚠️ Incidencia', titulo:`${i.tipo}: ${(i.descripcion||'').substring(0,40)}${(i.descripcion||'').length>40?'…':''}`,
-        sub:`Exp: ${i.expediciones?.nº_expedicion||'—'}`,
-        est:i.estado||'—', action:`openIncD('${i.id}')`
-      }));
+// ── Búsqueda global — overlay tipo Spotlight ─────────────────────
+let _searchTimer = null;
+let _bgOverlay = null;
 
-      if(!rows.length){
-        res.innerHTML=`<div style="padding:14px;font-size:12px;color:var(--g400);text-align:center">Sin resultados para "${q}"</div>`;
-        res.style.display='';
-      } else {
-        res.innerHTML=rows.map(r=>`
-          <div onclick="${r.action};cerrarBusqueda()" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:10px" onmouseenter="this.style.background='var(--b50)'" onmouseleave="this.style.background=''">
-            <div style="font-size:11px;color:var(--g400);min-width:80px;flex-shrink:0">${r.tipo}</div>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.titulo}</div>
-              <div style="font-size:11px;color:var(--g500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.sub}</div>
-            </div>
-            ${r.est?`<span class="badge bgr" style="font-size:10px;flex-shrink:0">${r.est}</span>`:''}
-          </div>`).join('');
-        res.style.display='';
+function abrirBusquedaGlobal(){
+  if(document.getElementById('bg-overlay')) return; // ya abierto
+
+  const ov = document.createElement('div');
+  ov.id = 'bg-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding-top:80px;backdrop-filter:blur(3px)';
+  ov.innerHTML = `
+    <div id="bg-panel" style="background:var(--w);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25),0 4px 14px rgba(0,0,0,.1);width:100%;max-width:560px;overflow:hidden;animation:fadeInUp .15s ease-out">
+      <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--g200)">
+        <span style="font-size:16px;color:var(--g400)">🔍</span>
+        <input id="bg-input" type="text" placeholder="Buscar expedición, buque, empresa, MRN, incidencia…"
+          style="flex:1;border:none;outline:none;font-size:15px;font-family:var(--f);color:var(--g900);background:transparent"
+          oninput="_bgBuscar(this.value)" autocomplete="off" spellcheck="false">
+        <kbd onclick="cerrarBusquedaGlobal()" style="font-size:11px;background:var(--g100);border:1px solid var(--g200);border-radius:5px;padding:2px 7px;color:var(--g500);cursor:pointer;font-family:var(--mono)">Esc</kbd>
+      </div>
+      <div id="bg-results" style="max-height:420px;overflow-y:auto">
+        <div style="padding:20px;text-align:center;font-size:13px;color:var(--g400)">
+          Escribe al menos 2 caracteres para buscar
+        </div>
+      </div>
+      <div style="padding:8px 16px;border-top:1px solid var(--g100);display:flex;gap:14px;font-size:10px;color:var(--g400)">
+        <span>↑↓ Navegar</span><span>↵ Abrir</span><span>Esc Cerrar</span>
+      </div>
+    </div>`;
+
+  // Cerrar al clicar fuera del panel
+  ov.addEventListener('mousedown', e => { if(e.target === ov) cerrarBusquedaGlobal(); });
+  document.body.appendChild(ov);
+
+  // Focus con pequeño delay para evitar que el Ctrl capture la K
+  setTimeout(()=>{
+    const inp = document.getElementById('bg-input');
+    if(inp) inp.focus();
+  }, 50);
+
+  // Navegación con teclado
+  ov.addEventListener('keydown', e => {
+    if(e.key === 'Escape'){ cerrarBusquedaGlobal(); return; }
+    if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      e.preventDefault();
+      const items = document.querySelectorAll('.bg-item');
+      if(!items.length) return;
+      let cur = [...items].findIndex(i=>i.classList.contains('bg-sel'));
+      items.forEach(i=>i.classList.remove('bg-sel'));
+      if(e.key === 'ArrowDown') cur = cur < items.length-1 ? cur+1 : 0;
+      else cur = cur > 0 ? cur-1 : items.length-1;
+      items[cur].classList.add('bg-sel');
+      items[cur].style.background = 'var(--b50)';
+      items[cur].scrollIntoView({block:'nearest'});
+    }
+    if(e.key === 'Enter'){
+      const sel = document.querySelector('.bg-item.bg-sel') || document.querySelector('.bg-item');
+      if(sel){ sel.click(); }
+    }
+  });
+}
+
+function cerrarBusquedaGlobal(){
+  const ov = document.getElementById('bg-overlay');
+  if(ov) ov.remove();
+  clearTimeout(_searchTimer);
+}
+
+async function _bgBuscar(q){
+  clearTimeout(_searchTimer);
+  const res = document.getElementById('bg-results');
+  if(!res) return;
+  if(!q || q.length < 2){
+    res.innerHTML = '<div style="padding:20px;text-align:center;font-size:13px;color:var(--g400)">Escribe al menos 2 caracteres para buscar</div>';
+    return;
+  }
+  res.innerHTML = '<div style="padding:16px;text-align:center"><div class="spinner" style="display:inline-block;width:16px;height:16px;border-width:2px"></div></div>';
+
+  _searchTimer = setTimeout(async()=>{
+    try{
+      const [rb, re, rmrn, remp, rinc] = await Promise.all([
+        sb.from('buques').select('id,nombre,imo,estado_operacion,nº_escala,eta_buque')
+          .or(`nombre.ilike.%${q}%,nº_escala.ilike.%${q}%`).limit(4),
+        sb.from('expediciones').select('id,nº_expedicion,buques(nombre),empresas(nombre),estado_semaforo,ubicacion')
+          .or(`nº_expedicion.ilike.%${q}%`).limit(5),
+        sb.from('expediciones').select('id,nº_expedicion,nº_mrn,buques(nombre),estado_semaforo')
+          .ilike('nº_mrn',`%${q}%`).limit(3),
+        sb.from('empresas').select('id,nombre,email_confronta')
+          .or(`nombre.ilike.%${q}%,email_confronta.ilike.%${q}%`).limit(4),
+        sb.from('incidencias').select('id,tipo,descripcion,estado,expediciones(id,nº_expedicion)')
+          .ilike('descripcion',`%${q}%`).limit(3),
+      ]);
+
+      const grupos = [];
+
+      const buques = rb.data||[];
+      const expRef = re.data||[];
+      const expMrn = (rmrn.data||[]).filter(e=>!expRef.find(x=>x.id===e.id));
+      const empresas = remp.data||[];
+      const incs = rinc.data||[];
+
+      if(buques.length) grupos.push({
+        label:'🚢 Buques',
+        items: buques.map(b=>({
+          titulo: b.nombre,
+          sub: [b.nº_escala&&`Escala: ${b.nº_escala}`, b.imo&&`IMO: ${b.imo}`, b.eta_buque&&`ETA: ${fd(b.eta_buque)}`].filter(Boolean).join(' · ') || '—',
+          badge: b.estado_operacion||'',
+          action: ()=>{ cerrarBusquedaGlobal(); openBuque(b.id); }
+        }))
+      });
+
+      if(expRef.length || expMrn.length) grupos.push({
+        label:'📦 Expediciones',
+        items: [
+          ...expRef.map(e=>({
+            titulo: e.nº_expedicion,
+            sub: [e.buques?.nombre, e.empresas?.nombre, e.ubicacion].filter(Boolean).join(' · ') || '—',
+            badge: e.estado_semaforo||'',
+            action: ()=>{ cerrarBusquedaGlobal(); openExpD(e.id); nav('expediciones',null); }
+          })),
+          ...expMrn.map(e=>({
+            titulo: e.nº_mrn,
+            sub: `Exp: ${e.nº_expedicion} · ${e.buques?.nombre||'—'}`,
+            badge: e.estado_semaforo||'',
+            action: ()=>{ cerrarBusquedaGlobal(); openExpD(e.id); nav('expediciones',null); }
+          }))
+        ]
+      });
+
+      if(empresas.length) grupos.push({
+        label:'🏢 Empresas',
+        items: empresas.map(e=>({
+          titulo: e.nombre,
+          sub: e.email_confronta||'Sin email',
+          badge: '',
+          action: ()=>{ cerrarBusquedaGlobal(); openEmpD(e.id); nav('empresas',null); }
+        }))
+      });
+
+      if(incs.length) grupos.push({
+        label:'⚠️ Incidencias',
+        items: incs.map(i=>({
+          titulo: `${i.tipo}: ${(i.descripcion||'').substring(0,50)}${(i.descripcion||'').length>50?'…':''}`,
+          sub: `Exp: ${i.expediciones?.nº_expedicion||'—'} · ${i.estado||'—'}`,
+          badge: i.estado||'',
+          action: ()=>{ cerrarBusquedaGlobal(); openIncD(i.id); nav('incidencias',null); }
+        }))
+      });
+
+      if(!grupos.length){
+        res.innerHTML = `<div style="padding:24px;text-align:center;font-size:13px;color:var(--g400)">Sin resultados para <strong>"${q}"</strong></div>`;
+        return;
       }
-    }catch(e){res.style.display='none';}
-  },300);
+
+      // Renderizar grupos
+      let html = '';
+      grupos.forEach(g=>{
+        html += `<div style="padding:6px 16px 2px;font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.08em">${g.label}</div>`;
+        g.items.forEach(item=>{
+          const badgeClean = (item.badge||'').replace(/[^\x20-\x7E\u00C0-\u024F\u0400-\u04FF\u2600-\u27BF]/gu,'').trim();
+          html += `<div class="bg-item" style="padding:9px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;border-radius:8px;margin:1px 6px;transition:background .1s"
+            onmouseenter="document.querySelectorAll('.bg-item').forEach(x=>{x.classList.remove('bg-sel');x.style.background=''});this.classList.add('bg-sel');this.style.background='var(--b50)'"
+            onmouseleave="this.style.background=this.classList.contains('bg-sel')?'var(--b50)':''">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.titulo}</div>
+              <div style="font-size:11px;color:var(--g500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.sub}</div>
+            </div>
+            ${badgeClean?`<span style="font-size:10px;background:var(--sur);border:1px solid var(--line,var(--g200));border-radius:20px;padding:2px 8px;color:var(--g600);white-space:nowrap;flex-shrink:0">${badgeClean}</span>`:''}
+            <span style="font-size:14px;color:var(--g300);flex-shrink:0">→</span>
+          </div>`;
+        });
+      });
+      res.innerHTML = html;
+
+      // Asignar eventos click
+      let idx = 0;
+      grupos.forEach(g=>{
+        g.items.forEach(item=>{
+          const el = res.querySelectorAll('.bg-item')[idx++];
+          if(el) el.addEventListener('click', item.action);
+        });
+      });
+
+      // Preseleccionar el primer resultado
+      const first = res.querySelector('.bg-item');
+      if(first){ first.classList.add('bg-sel'); first.style.background='var(--b50)'; }
+
+    }catch(e){
+      const res2 = document.getElementById('bg-results');
+      if(res2) res2.innerHTML = `<div style="padding:16px;font-size:12px;color:var(--rd600)">Error en la búsqueda</div>`;
+    }
+  }, 250);
 }
-function cerrarBusqueda(){
-  const res=document.getElementById('global-results');
-  const inp=document.getElementById('global-search');
-  if(res)res.style.display='none';
-  if(inp)inp.value='';
-}
+
+// Alias para compatibilidad con código anterior
+async function busquedaGlobal(q){ _bgBuscar(q); }
+function cerrarBusqueda(){ cerrarBusquedaGlobal(); }
+
+// Atajo de teclado Ctrl+K / Cmd+K
+document.addEventListener('keydown', e=>{
+  if((e.ctrlKey||e.metaKey) && e.key==='k'){
+    e.preventDefault();
+    if(document.getElementById('bg-overlay')) cerrarBusquedaGlobal();
+    else if(MOD) abrirBusquedaGlobal();
+  }
+  if(e.key==='Escape' && document.getElementById('bg-overlay')) cerrarBusquedaGlobal();
+});
 
 // ═══════════════════════════════════════════════════════════════
 // ALERTAS FECHA MÁX. DESPACHO — banner en dashboard
@@ -6217,7 +6359,7 @@ async function loadAlmFotos(tab){
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
             <span style="font-size:22px">${(e.ubicacion||'').includes('Aeropuerto')?'✈️':'📦'}</span>
             <div style="flex:1">
-              <div class="ll-ref">${e.nº_expedicion}</div>
+              <div style="font-weight:700;font-size:14px;color:#111;letter-spacing:-.01em">${e.nº_expedicion}</div>
               <div class="ll-sub">${e.bultos} btos · ${e.kilos} kg · <span style="color:var(--am600);font-weight:600">${e.ubicacion||'—'}</span></div>
             </div>
             ${bdg(e.estado_semaforo)}
@@ -8705,14 +8847,14 @@ async function saveUbic(id,val){
 // Calcula el estado_semáforo correcto según la ubicación
 function semaforoDeUbicacion(ubic){
   if(!ubic) return null;
-  if(ubic==='Landed')           return '⚓ Landed';
+  if(ubic==='Landed')           return '⌛ ESPERANDO ALMACÉN'; // ⚓ Landed no existe en el enum — se muestra visualmente pero no se guarda
   if(ubic==='A bordo')          return '🚢 EMBARCADO';
   if(ubic==='Camión cargado')   return '🚛 CARGADO CAMIÓN';
   if(ubic==='Pendiente recibir')return '⏳ EN TRÁNSITO';
   if(ubic.startsWith('Almacén'))return '📦 UBICADA';
   if(ubic==='Puerto')           return '📦 UBICADA';
   if(ubic.startsWith('Aeropuerto')) return '⏳ EN TRÁNSITO';
-  return null; // no cambiar
+  return null;
 }
 
 async function guardarExpedicion(id){if(!checkOnline())return;
@@ -8974,7 +9116,7 @@ function htmlAlb(b, exps, expsLanded){
   <div class="sign">
     <div><div class="sb">Conformidad conductor<br><br><br>Firma y DNI: _______________________<br><br>Fecha: _______________</div></div>
     <div><div class="sb">Recepción buque<br><br><br>Firma y DNI: _______________________<br><br>Fecha: _______________</div></div>
-    <div style="text-align:center;padding-top:8px"><div style="font-size:9px;color:#999;margin-bottom:4px">Verificar expedición:</div><img src="https://raw.githubusercontent.com/marcoslekolas/PortalALS/main/QRALS.png" style="width:60px;height:60px" onerror="this.style.display='none'"></div>
+    <div style="text-align:center;padding-top:8px"><div style="font-size:9px;color:#999;margin-bottom:4px">Verificar expedición:</div>${_qrAlbBase64?`<img src="${_qrAlbBase64}" style="width:60px;height:60px">`:''}</div>
   </div>
   <p style="margin-top:18px;font-size:9px;color:#aaa;text-align:center">Generado el ${new Date().toLocaleString('es-ES')} · ALS Portal Operativo · Algeciras Logistic Solutions</p>
   </body></html>`;
