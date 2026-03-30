@@ -7680,17 +7680,28 @@ async function enviarEmailEmbarqueCliente(buqueId, fotoUrl){
       'Operations 24/7 · Boardings +34 664 07 49 40';
 
     const otros = (b.ec?.otros_emails||[]).filter(Boolean).join(',');
-    const cc = ['als@alsalgeciras.com', otros].filter(Boolean).join(',');
+    const cc = otros || '';
     const asunto = encodeURIComponent('✅ Embarque confirmado — Buque '+b.nombre+' · '+hoy);
+
+    // iOS Safari limita mailto: a ~2000 chars — usar cuerpo corto en iPhone/iPad
+    const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const cuerpoFinal = esIOS
+      ? 'Estimado cliente,\n\n'+
+        'Confirmamos embarque a bordo del buque '+b.nombre+' el '+hoy+'.\n\n'+
+        'Expediciones: '+totalBultos+' bultos · '+totalKilos.toLocaleString('es-ES')+' kg\n'+
+        (exps||[]).map(e=>'· '+e.nº_expedicion+(e.nº_mrn?' (MRN: '+e.nº_mrn+')':'')).join('\n')+
+        '\n\nALS Algeciras · +34 956 58 13 16'
+      : cuerpo;
+
     const mailto = 'mailto:'+emailCliente
       +'?cc='+encodeURIComponent(cc)
       +'&subject='+asunto
-      +'&body='+encodeURIComponent(cuerpo);
+      +'&body='+encodeURIComponent(cuerpoFinal);
 
     const a = document.createElement('a');
     a.href = mailto; a.target = '_blank';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    showToast('📧 Email de embarque abierto — recuerda enviar');
+    showToast('📧 Email de embarque abierto — recuerda enviar'+(esIOS?' (versión compacta iOS)':''));
   } catch(ex){
     console.warn('Email embarque error:', ex);
     showToast('⚠️ No se pudo abrir el email de embarque: '+ex.message);
