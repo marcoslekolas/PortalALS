@@ -1668,17 +1668,6 @@ textarea.fi{resize:vertical;min-height:72px}
 
 // ── ALS App Code (global scope) ──
 
-// Precargar imagen QR estática del albarán como base64
-let _qrAlbBase64 = '';
-(function(){
-  const url = 'https://raw.githubusercontent.com/marcoslekolas/PortalALS/main/QRALS.png';
-  fetch(url).then(r=>r.blob()).then(blob=>{
-    const reader = new FileReader();
-    reader.onload = ()=>{ _qrAlbBase64 = reader.result; };
-    reader.readAsDataURL(blob);
-  }).catch(()=>{ console.warn('QR albarán no disponible offline'); });
-})();
-
 const UBICACIONES=['Pendiente recibir','Almacén-Sin Ubicar','Almacén-1ª Planta','Almacén-Planta Baja','Almacén-ADT','Almacén-LAME','A bordo','Camión cargado','Landed','Puerto','Aeropuerto-Málaga AGP','Aeropuerto-Sevilla SVQ','Aeropuerto-Madrid MAD'];
 const ROLES_LABELS={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
 
@@ -9065,7 +9054,7 @@ function abrirAlbaran(contenido){
   iframe.contentDocument.open();iframe.contentDocument.write(contenido);iframe.contentDocument.close();
 }
 
-function htmlAlb(b, exps, expsLanded){
+function htmlAlb(b, exps, expsLanded, qrBase64=''){
   const normal=(exps||[]).filter(e=>e.ubicacion!=='Landed');
   const landed=(expsLanded||exps||[]).filter(e=>e.ubicacion==='Landed');
   const tb=normal.reduce((a,e)=>a+e.bultos,0), tk=normal.reduce((a,e)=>a+e.kilos,0);
@@ -9116,7 +9105,7 @@ function htmlAlb(b, exps, expsLanded){
   <div class="sign">
     <div><div class="sb">Conformidad conductor<br><br><br>Firma y DNI: _______________________<br><br>Fecha: _______________</div></div>
     <div><div class="sb">Recepción buque<br><br><br>Firma y DNI: _______________________<br><br>Fecha: _______________</div></div>
-    <div style="text-align:center;padding-top:8px"><div style="font-size:9px;color:#999;margin-bottom:4px">Verificar expedición:</div>${_qrAlbBase64?`<img src="${_qrAlbBase64}" style="width:60px;height:60px">`:''}</div>
+    <div style="text-align:center;padding-top:8px"><div style="font-size:9px;color:#999;margin-bottom:4px">Verificar expedición:</div>${qrBase64?`<img src="${qrBase64}" style="width:60px;height:60px">`:''}</div>
   </div>
   <p style="margin-top:18px;font-size:9px;color:#aaa;text-align:center">Generado el ${new Date().toLocaleString('es-ES')} · ALS Portal Operativo · Algeciras Logistic Solutions</p>
   </body></html>`;
@@ -9128,12 +9117,14 @@ async function impAlb(buqueId){
   const {data:landedExps}=await sb.from('expediciones').select('*').eq('buque_id',buqueId).eq('ubicacion','Landed');
   if(!b)return;
   const allExps=[...(exps||[]),...(landedExps||[]).filter(e=>!(exps||[]).find(x=>x.id===e.id))];
-  abrirAlbaran(htmlAlb(b, allExps));
+  const qrBase64 = await generarQRDataURL('https://marcoslekolas.github.io/PortalALS/', 80) || '';
+  abrirAlbaran(htmlAlb(b, allExps, null, qrBase64));
 }
 async function impExpAlb(expId){
   const {data:e}=await sb.from('expediciones').select('*,buques(*,ec:cliente_id(nombre),en:consignatario_id(nombre))').eq('id',expId).single();
   if(!e)return;
-  abrirAlbaran(htmlAlb(e.buques||{},[e]));
+  const qrBase64 = await generarQRDataURL('https://marcoslekolas.github.io/PortalALS/', 80) || '';
+  abrirAlbaran(htmlAlb(e.buques||{},[e], null, qrBase64));
 }
 
 // ── QR en llegadas — aparece al añadir foto ───────────────────────
