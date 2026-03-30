@@ -1887,7 +1887,84 @@ async function checkAlertas(){
     }
   }catch(e){}
 }
-setInterval(checkAlertas,30000);
+setInterval(checkAlertas,30000);setInterval(checkAlertas,30000);
+
+// ── Supabase Realtime — actualizaciones en tiempo real ───────────────
+let _realtimeChannel = null;
+
+function iniciarRealtime(){
+  if(_realtimeChannel) return; // ya suscrito
+  try{
+    _realtimeChannel = sb.channel('als-expediciones-global')
+      .on('postgres_changes',
+        { event:'*', schema:'public', table:'expediciones' },
+        (payload)=>{
+          // Recargar vista actual si el cambio afecta a lo que se está viendo
+          _onRealtimeExpedicion(payload);
+        }
+      )
+      .on('postgres_changes',
+        { event:'INSERT', schema:'public', table:'activity_log',
+          filter:'accion=eq.alerta_llegada' },
+        (payload)=>{
+          // Notificar a oficina/admin de nueva llegada en tiempo real
+          if(MOD==='operativa' && CU && ['admin','oficina','aduanas'].includes(CU.rol)){
+            const ref = payload.new?.registro_nombre || 'expedición';
+            mostrarBanner('📦 Nueva llegada al almacén: ' + ref + ' — requiere atención', 'amber');
+            notifSistema('📦 Llegada al almacén', ref + ' — requiere gestión operativa');
+            const badge = document.getElementById('badge-al');
+            if(badge){ const cur=parseInt(badge.textContent||'0'); badge.textContent=cur+1; badge.style.display=''; }
+            // Si está en la vista de alertas, recargarla
+            if(CV==='alertas') loadAlertas();
+          }
+        }
+      )
+      .subscribe((status)=>{
+        if(status==='SUBSCRIBED'){
+          console.log('[ALS Realtime] Conectado — actualizaciones en tiempo real activas');
+        }
+      });
+  } catch(ex){
+    console.warn('[ALS Realtime] No disponible:', ex.message);
+  }
+}
+
+function _onRealtimeExpedicion(payload){
+  if(!CU || !MOD) return;
+  const vistasActivas = ['expediciones','dashboard','alertas','kanban','calendario'];
+  const vistasAlmacen = ['alm-llegadas','alm-auth'];
+
+  // Mostrar indicador sutil de actualización
+  const ts = Date.now();
+  if(!window._lastRealtimeToast || ts - window._lastRealtimeToast > 5000){
+    window._lastRealtimeToast = ts;
+    // Toast discreto no intrusivo
+    const t = document.createElement('div');
+    t.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(37,99,235,.9);color:#fff;font-size:11px;font-weight:600;padding:5px 14px;border-radius:20px;z-index:9999;pointer-events:none;opacity:0;transition:opacity .3s';
+    t.textContent = '🔄 Datos actualizados';
+    document.body.appendChild(t);
+    requestAnimationFrame(()=>{ t.style.opacity='1'; });
+    setTimeout(()=>{ t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 2500);
+  }
+
+  // Recargar vista si es relevante
+  if(MOD==='operativa' && vistasActivas.includes(CV)){
+    // Debounce — no recargar más de 1 vez cada 2s
+    clearTimeout(window._realtimeReloadTimer);
+    window._realtimeReloadTimer = setTimeout(()=>{ loadView(CV); }, 2000);
+  }
+  if(MOD==='almacen' && vistasAlmacen.includes(CV)){
+    clearTimeout(window._realtimeAlmTimer);
+    window._realtimeAlmTimer = setTimeout(()=>{ loadView(CV); }, 2000);
+  }
+}
+
+function detenerRealtime(){
+  if(_realtimeChannel){
+    try{ sb.removeChannel(_realtimeChannel); }catch(ex){}
+    _realtimeChannel = null;
+  }
+}
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
@@ -1996,6 +2073,7 @@ function checkSession(){
     if(destMod==='operativa') enterMod('operativa');
     else if(destMod==='almacen') enterMod('almacen');
     else showHome();
+    iniciarRealtime();
   } else {
     // SDK aún no cargado — guardar destino, el onload lo recogerá
     window._pendingMod = destMod;
@@ -3540,6 +3618,7 @@ function abrirTrackingAWB(awb){
 }
 
 function doLogout(){
+  detenerRealtime();
   logAuth('logout', CU?.id, CU?.nombre, CU?.rol||'');
   CU=null;MOD=null;clearSession();
   document.getElementById('app').style.display='none';
@@ -5805,6 +5884,33 @@ async function loadAlertas(){
       </div>
     </div>`;
   });
+
+  // ── Llegadas recientes pendientes de gestión (últimas 24h) ──────────
+  const hace24h = new Date(Date.now() - 24*60*60*1000).toISOString();
+  const {data:llegadas} = await sb.from('activity_log')
+    .select('*')
+    .eq('accion','alerta_llegada')
+    .gt('created_at', hace24h)
+    .order('created_at', {ascending:false});
+
+  if(llegadas && llegadas.length > 0){
+    html += `<div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--rl);padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:16px">📦</span>
+      <div style="font-size:12px;font-weight:700;color:var(--b600)">${llegadas.length} llegada${llegadas.length>1?'s':''} al almacén en las últimas 24h — pendiente${llegadas.length>1?'s':''} de gestión operativa</div>
+    </div>`;
+    llegadas.forEach(a=>{
+      const ts = a.created_at ? new Date(a.created_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+      html += `<div class="a-item wrn" style="cursor:pointer" onclick="nav('expediciones',null)">
+        <div class="a-icon">📦</div>
+        <div class="a-info">
+          <div class="a-title">${a.registro_nombre||'—'} — llegada confirmada por almacén</div>
+          <div class="a-detail">Confirmado: ${ts} · ${a.usuario_nombre||'—'} · Pendiente asignar ubicación y gestión documental</div>
+        </div>
+        <span class="badge bb">LLEGADA</span>
+      </div>`;
+    });
+    html += `<div style="height:1px;background:var(--g200);margin:10px 0"></div>`;
+  }
 
   document.getElementById('alertas-list').innerHTML=html||
     '<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No hay alertas activas</div></div>';
@@ -8782,9 +8888,9 @@ async function revertirCarga(expId, expRef){
     '↩ Revertido por ' + (CU?.nombre||'—') + ' el ' + new Date().toLocaleString('es-ES')
   );
 
-  showToast('↩ Carga revertida — intento fallido conservado en historial');
-  closeModal();
-  loadView(CV);
+  showToast('↩ Carga revertida — expedición disponible para nueva carga');
+  // Recargar la ficha para que los badges se actualicen
+  openExpD(expId, true);
 }
 
 function checkNbUnlock(){
@@ -9200,7 +9306,7 @@ async function imprimirQRLlegada(expId, ref){
         @page{margin:6mm;size:80mm auto}
       }
       .btn-print{margin-top:12px;background:#1565c0;color:#fff;border:none;border-radius:8px;
-        padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer}
+        padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px}
     </style>
   </head><body>
     <div class="logo">● ALS PORTAL OPERATIVO</div>
@@ -9214,6 +9320,7 @@ async function imprimirQRLlegada(expId, ref){
     <div class="fecha">Generado: ${new Date().toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
     <br>
     <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
+    <button style="margin-top:12px;margin-left:8px;background:#6b7280;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px" onclick="window.close()">✕ Cerrar</button>
   </body></html>`);
   w.document.close();
   // Dar tiempo a que cargue el data URL antes de imprimir
