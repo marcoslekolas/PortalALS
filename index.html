@@ -1389,7 +1389,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <!-- Barra alfabética -->
         <div id="emp-alpha-bar" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px"></div>
         <div style="font-size:11px;color:var(--g400);margin-bottom:8px" id="emp-count"></div>
-        <div class="tc"><table class="tbl"><thead><tr><th>Empresa</th><th>Rol</th><th>Contacto</th><th>Email confronta</th><th>Teléfono</th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
+        <div class="tc"><table class="tbl"><thead><tr><th>Empresa</th><th>Rol</th><th>Contacto</th><th>Emails</th><th>Teléfono</th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
       </div>
       <div class="view" id="view-usuarios">
         <div class="ph"><div class="pt">Gestión de usuarios</div><button class="btn btn-p" onclick="openModal('nuevo-usuario')">+ Nuevo usuario</button></div>
@@ -7886,7 +7886,8 @@ function _renderEmpresas(){
     lista = lista.filter(e=>
       (e.nombre||'').toLowerCase().includes(q) ||
       (e.email_confronta||'').toLowerCase().includes(q) ||
-      (e.persona_contacto||'').toLowerCase().includes(q)
+      (e.persona_contacto||'').toLowerCase().includes(q) ||
+      (e.otros_emails||[]).some(m=>(m||'').toLowerCase().includes(q))
     );
   }
   const countEl = document.getElementById('emp-count');
@@ -7900,7 +7901,10 @@ function _renderEmpresas(){
       <td><div class="fw">${e.nombre}</div></td>
       <td>${(e.rol||[]).map(r=>`<span class="badge bb" style="margin-right:3px">${r}</span>`).join('')}</td>
       <td>${e.persona_contacto||'—'}</td>
-      <td><a href="mailto:${e.email_confronta||''}" onclick="event.stopPropagation()" style="color:var(--b600);text-decoration:none">${e.email_confronta||'—'}</a></td>
+      <td onclick="event.stopPropagation()">
+        ${e.email_confronta ? `<a href="mailto:${e.email_confronta}" style="color:var(--b600);text-decoration:none;display:block;font-size:12px">${e.email_confronta}</a>` : '<span style="color:var(--g400)">—</span>'}
+        ${(e.otros_emails||[]).filter(Boolean).map(m=>`<a href="mailto:${m}" style="color:var(--g500);text-decoration:none;display:block;font-size:11px">${m}</a>`).join('')}
+      </td>
       <td>${e.telefono||'—'}</td>
     </tr>`
   ).join('') || '<tr><td colspan="5"><div class="empty"><div class="empty-txt">Sin resultados</div></div></td></tr>';
