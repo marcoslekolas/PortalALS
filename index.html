@@ -9105,7 +9105,7 @@ function htmlAlb(b, exps, expsLanded, qrBase64=''){
   <div class="sign">
     <div><div class="sb">Conformidad conductor<br><br><br>Firma y DNI: _______________________<br><br>Fecha: _______________</div></div>
     <div><div class="sb">Recepción buque<br><br><br>Firma y DNI: _______________________<br><br>Fecha: _______________</div></div>
-    <div style="text-align:center;padding-top:8px"><div style="font-size:9px;color:#999;margin-bottom:4px">Verificar expedición:</div>${qrBase64?`<img src="${qrBase64}" style="width:60px;height:60px">`:''}</div>
+    <div style="text-align:center;padding-top:8px">${qrBase64?`<img src="${qrBase64}" style="width:60px;height:60px;display:block;margin:0 auto 4px">`:''}<div style="font-size:8px;color:#999">www.alsalgeciras.com</div></div>
   </div>
   <p style="margin-top:18px;font-size:9px;color:#aaa;text-align:center">Generado el ${new Date().toLocaleString('es-ES')} · ALS Portal Operativo · Algeciras Logistic Solutions</p>
   </body></html>`;
@@ -9117,13 +9117,13 @@ async function impAlb(buqueId){
   const {data:landedExps}=await sb.from('expediciones').select('*').eq('buque_id',buqueId).eq('ubicacion','Landed');
   if(!b)return;
   const allExps=[...(exps||[]),...(landedExps||[]).filter(e=>!(exps||[]).find(x=>x.id===e.id))];
-  const qrBase64 = await generarQRDataURL('https://marcoslekolas.github.io/PortalALS/', 80) || '';
+  const qrBase64 = await generarQRDataURL('https://www.alsalgeciras.com', 80) || '';
   abrirAlbaran(htmlAlb(b, allExps, null, qrBase64));
 }
 async function impExpAlb(expId){
   const {data:e}=await sb.from('expediciones').select('*,buques(*,ec:cliente_id(nombre),en:consignatario_id(nombre))').eq('id',expId).single();
   if(!e)return;
-  const qrBase64 = await generarQRDataURL('https://marcoslekolas.github.io/PortalALS/', 80) || '';
+  const qrBase64 = await generarQRDataURL('https://www.alsalgeciras.com', 80) || '';
   abrirAlbaran(htmlAlb(e.buques||{},[e], null, qrBase64));
 }
 
