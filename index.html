@@ -3499,7 +3499,23 @@ async function verFotosExpedicion(expId, ref){
       .order('created_at');
 
     if(!data||!data.length){
-      showToast('No hay fotos guardadas para '+ref);
+      // Limpiar campos URL huérfanos si la expedición tiene URLs pero no hay fotos en BD
+      const {data:expCheck} = await sb.from('expediciones')
+        .select('foto_llegada_url,foto_carga_url,foto_embarque_url')
+        .eq('id',expId).single();
+      const tieneUrlsHuerfanas = expCheck && (expCheck.foto_llegada_url || expCheck.foto_carga_url || expCheck.foto_embarque_url);
+      if(tieneUrlsHuerfanas){
+        await sb.from('expediciones').update({
+          foto_llegada_url: null,
+          foto_carga_url: null,
+          foto_embarque_url: null
+        }).eq('id', expId);
+        showToast('No hay fotos para '+ref+' — icono eliminado');
+        // Recargar la vista para que el icono desaparezca
+        loadView(CV);
+      } else {
+        showToast('No hay fotos guardadas para '+ref);
+      }
       return;
     }
 
@@ -4379,7 +4395,7 @@ function abrirGaleriaFotos(urls, titulo, fotosData, expId){
   var urlsArr = urls.slice(); // copia mutable para poder eliminar
   var overlay = document.createElement('div');
   overlay.id = 'als-gallery-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;flex-direction:column;outline:none';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:25000;display:flex;flex-direction:column;outline:none';
   overlay.tabIndex = 0;
   document.body.appendChild(overlay);
 
