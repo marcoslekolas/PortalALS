@@ -8682,9 +8682,9 @@ async function saveBuqueEst(id,val){
 }
 
 // ── DETALLE EXPEDICIÓN ─────────────────────────────────────
-async function openExpD(id){
+async function openExpD(id, forceOpen=false){
   // Bloquear solo en vistas informativas del módulo almacén (flota, timeline, exp-buque)
-  if(MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
+  if(!forceOpen && MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
   const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas(nombre,email_confronta)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
@@ -9520,34 +9520,8 @@ async function _verificarManualScanner(){
 // ── Abrir expedición desde escáner (salta guardas de módulo) ─────────
 async function abrirExpDesdeScanner(expId){
   cerrarScannerQR();
-  // Cambiar a módulo operativa si hace falta, sin await (no es async)
-  if(MOD !== 'operativa'){
-    MOD = 'operativa';
-    const navOp  = document.getElementById('nav-op');
-    const navAlm = document.getElementById('nav-alm');
-    const navAdm = document.getElementById('nav-adm');
-    const app    = document.getElementById('app');
-    const home   = document.getElementById('screen-home');
-    if(home) home.style.display = 'none';
-    if(app)  app.style.display  = 'flex';
-    if(navOp)  navOp.style.display  = 'flex';
-    if(navAlm) navAlm.style.display = 'none';
-    if(navAdm) navAdm.style.display = 'none';
-    const bcMod = document.getElementById('bc-mod');
-    if(bcMod) bcMod.textContent = 'Operativa';
-    // Cargar dashboard como fondo
-    CV = 'dashboard';
-  }
-  // Abrir la ficha directamente (150ms para que el DOM se estabilice)
-  setTimeout(async ()=>{
-    const {data:e} = await sb.from('expediciones')
-      .select('*,buques(id,nombre),empresas(nombre,email_confronta)')
-      .eq('id', expId).single();
-    const {data:incs} = await sb.from('incidencias').select('*').eq('expedicion_id', expId);
-    if(!e){ showToast('❌ Expedición no encontrada'); return; }
-    // Llamar directamente al cuerpo de openExpD sin pasar por la guarda de módulo
-    openExpD(expId);
-  }, 150);
+  // Pequeña pausa para que el overlay desaparezca antes de abrir el modal
+  setTimeout(()=>{ openExpD(expId, true); }, 120);
 }
 
 function cerrarScannerQR(){
@@ -9597,25 +9571,37 @@ async function _procesarQRLeido(texto){
       qrReaderEl.style.cssText = 'width:100%;max-width:500px;max-height:120px;overflow:hidden;transition:max-height .3s ease;opacity:.5;pointer-events:none';
     }
     res.innerHTML = `
-      <div style="background:rgba(245,158,11,.15);border:2px solid #f59e0b;border-radius:14px;padding:18px;margin:8px 16px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-          <div style="font-size:28px">📦</div>
-          <div>
-            <div style="font-size:12px;font-weight:700;color:#fcd34d;letter-spacing:.05em">BULTO ${numBulto} de ${totalBultos}</div>
-            <div style="font-size:18px;font-weight:800;color:#fff;font-family:monospace;letter-spacing:-.3px">${e.nº_expedicion}</div>
+      <div style="background:#1c2a1e;border:2px solid #22c55e;border-radius:16px;padding:20px 18px;margin:8px 12px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <div style="background:#15803d;border-radius:12px;width:52px;height:52px;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">📦</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;font-weight:800;color:#4ade80;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px">BULTO ${numBulto} DE ${totalBultos}</div>
+            <div style="font-size:22px;font-weight:900;color:#fff;font-family:monospace;letter-spacing:-.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.nº_expedicion}</div>
           </div>
         </div>
-        <div style="background:rgba(0,0,0,.25);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
-          <div><span style="color:#9ca3af">Empresa</span><br><span style="color:#fff;font-weight:600">${e.empresas?.nombre||'—'}</span></div>
-          <div><span style="color:#9ca3af">Buque</span><br><span style="color:#fff;font-weight:600">${e.buques?.nombre||'—'}</span></div>
-          <div><span style="color:#9ca3af">Bultos / Kilos</span><br><span style="color:#fff;font-weight:600">${e.bultos||0} btos · ${e.kilos||0} kg</span></div>
-          <div><span style="color:#9ca3af">Ubicación</span><br><span style="color:#fff;font-weight:600">📍 ${e.ubicacion||'—'}</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+          <div style="background:#0f1f12;border-radius:10px;padding:12px">
+            <div style="font-size:10px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Empresa</div>
+            <div style="font-size:15px;font-weight:700;color:#fff;line-height:1.3">${e.empresas?.nombre||'—'}</div>
+          </div>
+          <div style="background:#0f1f12;border-radius:10px;padding:12px">
+            <div style="font-size:10px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Buque</div>
+            <div style="font-size:15px;font-weight:700;color:#fff;line-height:1.3">${e.buques?.nombre||'—'}</div>
+          </div>
+          <div style="background:#0f1f12;border-radius:10px;padding:12px">
+            <div style="font-size:10px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Bultos · Kilos</div>
+            <div style="font-size:17px;font-weight:800;color:#fff">${e.bultos||0} btos · ${e.kilos||0} kg</div>
+          </div>
+          <div style="background:#0f1f12;border-radius:10px;padding:12px">
+            <div style="font-size:10px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Ubicación</div>
+            <div style="font-size:15px;font-weight:700;color:#fff">📍 ${e.ubicacion||'—'}</div>
+          </div>
         </div>
-        <div style="margin-top:8px;font-size:11px;color:#9ca3af;text-align:center">${e.estado_semaforo||'—'}</div>
+        <div style="background:#0f1f12;border-radius:10px;padding:10px 14px;text-align:center;font-size:14px;font-weight:700;color:#86efac">${e.estado_semaforo||'—'}</div>
       </div>
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:10px 16px 4px">
-        ${['almacen','transportista'].includes(CU?.rol) ? '' : '<button id="sc-btn-blt-ficha" style="background:#3b82f6;color:#fff;border:none;border-radius:12px;padding:14px 20px;font-size:15px;font-weight:700;cursor:pointer;min-height:52px;flex:1;max-width:220px">📂 Ir a expedición</button>'}
-        <button id="sc-btn-blt-sig" style="background:#374151;color:#fff;border:none;border-radius:12px;padding:14px 20px;font-size:15px;font-weight:600;cursor:pointer;min-height:52px">🔄 Sig.</button>
+      <div style="display:flex;gap:10px;padding:12px 12px 6px;flex-wrap:wrap">
+        ${['almacen','transportista'].includes(CU?.rol) ? '' : '<button id="sc-btn-blt-ficha" style="flex:1;background:#2563eb;color:#fff;border:none;border-radius:14px;padding:16px 20px;font-size:16px;font-weight:800;cursor:pointer;min-height:56px;letter-spacing:.01em">📂 Ir a expedición</button>'}
+        <button id="sc-btn-blt-sig" style="background:#374151;color:#fff;border:none;border-radius:14px;padding:16px 20px;font-size:16px;font-weight:700;cursor:pointer;min-height:56px;min-width:80px">🔄</button>
       </div>`;
     // Scroll al resultado
     res.scrollIntoView({behavior:'smooth', block:'start'});
