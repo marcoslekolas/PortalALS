@@ -124,10 +124,6 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .hm-av{width:30px;height:30px;border-radius:50%;background:var(--b600);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--w)}
 .hm-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:32px 16px 48px}
 .hm-greeting{font-size:14px;color:var(--b600);font-weight:600;text-align:center;margin-top:8px;letter-spacing:.02em}
-.hm-brief-item{display:flex;align-items:flex-start;gap:8px;padding:4px 0;border-bottom:1px solid var(--b100)}
-.hm-brief-item:last-child{border-bottom:none}
-.hm-brief-num{font-size:18px;font-weight:800;color:var(--b700);min-width:28px;text-align:right;line-height:1.2}
-.hm-brief-lbl{font-size:12px;color:var(--g600);line-height:1.4}
 .hm-title{font-size:28px;font-weight:800;text-align:center;margin-bottom:4px;margin-top:4px;color:var(--g900);letter-spacing:-.5px}
 
 .hm-sub{font-size:15px;color:var(--g500);text-align:center;margin-bottom:36px}
@@ -917,19 +913,7 @@ textarea.fi{resize:vertical;min-height:72px}
     <div class="hm-greeting" id="hm-greeting">Buenos días</div>
     <div class="hm-title" id="hm-name-big">Portal ALS · CW</div>
     <div class="hm-sub">Selecciona el área de trabajo</div>
-    <!-- Morning Briefing -->
-    <div id="hm-briefing" style="width:100%;max-width:720px;margin:12px 0 4px;display:none">
-      <div style="background:var(--b50);border:1px solid var(--b100);border-radius:14px;padding:16px 20px;position:relative">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-          <span style="font-size:16px">🧠</span>
-          <span style="font-size:12px;font-weight:700;color:var(--b700);text-transform:uppercase;letter-spacing:.06em">Resumen operativo del día</span>
-          <span style="margin-left:auto;font-size:10px;color:var(--g400)" id="hm-brief-ts"></span>
-        </div>
-        <div id="hm-brief-body" style="font-size:13px;color:var(--g700);line-height:1.7">
-          <div style="display:flex;align-items:center;gap:8px;color:var(--g400)"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block"></div> Consultando datos operativos…</div>
-        </div>
-      </div>
-    </div>
+
     <div class="hm-cards" id="hm-cards"></div>
   </div>
 </div>
@@ -2620,8 +2604,8 @@ function showHome(){
       </div>
     </div>`;
 
-  // Morning Briefing
-  if(['admin','oficina','aduanas','almacen'].includes(CU?.rol)){ const bEl=document.getElementById('hm-briefing'); if(bEl) bEl.style.display=''; cargarMorningBriefing(); }
+  // Morning Briefing popup
+  if(['admin','oficina','aduanas'].includes(CU?.rol)) cargarMorningBriefing();
 
   if(['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol))
     c.innerHTML+=`<div class="hm-card hm-card-alm" onclick="enterMod('almacen')">
@@ -9378,81 +9362,6 @@ async function revertirCarga(expId, expRef){
 }
 
 
-// ── Morning Briefing — resumen operativo personalizado por usuario ────
-async function cargarMorningBriefing(){
-  const body = document.getElementById('hm-brief-body');
-  const ts   = document.getElementById('hm-brief-ts');
-  if(!body) return;
-
-  try{
-    // Datos frescos de Supabase
-    const hoy = new Date().toISOString().slice(0,10);
-    const en48h = new Date(Date.now()+48*3600000).toISOString();
-
-    const [
-      {data:buquesProximos},
-      {data:expVencidas},
-      {data:expSinMov},
-      {data:incAbiertas},
-      {data:expEnAlmacen}
-    ] = await Promise.all([
-      sb.from('buques').select('nombre,eta_buque,estado_operacion')
-        .neq('estado_operacion','Finalizado')
-        .lte('eta_buque', en48h).gte('eta_buque', hoy),
-      sb.from('expediciones').select('nº_expedicion,fecha_max_despacho,buques(nombre)')
-        .neq('tramite_aduanero','Despachado')
-        .neq('ubicacion','Pendiente recibir')
-        .lte('fecha_max_despacho', new Date(Date.now()+7*86400000).toISOString().slice(0,10))
-        .not('fecha_max_despacho','is',null),
-      sb.from('expediciones').select('id')
-        .like('ubicacion','Almacén%')
-        .lt('updated_at', new Date(Date.now()-7*86400000).toISOString())
-        .neq('estado_semaforo','🚢 EMBARCADO'),
-      sb.from('incidencias').select('id').neq('estado','Cerrada'),
-      sb.from('expediciones').select('id')
-        .like('ubicacion','Almacén%')
-        .neq('estado_semaforo','🚢 EMBARCADO')
-    ]);
-
-    // Construir items del briefing
-    const items = [];
-
-    if(buquesProximos?.length)
-      items.push({n:buquesProximos.length, icon:'🚢', lbl:`buque${buquesProximos.length>1?'s':''} con ETA en las próximas 48h: <strong>${buquesProximos.map(b=>b.nombre).join(', ')}</strong>`, color:'var(--b600)'});
-
-    if(expVencidas?.length)
-      items.push({n:expVencidas.length, icon:'⚠️', lbl:`expedición${expVencidas.length>1?'es':''} con fecha máx. de despacho esta semana`, color:'var(--am600)'});
-
-    if(expSinMov?.length)
-      items.push({n:expSinMov.length, icon:'🕰️', lbl:`expedición${expSinMov.length>1?'es':''} sin movimiento en almacén más de 7 días`, color:'var(--am600)'});
-
-    if(incAbiertas?.length)
-      items.push({n:incAbiertas.length, icon:'🔴', lbl:`incidencia${incAbiertas.length>1?'s':''} abierta${incAbiertas.length>1?'s':''} sin cerrar`, color:'var(--rd600)'});
-
-    if(expEnAlmacen?.length)
-      items.push({n:expEnAlmacen.length, icon:'📦', lbl:`expedición${expEnAlmacen.length>1?'es':''} actualmente en almacén`, color:'var(--tl600)'});
-
-    if(!items.length){
-      body.innerHTML = '<div style="font-size:13px;color:var(--gr600);font-weight:600">✅ Todo en orden — sin alertas activas hoy</div>';
-    } else {
-      body.innerHTML = items.map(i=>
-        `<div class="hm-brief-item">
-          <span style="font-size:14px;flex-shrink:0">${i.icon}</span>
-          <div><span style="font-size:16px;font-weight:800;color:${i.color}">${i.n}</span>
-          <span style="font-size:13px;color:var(--g600);margin-left:6px">${i.lbl}</span></div>
-        </div>`
-      ).join('');
-    }
-
-    if(ts) ts.textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-
-  } catch(ex){
-    if(body) body.innerHTML = '<div style="font-size:12px;color:var(--g400)">No se pudo cargar el resumen operativo</div>';
-    console.warn('Morning Briefing error:', ex);
-  }
-}
-
-
 // ── Línea de vida de expedición ───────────────────────────────────────
 async function abrirLineaVida(expId, expRef){
   // Abrir modal con toda la historia cronológica de la expedición
@@ -9535,6 +9444,123 @@ async function abrirLineaVida(expId, expRef){
   } catch(ex){
     document.getElementById('m-body').innerHTML = '<div class="empty">Error: '+ex.message+'</div>';
   }
+}
+
+
+// ── Morning Briefing — popup al login ───────────────────────────────
+async function cargarMorningBriefing(){
+  const ov    = document.getElementById('brief-overlay');
+  const body  = document.getElementById('brief-body');
+  const sal   = document.getElementById('brief-saludo');
+  const fecha = document.getElementById('brief-fecha');
+  if(!ov || !body) return;
+
+  // Personalizar saludo
+  const hora = new Date().getHours();
+  const nombre = (CU?.nombre||'').split(' ')[0];
+  if(sal) sal.textContent = (hora<12?'Buenos días':hora<19?'Buenas tardes':'Buenas noches')+', '+nombre+' 👋';
+  if(fecha) fecha.innerHTML = new Date().toLocaleDateString('es-ES',{weekday:'long',day:'2-digit',month:'long'})+
+    '<br><span style="font-size:10px">'+new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})+'</span>';
+
+  ov.style.display = 'flex';
+
+  try {
+    // Datos para el resumen
+    const hoy     = new Date().toISOString().slice(0,10);
+    const en7dias = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+    const en48h   = new Date(Date.now()+48*3600000).toISOString();
+
+    const [{data:buquesProx},{data:expFmax},{data:expSinUbicar}] = await Promise.all([
+      sb.from('buques')
+        .select('nombre,eta_buque')
+        .neq('estado_operacion','Finalizado')
+        .lte('eta_buque', en48h)
+        .gte('eta_buque', hoy)
+        .order('eta_buque'),
+      sb.from('expediciones')
+        .select('nº_expedicion,fecha_max_despacho,buques(nombre)')
+        .neq('tramite_aduanero','Despachado')
+        .neq('ubicacion','Pendiente recibir')
+        .lte('fecha_max_despacho', en7dias)
+        .gte('fecha_max_despacho', hoy)
+        .not('fecha_max_despacho','is',null),
+      sb.from('expediciones')
+        .select('id')
+        .eq('ubicacion','Almacén-Sin Ubicar')
+        .neq('estado_semaforo','🚢 EMBARCADO')
+    ]);
+
+    const nBuques  = (buquesProx||[]).length;
+    const nFmax    = (expFmax||[]).length;
+    const nSinUbic = (expSinUbicar||[]).length;
+    const nombresBuques = (buquesProx||[]).map(b=>b.nombre).join(', ');
+
+    // Construir prompt para IA
+    const contexto = [
+      nBuques  ? `${nBuques} buque${nBuques>1?'s':''} con ETA en las próximas 48h: ${nombresBuques}` : null,
+      nFmax    ? `${nFmax} expedición${nFmax>1?'es':''} con fecha máxima de despacho esta semana` : null,
+      nSinUbic ? `${nSinUbic} expedición${nSinUbic>1?'es':''} sin ubicar en almacén` : null,
+    ].filter(Boolean);
+
+    if(!contexto.length){
+      body.innerHTML = `<p style="font-size:14px;color:var(--g700);line-height:1.7">
+        ✅ <strong>Todo en orden.</strong> No hay alertas operativas para hoy. Puedes comenzar la jornada sin pendientes urgentes.
+      </p>`;
+      return;
+    }
+
+    // Llamada a IA
+    const orKey = await getOrKey();
+    if(!orKey){
+      // Sin IA — mostrar datos en texto simple
+      body.innerHTML = `<p style="font-size:14px;color:var(--g700);line-height:1.7">${contexto.join('. ')}.</p>`;
+      return;
+    }
+
+    const prompt = `Eres el asistente operativo de ALS Algeciras (agencia de aduanas y logística portuaria). 
+Redacta un resumen diario conciso y profesional en español para ${nombre}, en 2-3 frases como máximo, en tono directo y operativo.
+Datos del día: ${contexto.join('; ')}.
+No uses listas, solo texto fluido. No empieces con "Buenos días" ni saludos.`;
+
+    const resp = await fetch('https://openrouter.ai/api/v1/chat/completions',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+orKey,'Content-Type':'application/json',
+        'HTTP-Referer':'https://marcoslekolas.github.io','X-Title':'ALS Portal'},
+      body:JSON.stringify({
+        model:'mistralai/mistral-small-3.2-24b-instruct',
+        max_tokens:150,
+        messages:[{role:'user',content:prompt}]
+      })
+    });
+    const data = await resp.json();
+    const texto = data.choices?.[0]?.message?.content?.trim() || contexto.join('. ')+'.';
+
+    body.innerHTML = `<p style="font-size:14px;color:var(--g700);line-height:1.8;margin:0">${texto}</p>`;
+
+  } catch(ex){
+    console.warn('Morning Briefing:', ex);
+    body.innerHTML = `<p style="font-size:13px;color:var(--g500)">No se pudo cargar el resumen operativo.</p>`;
+  }
+}
+
+function cerrarBriefing(){
+  const ov = document.getElementById('brief-overlay');
+  if(ov) ov.style.display = 'none';
+}
+
+// Helper para obtener clave OpenRouter
+async function getOrKey(){
+  try{
+    if(typeof getOpenRouterKey==='function'){
+      const k = await new Promise(res=>{
+        const v = typeof _orKey!=='undefined'?_orKey:null;
+        res(v);
+      });
+      if(k) return k;
+    }
+    const {data} = await sb.from('als_config').select('valor').eq('clave','gemini_api_key').single();
+    return data?.valor||null;
+  }catch(e){ return null; }
 }
 
 function checkNbUnlock(){
