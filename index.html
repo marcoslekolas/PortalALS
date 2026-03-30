@@ -9519,8 +9519,23 @@ async function _verificarManualScanner(){
 
 // Abrir expedición desde escáner
 async function abrirExpDesdeScanner(expId){
-  cerrarScannerQR();
-  setTimeout(()=>{ openExpD(expId, true); }, 120);
+  // Ocultar overlay (sin eliminar) para que el modal sea visible
+  const ov = document.getElementById('scanner-overlay');
+  if(ov) ov.style.display = 'none';
+
+  // Detener cámara
+  if(_html5QrScanner){
+    const sc = _html5QrScanner; _html5QrScanner = null;
+    sc.stop().catch(()=>{}).finally(()=>{ try{ sc.clear && sc.clear(); }catch(e){} });
+  }
+  clearInterval(_scannerInterval); _scannerInterval = null;
+  if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream=null; }
+
+  // Abrir la ficha de expedición
+  await openExpD(expId, true);
+
+  // Eliminar overlay tras abrir el modal
+  if(ov) ov.remove();
 }
 
 function cerrarScannerQR(){
