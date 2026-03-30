@@ -9518,25 +9518,35 @@ async function _verificarManualScanner(){
 }
 
 // Abrir expedición desde escáner
+// Usamos variable global para pasar el ID fuera del ciclo del escáner
+let _pendingExpId = null;
 function abrirExpDesdeScanner(expId){
-  // Ocultar overlay inmediatamente sin esperar stop de cámara
-  const ov = document.getElementById('scanner-overlay');
-  if(ov) ov.style.display = 'none';
-  // Detener cámara en background sin await
-  if(_html5QrScanner){ try{ _html5QrScanner.stop().catch(()=>{}); }catch(ex){} _html5QrScanner=null; }
-  clearInterval(_scannerInterval); _scannerInterval=null;
-  if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream=null; }
-  // Abrir expedición — el modal tiene z-index 300, overlay oculto
-  openExpD(expId, true).then(()=>{ if(ov) ov.remove(); }).catch(err=>{ console.error('openExpD error:',err); showToast('❌ Error al abrir expedición: '+err.message); if(ov) ov.remove(); });
+  _pendingExpId = expId;
+  cerrarScannerQR(); // cierra overlay y detiene cámara correctamente
 }
 
 function cerrarScannerQR(){
   const ov = document.getElementById('scanner-overlay');
-  if(ov) ov.remove(); // Primero quitar overlay para feedback inmediato
+  if(ov) ov.remove();
   if(_html5QrScanner){
     const sc = _html5QrScanner;
     _html5QrScanner = null;
-    sc.stop().catch(()=>{}).finally(()=>{ try{ sc.clear && sc.clear(); }catch(e){} });
+    sc.stop().catch(()=>{}).finally(()=>{
+      try{ sc.clear && sc.clear(); }catch(e){}
+      // Abrir expedición pendiente DESPUÉS de que la cámara se haya detenido completamente
+      if(_pendingExpId){
+        const id = _pendingExpId;
+        _pendingExpId = null;
+        setTimeout(()=>{ openExpD(id, true); }, 100);
+      }
+    });
+  } else {
+    // Sin cámara activa, abrir expedición directamente
+    if(_pendingExpId){
+      const id = _pendingExpId;
+      _pendingExpId = null;
+      setTimeout(()=>{ openExpD(id, true); }, 100);
+    }
   }
   clearInterval(_scannerInterval); _scannerInterval = null;
   if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream=null; }
