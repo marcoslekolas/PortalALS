@@ -5115,7 +5115,7 @@ async function loadDash(){
   if(dfInfo)dfInfo.textContent=filtros.length?'Estadísticas: '+filtros.join(' · '):'Todos los buques activos';
 
   // KPIs
-  renderDashCharts(E);
+  renderDashCharts(allExps || Efilt || []);
   const dashCS=document.getElementById('dash-charts-section');if(dashCS)dashCS.style.display='';
   document.getElementById('kpi-grid').innerHTML=`
     <div class="kpi bl"><div class="kpi-lbl">Buques activos</div><div class="kpi-val">${allBuques.length}</div><div class="kpi-sub" style="color:var(--b600)">${enProceso.length} en proceso · ${listos.length} listos</div></div>
@@ -5839,6 +5839,31 @@ async function renderCal(){
       const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
       calBody.appendChild(buildDayCell(ds, d, isT, false, bq));
     }
+    // Rellenar días del mes siguiente hasta completar la última fila (7 columnas)
+    const totalCells = dow + days;
+    const trailing = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+    const nextM = calM === 11 ? 0 : calM + 1;
+    const nextY = calM === 11 ? calY + 1 : calY;
+    for(let d = 1; d <= trailing; d++){
+      const ds = `${nextY}-${String(nextM+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const bq = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
+      // Días del mes siguiente: visibles y con drag-drop activo pero estilo tenue
+      const cell = buildDayCell(ds, d, false, true, bq);
+      // Al soltar en día del mes siguiente, navegar automáticamente
+      cell.addEventListener('drop', async e => {
+        e.preventDefault(); cell.classList.remove('drag-over');
+        if(!calDragId) return;
+        const {error} = await sb.from('buques').update({eta_buque: ds+'T12:00:00'}).eq('id',calDragId);
+        if(!error){
+          showToast('ETA → '+ds+' · Navegando al mes siguiente');
+          calM = nextM; calY = nextY;
+          calAnchor = new Date(nextY, nextM, 1);
+          await renderCal();
+        } else { mostrarBanner('Error al mover','red'); }
+        calDragId = null;
+      }, true); // useCapture para sobreescribir el listener de buildDayCell
+      calBody.appendChild(cell);
+    }
   }
 
   // ── VISTA 15 DÍAS ────────────────────────────────────────
@@ -6013,7 +6038,7 @@ async function loadTL(){
         const key=estOpCls(b.estado_operacion||'').replace('st-','');
         chips+=`<div data-bid="${b.id}" draggable="true"
           title="${b.nombre}"
-          style="background:${BG[key]};color:${CLR[key]};border-left:3px solid ${BAR[key]};border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${CELL_W-10}px;cursor:grab;margin-bottom:1px;user-select:none"
+          style="background:${BG[key]};color:${CLR[key]};border-left:3px solid ${BAR[key]};border-radius:4px;padding:2px 6px;font-size:10px;font-weight:700;white-space:nowrap;cursor:grab;margin-bottom:1px;user-select:none;position:relative;z-index:2"
           onclick="openBuque('${b.id}')"
           ondragstart="window.tlDragId='${b.id}';event.dataTransfer.setData('text','${b.id}');event.dataTransfer.effectAllowed='move'"
           ondragend="this.style.opacity='1'"
