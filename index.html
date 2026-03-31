@@ -1378,17 +1378,10 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="tc" id="alm-lis"></div>
       </div>
       <div class="view" id="view-ubicaciones">
-        <!-- Selector de planta -->
-        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
-          <div style="display:flex;gap:4px">
-            <button id="ubic-tab-pb" class="btn btn-p btn-sm" onclick="setUbicPlanta('pb')">🏢 1ª Planta</button>
-            <button id="ubic-tab-1p" class="btn btn-s btn-sm" onclick="setUbicPlanta('1p')">📦 Sótano</button>
-          </div>
-          <button class="btn btn-s btn-sm" onclick="loadUbic()" style="margin-left:auto">↺ Actualizar</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+          <div style="font-size:12px;color:var(--g500)" id="ubic-resumen"></div>
+          <button class="btn btn-s btn-sm" onclick="loadUbic()">↺ Actualizar</button>
         </div>
-        <!-- Mapa SVG -->
-        <div id="ubic-mapa" style="width:100%;overflow-x:auto;margin-bottom:16px"></div>
-        <!-- Lista detalle -->
         <div class="ug" id="ubic-grid"></div>
       </div>
       <div class="view" id="view-listos"><div id="listos-list" class="buque-list"></div></div>
@@ -7869,183 +7862,48 @@ async function guardarFL(id){
   closeModal();await loadAlmacen();
 }
 
-let _ubicPlanta = 'pb'; // 'pb' = planta baja, '1p' = 1ª planta/sótano
-let _ubicData = {};
-
-function setUbicPlanta(p){
-  _ubicPlanta = p;
-  document.getElementById('ubic-tab-pb').className = 'btn btn-sm ' + (p==='pb'?'btn-p':'btn-s');
-  document.getElementById('ubic-tab-1p').className = 'btn btn-sm ' + (p==='1p'?'btn-p':'btn-s');
-  renderUbicMapa();
-}
-
 async function loadUbic(){
   const {data} = await sb.from('expediciones')
-    .select('ubicacion,nº_expedicion,bultos,kilos,buques(nombre)')
+    .select('id,ubicacion,nº_expedicion,bultos,kilos,buques(nombre)')
     .not('ubicacion','eq','Pendiente recibir')
     .neq('estado_semaforo','🚢 EMBARCADO');
 
-  _ubicData = {};
+  const g = {};
   (data||[]).forEach(e=>{
     const z = e.ubicacion||'Sin ubicación';
-    if(!_ubicData[z]) _ubicData[z]={exps:[],b:0,k:0};
-    _ubicData[z].exps.push(e);
-    _ubicData[z].b += e.bultos||0;
-    _ubicData[z].k += e.kilos||0;
+    if(!g[z]) g[z]={exps:[],b:0,k:0};
+    g[z].exps.push(e);
+    g[z].b += e.bultos||0;
+    g[z].k += e.kilos||0;
   });
 
-  renderUbicMapa();
+  // Resumen total
+  const total = (data||[]).length;
+  const sinUbic = g['Almacén-Sin Ubicar']?.exps.length||0;
+  const resEl = document.getElementById('ubic-resumen');
+  if(resEl) resEl.textContent = total+' expediciones activas en almacén'+(sinUbic>0?' · ⚠️ '+sinUbic+' sin ubicar':'');
 
-  // Lista detalle
-  document.getElementById('ubic-grid').innerHTML = Object.entries(_ubicData)
-    .map(([z,d])=>`<div class="uc">
-      <div class="uz">📍 ${z}</div>
-      <div class="ucv">${d.exps.length} <span style="font-size:14px;font-weight:400;color:var(--g500)">exp.</span></div>
-      <div class="us">${d.b} bultos · ${d.k} kg</div>
-      <div class="ui-list">${d.exps.slice(0,3).map(e=>`<div class="ui-item">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</div>`).join('')}
-        ${d.exps.length>3?`<div class="ui-item" style="color:var(--g400)">+${d.exps.length-3} más</div>`:''}
-      </div>
-    </div>`).join('')
+  // Orden: Sin ubicar primero, luego el resto
+  const zonasSinUbic = ['Almacén-Sin Ubicar'];
+  const zonasPriority = [...zonasSinUbic, ...Object.keys(g).filter(k=>!zonasSinUbic.includes(k))];
+
+  document.getElementById('ubic-grid').innerHTML = zonasPriority
+    .filter(z=>g[z])
+    .map(z=>{
+      const d = g[z];
+      const esSinUbic = z==='Almacén-Sin Ubicar';
+      return `<div class="uc" style="${esSinUbic?'border:2px solid var(--rd300);background:var(--rd50)':''}">
+        <div class="uz" style="${esSinUbic?'color:var(--rd600)':''}">📍 ${z}</div>
+        <div class="ucv">${d.exps.length} <span style="font-size:14px;font-weight:400;color:var(--g500)">exp.</span></div>
+        <div class="us">${d.b} bultos · ${d.k} kg</div>
+        <div class="ui-list">${d.exps.slice(0,4).map(e=>`<div class="ui-item" style="cursor:pointer" onclick="openExpD('${e.id}');nav('expediciones',null)">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</div>`).join('')}
+          ${d.exps.length>4?`<div class="ui-item" style="color:var(--g400)">+${d.exps.length-4} más</div>`:''}
+        </div>
+      </div>`;
+    }).join('')
     || '<div class="empty"><div class="empty-icon">📍</div><div class="empty-txt">No hay mercancía en almacén</div></div>';
 }
 
-function renderUbicMapa(){
-  const mapa = document.getElementById('ubic-mapa');
-  if(!mapa) return;
-
-  // Colores según ocupación
-  function colorZona(key){
-    const d = _ubicData[key];
-    if(!d || d.exps.length===0) return {fill:'#f0fdf4',stroke:'#86efac',txt:'Libre',n:0,color:'#16a34a'};
-    if(d.exps.length<=3)  return {fill:'#eff6ff',stroke:'#93c5fd',txt:d.exps.length+' exp.',n:d.exps.length,color:'#2563eb'};
-    if(d.exps.length<=8)  return {fill:'#fefce8',stroke:'#fde047',txt:d.exps.length+' exp.',n:d.exps.length,color:'#ca8a04'};
-    return {fill:'#fef2f2',stroke:'#fca5a5',txt:d.exps.length+' exp.',n:d.exps.length,color:'#dc2626'};
-  }
-
-  function tooltip(key){
-    const d = _ubicData[key];
-    if(!d) return '';
-    return d.exps.slice(0,5).map(e=>e.nº_expedicion).join(', ')+(d.exps.length>5?'…':'');
-  }
-
-  if(_ubicPlanta === 'pb'){
-    // ── PLANTA BAJA ─────────────────────────────────────────
-    // Basado en plano P7.2: zona izquierda=ADT, zona central=ADT(grande), zona derecha=Almacén PB
-    const adt   = colorZona('Almacén-ADT');
-    const lame  = colorZona('Almacén-LAME');
-    const pb    = colorZona('Almacén-1ª Planta');
-    const sinU  = colorZona('Almacén-Sin Ubicar');
-
-    mapa.innerHTML = `<svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:700px;font-family:var(--f)">
-      <!-- Fondo general -->
-      <rect x="0" y="0" width="700" height="320" fill="var(--g50)" rx="12"/>
-      <text x="350" y="22" text-anchor="middle" font-size="13" font-weight="700" fill="var(--g600)">1ª PLANTA — Polígono La Menacha (Almacén)</text>
-
-      <!-- Zona LAME (izquierda, lo que en el plano era ADT) -->
-      <rect x="20" y="40" width="160" height="200" rx="8" fill="${lame.fill}" stroke="${lame.stroke}" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-LAME')"/>
-      <text x="100" y="110" text-anchor="middle" font-size="14" font-weight="800" fill="${lame.color}">LAME</text>
-      <text x="100" y="130" text-anchor="middle" font-size="12" fill="${lame.color}">${lame.txt}</text>
-      ${lame.n>0?`<circle cx="100" cy="155" r="16" fill="${lame.stroke}"/><text x="100" y="160" text-anchor="middle" font-size="13" font-weight="700" fill="${lame.color}">${lame.n}</text>`:'<text x="100" y="165" text-anchor="middle" font-size="11" fill="#16a34a">Libre ✓</text>'}
-      <text x="100" y="220" text-anchor="middle" font-size="9" fill="var(--g400)">${tooltip('Almacén-LAME')}</text>
-
-      <!-- Zona ADT (zona central grande — lo que en el plano era LAME+DA) -->
-      <rect x="200" y="40" width="200" height="200" rx="8" fill="${adt.fill}" stroke="${adt.stroke}" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-ADT')"/>
-      <text x="300" y="110" text-anchor="middle" font-size="14" font-weight="800" fill="${adt.color}">ADT</text>
-      <text x="300" y="130" text-anchor="middle" font-size="12" fill="${adt.color}">${adt.txt}</text>
-      ${adt.n>0?`<circle cx="300" cy="155" r="16" fill="${adt.stroke}"/><text x="300" y="160" text-anchor="middle" font-size="13" font-weight="700" fill="${adt.color}">${adt.n}</text>`:'<text x="300" y="165" text-anchor="middle" font-size="11" fill="#16a34a">Libre ✓</text>'}
-      <text x="300" y="220" text-anchor="middle" font-size="9" fill="var(--g400)">${tooltip('Almacén-ADT')}</text>
-
-      <!-- Almacén Planta Baja (derecha) -->
-      <rect x="420" y="40" width="260" height="200" rx="8" fill="${pb.fill}" stroke="${pb.stroke}" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-1ª Planta')"/>
-      <text x="550" y="110" text-anchor="middle" font-size="14" font-weight="800" fill="${pb.color}">ALMACÉN</text>
-      <text x="550" y="128" text-anchor="middle" font-size="13" font-weight="700" fill="${pb.color}">1ª PLANTA</text>
-      <text x="550" y="148" text-anchor="middle" font-size="12" fill="${pb.color}">${pb.txt}</text>
-      ${pb.n>0?`<circle cx="550" cy="170" r="16" fill="${pb.stroke}"/><text x="550" y="175" text-anchor="middle" font-size="13" font-weight="700" fill="${pb.color}">${pb.n}</text>`:'<text x="550" y="178" text-anchor="middle" font-size="11" fill="#16a34a">Libre ✓</text>'}
-      <text x="550" y="220" text-anchor="middle" font-size="9" fill="var(--g400)">${tooltip('Almacén-1ª Planta')}</text>
-
-      <!-- Sin ubicar -->
-      ${sinU.n>0?`
-      <rect x="20" y="258" width="660" height="48" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-Sin Ubicar')"/>
-      <text x="350" y="278" text-anchor="middle" font-size="12" font-weight="700" fill="#dc2626">⚠️ SIN UBICAR — ${sinU.n} expedición${sinU.n>1?'es':''} pendientes de asignar ubicación</text>
-      <text x="350" y="296" text-anchor="middle" font-size="10" fill="#dc2626">${tooltip('Almacén-Sin Ubicar')}</text>
-      `:''}
-
-      <!-- Leyenda -->
-      <g transform="translate(20,295)">
-        <rect x="0" y="0" width="10" height="10" fill="#f0fdf4" stroke="#86efac" rx="2"/>
-        <text x="14" y="9" font-size="9" fill="var(--g500)">Libre</text>
-        <rect x="60" y="0" width="10" height="10" fill="#eff6ff" stroke="#93c5fd" rx="2"/>
-        <text x="74" y="9" font-size="9" fill="var(--g500)">1-3 exp.</text>
-        <rect x="130" y="0" width="10" height="10" fill="#fefce8" stroke="#fde047" rx="2"/>
-        <text x="144" y="9" font-size="9" fill="var(--g500)">4-8 exp.</text>
-        <rect x="200" y="0" width="10" height="10" fill="#fef2f2" stroke="#fca5a5" rx="2"/>
-        <text x="214" y="9" font-size="9" fill="var(--g500)">&gt;8 exp.</text>
-        <text x="320" y="9" font-size="9" fill="var(--g400)">Haz clic en una zona para filtrar</text>
-      </g>
-    </svg>`;
-
-  } else {
-    // ── 1ª PLANTA / SÓTANO ──────────────────────────────────
-    // Basado en plano P7.4 (sótano): zona marcada ADT → actualmente LAME, nave principal → Almacén 1ª Planta
-    const sinU  = colorZona('Almacén-Sin Ubicar');
-    const adt1  = colorZona('Almacén-ADT');
-
-    mapa.innerHTML = `<svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:700px;font-family:var(--f)">
-      <rect x="0" y="0" width="700" height="320" fill="var(--g50)" rx="12"/>
-      <text x="350" y="22" text-anchor="middle" font-size="13" font-weight="700" fill="var(--g600)">SÓTANO — Polígono La Menacha</text>
-
-      <!-- ADT (zona operativa del sótano) -->
-      <rect x="20" y="40" width="400" height="200" rx="8" fill="${adt1.fill}" stroke="${adt1.stroke}" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-ADT')"/>
-      <text x="220" y="115" text-anchor="middle" font-size="14" font-weight="800" fill="${adt1.color}">ADT</text>
-      <text x="220" y="135" text-anchor="middle" font-size="12" fill="${adt1.color}">${adt1.txt}</text>
-      ${adt1.n>0?`<circle cx="220" cy="160" r="16" fill="${adt1.stroke}"/><text x="220" y="165" text-anchor="middle" font-size="13" font-weight="700" fill="${adt1.color}">${adt1.n}</text>`:'<text x="220" y="168" text-anchor="middle" font-size="11" fill="#16a34a">Libre ✓</text>'}
-      <text x="220" y="220" text-anchor="middle" font-size="9" fill="var(--g400)">${tooltip('Almacén-ADT')}</text>
-
-      <!-- 2ª Planta — Oficinas (nave principal, no es almacén operativo) -->
-      <rect x="440" y="40" width="240" height="200" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6,3"/>
-      <text x="560" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#64748b">2ª PLANTA</text>
-      <text x="560" y="138" text-anchor="middle" font-size="11" fill="#94a3b8">Zona de Oficinas</text>
-      <text x="560" y="168" text-anchor="middle" font-size="22">🏢</text>
-
-      <!-- Sin ubicar -->
-      ${sinU.n>0?`
-      <rect x="20" y="258" width="660" height="48" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-Sin Ubicar')"/>
-      <text x="350" y="278" text-anchor="middle" font-size="12" font-weight="700" fill="#dc2626">⚠️ SIN UBICAR — ${sinU.n} expedición${sinU.n>1?'es':''} pendientes de asignar ubicación</text>
-      <text x="350" y="296" text-anchor="middle" font-size="10" fill="#dc2626">${tooltip('Almacén-Sin Ubicar')}</text>
-      `:''}
-
-      <!-- Leyenda -->
-      <g transform="translate(20,295)">
-        <rect x="0" y="0" width="10" height="10" fill="#f0fdf4" stroke="#86efac" rx="2"/>
-        <text x="14" y="9" font-size="9" fill="var(--g500)">Libre</text>
-        <rect x="60" y="0" width="10" height="10" fill="#eff6ff" stroke="#93c5fd" rx="2"/>
-        <text x="74" y="9" font-size="9" fill="var(--g500)">1-3 exp.</text>
-        <rect x="130" y="0" width="10" height="10" fill="#fefce8" stroke="#fde047" rx="2"/>
-        <text x="144" y="9" font-size="9" fill="var(--g500)">4-8 exp.</text>
-        <rect x="200" y="0" width="10" height="10" fill="#fef2f2" stroke="#fca5a5" rx="2"/>
-        <text x="214" y="9" font-size="9" fill="var(--g500)">&gt;8 exp.</text>
-        <text x="320" y="9" font-size="9" fill="var(--g400)">Haz clic en una zona para filtrar</text>
-      </g>
-    </svg>`;
-  }
-}
-
-function filtrarUbicacion(zona){
-  // Filtrar la lista detalle para mostrar solo esa zona
-  const d = _ubicData[zona];
-  if(!d) return;
-  const grid = document.getElementById('ubic-grid');
-  grid.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:8px 12px;background:var(--b50);border-radius:var(--r)">
-      <div style="font-size:13px;font-weight:700;color:var(--b700)">📍 ${zona} — ${d.exps.length} expedición${d.exps.length!==1?'es':''} · ${d.b} bultos · ${d.k} kg</div>
-      <button onclick="loadUbic()" class="btn btn-s btn-sm">✕ Ver todas</button>
-    </div>
-    ${d.exps.map(e=>`
-      <div class="uc" onclick="openExpD('${e.id||''}');nav('expediciones',null)" style="cursor:pointer">
-        <div class="uz">📦 ${e.nº_expedicion}</div>
-        <div class="us">${e.buques?.nombre||'—'} · ${e.bultos} bultos · ${e.kilos} kg</div>
-      </div>`).join('')}`;
-}
 
 async function loadListos(){
   const {data}=await sb.from('buques').select('*,ec:cliente_id(nombre)').or('estado_operacion.is.null,estado_operacion.neq.Finalizado');
@@ -9643,7 +9501,7 @@ async function openExpD(id, forceOpen=false){
     </div>
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR</button><button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR</button><button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-s btn-sm" onclick="closeModal();nav('ubicaciones',null)">📍 Ver mapa</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   window._modalExpId = e.id; // para refresh Realtime
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
