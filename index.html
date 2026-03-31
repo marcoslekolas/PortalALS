@@ -6674,44 +6674,9 @@ async function loadAlmDash(){
     <div class="kpi ${I.length>0?'rd':'gr'}"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>
     ${tiempoMedio!==null?`<div class="kpi bl"><div class="kpi-lbl">Tiempo medio almacén</div><div class="kpi-val">${tiempoMedio}d</div><div class="kpi-sub">llegada→carga</div></div>`:''}`;
 
-  // Sección incidencias abiertas por tipo
-  const incHtml = rankingInc.length ? `
-    <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--g500);margin-bottom:10px">⚠️ Incidencias abiertas por tipo</div>
-      ${rankingInc.map(([tipo,n])=>`
-        <div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--g100)">
-          <span class="badge ba" style="font-size:11px;min-width:80px;text-align:center">${tipo}</span>
-          <div style="flex:1;background:var(--g100);border-radius:4px;height:8px;overflow:hidden">
-            <div style="height:100%;background:var(--am500);width:${Math.round(n/I.length*100)}%;transition:width .3s"></div>
-          </div>
-          <span style="font-size:12px;font-weight:700;color:var(--am600);min-width:20px;text-align:right">${n}</span>
-        </div>`).join('')}
-    </div>` : '';
-
-  // Expediciones sin foto de llegada
-  const sinFotoList = E.filter(e=>
-    e.ubicacion&&e.ubicacion.startsWith('Almacén')&&!e.foto_llegada_url
-  ).slice(0,5);
-  const sinFotoHtml = sinFotoList.length ? `
-    <div style="background:var(--w);border:1px solid var(--rd200,#fecaca);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--rd600);margin-bottom:10px">📷 Expediciones en almacén sin foto de llegada</div>
-      ${sinFotoList.map(e=>`
-        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--g100);font-size:12px;cursor:pointer" onclick="openExpD('${e.id}')">
-          <span style="font-weight:700;font-family:var(--mono)">${e.nº_expedicion}</span>
-          <span style="color:var(--g500)">${e.buques?.nombre||'—'}</span>
-          <span style="margin-left:auto">${bdg(e.estado_semaforo)}</span>
-        </div>`).join('')}
-      ${sinFotoList.length<sinFoto?`<div style="font-size:11px;color:var(--g400);margin-top:6px">Y ${sinFoto-sinFotoList.length} más…</div>`:''}
-    </div>` : '';
-
-  // Insertar secciones extra si el contenedor existe
-  let extraCont = document.getElementById('alm-dash-extra');
-  if(!extraCont){
-    extraCont = document.createElement('div');
-    extraCont.id = 'alm-dash-extra';
-    document.getElementById('alm-kpi-grid').after(extraCont);
-  }
-  extraCont.innerHTML = sinFotoHtml + incHtml;
+  // Limpiar sección extra si existe
+  const extraCont = document.getElementById('alm-dash-extra');
+  if(extraCont) extraCont.innerHTML = '';
 
   document.getElementById('alm-listos-dash').innerHTML=lis.length
     ?lis.map(b=>buqueCard(b,true)).join('')
@@ -9501,7 +9466,7 @@ async function openExpD(id, forceOpen=false){
     </div>
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR</button><button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-s btn-sm" onclick="closeModal();nav('ubicaciones',null)">📍 Ver mapa</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR</button><button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   window._modalExpId = e.id; // para refresh Realtime
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
