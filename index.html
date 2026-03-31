@@ -1141,6 +1141,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="nav-item" onclick="nav('log',this)"><span class="ni">📋</span><span class="nav-item-txt">Log de actividad</span></div>
         <div class="nav-item" onclick="nav('permisos',this)"><span class="ni">🔑</span><span class="nav-item-txt">Permisos por rol</span></div>
         <div class="nav-item" onclick="nav('versiones',this)"><span class="ni">🏷️</span><span class="nav-item-txt">Versiones</span></div>
+        <div class="nav-item" onclick="nav('informe',this)"><span class="ni">📊</span><span class="nav-item-txt">Informe semanal</span></div>
         <div style="margin-top:auto;padding:12px 8px;border-top:1px solid var(--g200)">
           <button class="btn btn-s btn-sm" style="width:100%;justify-content:center" onclick="enterMod('operativa')">← Ir a Operativa</button>
           <button class="btn btn-s btn-sm" style="width:100%;justify-content:center;margin-top:6px" onclick="showHome()">🏠 Inicio</button>
@@ -1424,16 +1425,38 @@ textarea.fi{resize:vertical;min-height:72px}
     </div>
   </div>
 </div>
+      <div class="view" id="view-informe">
+        <div class="ph">
+          <div class="pt">📊 Informe semanal</div>
+          <button class="btn btn-p" onclick="generarInformeSemanal()">⚡ Generar ahora</button>
+        </div>
+        <div style="max-width:700px;margin:0 auto">
+          <div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
+            <div style="font-size:13px;color:var(--b700);margin-bottom:8px;font-weight:600">ℹ️ Sobre este informe</div>
+            <div style="font-size:12px;color:var(--g600);line-height:1.7">Genera un resumen ejecutivo de la semana anterior con IA. Se abre tu cliente de correo listo para enviar.</div>
+          </div>
+          <div id="informe-preview" style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:20px;min-height:120px;font-size:13px;color:var(--g600);line-height:1.7">
+            Pulsa "Generar ahora" para crear el informe de esta semana.
+          </div>
+          <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end" id="informe-actions">
+            <button class="btn btn-s" onclick="copiarInforme()">📋 Copiar</button>
+            <button class="btn btn-p" onclick="enviarInformePorEmail()">📧 Enviar por email</button>
+          </div>
+        </div>
+      </div>
 <div class="view" id="view-versiones">
   <div class="ph"><div class="pt">🏷️ Historial de versiones — ALS Portal Operativo</div></div>
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.7.0</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.8.0</span>
         <span style="font-size:12px;color:var(--g400)">30/03/2026</span>
         <span class="badge bg">Actual</span>
       </div>
       <ul style="font-size:13px;color:var(--g700);margin:0;padding-left:20px;line-height:1.8">
+        <li>💬 Notas internas por expedición con menciones @usuario y notificación push</li>
+        <li>📊 Informe semanal con IA — resumen ejecutivo generado y enviable por email</li>
+        <li>🎓 Onboarding guiado al primer login — tour interactivo por rol (admin/oficina/almacén/aduanas)</li>
         <li>🔔 Notificaciones push nativas via Service Worker</li>
         <li>🧠 Búsqueda global semántica con IA — describe en lenguaje natural</li>
         <li>🎛️ Kanban drag & drop — arrastra expediciones entre estados</li>
@@ -2134,7 +2157,7 @@ function mostrarEstadoRealtime(){
 }
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.7.0';
+const APP_VERSION = 'v3.8.0';
 const APP_VERSION_DATE = '30/03/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -2496,6 +2519,13 @@ async function doLogin(){
     if(CU.must_change_password){showChangePwd();return;}
     iniciarVerificacionSesion();
     solicitarPermisoPush(); // solicitar permiso notificaciones push
+    // Onboarding — solo si es la primera vez
+    try{
+      const onbKey = 'als_onb_'+CU.id;
+      if(!localStorage.getItem(onbKey)){
+        setTimeout(()=>iniciarOnboarding(), 800);
+      }
+    }catch(e){}
     // Morning Briefing — mostrar antes de navegar al módulo
     if(['admin','oficina','aduanas'].includes(CU.rol)){
       cargarMorningBriefing();
@@ -4838,6 +4868,7 @@ async function loadView(view){
     case 'facturacion':await loadFacturacion();break;
     case 'permisos':await loadPermisos();break;
     case 'versiones':loadVersiones();break;
+    case 'informe':break;
   }
 }
 
@@ -9406,6 +9437,17 @@ async function openExpD(id, forceOpen=false){
     </div>`:''}
     
     <hr class="fdiv">
+    <!-- Notas internas -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">💬 Notas internas del equipo</div>
+      <div id="notas-exp-cont" style="max-height:180px;overflow-y:auto;margin-bottom:8px;display:flex;flex-direction:column;gap:6px"></div>
+      <div style="display:flex;gap:6px">
+        <input id="nota-input" class="fi" placeholder="Escribe una nota… (@nombre para mencionar)" style="flex:1;font-size:12px"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();enviarNota('${e.id}','${e.nº_expedicion}');}">
+        <button class="btn btn-p btn-sm" onclick="enviarNota('${e.id}','${e.nº_expedicion}')">Enviar</button>
+      </div>
+    </div>
+    <hr class="fdiv">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
       <div style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.4px">📋 Historial de cambios</div>
     </div>
@@ -9415,6 +9457,7 @@ async function openExpD(id, forceOpen=false){
   window._modalExpId = e.id; // para refresh Realtime
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
+  loadNotasExp(e.id);
 }
 
 
@@ -9818,6 +9861,247 @@ async function loadRendimiento(){
   } catch(ex){
     if(grid) grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-txt">Error: ${ex.message}</div></div>`;
   }
+}
+
+
+// ── Notas internas por expedición ────────────────────────────────────
+async function loadNotasExp(expId){
+  const cont = document.getElementById('notas-exp-cont');
+  if(!cont) return;
+  try{
+    const {data} = await sb.from('activity_log')
+      .select('*')
+      .eq('tabla','expediciones')
+      .eq('registro_id', expId)
+      .eq('accion','nota_interna')
+      .order('created_at', {ascending:true});
+
+    if(!data||!data.length){
+      cont.innerHTML = '<div style="font-size:12px;color:var(--g400);padding:4px 0">Sin notas. Sé el primero en dejar una.</div>';
+      return;
+    }
+
+    cont.innerHTML = data.map(n=>{
+      const esMio = n.usuario_id === CU?.id;
+      const hora = new Date(n.created_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      // Resaltar menciones @usuario
+      const texto = (n.valor_nuevo||'').replace(/@(\w+)/g, '<strong style="color:var(--b600)">@$1</strong>');
+      return `<div style="display:flex;gap:8px;align-items:flex-start;${esMio?'flex-direction:row-reverse':''}">
+        <div style="width:28px;height:28px;border-radius:50%;background:${esMio?'var(--b600)':'var(--g300)'};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">
+          ${(n.usuario_nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}
+        </div>
+        <div style="max-width:75%">
+          <div style="background:${esMio?'var(--b50)':'var(--g50)'};border:1px solid ${esMio?'var(--b100)':'var(--g200)'};border-radius:10px;padding:7px 10px">
+            <div style="font-size:12px;color:var(--g800);line-height:1.5">${texto}</div>
+          </div>
+          <div style="font-size:10px;color:var(--g400);margin-top:2px;${esMio?'text-align:right':''}">${n.usuario_nombre||'—'} · ${hora}</div>
+        </div>
+      </div>`;
+    }).join('');
+    cont.scrollTop = cont.scrollHeight;
+  } catch(ex){ console.warn('loadNotasExp:', ex); }
+}
+
+async function enviarNota(expId, expRef){
+  const inp = document.getElementById('nota-input');
+  const texto = inp?.value?.trim();
+  if(!texto) return;
+
+  try{
+    await logAct('expediciones', expId, expRef, 'nota_interna', 'nota', null, texto);
+    inp.value = '';
+    await loadNotasExp(expId);
+
+    // Notificar a usuarios mencionados con @nombre
+    const menciones = [...texto.matchAll(/@(\w+)/g)].map(m=>m[1].toLowerCase());
+    if(menciones.length){
+      const {data:usu} = await sb.from('usuarios').select('id,nombre,rol').eq('activo',true);
+      const mencionados = (usu||[]).filter(u=>
+        menciones.some(m=>(u.nombre||'').toLowerCase().includes(m))
+      );
+      mencionados.forEach(u=>{
+        if(u.id !== CU?.id){
+          notifSistema('💬 '+CU.nombre+' te mencionó', expRef+': '+texto.slice(0,60));
+        }
+      });
+    }
+  } catch(ex){ showToast('❌ Error al enviar nota: '+ex.message); }
+}
+
+
+// ── Informe semanal automático ────────────────────────────────────────
+let _informeTexto = '';
+
+async function generarInformeSemanal(){
+  const prev = document.getElementById('informe-preview');
+  const acts = document.getElementById('informe-actions');
+  if(!prev) return;
+  prev.innerHTML = '<div style="display:flex;align-items:center;gap:10px;color:var(--g400)"><div class="spinner" style="display:inline-block;width:16px;height:16px;border-width:2px"></div> Recopilando datos de la semana…</div>';
+
+  try{
+    const ahora = new Date();
+    const lunes = new Date(ahora); lunes.setDate(ahora.getDate() - ahora.getDay() + 1 - 7);
+    const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 6);
+    const desde = lunes.toISOString().slice(0,10);
+    const hasta = domingo.toISOString().slice(0,10);
+
+    // Semana anterior también para comparativa
+    const desdeAnt = new Date(lunes); desdeAnt.setDate(lunes.getDate()-7);
+    const hastaAnt = new Date(domingo); hastaAnt.setDate(domingo.getDate()-7);
+
+    const [{data:exps},{data:expsAnt},{data:incs},{data:buques},{data:log}] = await Promise.all([
+      sb.from('expediciones').select('id,nº_expedicion,tramite_aduanero,bultos,kilos,empresas(nombre)').gte('created_at',desde).lte('created_at',hasta+'T23:59:59'),
+      sb.from('expediciones').select('id').gte('created_at',desdeAnt.toISOString().slice(0,10)).lte('created_at',hastaAnt.toISOString().slice(0,10)+'T23:59:59'),
+      sb.from('incidencias').select('id,tipo,estado').gte('created_at',desde).lte('created_at',hasta+'T23:59:59'),
+      sb.from('buques').select('nombre,eta_buque').gte('eta_buque',desde).lte('eta_buque',hasta),
+      sb.from('activity_log').select('usuario_nombre,accion').gte('created_at',desde).lte('created_at',hasta+'T23:59:59')
+    ]);
+
+    const nExps = (exps||[]).length;
+    const nExpsAnt = (expsAnt||[]).length;
+    const nBultos = (exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
+    const nKilos = (exps||[]).reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+    const nDesp = (exps||[]).filter(e=>e.tramite_aduanero==='Despachado').length;
+    const nIncs = (incs||[]).length;
+    const nIncsAbiertas = (incs||[]).filter(i=>i.estado!=='Cerrada').length;
+    const nBuques = (buques||[]).length;
+    const variacion = nExpsAnt > 0 ? Math.round((nExps-nExpsAnt)/nExpsAnt*100) : null;
+    const varTexto = variacion===null?'':variacion>0?` (▲ +${variacion}% vs semana anterior)`:`(▼ ${variacion}% vs semana anterior)`;
+
+    // Usuarios más activos
+    const actPorUser = {};
+    (log||[]).forEach(l=>{ if(l.usuario_nombre) actPorUser[l.usuario_nombre]=(actPorUser[l.usuario_nombre]||0)+1; });
+    const topUser = Object.entries(actPorUser).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([n,c])=>n+' ('+c+')').join(', ');
+
+    const datos = {
+      semana: `${lunes.toLocaleDateString('es-ES',{day:'2-digit',month:'long'})} – ${domingo.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'})}`,
+      nExps, nBultos, nKilos: Math.round(nKilos), nDesp, nBuques, nIncs, nIncsAbiertas, varTexto, topUser
+    };
+
+    // Generar párrafo con IA si disponible
+    const orKey = await getOrKey();
+    let parrafoIA = '';
+    if(orKey){
+      const resp = await fetch('https://openrouter.ai/api/v1/chat/completions',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+orKey,'Content-Type':'application/json','HTTP-Referer':'https://marcoslekolas.github.io','X-Title':'ALS Informe'},
+        body: JSON.stringify({
+          model:'mistralai/mistral-small-3.2-24b-instruct',
+          max_tokens:200,
+          messages:[{role:'user',content:`Redacta un párrafo ejecutivo conciso (máx 3 frases) en español para el informe semanal de una agencia de aduanas y logística portuaria (ALS Algeciras). Datos: ${nExps} expediciones gestionadas${varTexto}, ${nBuques} buques operados, ${nDesp} expediciones despachadas, ${nIncs} incidencias (${nIncsAbiertas} abiertas). Tono profesional y directo.`}]
+        })
+      });
+      const d = await resp.json();
+      parrafoIA = d.choices?.[0]?.message?.content?.trim()||'';
+    }
+
+    _informeTexto = `INFORME SEMANAL — ALS ALGECIRAS
+Semana del ${datos.semana}
+${'─'.repeat(48)}
+
+${parrafoIA}
+
+RESUMEN OPERATIVO
+• Expediciones gestionadas: ${nExps}${varTexto}
+• Bultos: ${nBultos.toLocaleString('es-ES')} · Kilos: ${datos.nKilos.toLocaleString('es-ES')} kg
+• Buques operados: ${nBuques}
+• Expediciones despachadas: ${nDesp} de ${nExps}
+• Incidencias: ${nIncs} creadas · ${nIncsAbiertas} pendientes de cierre
+
+EQUIPO MÁS ACTIVO
+${topUser||'Sin datos'}
+
+${'─'.repeat(48)}
+Generado automáticamente por Portal ALS · ${new Date().toLocaleString('es-ES')}`;
+
+    prev.innerHTML = '<pre style="white-space:pre-wrap;font-size:12px;font-family:var(--mono);color:var(--g700);line-height:1.7">'+_informeTexto+'</pre>';
+    if(acts) acts.style.display='flex';
+
+  } catch(ex){
+    if(prev) prev.innerHTML = '<div style="color:var(--rd600)">❌ Error: '+ex.message+'</div>';
+  }
+}
+
+function copiarInforme(){
+  navigator.clipboard?.writeText(_informeTexto).then(()=>showToast('📋 Informe copiado al portapapeles'));
+}
+
+function enviarInformePorEmail(){
+  if(!_informeTexto){ showToast('Genera el informe primero'); return; }
+  const asunto = encodeURIComponent('Informe semanal ALS — '+new Date().toLocaleDateString('es-ES'));
+  const cuerpo = encodeURIComponent(_informeTexto);
+  const a = document.createElement('a');
+  a.href = 'mailto:als@alsalgeciras.com?subject='+asunto+'&body='+cuerpo;
+  a.click();
+}
+
+
+// ── Onboarding guiado por rol ─────────────────────────────────────────
+const _onbPasos = {
+  admin: [
+    {icon:'⚡',title:'Panel de administrador',txt:'Tienes acceso completo al portal. Desde <strong>Configuración</strong> gestionas usuarios, permisos, versiones e informes semanales.'},
+    {icon:'📦',title:'Módulo Operativa',txt:'Controla toda la operativa portuaria: buques, expediciones, Kanban y alertas en tiempo real con hasta 20 usuarios simultáneos.'},
+    {icon:'🔔',title:'Alertas prioritarias',txt:'El panel de <strong>Alertas</strong> prioriza las expediciones sin ubicar. El indicador verde en el header confirma que el Realtime está activo.'},
+    {icon:'📊',title:'Dashboard Ejecutivo',txt:'Analiza KPIs con comparativa vs año anterior. El <strong>Informe semanal</strong> (en Configuración) genera un resumen ejecutivo con IA.'},
+  ],
+  oficina: [
+    {icon:'🏢',title:'Tu espacio de trabajo',txt:'Gestionas expediciones, buques y alertas operativas. El Morning Briefing al entrar te da el resumen del día actualizado.'},
+    {icon:'📦',title:'Expediciones',txt:'Crea, edita y filtra expediciones. Usa <strong>Ctrl+K</strong> para búsqueda global instantánea, incluyendo búsqueda con IA semántica.'},
+    {icon:'💬',title:'Notas internas',txt:'Dentro de cada expedición puedes dejar notas para el equipo. Usa @nombre para mencionar a un compañero y reciba notificación push.'},
+    {icon:'📧',title:'Notificaciones al cliente',txt:'Al confirmar embarque se genera automáticamente un email al cliente. Desde la ficha del buque puedes notificar individualmente.'},
+  ],
+  almacen: [
+    {icon:'📦',title:'Módulo Almacén',txt:'Tu espacio principal. Confirmas llegadas con foto, asignas ubicaciones y gestionas la carga de camiones.'},
+    {icon:'📸',title:'Fotos de operación',txt:'Cada acción puede ir acompañada de foto. Las fotos quedan vinculadas a la expedición con fecha y autor automáticamente.'},
+    {icon:'📷',title:'Escáner QR',txt:'Usa el escáner QR para verificar autorizaciones de carga y consultar información de bultos sueltos directamente desde tu móvil.'},
+    {icon:'🔔',title:'Notificaciones en tiempo real',txt:'Recibirás una notificación push en tu móvil cuando una expedición sea autorizada para carga. Acepta el permiso cuando te lo pida.'},
+  ],
+  aduanas: [
+    {icon:'🏛️',title:'Módulo Aduanas',txt:'Accedes al clasificador TARIC con IA, generador de borradores DUA y consultas EORI. Todo integrado con la operativa portuaria.'},
+    {icon:'🔍',title:'Clasificador TARIC',txt:'Describe la mercancía en lenguaje natural o sube la factura y la IA propone el código TARIC con confianza, medidas y aranceles.'},
+    {icon:'📋',title:'Borrador DUA',txt:'El generador de DUA analiza la factura y rellena automáticamente las casillas según la resolución AEAT vigente.'},
+    {icon:'📦',title:'Expediciones y alertas',txt:'Ves las expediciones pendientes de despacho y sus alertas. Las expediciones sin MRN aparecen destacadas para facilitar tu gestión.'},
+  ],
+};
+
+let _onbStep = 0;
+let _onbPasosRol = [];
+
+function iniciarOnboarding(){
+  const rol = CU?.rol || 'oficina';
+  _onbPasosRol = _onbPasos[rol] || _onbPasos.oficina;
+  _onbStep = 0;
+  renderOnbStep();
+  document.getElementById('onboarding-overlay').style.display='flex';
+}
+
+function renderOnbStep(){
+  const paso = _onbPasosRol[_onbStep];
+  const total = _onbPasosRol.length;
+  document.getElementById('onb-icon').textContent = paso.icon;
+  document.getElementById('onb-title').textContent = paso.title;
+  document.getElementById('onb-subtitle').textContent = `Paso ${_onbStep+1} de ${total}`;
+  document.getElementById('onb-body').innerHTML = `<p style="font-size:14px;color:var(--g700);line-height:1.7">${paso.txt}</p>`;
+  document.getElementById('onb-next').textContent = _onbStep < total-1 ? 'Siguiente →' : '¡Empezar! ✓';
+  // Dots
+  document.getElementById('onb-dots').innerHTML = _onbPasosRol.map((_,i)=>
+    `<div style="width:7px;height:7px;border-radius:50%;background:${i===_onbStep?'var(--b600)':'var(--g200)'}"></div>`
+  ).join('');
+}
+
+function onbSiguiente(){
+  if(_onbStep < _onbPasosRol.length-1){
+    _onbStep++;
+    renderOnbStep();
+  } else {
+    cerrarOnboarding();
+  }
+}
+
+function cerrarOnboarding(){
+  document.getElementById('onboarding-overlay').style.display='none';
+  // Marcar como completado para no volver a mostrar
+  try{ localStorage.setItem('als_onb_'+CU?.id, '1'); }catch(e){}
 }
 
 function checkNbUnlock(){
@@ -10903,6 +11187,25 @@ if(typeof sb!=="undefined"&&sb){loadEmailPlantillas();}else{setTimeout(()=>{if(s
     </div>
     <div style="padding:8px 24px 20px;display:flex;justify-content:flex-end">
       <button onclick="cerrarBriefing()" class="btn btn-p" style="min-width:130px;min-height:44px;font-size:15px">Comenzar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Onboarding Modal ──────────────────────────────────── -->
+<div id="onboarding-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:31000;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--w);border-radius:20px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
+    <div id="onb-header" style="background:linear-gradient(135deg,#1d4ed8,#7c3aed);padding:24px 24px 20px">
+      <div style="font-size:32px;margin-bottom:8px" id="onb-icon">👋</div>
+      <div style="font-size:18px;font-weight:800;color:#fff" id="onb-title">Bienvenido al Portal ALS</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.7);margin-top:4px" id="onb-subtitle">Paso 1 de 4</div>
+    </div>
+    <div style="padding:20px 24px" id="onb-body"></div>
+    <div style="padding:12px 24px 20px;display:flex;align-items:center;justify-content:space-between">
+      <button onclick="cerrarOnboarding()" style="background:none;border:none;color:var(--g400);font-size:12px;cursor:pointer">Saltar tour</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <div id="onb-dots" style="display:flex;gap:4px"></div>
+        <button id="onb-next" onclick="onbSiguiente()" class="btn btn-p" style="min-width:100px">Siguiente →</button>
+      </div>
     </div>
   </div>
 </div>
