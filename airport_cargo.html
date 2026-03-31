@@ -287,16 +287,14 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
     </div>
     <!-- Actions -->
     <button class="hdr-btn" onclick="openNueva()">+ Nueva</button>
-    <button onclick="setDarkAuto()" title="Modo automático" style="background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;color:rgba(255,255,255,.6)">🌗</button>
+    <button onclick="toggleDarkMode()" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px 6px;color:rgba(255,255,255,.7)" title="Modo oscuro" id="dark-toggle">🌙</button>
     <div onclick="goTo('home')" title="Ir a inicio" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.25);transition:background .15s" onmouseenter="this.style.background='rgba(255,255,255,.1)'" onmouseleave="this.style.background='transparent'">
-      <div id="hdr-av" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">ALS</div>
+      <div id="hdr-av" style="width:30px;height:30px;border-radius:50%;background:var(--b600,#2563eb);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">ALS</div>
       <div style="display:flex;flex-direction:column;line-height:1.3" class="nav-item-txt">
         <span id="hdr-user-name" style="font-size:12px;font-weight:600;color:#fff">—</span>
         <span id="hdr-user-role" style="font-size:10px;color:rgba(255,255,255,.55)">← Inicio</span>
       </div>
     </div>
-    <button id="dark-toggle" style="display:none" onclick="toggleDarkMode()"></button>
-
   </header>
   <div id="body">
     <nav id="sidebar">
@@ -437,6 +435,13 @@ let sb;
 // ── NAVEGACIÓN ───────────────────────────────────────────
 
 // ── Modo oscuro ───────────────────────────────────────────────
+function setDarkAuto(){
+  localStorage.removeItem('als_dark');
+  const p=window.matchMedia?.('(prefers-color-scheme:dark)').matches;
+  p?document.documentElement.classList.add('dark'):document.documentElement.classList.remove('dark');
+  const btn=document.getElementById('dark-toggle');
+  if(btn)btn.textContent=p?'☀️':'🌙';
+}
 function toggleDarkMode(){
   const isDark=document.documentElement.classList.toggle('dark');
   localStorage.setItem('als_dark', isDark?'1':'0');
@@ -1716,27 +1721,17 @@ async function crearEmpresaDesdeConsignatario(){
   };
 }
 
-  // Inyectar nombre usuario
-  try{
-    const cu = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'{}');
-    const nombreEl = document.getElementById('hdr-user-nombre');
-    if(nombreEl && cu.nombre) nombreEl.textContent = cu.nombre.split(' ')[0];
-  }catch(e){}
-  menu.style.display = 'block';
-  setTimeout(()=>{ document.addEventListener('click', _cerrarMenuHdrOut, {once:true}); }, 10);
-}
 
-
-// Inyectar nombre en avatar al cargar
+// Inyectar nombre usuario en avatar al cargar
 (function(){
   try{
-    const cu = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'{}');
+    var cu = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'{}');
     if(cu && cu.nombre){
-      const init = cu.nombre.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+      var init = cu.nombre.split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();
       document.addEventListener('DOMContentLoaded', function(){
-        const av = document.getElementById('hdr-av');
-        const nm = document.getElementById('hdr-user-name');
-        const rl = document.getElementById('hdr-user-role');
+        var av = document.getElementById('hdr-av');
+        var nm = document.getElementById('hdr-user-name');
+        var rl = document.getElementById('hdr-user-role');
         if(av) av.textContent = init;
         if(nm) nm.textContent = cu.nombre.split(' ').slice(0,2).join(' ');
         if(rl) rl.textContent = cu.rol || '← Inicio';
