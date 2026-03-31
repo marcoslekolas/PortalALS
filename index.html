@@ -3250,12 +3250,9 @@ async function subirFotoStorage(file, entidad, entidadId, tipo){
     // - Convierte HEIC/HEIF de iPhone automáticamente
     // - Reduce tamaño para evitar timeouts en redes lentas
     // - Calidad 0.88 preserva detalle suficiente para documentación
-    const umbral = 1.5 * 1024 * 1024; // comprimir si > 1.5MB
-    let fileToUpload = file;
-    if(file.size > umbral || file.type === 'image/heic' || file.type === 'image/heif' ||
-       !file.type.startsWith('image/jpeg')){
-      fileToUpload = await compFoto(file, 2400, 0.88);
-    }
+    // Comprimir siempre: 2400px maxima calidad 0.92 sin perdida visible
+    // Para descarga original usar fotoUrlDescarga() que elimina parametros transform
+    let fileToUpload = await compFoto(file, 2400, 0.92);
 
     const path = `${entidad}/${entidadId}/${tipo}_${Date.now()}.jpg`;
 
@@ -7296,9 +7293,26 @@ async function confirmarLlegadaFotos(id){
   // Si hay daño → crear incidencia automáticamente
   if(estado !== 'ok'){
     const tipoInc = { leve:'Embalaje', grave:'Roto', humedad:'Humedad', precinto:'Precinto' }[estado] || 'Otro';
-    const descInc = [`Estado al recibir: ${estadoTxt}`, nota?`Notas: ${nota}`:'', fotoUrl?'Foto adjunta':'Sin foto'].filter(Boolean).join(' · ');
-    await sb.from('incidencias').insert({ expedicion_id:id, tipo:tipoInc, descripcion:descInc, nombre:tipoInc });
-    showToast(`✅ Llegada confirmada · ⚠️ Incidencia "${tipoInc}" creada automáticamente`);
+    const descInc = [`Estado al recibir: ${estadoTxt}`, nota?`Notas: ${nota}`:'', fotoUrl?'📸 Foto adjunta':'Sin foto'].filter(Boolean).join(' · ');
+    const {data:incNueva} = await sb.from('incidencias').insert({
+      expedicion_id:id, tipo:tipoInc, descripcion:descInc, nombre:tipoInc
+    }).select('id').single();
+    // Vincular foto a incidencia — misma storage_url, sin duplicar espacio en Supabase
+    if(fotoUrl && incNueva?.id){
+      const {data:fotoRec} = await sb.from('fotos_operativas')
+        .select('storage_path,subida_por,created_at')
+        .eq('entidad','expediciones').eq('entidad_id',id).eq('tipo','llegada')
+        .order('created_at',{ascending:false}).limit(1).maybeSingle();
+      if(fotoRec){
+        await sb.from('fotos_operativas').insert({
+          entidad:'incidencias', entidad_id:String(incNueva.id),
+          tipo:'llegada', storage_url:fotoUrl,
+          storage_path:fotoRec.storage_path,
+          subida_por:fotoRec.subida_por, created_at:fotoRec.created_at
+        });
+      }
+    }
+    showToast('✅ Llegada confirmada · ⚠️ Incidencia "' + tipoInc + '" creada' + (fotoUrl?' con foto 📸':''));
   } else {
     showToast('✅ Llegada confirmada' + (fotoUrl?' con foto 📸':''));
   }
@@ -7996,7 +8010,25 @@ async function openIncD(id){
   const {data:i}=await sb.from('incidencias').select('*,expediciones(nº_expedicion)').eq('id',id).single();
   const {data:usu}=await sb.from('usuarios').select('id,nombre');if(!i)return;
   document.getElementById('m-title').textContent='⚠️ Incidencia: '+i.tipo;
-  document.getElementById('m-body').innerHTML=`<div class="fg2"><label class="fl2">Descripción</label><textarea id="ic-d" class="fi">${sanitize(i.descripcion||'')}</textarea></div><div class="fr2"><div class="fg2"><label class="fl2">Estado</label><select id="ic-e" class="fi fs">${['Abierta','En gestión','Cerrada'].map(s=>`<option ${i.estado===s?'selected':''}>${s}</option>`).join('')}</select></div><div class="fg2"><label class="fl2">Responsable</label><select id="ic-r" class="fi fs"><option value="">Sin asignar</option>${(usu||[]).map(u=>`<option value="${u.id}" ${i.responsable_id===u.id?'selected':''}>${u.nombre}</option>`).join('')}</select></div></div><div class="fg2"><label class="fl2">Resolución</label><textarea id="ic-res" class="fi">${sanitize(i.resolucion||'')}</textarea></div>`;
+  // Cargar fotos vinculadas a esta incidencia
+  const {data:fotosInc} = await sb.from('fotos_operativas')
+    .select('storage_url,tipo,created_at,subida_por')
+    .eq('entidad','incidencias')
+    .eq('entidad_id', String(id))
+    .order('created_at');
+  const fotosHtml = (fotosInc||[]).length ? `
+    <div class="fg2">
+      <label class="fl2">📸 Fotos de la incidencia</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+        ${(fotosInc||[]).map(f=>`
+          <div style="position:relative;cursor:pointer" onclick="abrirGaleriaFotos(['${f.storage_url}'],'Foto incidencia')">
+            <img src="${f.storage_url}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--g200)">
+            <div style="font-size:9px;color:var(--g500);text-align:center;margin-top:2px">${new Date(f.created_at).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'})}</div>
+          </div>`).join('')}
+      </div>
+      <div style="font-size:11px;color:var(--g400);margin-top:4px">Las fotos se comparten con la expedición — no ocupan espacio adicional</div>
+    </div>` : '';
+  document.getElementById('m-body').innerHTML=fotosHtml+`<div class="fg2"><label class="fl2">Descripción</label><textarea id="ic-d" class="fi">${sanitize(i.descripcion||'')}</textarea></div><div class="fr2"><div class="fg2"><label class="fl2">Estado</label><select id="ic-e" class="fi fs">${['Abierta','En gestión','Cerrada'].map(s=>`<option ${i.estado===s?'selected':''}>${s}</option>`).join('')}</select></div><div class="fg2"><label class="fl2">Responsable</label><select id="ic-r" class="fi fs"><option value="">Sin asignar</option>${(usu||[]).map(u=>`<option value="${u.id}" ${i.responsable_id===u.id?'selected':''}>${u.nombre}</option>`).join('')}</select></div></div><div class="fg2"><label class="fl2">Resolución</label><textarea id="ic-res" class="fi">${sanitize(i.resolucion||'')}</textarea></div>`;
   document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-p" onclick="saveInc('${i.id}')">💾 Guardar</button>`;
   document.getElementById('mo').classList.add('open');
 }
