@@ -11260,23 +11260,9 @@ async function abrirScannerQR(){
   ov.id = 'scanner-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
   ov.innerHTML = `
-    <!-- Header con modos -->
-    <div style="background:rgba(0,0,0,.9);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;flex-wrap:wrap">
-      <div style="color:#fff;font-weight:700;font-size:15px">📷 Escáner QR</div>
-      <div style="display:flex;gap:6px">
-        <button id="sc-mode-autorizar" onclick="_setScannerMode('autorizar')"
-          style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;min-height:44px">
-          ✅ Autorización
-        </button>
-        <button id="sc-mode-bulto" onclick="_setScannerMode('bulto')"
-          style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;min-height:44px">
-          📦 Bulto suelto
-        </button>
-        <button onclick="cerrarScannerQR()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:10px 16px;font-size:16px;font-weight:700;cursor:pointer;min-height:44px">✕</button>
-      </div>
-    </div>
-    <div id="sc-mode-label" style="background:rgba(59,130,246,.3);color:#93c5fd;font-size:12px;font-weight:600;text-align:center;padding:6px;letter-spacing:.05em;flex-shrink:0">
-      MODO: VERIFICACIÓN DE AUTORIZACIÓN
+    <!-- Sin header — título mínimo -->
+    <div style="background:rgba(0,0,0,.9);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div id="sc-mode-label" style="color:#93c5fd;font-size:12px;font-weight:600;letter-spacing:.05em">MODO: VERIFICACIÓN DE AUTORIZACIÓN</div>
     </div>
     <!-- Resultado grande — ocupa la mayor parte de la pantalla -->
     <div id="scanner-result" style="flex:1;background:#000;overflow-y:auto;padding:16px;color:#fff;display:flex;flex-direction:column;gap:10px">
@@ -11292,10 +11278,24 @@ async function abrirScannerQR(){
           style="background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px 18px;font-size:18px;cursor:pointer;min-height:48px;min-width:54px">🔍</button>
       </div>
     </div>
-    <!-- Cámara compacta abajo -->
-    <div style="flex-shrink:0;background:#000;padding:8px;display:flex;flex-direction:column;align-items:center;gap:4px">
+    <!-- Cámara compacta -->
+    <div style="flex-shrink:0;background:#000;padding:8px 8px 0;display:flex;flex-direction:column;align-items:center">
       <div id="qr-reader" style="width:100%;max-width:340px;border-radius:12px;overflow:hidden"></div>
-      <div style="font-size:11px;color:#6b7280">Escanea el QR de la expedición</div>
+    </div>
+    <!-- Botones de modo ABAJO — fácil acceso con el pulgar en móvil -->
+    <div style="flex-shrink:0;background:rgba(0,0,0,.95);padding:10px 12px;display:flex;gap:8px;border-top:1px solid #1f2937">
+      <button id="sc-mode-autorizar" onclick="_setScannerMode('autorizar')"
+        style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;min-height:52px">
+        ✅ Autorización
+      </button>
+      <button id="sc-mode-bulto" onclick="_setScannerMode('bulto')"
+        style="flex:1;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;min-height:52px">
+        📦 Bulto suelto
+      </button>
+      <button onclick="cerrarScannerQR()"
+        style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:12px 16px;font-size:18px;font-weight:700;cursor:pointer;min-height:52px">
+        ✕
+      </button>
     </div>`;
 
   document.body.appendChild(ov);
@@ -11316,11 +11316,22 @@ async function abrirScannerQR(){
     return;
   }
 
+  // Solicitar permiso cámara explícitamente una vez — iOS lo recuerda en la sesión
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    stream.getTracks().forEach(t => t.stop()); // solo para obtener el permiso
+  }catch(permErr){
+    document.getElementById('scanner-result').innerHTML =
+      `<div style="color:#f87171;font-size:13px;padding:16px">❌ Sin acceso a la cámara.<br>
+      Permite el acceso en Ajustes > Safari > Cámara.</div>`;
+    return;
+  }
+
   try {
     _html5QrScanner = new window.Html5Qrcode('qr-reader');
     await _html5QrScanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
+      { fps: 8, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
       (decodedText) => _procesarQRLeido(decodedText),
       () => {}
     );
@@ -11409,16 +11420,22 @@ let _ultimoQRTs = 0;
 let _scannerPausado = false; // true mientras se muestra un resultado — evita parpadeo
 
 async function _procesarQRLeido(texto){
-  if(_scannerPausado) return; // resultado activo — ignorar lecturas de cámara
+  // Mutex robusto: bloquear INMEDIATAMENTE antes de cualquier check
+  if(_scannerPausado) return;
+  _scannerPausado = true; // bloquear nuevas lecturas ya
+
   const ahora = Date.now();
-  if(texto === _ultimoQRLeido && ahora - _ultimoQRTs < 4000) return;
+  // Deduplicar: mismo QR en menos de 8s — liberar y salir
+  if(texto === _ultimoQRLeido && ahora - _ultimoQRTs < 8000){
+    _scannerPausado = false; return;
+  }
   _ultimoQRLeido = texto;
   _ultimoQRTs = ahora;
 
   if(navigator.vibrate) navigator.vibrate(100);
 
   const res = document.getElementById('scanner-result');
-  if(!res) return;
+  if(!res){ _scannerPausado = false; return; }
 
   // ── Modo bulto suelto: ALS-BLT:{expId}:{n}:{total} ──────────
   const matchBlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):(\d+):(\d+)$/i);
@@ -11426,17 +11443,20 @@ async function _procesarQRLeido(texto){
     const expId = matchBlt[1];
     const numBulto = matchBlt[2];
     const totalBultos = matchBlt[3];
-    _scannerPausado = true; // pausar lecturas mientras se muestra resultado
-    res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Identificando bulto…</div>';
+    const pBlt = document.getElementById('sc-resultado-principal');
+    if(pBlt){
+      pBlt.style.borderColor = '#374151';
+      pBlt.style.background = '#111';
+      pBlt.innerHTML = '<div style="color:#9ca3af;font-size:14px"><div class="spinner" style="display:inline-block;margin-right:8px;width:20px;height:20px;border-width:2px"></div>Identificando bulto…</div>';
+    }
     const {data:e, error} = await sb.from('expediciones')
       .select('id,nº_expedicion,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
       .eq('id', expId).single();
     if(error||!e){
-      beepError(); _scannerPausado = false;
-      const pErr = document.getElementById('sc-resultado-principal');
-      if(pErr){ pErr.style.borderColor='#ef4444'; pErr.style.background='rgba(239,68,68,.1)';
-        pErr.innerHTML='<div style="font-size:40px;margin-bottom:8px">❌</div><div style="color:#f87171;font-size:16px;font-weight:700">Expedición no encontrada</div>'; }
-      else res.innerHTML = `<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada</div>`;
+      beepError();
+      if(pBlt){ pBlt.style.borderColor='#ef4444'; pBlt.style.background='rgba(239,68,68,.1)';
+        pBlt.innerHTML='<div style="font-size:40px;margin-bottom:8px">❌</div><div style="color:#f87171;font-size:16px;font-weight:700">Expedición no encontrada</div>'; }
+      _scannerPausado = false;
       return;
     }
     beepOK(); if(navigator.vibrate) navigator.vibrate([100,50,200]);
