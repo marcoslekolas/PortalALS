@@ -11256,6 +11256,10 @@ function imprimirQR(ref, qrData, dataUrl){
 let _html5QrScanner = null;
 
 async function abrirScannerQR(){
+  // Resetear estado del escáner al abrir — crítico para que funcione tras reusos
+  _scannerPausado = false;
+  _ultimoQRLeido = null;
+  _ultimoQRTs = 0;
   const ov = document.createElement('div');
   ov.id = 'scanner-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
@@ -11425,8 +11429,8 @@ async function _procesarQRLeido(texto){
   _scannerPausado = true; // bloquear nuevas lecturas ya
 
   const ahora = Date.now();
-  // Deduplicar: mismo QR en menos de 8s — liberar y salir
-  if(texto === _ultimoQRLeido && ahora - _ultimoQRTs < 8000){
+  // Deduplicar solo para doble-disparo inmediato (500ms)
+  if(texto === _ultimoQRLeido && ahora - _ultimoQRTs < 500){
     _scannerPausado = false; return;
   }
   _ultimoQRLeido = texto;
@@ -11468,6 +11472,7 @@ async function _procesarQRLeido(texto){
            style="background:#2563eb;color:#fff;border:none;border-radius:12px;padding:16px 24px;font-size:16px;font-weight:800;cursor:pointer;min-height:56px;width:100%">
            📂 Ir a expedición</button>` : '';
 
+    // _scannerPausado queda TRUE — el botón "Siguiente bulto" lo libera
     if(principal){
       principal.style.borderColor = '#22c55e';
       principal.style.background = 'rgba(34,197,94,.08)';
