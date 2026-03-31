@@ -11256,24 +11256,26 @@ function imprimirQR(ref, qrData, dataUrl){
 let _html5QrScanner = null;
 
 async function abrirScannerQR(){
-  // Resetear estado del escáner al abrir — crítico para que funcione tras reusos
+  // Reset completo
   _scannerPausado = false;
   _ultimoQRLeido = null;
   _ultimoQRTs = 0;
+  window._scannerMode = 'autorizar';
+
+  // Cerrar escáner anterior si existe
+  cerrarScannerQR();
+
   const ov = document.createElement('div');
   ov.id = 'scanner-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
   ov.innerHTML = `
-    <!-- Sin header — título mínimo -->
-    <div style="background:rgba(0,0,0,.9);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-      <div id="sc-mode-label" style="color:#93c5fd;font-size:12px;font-weight:600;letter-spacing:.05em">MODO: VERIFICACIÓN DE AUTORIZACIÓN</div>
+    <div style="background:rgba(0,0,0,.9);padding:10px 16px;flex-shrink:0">
+      <div id="sc-mode-label" style="color:#93c5fd;font-size:12px;font-weight:600;letter-spacing:.05em;text-align:center">MODO: VERIFICACIÓN DE AUTORIZACIÓN</div>
     </div>
-    <!-- Resultado grande — ocupa la mayor parte de la pantalla -->
     <div id="scanner-result" style="flex:1;background:#000;overflow-y:auto;padding:16px;color:#fff;display:flex;flex-direction:column;gap:10px">
       <div id="sc-resultado-principal" style="background:#111;border:2px solid #1f2937;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1">
-        <div style="color:#4b5563;font-size:16px">📷 Apunta al código QR</div>
+        <div style="color:#4b5563;font-size:16px">📷 Iniciando cámara…</div>
       </div>
-      <!-- Entrada manual -->
       <div style="display:flex;gap:8px">
         <input id="scan-manual-inp" placeholder="O escribe la referencia manualmente…"
           style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:10px;padding:12px 14px;font-size:14px;min-height:48px"
@@ -11282,11 +11284,10 @@ async function abrirScannerQR(){
           style="background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px 18px;font-size:18px;cursor:pointer;min-height:48px;min-width:54px">🔍</button>
       </div>
     </div>
-    <!-- Cámara compacta -->
-    <div style="flex-shrink:0;background:#000;padding:8px 8px 0;display:flex;flex-direction:column;align-items:center">
-      <div id="qr-reader" style="width:100%;max-width:340px;border-radius:12px;overflow:hidden"></div>
+    <div style="flex-shrink:0;background:#000;padding:8px 8px 0;display:flex;justify-content:center">
+      <video id="sc-video" autoplay playsinline muted style="width:100%;max-width:340px;border-radius:12px;display:block"></video>
+      <canvas id="sc-canvas" style="display:none"></canvas>
     </div>
-    <!-- Botones de modo ABAJO — fácil acceso con el pulgar en móvil -->
     <div style="flex-shrink:0;background:rgba(0,0,0,.95);padding:10px 12px;display:flex;gap:8px;border-top:1px solid #1f2937">
       <button id="sc-mode-autorizar" onclick="_setScannerMode('autorizar')"
         style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;min-height:52px">
@@ -11303,47 +11304,81 @@ async function abrirScannerQR(){
     </div>`;
 
   document.body.appendChild(ov);
-  window._scannerMode = 'autorizar';
 
-  if(!window.Html5Qrcode){
-    await new Promise((resolve, reject)=>{
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';
-      s.onload = resolve; s.onerror = reject;
+  const video = document.getElementById('sc-video');
+  const canvas = document.getElementById('sc-canvas');
+  const principal = document.getElementById('sc-resultado-principal');
+
+  // Obtener cámara
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} }
+    });
+    window._scannerStream = stream;
+    video.srcObject = stream;
+    await new Promise(r => { video.onloadedmetadata = r; });
+    video.play();
+  }catch(err){
+    if(principal) principal.innerHTML = `<div style="color:#f87171;font-size:14px">❌ Sin acceso a cámara<br><span style="font-size:11px;color:#6b7280">${err.message}</span><br><br>Usa la entrada manual de abajo</div>`;
+    return;
+  }
+
+  if(principal) principal.innerHTML = '<div style="color:#4b5563;font-size:16px">📷 Apunta al código QR</div>';
+
+  // Cargar jsQR como decodificador (funciona en todos los iOS)
+  if(!window.jsQR){
+    await new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+      s.onload=res; s.onerror=rej;
       document.head.appendChild(s);
     }).catch(()=>{});
   }
 
-  if(!window.Html5Qrcode){
-    document.getElementById('scanner-result').innerHTML = `
-      <div style="color:#f87171;font-size:13px;padding:16px">❌ No se pudo cargar el escáner.<br>Usa la búsqueda manual.</div>`;
-    return;
+  // Bucle de escaneo controlado — UN frame cada 300ms, no continuo
+  let _scanning = true;
+  window._scannerStop = ()=>{ _scanning = false; };
+
+  async function scanFrame(){
+    if(!_scanning) return;
+    if(_scannerPausado){ setTimeout(scanFrame, 300); return; }
+    if(video.readyState !== video.HAVE_ENOUGH_DATA){ setTimeout(scanFrame, 100); return; }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    let qrText = null;
+
+    // Intentar BarcodeDetector nativo primero (iOS 16+, Android)
+    if(window.BarcodeDetector){
+      try{
+        const codes = await window.BarcodeDetector.detect(canvas);
+        if(codes.length) qrText = codes[0].rawValue;
+      }catch(e){}
+    }
+
+    // Fallback a jsQR
+    if(!qrText && window.jsQR){
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = window.jsQR(imageData.data, imageData.width, imageData.height, {inversionAttempts:'dontInvert'});
+      if(code) qrText = code.data;
+    }
+
+    if(qrText){
+      // Procesar — _procesarQRLeido pondrá _scannerPausado=true si procede
+      await _procesarQRLeido(qrText);
+    }
+
+    // Siguiente frame en 300ms
+    setTimeout(scanFrame, 300);
   }
 
-  // Solicitar permiso cámara explícitamente una vez — iOS lo recuerda en la sesión
-  try{
-    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-    stream.getTracks().forEach(t => t.stop()); // solo para obtener el permiso
-  }catch(permErr){
-    document.getElementById('scanner-result').innerHTML =
-      `<div style="color:#f87171;font-size:13px;padding:16px">❌ Sin acceso a la cámara.<br>
-      Permite el acceso en Ajustes > Safari > Cámara.</div>`;
-    return;
-  }
-
-  try {
-    _html5QrScanner = new window.Html5Qrcode('qr-reader');
-    await _html5QrScanner.start(
-      { facingMode: 'environment' },
-      { fps: 8, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
-      (decodedText) => _procesarQRLeido(decodedText),
-      () => {}
-    );
-  } catch(e){
-    document.getElementById('scanner-result').innerHTML = `
-      <div style="color:#f87171;font-size:13px;padding:16px">❌ Sin acceso a la cámara: ${e.message||e}<br><br>Usa la búsqueda manual.</div>`;
-  }
+  scanFrame();
 }
+
 
 function _setScannerMode(mode){
   _scannerPausado = false; // al cambiar modo, permitir nuevas lecturas
@@ -11392,31 +11427,24 @@ function abrirExpDesdeScanner(expId){
 }
 
 function cerrarScannerQR(){
-  _scannerPausado = false; // resetear para próxima apertura
+  _scannerPausado = false;
+  _ultimoQRLeido = null;
+  // Detener bucle de escaneo propio
+  if(window._scannerStop){ window._scannerStop(); window._scannerStop=null; }
+  // Detener stream de cámara
+  if(window._scannerStream){ window._scannerStream.getTracks().forEach(t=>t.stop()); window._scannerStream=null; }
+  // Detener html5-qrcode legacy si existe
+  if(_html5QrScanner){
+    const sc = _html5QrScanner; _html5QrScanner = null;
+    sc.stop().catch(()=>{});
+  }
   const ov = document.getElementById('scanner-overlay');
   if(ov) ov.remove();
-  if(_html5QrScanner){
-    const sc = _html5QrScanner;
-    _html5QrScanner = null;
-    sc.stop().catch(()=>{}).finally(()=>{
-      try{ sc.clear && sc.clear(); }catch(e){}
-      // Abrir expedición pendiente DESPUÉS de que la cámara se haya detenido completamente
-      if(_pendingExpId){
-        const id = _pendingExpId;
-        _pendingExpId = null;
-        setTimeout(()=>{ openExpD(id, true); }, 100);
-      }
-    });
-  } else {
-    // Sin cámara activa, abrir expedición directamente
-    if(_pendingExpId){
-      const id = _pendingExpId;
-      _pendingExpId = null;
-      setTimeout(()=>{ openExpD(id, true); }, 100);
-    }
-  }
   clearInterval(_scannerInterval); _scannerInterval = null;
-  if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream=null; }
+  if(_pendingExpId){
+    const id = _pendingExpId; _pendingExpId = null;
+    setTimeout(()=>{ openExpD(id, true); }, 100);
+  }
 }
 
 let _ultimoQRLeido = null;
