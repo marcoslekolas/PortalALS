@@ -1053,7 +1053,6 @@ textarea.fi{resize:vertical;min-height:72px}
 
       <div class="h-right">
         <!-- Búsqueda global -->
-        <!-- Búsqueda global — abre overlay -->
         <div id="global-search-wrap" style="display:none">
           <button class="hdr-icon-btn" onclick="abrirBusquedaGlobal()" title="Búsqueda global (Ctrl+K)" id="btn-busqueda-global"
             style="display:flex;align-items:center;gap:6px;padding:0 10px;width:auto;font-size:12px;color:var(--g500);border-color:var(--g200)">
@@ -1062,43 +1061,59 @@ textarea.fi{resize:vertical;min-height:72px}
           </button>
         </div>
 
-        <!-- ISO certs -->
-        <div class="hdr-cert">ISO 9001<br>ISO 14001</div>
-
-        <!-- Cambiar módulo -->
-        <button id="btn-to-operativa" class="hdr-icon-btn" onclick="irAOperativa()" style="display:none" title="Operativa">🏢</button>
-        <button id="btn-to-almacen" class="hdr-icon-btn" onclick="irAAlmacen()" style="display:none" title="Almacén">📦</button>
-        <button id="btn-to-airport" class="hdr-icon-btn" onclick="window.location.href='airport_cargo.html'" style="display:none" title="Airport Cargo">✈️</button>
-        <button class="hdr-icon-btn" onclick="abrirMenuAduanas()" style="display:none" id="btn-to-taric" title="Módulo Aduanas">🏛️</button>
-        <button id="btn-to-config" class="hdr-icon-btn" onclick="enterMod('configuracion')" style="display:none" title="Configuración">⚙️</button>
-
-        <!-- Atajos teclado -->
-        <button onclick="mostrarAtajos()" title="Atajos de teclado (?)" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--g400);padding:2px 6px;font-family:var(--mono);font-weight:700">?</button>
+        <!-- Indicador Realtime -->
+        <div id="rt-indicator" title="Realtime: desconectado" style="width:8px;height:8px;border-radius:50%;background:var(--g300);flex-shrink:0;cursor:pointer;transition:background .4s;display:none" onclick="mostrarEstadoRealtime()"></div>
 
         <!-- Modo oscuro automático -->
-        <button onclick="setDarkAuto()" title="Modo automático (sistema)" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--g400);padding:2px 4px" id="dark-auto-btn">🌗</button>
+        <button onclick="setDarkAuto()" title="Modo automático (sistema)" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--g400);padding:2px 4px" id="dark-auto-btn">🌗</button>
 
-        <!-- Indicador Realtime -->
-        <div id="rt-indicator" title="Realtime: desconectado" style="width:8px;height:8px;border-radius:50%;background:var(--g300);flex-shrink:0;cursor:default;transition:background .4s;display:none" onclick="mostrarEstadoRealtime()"></div>
-
-        <!-- Dark mode -->
-        <button id="dark-toggle" class="hdr-icon-btn" onclick="toggleDarkMode()" title="Modo oscuro/claro">🌙</button>
-
-        <!-- Acciones rápidas -->
+        <!-- Acciones rápidas — solo en Operativa -->
         <button class="btn btn-p btn-sm" id="btn-nb" onclick="openModal('nuevo-buque')" style="display:none">+ Buque</button>
         <button class="btn btn-s btn-sm" id="btn-ne" onclick="openModal('nueva-expedicion')" style="display:none">+ Expedición</button>
 
-        <!-- Usuario -->
-        <div class="hdr-user" id="hdr-user-btn" onclick="volverHome()" title="Inicio">
-          <div class="hdr-av" id="hdr-av">?</div>
-          <div class="hdr-user-info">
-            <div class="hdr-user-name" id="hdr-user-name">—</div>
-            <div class="hdr-user-role" id="hdr-user-role">—</div>
+        <!-- Avatar con menú contextual -->
+        <div style="position:relative">
+          <div class="hdr-user" id="hdr-user-btn" onclick="toggleMenuUsuario()" title="Menú" style="cursor:pointer">
+            <div class="hdr-av" id="hdr-av">?</div>
+            <div class="hdr-user-info nav-item-txt">
+              <div class="hdr-user-name" id="hdr-user-name">—</div>
+              <div class="hdr-user-role" id="hdr-user-role">—</div>
+            </div>
+          </div>
+          <!-- Menú desplegable -->
+          <div id="hdr-user-menu" style="display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--w);border:1px solid var(--g200);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:200px;z-index:2000;overflow:hidden">
+            <!-- Ir a inicio -->
+            <button onclick="volverHome();cerrarMenuUsuario()" style="width:100%;background:none;border:none;border-bottom:1px solid var(--g100);padding:12px 16px;font-size:13px;font-weight:600;color:var(--g700);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;font-family:var(--f)">
+              🏠 Ir a inicio
+            </button>
+            <!-- Módulos (se muestran/ocultan según rol) -->
+            <div id="hdr-menu-modulos"></div>
+            <!-- Separador -->
+            <div style="height:1px;background:var(--g100);margin:4px 0"></div>
+            <!-- Atajos -->
+            <button onclick="mostrarAtajos();cerrarMenuUsuario()" style="width:100%;background:none;border:none;padding:10px 16px;font-size:13px;color:var(--g600);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;font-family:var(--f)">
+              ⌨️ Atajos de teclado
+            </button>
+            <!-- Configuración (admin) -->
+            <button id="hdr-menu-config" onclick="enterMod('configuracion');cerrarMenuUsuario()" style="display:none;width:100%;background:none;border:none;padding:10px 16px;font-size:13px;color:var(--g600);cursor:pointer;text-align:left;display:none;align-items:center;gap:10px;font-family:var(--f)">
+              ⚙️ Configuración
+            </button>
+            <!-- Separador -->
+            <div style="height:1px;background:var(--g100);margin:4px 0"></div>
+            <!-- Cerrar sesión -->
+            <button onclick="doLogout()" style="width:100%;background:none;border:none;padding:10px 16px;font-size:13px;color:var(--rd600);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;font-family:var(--f)">
+              🚪 Cerrar sesión
+            </button>
           </div>
         </div>
 
-        <!-- Salir -->
-        <button class="hdr-icon-btn hdr-logout" onclick="doLogout()" title="Cerrar sesión">🚪</button>
+        <!-- Botones ocultos mantenidos para compatibilidad JS -->
+        <span id="btn-to-operativa" style="display:none"></span>
+        <span id="btn-to-almacen" style="display:none"></span>
+        <span id="btn-to-airport" style="display:none"></span>
+        <span id="btn-to-taric" style="display:none"></span>
+        <span id="btn-to-config" style="display:none"></span>
+        <button id="dark-toggle" style="display:none" onclick="toggleDarkMode()"></button>
       </div>
     </div>
   </header>
@@ -10236,6 +10251,55 @@ function beepCompletado(){
       osc.stop(ctx.currentTime + i*0.12 + 0.2);
     });
   } catch(e){}
+}
+
+
+// ── Menú contextual del usuario en header ────────────────────────────
+function toggleMenuUsuario(){
+  const menu = document.getElementById('hdr-user-menu');
+  if(!menu) return;
+  const visible = menu.style.display !== 'none';
+  if(visible){ cerrarMenuUsuario(); return; }
+
+  // Rellenar módulos según rol
+  const modulos = document.getElementById('hdr-menu-modulos');
+  const configBtn = document.getElementById('hdr-menu-config');
+  if(modulos && CU){
+    const items = [];
+    if(['admin','oficina','aduanas'].includes(CU.rol))
+      items.push({icon:'🏢', lbl:'Operativa', fn:"enterMod('operativa');cerrarMenuUsuario()"});
+    if(['admin','oficina','almacen','transportista'].includes(CU.rol))
+      items.push({icon:'📦', lbl:'Almacén', fn:"enterMod('almacen');cerrarMenuUsuario()"});
+    if(['admin','oficina','aduanas'].includes(CU.rol))
+      items.push({icon:'✈️', lbl:'Airport Cargo', fn:"window.location.href='airport_cargo.html'"});
+    if(['admin','aduanas'].includes(CU.rol))
+      items.push({icon:'🏛️', lbl:'Módulo Aduanas', fn:"abrirMenuAduanas();cerrarMenuUsuario()"});
+    modulos.innerHTML = items.map(i=>
+      `<button onclick="${i.fn}" style="width:100%;background:none;border:none;padding:10px 16px;font-size:13px;color:var(--g600);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;font-family:var(--f)">
+        ${i.icon} ${i.lbl}
+      </button>`
+    ).join('');
+    if(configBtn) configBtn.style.display = CU.rol==='admin' ? 'flex' : 'none';
+  }
+
+  menu.style.display = 'block';
+  // Cerrar al clicar fuera
+  setTimeout(()=>{
+    document.addEventListener('click', _cerrarMenuUsuarioOutside, {once:true});
+  }, 10);
+}
+
+function _cerrarMenuUsuarioOutside(e){
+  const menu = document.getElementById('hdr-user-menu');
+  const btn  = document.getElementById('hdr-user-btn');
+  if(menu && !menu.contains(e.target) && !btn?.contains(e.target)){
+    cerrarMenuUsuario();
+  }
+}
+
+function cerrarMenuUsuario(){
+  const menu = document.getElementById('hdr-user-menu');
+  if(menu) menu.style.display = 'none';
 }
 
 function checkNbUnlock(){
