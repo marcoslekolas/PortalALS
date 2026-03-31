@@ -1071,6 +1071,9 @@ textarea.fi{resize:vertical;min-height:72px}
         <button class="hdr-icon-btn" onclick="abrirMenuAduanas()" style="display:none" id="btn-to-taric" title="Módulo Aduanas">🏛️</button>
         <button id="btn-to-config" class="hdr-icon-btn" onclick="enterMod('configuracion')" style="display:none" title="Configuración">⚙️</button>
 
+        <!-- Atajos teclado -->
+        <button onclick="mostrarAtajos()" title="Atajos de teclado (?)" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--g400);padding:2px 6px;font-family:var(--mono);font-weight:700">?</button>
+
         <!-- Modo oscuro automático -->
         <button onclick="setDarkAuto()" title="Modo automático (sistema)" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--g400);padding:2px 4px" id="dark-auto-btn">🌗</button>
 
@@ -1374,7 +1377,20 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="ph" style="margin-top:16px"><div class="pt">✅ Autorizados — listos para cargar</div></div>
         <div class="tc" id="alm-lis"></div>
       </div>
-      <div class="view" id="view-ubicaciones"><div class="ug" id="ubic-grid"></div></div>
+      <div class="view" id="view-ubicaciones">
+        <!-- Selector de planta -->
+        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;gap:4px">
+            <button id="ubic-tab-pb" class="btn btn-p btn-sm" onclick="setUbicPlanta('pb')">🏢 1ª Planta</button>
+            <button id="ubic-tab-1p" class="btn btn-s btn-sm" onclick="setUbicPlanta('1p')">📦 Sótano</button>
+          </div>
+          <button class="btn btn-s btn-sm" onclick="loadUbic()" style="margin-left:auto">↺ Actualizar</button>
+        </div>
+        <!-- Mapa SVG -->
+        <div id="ubic-mapa" style="width:100%;overflow-x:auto;margin-bottom:16px"></div>
+        <!-- Lista detalle -->
+        <div class="ug" id="ubic-grid"></div>
+      </div>
       <div class="view" id="view-listos"><div id="listos-list" class="buque-list"></div></div>
       <div class="view" id="view-incidencias">
         <div class="tc"><table class="tbl"><thead><tr><th>Tipo</th><th>Expedición</th><th>Descripción</th><th>Estado</th><th>Responsable</th><th>Fecha</th></tr></thead><tbody id="inc-tbody"></tbody></table></div>
@@ -1449,11 +1465,13 @@ textarea.fi{resize:vertical;min-height:72px}
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.8.0</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.9.0</span>
         <span style="font-size:12px;color:var(--g400)">30/03/2026</span>
         <span class="badge bg">Actual</span>
       </div>
       <ul style="font-size:13px;color:var(--g700);margin:0;padding-left:20px;line-height:1.8">
+        <li>⌨️ Atajos de teclado globales (A/E/B/D/K/U/N/Esc/? + Ctrl+K)</li>
+        <li>🗺️ Mapa visual de almacén basado en planos reales La Menacha — Planta Baja y 1ª Planta/Sótano con semaforización de ocupación</li>
         <li>💬 Notas internas por expedición con menciones @usuario y notificación push</li>
         <li>📊 Informe semanal con IA — resumen ejecutivo generado y enviable por email</li>
         <li>🎓 Onboarding guiado al primer login — tour interactivo por rol (admin/oficina/almacén/aduanas)</li>
@@ -2157,7 +2175,7 @@ function mostrarEstadoRealtime(){
 }
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.8.0';
+const APP_VERSION = 'v3.9.0';
 const APP_VERSION_DATE = '30/03/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -7851,10 +7869,182 @@ async function guardarFL(id){
   closeModal();await loadAlmacen();
 }
 
+let _ubicPlanta = 'pb'; // 'pb' = planta baja, '1p' = 1ª planta/sótano
+let _ubicData = {};
+
+function setUbicPlanta(p){
+  _ubicPlanta = p;
+  document.getElementById('ubic-tab-pb').className = 'btn btn-sm ' + (p==='pb'?'btn-p':'btn-s');
+  document.getElementById('ubic-tab-1p').className = 'btn btn-sm ' + (p==='1p'?'btn-p':'btn-s');
+  renderUbicMapa();
+}
+
 async function loadUbic(){
-  const {data}=await sb.from('expediciones').select('ubicacion,nº_expedicion,bultos,kilos,buques(nombre)').not('ubicacion','eq','Pendiente recibir').neq('estado_semaforo','🚢 EMBARCADO');
-  const g={};(data||[]).forEach(e=>{if(!g[e.ubicacion])g[e.ubicacion]={exps:[],b:0,k:0};g[e.ubicacion].exps.push(e);g[e.ubicacion].b+=e.bultos||0;g[e.ubicacion].k+=e.kilos||0;});
-  document.getElementById('ubic-grid').innerHTML=Object.entries(g).map(([z,d])=>`<div class="uc"><div class="uz">📍 ${z}</div><div class="ucv">${d.exps.length} <span style="font-size:14px;font-weight:400;color:var(--g500)">exp.</span></div><div class="us">${d.b} bultos · ${d.k} kg</div><div class="ui-list">${d.exps.slice(0,3).map(e=>`<div class="ui-item">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</div>`).join('')}${d.exps.length>3?`<div class="ui-item" style="color:var(--g400)">+${d.exps.length-3} más</div>`:''}</div></div>`).join('')||'<div class="empty"><div class="empty-icon">📍</div><div class="empty-txt">No hay mercancía en almacén</div></div>';
+  const {data} = await sb.from('expediciones')
+    .select('ubicacion,nº_expedicion,bultos,kilos,buques(nombre)')
+    .not('ubicacion','eq','Pendiente recibir')
+    .neq('estado_semaforo','🚢 EMBARCADO');
+
+  _ubicData = {};
+  (data||[]).forEach(e=>{
+    const z = e.ubicacion||'Sin ubicación';
+    if(!_ubicData[z]) _ubicData[z]={exps:[],b:0,k:0};
+    _ubicData[z].exps.push(e);
+    _ubicData[z].b += e.bultos||0;
+    _ubicData[z].k += e.kilos||0;
+  });
+
+  renderUbicMapa();
+
+  // Lista detalle
+  document.getElementById('ubic-grid').innerHTML = Object.entries(_ubicData)
+    .map(([z,d])=>`<div class="uc">
+      <div class="uz">📍 ${z}</div>
+      <div class="ucv">${d.exps.length} <span style="font-size:14px;font-weight:400;color:var(--g500)">exp.</span></div>
+      <div class="us">${d.b} bultos · ${d.k} kg</div>
+      <div class="ui-list">${d.exps.slice(0,3).map(e=>`<div class="ui-item">${e.nº_expedicion} — ${e.buques?.nombre||'—'}</div>`).join('')}
+        ${d.exps.length>3?`<div class="ui-item" style="color:var(--g400)">+${d.exps.length-3} más</div>`:''}
+      </div>
+    </div>`).join('')
+    || '<div class="empty"><div class="empty-icon">📍</div><div class="empty-txt">No hay mercancía en almacén</div></div>';
+}
+
+function renderUbicMapa(){
+  const mapa = document.getElementById('ubic-mapa');
+  if(!mapa) return;
+
+  // Colores según ocupación
+  function colorZona(key){
+    const d = _ubicData[key];
+    if(!d || d.exps.length===0) return {fill:'#f0fdf4',stroke:'#86efac',txt:'Libre',n:0,color:'#16a34a'};
+    if(d.exps.length<=3)  return {fill:'#eff6ff',stroke:'#93c5fd',txt:d.exps.length+' exp.',n:d.exps.length,color:'#2563eb'};
+    if(d.exps.length<=8)  return {fill:'#fefce8',stroke:'#fde047',txt:d.exps.length+' exp.',n:d.exps.length,color:'#ca8a04'};
+    return {fill:'#fef2f2',stroke:'#fca5a5',txt:d.exps.length+' exp.',n:d.exps.length,color:'#dc2626'};
+  }
+
+  function tooltip(key){
+    const d = _ubicData[key];
+    if(!d) return '';
+    return d.exps.slice(0,5).map(e=>e.nº_expedicion).join(', ')+(d.exps.length>5?'…':'');
+  }
+
+  if(_ubicPlanta === 'pb'){
+    // ── PLANTA BAJA ─────────────────────────────────────────
+    // Basado en plano P7.2: zona izquierda=ADT, zona central=ADT(grande), zona derecha=Almacén PB
+    const adt   = colorZona('Almacén-ADT');
+    const lame  = colorZona('Almacén-LAME');
+    const pb    = colorZona('Almacén-1ª Planta');
+    const sinU  = colorZona('Almacén-Sin Ubicar');
+
+    mapa.innerHTML = `<svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:700px;font-family:var(--f)">
+      <!-- Fondo general -->
+      <rect x="0" y="0" width="700" height="320" fill="var(--g50)" rx="12"/>
+      <text x="350" y="22" text-anchor="middle" font-size="13" font-weight="700" fill="var(--g600)">1ª PLANTA — Polígono La Menacha (Almacén)</text>
+
+      <!-- Zona LAME (izquierda, lo que en el plano era ADT) -->
+      <rect x="20" y="40" width="160" height="200" rx="8" fill="${lame.fill}" stroke="${lame.stroke}" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-LAME')"/>
+      <text x="100" y="110" text-anchor="middle" font-size="14" font-weight="800" fill="${lame.color}">LAME</text>
+      <text x="100" y="130" text-anchor="middle" font-size="12" fill="${lame.color}">${lame.txt}</text>
+      ${lame.n>0?`<circle cx="100" cy="155" r="16" fill="${lame.stroke}"/><text x="100" y="160" text-anchor="middle" font-size="13" font-weight="700" fill="${lame.color}">${lame.n}</text>`:'<text x="100" y="165" text-anchor="middle" font-size="11" fill="#16a34a">Libre ✓</text>'}
+      <text x="100" y="220" text-anchor="middle" font-size="9" fill="var(--g400)">${tooltip('Almacén-LAME')}</text>
+
+      <!-- Zona ADT (zona central grande — lo que en el plano era LAME+DA) -->
+      <rect x="200" y="40" width="200" height="200" rx="8" fill="${adt.fill}" stroke="${adt.stroke}" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-ADT')"/>
+      <text x="300" y="110" text-anchor="middle" font-size="14" font-weight="800" fill="${adt.color}">ADT</text>
+      <text x="300" y="130" text-anchor="middle" font-size="12" fill="${adt.color}">${adt.txt}</text>
+      ${adt.n>0?`<circle cx="300" cy="155" r="16" fill="${adt.stroke}"/><text x="300" y="160" text-anchor="middle" font-size="13" font-weight="700" fill="${adt.color}">${adt.n}</text>`:'<text x="300" y="165" text-anchor="middle" font-size="11" fill="#16a34a">Libre ✓</text>'}
+      <text x="300" y="220" text-anchor="middle" font-size="9" fill="var(--g400)">${tooltip('Almacén-ADT')}</text>
+
+      <!-- Almacén Planta Baja (derecha) -->
+      <rect x="420" y="40" width="260" height="200" rx="8" fill="${pb.fill}" stroke="${pb.stroke}" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-1ª Planta')"/>
+      <text x="550" y="110" text-anchor="middle" font-size="14" font-weight="800" fill="${pb.color}">ALMACÉN</text>
+      <text x="550" y="128" text-anchor="middle" font-size="13" font-weight="700" fill="${pb.color}">1ª PLANTA</text>
+      <text x="550" y="148" text-anchor="middle" font-size="12" fill="${pb.color}">${pb.txt}</text>
+      ${pb.n>0?`<circle cx="550" cy="170" r="16" fill="${pb.stroke}"/><text x="550" y="175" text-anchor="middle" font-size="13" font-weight="700" fill="${pb.color}">${pb.n}</text>`:'<text x="550" y="178" text-anchor="middle" font-size="11" fill="#16a34a">Libre ✓</text>'}
+      <text x="550" y="220" text-anchor="middle" font-size="9" fill="var(--g400)">${tooltip('Almacén-1ª Planta')}</text>
+
+      <!-- Sin ubicar -->
+      ${sinU.n>0?`
+      <rect x="20" y="258" width="660" height="48" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-Sin Ubicar')"/>
+      <text x="350" y="278" text-anchor="middle" font-size="12" font-weight="700" fill="#dc2626">⚠️ SIN UBICAR — ${sinU.n} expedición${sinU.n>1?'es':''} pendientes de asignar ubicación</text>
+      <text x="350" y="296" text-anchor="middle" font-size="10" fill="#dc2626">${tooltip('Almacén-Sin Ubicar')}</text>
+      `:''}
+
+      <!-- Leyenda -->
+      <g transform="translate(20,295)">
+        <rect x="0" y="0" width="10" height="10" fill="#f0fdf4" stroke="#86efac" rx="2"/>
+        <text x="14" y="9" font-size="9" fill="var(--g500)">Libre</text>
+        <rect x="60" y="0" width="10" height="10" fill="#eff6ff" stroke="#93c5fd" rx="2"/>
+        <text x="74" y="9" font-size="9" fill="var(--g500)">1-3 exp.</text>
+        <rect x="130" y="0" width="10" height="10" fill="#fefce8" stroke="#fde047" rx="2"/>
+        <text x="144" y="9" font-size="9" fill="var(--g500)">4-8 exp.</text>
+        <rect x="200" y="0" width="10" height="10" fill="#fef2f2" stroke="#fca5a5" rx="2"/>
+        <text x="214" y="9" font-size="9" fill="var(--g500)">&gt;8 exp.</text>
+        <text x="320" y="9" font-size="9" fill="var(--g400)">Haz clic en una zona para filtrar</text>
+      </g>
+    </svg>`;
+
+  } else {
+    // ── 1ª PLANTA / SÓTANO ──────────────────────────────────
+    // Basado en plano P7.4 (sótano): zona marcada ADT → actualmente LAME, nave principal → Almacén 1ª Planta
+    const sinU  = colorZona('Almacén-Sin Ubicar');
+    const adt1  = colorZona('Almacén-ADT');
+
+    mapa.innerHTML = `<svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:700px;font-family:var(--f)">
+      <rect x="0" y="0" width="700" height="320" fill="var(--g50)" rx="12"/>
+      <text x="350" y="22" text-anchor="middle" font-size="13" font-weight="700" fill="var(--g600)">SÓTANO — Polígono La Menacha</text>
+
+      <!-- ADT (zona operativa del sótano) -->
+      <rect x="20" y="40" width="400" height="200" rx="8" fill="${adt1.fill}" stroke="${adt1.stroke}" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-ADT')"/>
+      <text x="220" y="115" text-anchor="middle" font-size="14" font-weight="800" fill="${adt1.color}">ADT</text>
+      <text x="220" y="135" text-anchor="middle" font-size="12" fill="${adt1.color}">${adt1.txt}</text>
+      ${adt1.n>0?`<circle cx="220" cy="160" r="16" fill="${adt1.stroke}"/><text x="220" y="165" text-anchor="middle" font-size="13" font-weight="700" fill="${adt1.color}">${adt1.n}</text>`:'<text x="220" y="168" text-anchor="middle" font-size="11" fill="#16a34a">Libre ✓</text>'}
+      <text x="220" y="220" text-anchor="middle" font-size="9" fill="var(--g400)">${tooltip('Almacén-ADT')}</text>
+
+      <!-- 2ª Planta — Oficinas (nave principal, no es almacén operativo) -->
+      <rect x="440" y="40" width="240" height="200" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6,3"/>
+      <text x="560" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#64748b">2ª PLANTA</text>
+      <text x="560" y="138" text-anchor="middle" font-size="11" fill="#94a3b8">Zona de Oficinas</text>
+      <text x="560" y="168" text-anchor="middle" font-size="22">🏢</text>
+
+      <!-- Sin ubicar -->
+      ${sinU.n>0?`
+      <rect x="20" y="258" width="660" height="48" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="2" style="cursor:pointer" onclick="filtrarUbicacion('Almacén-Sin Ubicar')"/>
+      <text x="350" y="278" text-anchor="middle" font-size="12" font-weight="700" fill="#dc2626">⚠️ SIN UBICAR — ${sinU.n} expedición${sinU.n>1?'es':''} pendientes de asignar ubicación</text>
+      <text x="350" y="296" text-anchor="middle" font-size="10" fill="#dc2626">${tooltip('Almacén-Sin Ubicar')}</text>
+      `:''}
+
+      <!-- Leyenda -->
+      <g transform="translate(20,295)">
+        <rect x="0" y="0" width="10" height="10" fill="#f0fdf4" stroke="#86efac" rx="2"/>
+        <text x="14" y="9" font-size="9" fill="var(--g500)">Libre</text>
+        <rect x="60" y="0" width="10" height="10" fill="#eff6ff" stroke="#93c5fd" rx="2"/>
+        <text x="74" y="9" font-size="9" fill="var(--g500)">1-3 exp.</text>
+        <rect x="130" y="0" width="10" height="10" fill="#fefce8" stroke="#fde047" rx="2"/>
+        <text x="144" y="9" font-size="9" fill="var(--g500)">4-8 exp.</text>
+        <rect x="200" y="0" width="10" height="10" fill="#fef2f2" stroke="#fca5a5" rx="2"/>
+        <text x="214" y="9" font-size="9" fill="var(--g500)">&gt;8 exp.</text>
+        <text x="320" y="9" font-size="9" fill="var(--g400)">Haz clic en una zona para filtrar</text>
+      </g>
+    </svg>`;
+  }
+}
+
+function filtrarUbicacion(zona){
+  // Filtrar la lista detalle para mostrar solo esa zona
+  const d = _ubicData[zona];
+  if(!d) return;
+  const grid = document.getElementById('ubic-grid');
+  grid.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:8px 12px;background:var(--b50);border-radius:var(--r)">
+      <div style="font-size:13px;font-weight:700;color:var(--b700)">📍 ${zona} — ${d.exps.length} expedición${d.exps.length!==1?'es':''} · ${d.b} bultos · ${d.k} kg</div>
+      <button onclick="loadUbic()" class="btn btn-s btn-sm">✕ Ver todas</button>
+    </div>
+    ${d.exps.map(e=>`
+      <div class="uc" onclick="openExpD('${e.id||''}');nav('expediciones',null)" style="cursor:pointer">
+        <div class="uz">📦 ${e.nº_expedicion}</div>
+        <div class="us">${e.buques?.nombre||'—'} · ${e.bultos} bultos · ${e.kilos} kg</div>
+      </div>`).join('')}`;
 }
 
 async function loadListos(){
@@ -10102,6 +10292,75 @@ function cerrarOnboarding(){
   document.getElementById('onboarding-overlay').style.display='none';
   // Marcar como completado para no volver a mostrar
   try{ localStorage.setItem('als_onb_'+CU?.id, '1'); }catch(e){}
+}
+
+
+// ── Atajos de teclado globales ───────────────────────────────────────
+document.addEventListener('keydown', function(e){
+  // No activar si estamos escribiendo en un input/textarea
+  const tag = document.activeElement?.tagName?.toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select') return;
+  // No activar si hay modal abierto (excepto Esc)
+  const modalAbierto = document.getElementById('mo')?.classList.contains('open');
+
+  if(e.key==='Escape'){
+    if(modalAbierto){ closeModal(); return; }
+    const bg = document.getElementById('bg-overlay');
+    if(bg){ cerrarBusquedaGlobal(); return; }
+    const onb = document.getElementById('onboarding-overlay');
+    if(onb?.style.display!=='none'){ cerrarOnboarding(); return; }
+    const brief = document.getElementById('brief-overlay');
+    if(brief?.style.display!=='none'){ cerrarBriefing(); return; }
+    return;
+  }
+  if(modalAbierto) return; // resto de atajos no funcionan con modal abierto
+
+  if(e.key==='?' && !e.ctrlKey && !e.metaKey){ mostrarAtajos(); return; }
+  if((e.ctrlKey||e.metaKey) && e.key==='k'){ e.preventDefault(); abrirBusquedaGlobal(); return; }
+
+  if(!CU || !MOD) return; // solo si hay sesión activa
+
+  switch(e.key.toLowerCase()){
+    case 'a': if(MOD==='operativa') nav('alertas', null); break;
+    case 'e': if(MOD==='operativa') nav('expediciones', null); break;
+    case 'b': if(MOD==='operativa') nav('buques', null); break;
+    case 'd': if(MOD==='operativa') nav('dashboard', null); break;
+    case 'k': if(MOD==='operativa') nav('kanban', null); break;
+    case 'u': if(MOD==='operativa') nav('ubicaciones', null); break;
+    case 'n':
+      if(MOD==='operativa' && ['admin','oficina'].includes(CU.rol)){
+        e.preventDefault();
+        openModal('nueva-expedicion');
+      }
+      break;
+  }
+});
+
+function mostrarAtajos(){
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:32000;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML = `
+    <div style="background:var(--w);border-radius:16px;width:100%;max-width:420px;padding:24px;box-shadow:0 16px 40px rgba(0,0,0,.2)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-size:16px;font-weight:700">⌨️ Atajos de teclado</div>
+        <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--g400)">×</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
+        ${[
+          ['A','Panel de alertas'],['E','Expediciones'],['B','Buques'],
+          ['D','Dashboard'],['K','Kanban'],['U','Ubicaciones'],
+          ['N','Nueva expedición'],['Ctrl+K','Búsqueda global'],
+          ['Esc','Cerrar modal/overlay'],['?','Ver estos atajos'],
+        ].map(([k,v])=>`
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--g50);border-radius:6px">
+            <kbd style="background:var(--w);border:1px solid var(--g300);border-radius:4px;padding:2px 7px;font-size:12px;font-family:var(--mono);font-weight:600;box-shadow:0 1px 0 var(--g300)">${k}</kbd>
+            <span style="color:var(--g600)">${v}</span>
+          </div>`).join('')}
+      </div>
+      <div style="font-size:11px;color:var(--g400);margin-top:14px;text-align:center">Los atajos no funcionan mientras escribes en un campo de texto</div>
+    </div>`;
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
 }
 
 function checkNbUnlock(){
