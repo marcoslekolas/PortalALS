@@ -10330,28 +10330,63 @@ function mostrarAtajos(){
 
 
 // ── Sonidos de validación escáner ────────────────────────────────────
+// Genera un WAV PCM mono 8bit en base64 para uso como Audio src
+function _makeToneWav(freq, duration, vol){
+  const sampleRate = 8000;
+  const numSamples = Math.floor(sampleRate * duration);
+  const buf = new Uint8Array(44 + numSamples);
+  // WAV header
+  const dv = new DataView(buf.buffer);
+  const writeStr = (off, s) => { for(let i=0;i<s.length;i++) dv.setUint8(off+i, s.charCodeAt(i)); };
+  writeStr(0,'RIFF'); dv.setUint32(4, 36+numSamples, true);
+  writeStr(8,'WAVE'); writeStr(12,'fmt ');
+  dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
+  dv.setUint32(24,sampleRate,true); dv.setUint32(28,sampleRate,true);
+  dv.setUint16(32,1,true); dv.setUint16(34,8,true);
+  writeStr(36,'data'); dv.setUint32(40,numSamples,true);
+  for(let i=0;i<numSamples;i++){
+    const t = i/sampleRate;
+    const env = Math.max(0, 1 - t/duration); // fade out
+    buf[44+i] = Math.round(128 + 127 * vol * env * Math.sin(2*Math.PI*freq*t));
+  }
+  let bin=''; buf.forEach(b=>{ bin+=String.fromCharCode(b); });
+  return 'data:audio/wav;base64,'+btoa(bin);
+}
+// Precargar sonidos en primera interacción
+function _preloadSounds(){
+  if(window._soundsLoaded) return;
+  window._soundsLoaded = true;
+  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1046,0.15,0.5), volume:1});
+  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(220, 0.25,0.5), volume:1});
+  window._beepOKEl.load();
+  window._beepErrEl.load();
+}
 function beepOK(){
+  // Doble método: AudioContext + <audio> para máxima compatibilidad iOS
   try{
     const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
-    if(ctx.state==='suspended') ctx.resume();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    if(ctx.state==='suspended') ctx.resume().catch(()=>{});
+    const osc = ctx.createOscillator(); const gain = ctx.createGain();
     osc.connect(gain); gain.connect(ctx.destination);
     osc.type = 'sine';
     osc.frequency.setValueAtTime(1046, ctx.currentTime);
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.18);
   } catch(e){}
+  // Audio element (iOS fallback)
+  try{
+    const el = window._beepOKEl;
+    if(el){ el.currentTime=0; el.play().catch(()=>{}); }
+  }catch(e){}
 }
 
 function beepError(){
   try{
     const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
-    if(ctx.state==='suspended') ctx.resume();
+    if(ctx.state==='suspended') ctx.resume().catch(()=>{});
     [220, 180].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -10364,6 +10399,7 @@ function beepError(){
       osc.stop(ctx.currentTime + i*0.12 + 0.1);
     });
   } catch(e){}
+  try{ const el=window._beepErrEl; if(el){el.currentTime=0;el.play().catch(()=>{});} }catch(e){}
 }
 
 function beepCompletado(){
@@ -10458,6 +10494,32 @@ function cerrarMenuAduanasHdr(id){
   if(menu) menu.style.display = 'none';
 }
 
+
+// ── Helper: restaurar barra de modos del escáner ──────────────────
+function _restaurarBarraModos(){
+  const bar = document.querySelector('#scanner-overlay > div:last-child');
+  if(!bar) return;
+  const modo = window._scannerMode || 'autorizar';
+  const bA = document.createElement('button');
+  bA.id='sc-mode-autorizar'; bA.onclick=()=>_setScannerMode('autorizar');
+  bA.style.cssText='flex:1;background:'+(modo==='autorizar'?'#3b82f6':'rgba(255,255,255,.15)')+';color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;min-height:52px';
+  bA.textContent='✅ Autorización';
+  const bB = document.createElement('button');
+  bB.id='sc-mode-bulto'; bB.onclick=()=>_setScannerMode('bulto');
+  bB.style.cssText='flex:1;background:'+(modo==='bulto'?'#f59e0b':'rgba(255,255,255,.12)')+';color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;min-height:52px';
+  bB.textContent='📦 Bulto suelto';
+  const bC = document.createElement('button');
+  bC.onclick=()=>cerrarScannerQR();
+  bC.style.cssText='background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:12px 16px;font-size:18px;font-weight:700;cursor:pointer;min-height:52px';
+  bC.textContent='✕';
+  bar.innerHTML=''; bar.append(bA,bB,bC);
+}
+
+// ── Helper: poner botones de resultado en barra inferior ────────────
+function _mostrarBotonesResultado(html_btns){
+  const bar = document.querySelector('#scanner-overlay > div:last-child');
+  if(bar) bar.innerHTML = html_btns;
+}
 
 // ── Barra de progreso superior ───────────────────────────────────────
 function loadBarStart(){
@@ -11302,11 +11364,18 @@ async function abrirScannerQR(){
   document.body.appendChild(ov);
   window._scannerMode = 'autorizar';
 
-  // Crear AudioContext aprovechando el gesto del usuario — iOS lo requiere
+  // Preparar audio en el gesto del usuario (iOS requiere esto)
+  _preloadSounds();
   try{
     if(!window._alsAudioCtx || window._alsAudioCtx.state === 'closed')
       window._alsAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
-    if(window._alsAudioCtx.state === 'suspended') window._alsAudioCtx.resume();
+    if(window._alsAudioCtx.state === 'suspended') window._alsAudioCtx.resume().catch(()=>{});
+    // Reproducir silencio para "desbloquear" el audio en iOS
+    const osc = window._alsAudioCtx.createOscillator();
+    const g = window._alsAudioCtx.createGain();
+    g.gain.setValueAtTime(0, window._alsAudioCtx.currentTime);
+    osc.connect(g); g.connect(window._alsAudioCtx.destination);
+    osc.start(); osc.stop(window._alsAudioCtx.currentTime + 0.01);
   }catch(e){}
 
   if(!window.Html5Qrcode){
@@ -11427,17 +11496,15 @@ async function _procesarQRLeido(texto){
     const camB = document.getElementById('sc-camara-wrap');
     if(camB) camB.style.display = 'none';
     res.innerHTML = `
-      <div style="background:rgba(245,158,11,.15);border:2px solid #f59e0b;border-radius:10px;padding:14px;margin:4px">
-        <div style="font-size:13px;font-weight:700;color:#fcd34d;margin-bottom:6px">📦 BULTO ${numBulto} de ${totalBultos}</div>
-        <div style="font-size:22px;font-weight:900;color:#fff;font-family:monospace;margin-bottom:4px">${e.nº_expedicion}</div>
-        <div style="font-size:13px;color:#d1d5db">${e.empresas?.nombre||'—'} · ${e.buques?.nombre||'—'}</div>
-        <div style="font-size:12px;color:#9ca3af;margin-top:4px">${e.bultos||0} btos · ${e.kilos||0} kg · 📍${e.ubicacion||'—'}</div>
+      <div style="background:rgba(245,158,11,.15);border:2px solid #f59e0b;border-radius:12px;padding:16px;margin:4px">
+        <div style="font-size:13px;font-weight:700;color:#fcd34d;margin-bottom:8px">📦 BULTO ${numBulto} de ${totalBultos}</div>
+        <div style="font-size:26px;font-weight:900;color:#fff;font-family:monospace;margin-bottom:6px">${e.nº_expedicion}</div>
+        <div style="font-size:13px;color:#d1d5db;margin-bottom:4px">${e.empresas?.nombre||'—'} · ${e.buques?.nombre||'—'}</div>
+        <div style="font-size:12px;color:#9ca3af;margin-bottom:2px">${e.bultos||0} btos · ${e.kilos||0} kg · 📍${e.ubicacion||'—'}</div>
         <div style="font-size:12px;color:#9ca3af">${e.estado_semaforo||'—'}</div>
-      </div>
-      <div style="display:flex;gap:8px;padding:8px 4px">
-        <button id="sc-btn-blt-ficha" style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;min-height:48px">👁 Expedición</button>
-        <button id="sc-btn-blt-sig"   style="flex:1;background:#374151;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;min-height:48px">🔄 Siguiente</button>
       </div>`;
+    const modBarB=document.querySelector('#scanner-overlay > div:last-child');
+    if(modBarB) modBarB.innerHTML='<button id="sc-btn-blt-ficha" style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;min-height:56px">👁 Expedición</button><button id="sc-btn-blt-sig" style="flex:1;background:#374151;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;min-height:56px">🔄 Siguiente</button>';
     requestAnimationFrame(()=>{
       const f=document.getElementById('sc-btn-blt-ficha');
       const s=document.getElementById('sc-btn-blt-sig');
@@ -11447,6 +11514,7 @@ async function _procesarQRLeido(texto){
         const cam=document.getElementById('sc-camara-wrap');
         if(cam) cam.style.display='';
         res.innerHTML='<div style="font-size:13px;color:#9ca3af;padding:8px">📦 Escanea el siguiente bulto</div>';
+        _restaurarBarraModos();
       });
     });
     return;
@@ -11485,19 +11553,21 @@ async function _mostrarResultadoScan(e, res){
   const cam = document.getElementById('sc-camara-wrap');
   if(cam) cam.style.display = 'none';
   const expId=e.id, expRef=e.nº_expedicion;
+  // Poner resultado en scanner-result (arriba) y botones en barra inferior fija
   res.innerHTML = `
-    <div style="background:${bg};border:2px solid ${color};border-radius:10px;padding:14px;margin:4px">
-      <div style="font-size:40px;margin-bottom:6px">${autorizada?'✅':'🚫'}</div>
-      <div style="font-size:18px;font-weight:800;color:${color};margin-bottom:8px">${autorizada?'AUTORIZADA':'NO AUTORIZADA — RECHAZAR'}</div>
-      <div style="font-size:20px;font-weight:700;color:#fff;font-family:monospace">${e.nº_expedicion}</div>
-      <div style="font-size:13px;color:#d1d5db;margin-top:4px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
-      <div style="font-size:12px;color:#9ca3af;margin-top:2px">${e.bultos||0} btos · ${e.kilos||0} kg · 📍${e.ubicacion||'—'}</div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;padding:8px 4px">
-      ${autorizada?'<button id="sc-btn-carga" style="flex:1;background:#22c55e;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;min-height:48px">✅ Confirmar carga</button>':''}
-      <button id="sc-btn-ficha" style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;min-height:48px">👁 Ficha</button>
-      <button id="sc-btn-sig"   style="background:#374151;color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:14px;font-weight:600;cursor:pointer;min-height:48px">🔄 Sig.</button>
+    <div style="background:${bg};border:2px solid ${color};border-radius:12px;padding:16px;margin:4px">
+      <div style="font-size:52px;margin-bottom:8px">${autorizada?'✅':'🚫'}</div>
+      <div style="font-size:20px;font-weight:900;color:${color};margin-bottom:10px">${autorizada?'AUTORIZADA':'NO AUTORIZADA'}</div>
+      <div style="font-size:22px;font-weight:800;color:#fff;font-family:monospace;margin-bottom:6px">${e.nº_expedicion}</div>
+      <div style="font-size:13px;color:#d1d5db;margin-bottom:4px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
+      <div style="font-size:12px;color:#9ca3af">${e.bultos||0} btos · ${e.kilos||0} kg · 📍${e.ubicacion||'—'}</div>
     </div>`;
+  // Botones en barra inferior
+  _mostrarBotonesResultado(
+    (autorizada ? '<button id="sc-btn-carga" style="flex:1;background:#22c55e;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;min-height:56px">✅ Confirmar</button>' : '') +
+    '<button id="sc-btn-ficha" style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;min-height:56px">👁 Ficha</button>' +
+    '<button id="sc-btn-sig" style="flex:1;background:#374151;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;min-height:56px">🔄 Siguiente</button>'
+  );
   requestAnimationFrame(()=>{
     const c=document.getElementById('sc-btn-carga');
     const f=document.getElementById('sc-btn-ficha');
@@ -11509,7 +11579,9 @@ async function _mostrarResultadoScan(e, res){
       const cam=document.getElementById('sc-camara-wrap');
       if(cam) cam.style.display='';
       res.innerHTML='<div style="font-size:13px;color:#9ca3af;padding:8px">Apunta al siguiente QR</div>';
-    });
+      // Restaurar barra de modos
+      _restaurarBarraModos();
+      });
   });
 }
 
