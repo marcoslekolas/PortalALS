@@ -9739,7 +9739,7 @@ async function openExpD(id, forceOpen=false){
     : '';
   document.getElementById('m-body').innerHTML=`
     <div class="dg">
-      <div class="df"><div class="dl">Buque</div><div class="dv" style="cursor:pointer;color:var(--b600)" onclick="closeModal();setTimeout(()=>openBuque('${e.buques?.id}'),60)">${e.buques?.nombre||'—'} ↗</div></div>
+      <div class="df"><div class="dl">Buque</div><div class="dv" style="padding:0"><select id="buq-sel" class="fi fs" style="border:none;background:transparent;font-weight:500;padding:4px 0;color:var(--g900)"><option value="${e.buque_id||''}">${e.buques?.nombre||'Cargando…'}</option></select></div></div>
       <div class="df"><div class="dl">Empresa</div><div class="dv">${e.empresas?.nombre||'—'}</div></div>
       <div class="df"><div class="dl">Bultos</div><div class="dv">${e.bultos}</div></div>
       <div class="df"><div class="dl">Kilos</div><div class="dv">${e.kilos} kg</div></div>
@@ -9791,6 +9791,30 @@ async function openExpD(id, forceOpen=false){
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
   document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  // ── Poblar select de buques ────────────────────────────────────────
+  (async()=>{
+    const sel = document.getElementById('buq-sel');
+    if(!sel) return;
+    const {data:bqs} = await sb.from('buques')
+      .select('id,nombre')
+      .or('estado_operacion.is.null,estado_operacion.neq.Finalizado')
+      .order('eta_buque',{ascending:false});
+    // Mantener el buque actual aunque esté finalizado
+    const opts = (bqs||[]).map(b =>
+      '<option value="'+b.id+'"'+(b.id===e.buque_id?' selected':'')+'>'+b.nombre+'</option>'
+    ).join('');
+    // Si el buque actual no está en la lista (finalizado), añadirlo al inicio
+    const currentInList = (bqs||[]).some(b => b.id === e.buque_id);
+    const currentOpt = (!currentInList && e.buque_id)
+      ? '<option value="'+e.buque_id+'" selected>'+(e.buques?.nombre||'—')+'</option>'
+      : '';
+    sel.innerHTML = '<option value="">— Sin asignar —</option>'+currentOpt+opts;
+    sel.onchange = () => {
+      const opt = sel.options[sel.selectedIndex];
+      saveExpBuque(e.id, sel.value, opt.text);
+    };
+  })();
+
   if(e.estado_carga==='✅ AUTORIZADO'){
     const btnInstr = document.createElement('button');
     btnInstr.className='btn btn-s btn-sm';
@@ -11569,6 +11593,16 @@ function _renderIndicadoresPlazos(e){
   }
 
   return out;
+}
+
+
+// ── Cambiar buque asignado a una expedición ──────────────────────────
+async function saveExpBuque(expId, buqueId, buqueNombre){
+  if(!buqueId){ showToast('⚠️ Selecciona un buque'); return; }
+  const {error} = await sb.from('expediciones').update({buque_id: buqueId}).eq('id', expId);
+  if(error){ mostrarBanner('Error al cambiar buque: '+error.message,'red'); return; }
+  await logAct('expediciones', expId, '', 'editar', 'buque_id', null, buqueNombre);
+  showToast('🚢 Buque actualizado → '+buqueNombre);
 }
 
 
