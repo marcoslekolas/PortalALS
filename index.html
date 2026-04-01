@@ -857,6 +857,14 @@ textarea.fi{resize:vertical;min-height:72px}
   #fotos-tabs-top{display:none !important;} /* barra inferior reemplaza a tabs en móvil */
   .ib:active{transform:scale(.88);}
 }
+
+.notif-item{display:flex;gap:12px;align-items:flex-start;padding:14px 20px;border-bottom:1px solid var(--g100);cursor:pointer;transition:background .12s}
+.notif-item:hover{background:var(--g50)}
+.notif-item.unread{background:var(--b50)}
+.notif-item.unread:hover{background:#dbeafe}
+.notif-dot{width:8px;height:8px;border-radius:50%;background:#ef4444;flex-shrink:0;margin-top:5px}
+.notif-dot.read{background:transparent}
+@media(max-width:600px){#notif-panel{width:100%;border-left:none}}
 </style>
 <script>
 // Aplicar modo oscuro inmediatamente para evitar flash
@@ -1108,6 +1116,12 @@ textarea.fi{resize:vertical;min-height:72px}
         <!-- Acciones rápidas — solo en Operativa -->
         <button class="btn btn-p btn-sm" id="btn-nb" onclick="openModal('nuevo-buque')" style="display:none">+ Buque</button>
         <button class="btn btn-s btn-sm" id="btn-ne" onclick="openModal('nueva-expedicion')" style="display:none">+ Expedición</button>
+
+        <!-- Centro de notificaciones -->
+        <button id="hdr-notif-btn" onclick="abrirCentroNotificaciones()" title="Notificaciones" style="position:relative;background:none;border:none;cursor:pointer;padding:4px 6px;font-size:20px;line-height:1;display:none">
+          🔔
+          <span id="hdr-notif-badge" style="display:none;position:absolute;top:0;right:0;background:#ef4444;color:#fff;font-size:9px;font-weight:800;border-radius:50%;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 2px;pointer-events:none"></span>
+        </button>
 
         <!-- Avatar → volver a inicio -->
         <div class="hdr-user" id="hdr-user-btn" onclick="volverHome()" title="Ir a inicio" style="cursor:pointer">
@@ -7675,7 +7689,28 @@ async function imprimirEtiquetasBultos(expId, ref, numBultos){
       </div>
     </div>
     ${etiqHtml}
-  </body></html>`);
+  </div>
+
+<!-- ── Panel Centro de Notificaciones ─────────────────────────────── -->
+<div id="notif-panel" style="display:none;position:fixed;top:0;right:0;width:360px;max-width:100vw;height:100%;background:var(--w);border-left:1px solid var(--g200);z-index:25000;display:flex;flex-direction:column;box-shadow:-4px 0 24px rgba(0,0,0,.12);transform:translateX(100%);transition:transform .25s ease">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--g200);flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">🔔</span>
+      <span style="font-size:15px;font-weight:700;color:var(--g900)">Notificaciones</span>
+      <span id="notif-count-lbl" style="font-size:11px;color:var(--g500)"></span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button onclick="marcarTodasLeidas()" id="notif-mark-all" style="display:none;font-size:11px;color:var(--b600);background:none;border:none;cursor:pointer;font-weight:600;padding:4px 8px;border-radius:6px" onmouseenter="this.style.background='var(--b50)'" onmouseleave="this.style.background='none'">Marcar leídas</button>
+      <button onclick="cerrarCentroNotificaciones()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--g500);padding:4px;line-height:1;border-radius:6px" onmouseenter="this.style.background='var(--g100)'" onmouseleave="this.style.background='none'">✕</button>
+    </div>
+  </div>
+  <div id="notif-list" style="flex:1;overflow-y:auto;padding:0">
+    <div class="empty" style="padding:40px 20px">Sin notificaciones</div>
+  </div>
+</div>
+<div id="notif-backdrop" onclick="cerrarCentroNotificaciones()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:24999"></div>
+
+</body></html>`);
   w.document.close();
   setTimeout(()=>{ try{ w.print(); }catch(e){} }, 900);
 }
@@ -11632,81 +11667,166 @@ async function saveExpBuque(expId, buqueId, buqueNombre){
 
 
 // ── Notificaciones internas (@menciones) ─────────────────────────────
+// ── Centro de Notificaciones ──────────────────────────────────────────
+let _notifRealtime = null;
+
 async function cargarNotificacionesPendientes(){
   if(!CU?.id) return;
   try{
+    // Mostrar botón en header
+    const btn = document.getElementById('hdr-notif-btn');
+    if(btn) btn.style.display = '';
+
     const {data} = await sb.from('als_notificaciones')
       .select('*')
       .eq('destinatario_id', CU.id)
       .eq('leida', false)
       .order('created_at', {ascending:false});
-    const n = (data||[]).length;
-    // Badge en el header
-    let badge = document.getElementById('hdr-notif-badge');
-    if(!badge){
-      const hdr = document.getElementById('hdr-ver')?.parentElement;
-      if(hdr){
-        const btn = document.createElement('button');
-        btn.id = 'hdr-notif-btn';
-        btn.title = 'Notificaciones';
-        btn.style.cssText = 'position:relative;background:none;border:none;cursor:pointer;padding:4px;font-size:18px;line-height:1';
-        btn.innerHTML = '🔔<span id="hdr-notif-badge" style="display:none;position:absolute;top:0;right:0;background:#ef4444;color:#fff;font-size:9px;font-weight:700;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center"></span>';
-        btn.onclick = () => mostrarPanelNotificaciones();
-        hdr.appendChild(btn);
-        badge = document.getElementById('hdr-notif-badge');
-      }
+
+    _actualizarBadge((data||[]).length);
+
+    // Suscribir a Realtime para recibir menciones al instante
+    if(!_notifRealtime){
+      _notifRealtime = sb.channel('notif-'+CU.id)
+        .on('postgres_changes',{
+          event:'INSERT', schema:'public', table:'als_notificaciones',
+          filter:'destinatario_id=eq.'+CU.id
+        }, payload => {
+          _onNuevaNotificacion(payload.new);
+        })
+        .subscribe();
     }
-    if(badge){
-      badge.textContent = n > 9 ? '9+' : String(n);
-      badge.style.display = n > 0 ? 'block' : 'none';
-    }
-    // Si hay menciones nuevas, mostrar banner
-    if(n > 0 && data[0]){
-      mostrarBanner('💬 ' + data[0].remitente_nombre + ' te mencionó: ' + data[0].cuerpo.slice(0,60), 'blue');
-    }
-  } catch(ex){ console.warn('Notificaciones error:', ex); }
+  } catch(ex){ console.warn('Notificaciones:', ex); }
 }
 
-async function mostrarPanelNotificaciones(){
-  if(!CU?.id) return;
+function _actualizarBadge(n){
+  const badge = document.getElementById('hdr-notif-badge');
+  if(!badge) return;
+  badge.textContent = n > 9 ? '9+' : String(n);
+  badge.style.display = n > 0 ? 'block' : 'none';
+  // Pulsar animación si hay nuevas
+  if(n > 0){
+    badge.animate([{transform:'scale(1)'},{transform:'scale(1.4)'},{transform:'scale(1)'}],{duration:300,easing:'ease-out'});
+  }
+}
+
+function _onNuevaNotificacion(notif){
+  // Badge +1
+  const badge = document.getElementById('hdr-notif-badge');
+  const cur = parseInt(badge?.textContent||'0') || 0;
+  _actualizarBadge(cur + 1);
+  // Banner discreto
+  mostrarBanner('💬 ' + (notif.remitente_nombre||'Alguien') + ' te mencionó — ' + (notif.cuerpo||'').slice(0,50), 'blue');
+  // Si el panel está abierto, refrescar
+  const panel = document.getElementById('notif-panel');
+  if(panel && panel.style.transform === 'translateX(0px)') _renderNotificaciones();
+}
+
+function abrirCentroNotificaciones(){
+  const panel = document.getElementById('notif-panel');
+  const backdrop = document.getElementById('notif-backdrop');
+  if(!panel) return;
+  panel.style.display = 'flex';
+  backdrop.style.display = 'block';
+  requestAnimationFrame(()=>{ panel.style.transform = 'translateX(0)'; });
+  _renderNotificaciones();
+}
+
+function cerrarCentroNotificaciones(){
+  const panel = document.getElementById('notif-panel');
+  const backdrop = document.getElementById('notif-backdrop');
+  if(!panel) return;
+  panel.style.transform = 'translateX(100%)';
+  backdrop.style.display = 'none';
+  setTimeout(()=>{ panel.style.display = 'none'; }, 260);
+}
+
+async function _renderNotificaciones(){
+  const list = document.getElementById('notif-list');
+  const countLbl = document.getElementById('notif-count-lbl');
+  const markAll = document.getElementById('notif-mark-all');
+  if(!list) return;
+
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--g400)"><div class="spinner" style="display:inline-block;width:16px;height:16px;border-width:2px"></div></div>';
+
   const {data} = await sb.from('als_notificaciones')
-    .select('*').eq('destinatario_id', CU.id)
-    .order('created_at',{ascending:false}).limit(20);
-  const items = (data||[]);
-  document.getElementById('m-title').textContent = '🔔 Notificaciones';
-  document.getElementById('m-body').innerHTML = items.length ? items.map(n=>{
+    .select('*')
+    .eq('destinatario_id', CU.id)
+    .order('created_at', {ascending:false})
+    .limit(50);
+
+  const items = data||[];
+  const noLeidas = items.filter(n=>!n.leida).length;
+
+  if(countLbl) countLbl.textContent = noLeidas > 0 ? noLeidas+' sin leer' : 'todo leído';
+  if(markAll) markAll.style.display = noLeidas > 0 ? '' : 'none';
+
+  if(!items.length){
+    list.innerHTML = '<div class="empty" style="padding:40px 20px">Sin notificaciones</div>';
+    return;
+  }
+
+  list.innerHTML = items.map(n=>{
     const leida = n.leida;
-    const ts = new Date(n.created_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-    return '<div style="padding:12px 0;border-bottom:1px solid var(--g100);display:flex;gap:10px;align-items:flex-start;opacity:'+(leida?.6:1)+'">'
-      +'<span style="font-size:20px;flex-shrink:0">'+n.tipo==='mencion'?'💬':'🔔'+'</span>'
+    const ahora = new Date();
+    const fecha = new Date(n.created_at);
+    const diffMin = Math.round((ahora-fecha)/60000);
+    const ts = diffMin < 1 ? 'ahora mismo'
+      : diffMin < 60 ? 'hace '+diffMin+'m'
+      : diffMin < 1440 ? 'hace '+Math.round(diffMin/60)+'h'
+      : fecha.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'});
+
+    return '<div class="notif-item'+(leida?'':' unread')+'" onclick="_abrirNotif(\''+n.id+'\',\''+( n.expedicion_id||'')+'\','+leida+')">'
+      +'<div class="notif-dot'+(leida?' read':'')+'" style="margin-top:4px;flex-shrink:0"></div>'
       +'<div style="flex:1;min-width:0">'
-      +'<div style="font-size:13px;font-weight:'+(leida?'400':'700')+';color:var(--g900)">'+n.titulo+'</div>'
-      +'<div style="font-size:12px;color:var(--g600);margin-top:2px">'+n.cuerpo+'</div>'
-      +'<div style="font-size:10px;color:var(--g400);margin-top:3px">'+ts+'</div>'
+      +'<div style="font-size:13px;font-weight:'+(leida?'500':'700')+';color:var(--g900);margin-bottom:2px">'+n.titulo+'</div>'
+      +'<div style="font-size:12px;color:var(--g600);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+( n.cuerpo||'')+'</div>'
+      +'<div style="font-size:10px;color:var(--g400);margin-top:4px">'+ts+'</div>'
       +'</div>'
-      +(n.expedicion_id?'<button class="btn btn-s btn-sm" style="font-size:11px" onclick="closeModal();setTimeout(()=>openExpD(\''+n.expedicion_id+'\'),100)">Ver</button>':'')
+      +(n.expedicion_id?'<span style="font-size:16px;color:var(--b500);flex-shrink:0;align-self:center">›</span>':'')
       +'</div>';
-  }).join('') : '<div class="empty">Sin notificaciones</div>';
-  document.getElementById('m-foot').innerHTML = '<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>'
-    +(items.some(n=>!n.leida)?'<button class="btn btn-p btn-sm" onclick="marcarTodasLeidas()">Marcar todas leídas</button>':'');
-  document.getElementById('mo').classList.add('open');
+  }).join('');
+}
+
+async function _abrirNotif(notifId, expId, yaLeida){
+  // Marcar como leída
+  if(!yaLeida){
+    await sb.from('als_notificaciones').update({leida:true}).eq('id',notifId);
+    // Restar del badge
+    const badge = document.getElementById('hdr-notif-badge');
+    const cur = Math.max(0,(parseInt(badge?.textContent||'0')||0)-1);
+    _actualizarBadge(cur);
+    // Refrescar lista
+    _renderNotificaciones();
+  }
+  // Navegar a la expedición
+  if(expId){
+    cerrarCentroNotificaciones();
+    setTimeout(()=> openExpD(expId), 300);
+  }
 }
 
 async function marcarTodasLeidas(){
   if(!CU?.id) return;
-  await sb.from('als_notificaciones').update({leida:true}).eq('destinatario_id',CU.id).eq('leida',false);
-  const badge = document.getElementById('hdr-notif-badge');
-  if(badge) badge.style.display='none';
-  closeModal();
-  showToast('✅ Notificaciones marcadas como leídas');
+  await sb.from('als_notificaciones')
+    .update({leida:true})
+    .eq('destinatario_id', CU.id)
+    .eq('leida', false);
+  _actualizarBadge(0);
+  _renderNotificaciones();
+  showToast('✅ Todo marcado como leído');
 }
+
+// Compat: mantener función antigua por si se llama desde algún sitio
+async function cargarNotificacionesPendientes_legacy(){ return cargarNotificacionesPendientes(); }
+
 
 
 function mostrarQRExpedicion(id, ref){
   const qrData = qrDataParaExp(id);
   const ov = document.createElement('div');
   ov.id = 'qr-overlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:21000;display:flex;align-items:center;justify-content:center;padding:20px';
   ov.innerHTML = `
     <div style="background:#fff;border-radius:16px;padding:28px;max-width:320px;width:100%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.3)">
       <div style="font-size:15px;font-weight:800;color:var(--g900);margin-bottom:4px">📱 Código QR</div>
