@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://*.openrouter.ai; font-src https://fonts.gstatic.com; worker-src blob:; manifest-src 'self' blob:;">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#2563eb">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -71,6 +71,7 @@ if('serviceWorker' in navigator){
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
+  --safe-top:env(safe-area-inset-top,0px);--safe-bot:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px);
   --w:#fff;--g50:#f8f9fa;--g100:#f1f3f5;--g200:#e9ecef;--g300:#dee2e6;--g400:#ced4da;
   --g500:#adb5bd;--g600:#6c757d;--g700:#495057;--g800:#343a40;--g900:#212529;
   --b50:#e7f1ff;--b100:#c5dbff;--b500:#3b82f6;--b600:#2563eb;--b700:#1d4ed8;
@@ -90,6 +91,13 @@ if('serviceWorker' in navigator){
   --sw:240px;--sw-collapsed:64px;--hh:56px;
 }
 html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
+/* PWA safe-area para iPhone notch y barra de gestos */
+body{
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bot);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
 /* App screens use overflow:hidden individually, but body must allow scroll for home */
 #screen-login,#app{overflow:hidden}
 
@@ -500,7 +508,7 @@ textarea.fi{resize:vertical;min-height:72px}
   .fs{font-size:16px}
   .nav-item{padding:11px 12px}
   .tbl td,.tbl th{padding:10px 10px}
-  .modal{max-width:100%;margin:0;border-radius:var(--rl) var(--rl) 0 0}
+  .modal{max-width:100%;margin:0;border-radius:var(--rl) var(--rl) 0 0;padding-bottom:var(--safe-bot)}
   .mo{align-items:flex-end;padding:0}
   .mb{padding:18px 16px}
   .mh{padding:14px 16px}
@@ -1265,10 +1273,7 @@ textarea.fi{resize:vertical;min-height:72px}
           <div id="buques-dash" class="buque-list"></div>
         </div>
         <!-- Gráficas resumen -->
-        <div style="margin-top:24px">
-          <div class="ph"><div class="pt">📊 Resumen estadístico</div></div>
-          <div class="cg" id="dash-charts"></div>
-        </div>
+        <!-- Gráficas movidas a Gestión Operativa / Estadísticas -->
       <!-- Gráficas dashboard -->
       <div id="dash-charts-section" style="display:none">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px">
@@ -1286,7 +1291,7 @@ textarea.fi{resize:vertical;min-height:72px}
       <div class="view" id="view-flota"><div class="fg" id="flota-grid"></div></div>
       <div class="view" id="view-buques">
         <div class="sbar"><span style="color:var(--g400)">🔍</span><input type="text" placeholder="Buscar buque, IMO, escala..." oninput="filtrarB(this.value)"></div>
-        <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-s btn-sm" onclick="exportarBuquesCSV()">⬇️ Exportar CSV</button></div>
+
         <div id="buques-list" class="buque-list"></div>
       </div>
       <div class="view" id="view-expediciones">
@@ -1660,6 +1665,7 @@ textarea.fi{resize:vertical;min-height:72px}
       <select id="fact-fil-estado" class="fi fs" style="width:auto" onchange="loadFacturacion()">
         <option value="">Todos los estados</option>
         <option value="pendiente">⏳ Pendiente facturar</option>
+        <option value="notificado">📧 Notificado</option>
         <option value="facturado">✅ Facturado</option>
       </select>
       <select id="fact-fil-mes" class="fi fs" style="width:auto" onchange="loadFacturacion()">
@@ -6314,7 +6320,8 @@ window.tlDropHandler=async function(cell){
   if(!bid)return;
   const date=cell.dataset.date;
   const hour=parseInt(cell.dataset.hour);
-  const newDt=date+'T'+(hour<10?'0'+hour:hour)+':00:00';
+  // Usar la hora exacta del slot (dataset.hour es la hora real del grid)
+  const newDt=date+'T'+String(hour).padStart(2,'0')+':00:00';
   window.tlDragId=null;
   const {error}=await sb.from('buques').update({eta_buque:newDt}).eq('id',bid);
   if(!error){
@@ -7513,7 +7520,7 @@ async function confirmarLlegadaFotos(id){
 function ofrecerEtiquetasBultos(expId, ref, numBultos){
   const ov = document.createElement('div');
   ov.id = 'etiquetas-overlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:20001;display:flex;align-items:center;justify-content:center;padding:20px';
   ov.innerHTML = `
     <div style="background:#fff;border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.3)">
       <div style="font-size:28px;margin-bottom:8px">🏷️</div>
@@ -7823,6 +7830,8 @@ async function loadFacturacion(){
     const totalBultos = (exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
     const totalKilos = (exps||[]).reduce((a,e)=>a+(e.kilos||0),0);
     const estado = b.estado_facturacion||'pendiente';
+    const estadoLabel = estado==='facturado'?'✅ Facturado':estado==='notificado'?'📧 Notificado':'⏳ Pendiente';
+    const estadoColor = estado==='facturado'?'var(--gr600)':estado==='notificado'?'var(--b600)':'var(--am600)';
     const emailSent = b.email_facturacion_sent;
     const emailFecha = b.email_facturacion_fecha ? new Date(b.email_facturacion_fecha).toLocaleDateString('es-ES') : '—';
 
@@ -7930,7 +7939,7 @@ async function enviarEmailFacturacion(buqueId){
   await sb.from('buques').update({
     email_facturacion_sent: true,
     email_facturacion_fecha: ahora,
-    estado_facturacion: 'pendiente' // mantener pendiente hasta que lo marquen como facturado
+    estado_facturacion: 'notificado' // cambia a Notificado al enviar el email
   }).eq('id',buqueId);
 
   await logAct('buques',buqueId,b.nombre,'editar','email_facturacion_sent','false',
@@ -9611,13 +9620,15 @@ async function notifClienteBuque(buqueId, buqueNombre){
 
   const asunto = `Aviso mercancía en almacén — Buque ${buqueNombre} · ${exps.length} expedición${exps.length!==1?'es':''}`;
   const sepLinea = '─'.repeat(52);
+  const trackingBase = 'https://www.alsalgeciras.com/tracking?exp=';
   const detalle = exps.map((e,i)=>`  ${i+1}. ${e.nº_expedicion}
      • Buque:       ${buqueNombre}
      • Bultos:      ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg
      • Ubicación:   ${e.ubicacion||'—'}
      • Estado:      ${e.estado_semaforo||'—'}
      • Trámite:     ${e.tramite_aduanero||'—'}
-     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}`
+     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}
+     🔍 Seguimiento: ${trackingBase}${e.id}`
   ).join('\n\n');
 
   const firma = `Atentamente,
@@ -10286,11 +10297,25 @@ async function enviarNota(expId, expRef){
       const mencionados = (usu||[]).filter(u=>
         menciones.some(m=>(u.nombre||'').toLowerCase().includes(m))
       );
-      mencionados.forEach(u=>{
-        if(u.id !== CU?.id){
+      const notifRows = mencionados
+        .filter(u => u.id !== CU?.id)
+        .map(u => ({
+          destinatario_id: u.id,
+          remitente_id: CU.id,
+          remitente_nombre: CU.nombre,
+          tipo: 'mencion',
+          titulo: '💬 ' + CU.nombre + ' te mencionó',
+          cuerpo: expRef + ': ' + texto.slice(0, 120),
+          leida: false,
+          expedicion_id: expId
+        }));
+      if(notifRows.length){
+        await sb.from('als_notificaciones').insert(notifRows);
+        // Push local si el destinatario está en este mismo navegador (mismo tab)
+        mencionados.filter(u=>u.id!==CU?.id).forEach(u=>{
           notifSistema('💬 '+CU.nombre+' te mencionó', expRef+': '+texto.slice(0,60));
-        }
-      });
+        });
+      }
     }
   } catch(ex){ showToast('❌ Error al enviar nota: '+ex.message); }
 }
@@ -11156,7 +11181,7 @@ const QR_ALS_B64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAA
 function abrirAlbaran(contenido){
   const ov=document.createElement('div');
   ov.id='alb-overlay';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;flex-direction:column;align-items:center;padding:20px;gap:10px';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:20000;display:flex;flex-direction:column;align-items:center;padding:20px;gap:10px';
   const toolbar=document.createElement('div');
   toolbar.style.cssText='display:flex;gap:10px;align-items:center;width:100%;max-width:820px';
   toolbar.innerHTML=`<button onclick="document.getElementById('alb-overlay').remove()" style="padding:7px 16px;background:#fff;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:13px">✕ Cerrar</button><button onclick="document.getElementById('alb-frame').contentWindow.print()" style="padding:7px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">🖨️ Imprimir / Guardar PDF</button>`;
@@ -11603,6 +11628,77 @@ async function saveExpBuque(expId, buqueId, buqueNombre){
   if(error){ mostrarBanner('Error al cambiar buque: '+error.message,'red'); return; }
   await logAct('expediciones', expId, '', 'editar', 'buque_id', null, buqueNombre);
   showToast('🚢 Buque actualizado → '+buqueNombre);
+}
+
+
+// ── Notificaciones internas (@menciones) ─────────────────────────────
+async function cargarNotificacionesPendientes(){
+  if(!CU?.id) return;
+  try{
+    const {data} = await sb.from('als_notificaciones')
+      .select('*')
+      .eq('destinatario_id', CU.id)
+      .eq('leida', false)
+      .order('created_at', {ascending:false});
+    const n = (data||[]).length;
+    // Badge en el header
+    let badge = document.getElementById('hdr-notif-badge');
+    if(!badge){
+      const hdr = document.getElementById('hdr-ver')?.parentElement;
+      if(hdr){
+        const btn = document.createElement('button');
+        btn.id = 'hdr-notif-btn';
+        btn.title = 'Notificaciones';
+        btn.style.cssText = 'position:relative;background:none;border:none;cursor:pointer;padding:4px;font-size:18px;line-height:1';
+        btn.innerHTML = '🔔<span id="hdr-notif-badge" style="display:none;position:absolute;top:0;right:0;background:#ef4444;color:#fff;font-size:9px;font-weight:700;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center"></span>';
+        btn.onclick = () => mostrarPanelNotificaciones();
+        hdr.appendChild(btn);
+        badge = document.getElementById('hdr-notif-badge');
+      }
+    }
+    if(badge){
+      badge.textContent = n > 9 ? '9+' : String(n);
+      badge.style.display = n > 0 ? 'block' : 'none';
+    }
+    // Si hay menciones nuevas, mostrar banner
+    if(n > 0 && data[0]){
+      mostrarBanner('💬 ' + data[0].remitente_nombre + ' te mencionó: ' + data[0].cuerpo.slice(0,60), 'blue');
+    }
+  } catch(ex){ console.warn('Notificaciones error:', ex); }
+}
+
+async function mostrarPanelNotificaciones(){
+  if(!CU?.id) return;
+  const {data} = await sb.from('als_notificaciones')
+    .select('*').eq('destinatario_id', CU.id)
+    .order('created_at',{ascending:false}).limit(20);
+  const items = (data||[]);
+  document.getElementById('m-title').textContent = '🔔 Notificaciones';
+  document.getElementById('m-body').innerHTML = items.length ? items.map(n=>{
+    const leida = n.leida;
+    const ts = new Date(n.created_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    return '<div style="padding:12px 0;border-bottom:1px solid var(--g100);display:flex;gap:10px;align-items:flex-start;opacity:'+(leida?.6:1)+'">'
+      +'<span style="font-size:20px;flex-shrink:0">'+n.tipo==='mencion'?'💬':'🔔'+'</span>'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:13px;font-weight:'+(leida?'400':'700')+';color:var(--g900)">'+n.titulo+'</div>'
+      +'<div style="font-size:12px;color:var(--g600);margin-top:2px">'+n.cuerpo+'</div>'
+      +'<div style="font-size:10px;color:var(--g400);margin-top:3px">'+ts+'</div>'
+      +'</div>'
+      +(n.expedicion_id?'<button class="btn btn-s btn-sm" style="font-size:11px" onclick="closeModal();setTimeout(()=>openExpD(\''+n.expedicion_id+'\'),100)">Ver</button>':'')
+      +'</div>';
+  }).join('') : '<div class="empty">Sin notificaciones</div>';
+  document.getElementById('m-foot').innerHTML = '<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>'
+    +(items.some(n=>!n.leida)?'<button class="btn btn-p btn-sm" onclick="marcarTodasLeidas()">Marcar todas leídas</button>':'');
+  document.getElementById('mo').classList.add('open');
+}
+
+async function marcarTodasLeidas(){
+  if(!CU?.id) return;
+  await sb.from('als_notificaciones').update({leida:true}).eq('destinatario_id',CU.id).eq('leida',false);
+  const badge = document.getElementById('hdr-notif-badge');
+  if(badge) badge.style.display='none';
+  closeModal();
+  showToast('✅ Notificaciones marcadas como leídas');
 }
 
 
