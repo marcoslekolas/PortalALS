@@ -10301,1082 +10301,106 @@ document.addEventListener('keydown', function(e){
   }
 });
 
-function mostrarAtajos(){
-  const ov = document.createElement('div');
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:32000;display:flex;align-items:center;justify-content:center;padding:20px';
-  ov.innerHTML = `
-    <div style="background:var(--w);border-radius:16px;width:100%;max-width:420px;padding:24px;box-shadow:0 16px 40px rgba(0,0,0,.2)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div style="font-size:16px;font-weight:700">⌨️ Atajos de teclado</div>
-        <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--g400)">×</button>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
-        ${[
-          ['A','Panel de alertas'],['E','Expediciones'],['B','Buques'],
-          ['D','Dashboard'],['K','Kanban'],['U','Ubicaciones'],
-          ['N','Nueva expedición'],['Ctrl+K','Búsqueda global'],
-          ['Esc','Cerrar modal/overlay'],['?','Ver estos atajos'],
-        ].map(([k,v])=>`
-          <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--g50);border-radius:6px">
-            <kbd style="background:var(--w);border:1px solid var(--g300);border-radius:4px;padding:2px 7px;font-size:12px;font-family:var(--mono);font-weight:600;box-shadow:0 1px 0 var(--g300)">${k}</kbd>
-            <span style="color:var(--g600)">${v}</span>
-          </div>`).join('')}
-      </div>
-      <div style="font-size:11px;color:var(--g400);margin-top:14px;text-align:center">Los atajos no funcionan mientras escribes en un campo de texto</div>
-    </div>`;
-  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
-  document.body.appendChild(ov);
-}
-
-
 // ── Sonidos de validación escáner ────────────────────────────────────
-// Genera un WAV PCM mono 8bit en base64 para uso como Audio src
-function _makeToneWav(freq, duration, vol){
-  const sampleRate = 8000;
-  const numSamples = Math.floor(sampleRate * duration);
-  const buf = new Uint8Array(44 + numSamples);
-  // WAV header
-  const dv = new DataView(buf.buffer);
-  const writeStr = (off, s) => { for(let i=0;i<s.length;i++) dv.setUint8(off+i, s.charCodeAt(i)); };
-  writeStr(0,'RIFF'); dv.setUint32(4, 36+numSamples, true);
-  writeStr(8,'WAVE'); writeStr(12,'fmt ');
-  dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
-  dv.setUint32(24,sampleRate,true); dv.setUint32(28,sampleRate,true);
-  dv.setUint16(32,1,true); dv.setUint16(34,8,true);
-  writeStr(36,'data'); dv.setUint32(40,numSamples,true);
-  for(let i=0;i<numSamples;i++){
-    const t = i/sampleRate;
-    const env = Math.max(0, 1 - t/duration); // fade out
-    buf[44+i] = Math.round(128 + 127 * vol * env * Math.sin(2*Math.PI*freq*t));
-  }
-  let bin=''; buf.forEach(b=>{ bin+=String.fromCharCode(b); });
-  return 'data:audio/wav;base64,'+btoa(bin);
+let _alsAudioCtx = null;
+
+function _getAudioCtx(){
+  if(!_alsAudioCtx || _alsAudioCtx.state === 'closed')
+    _alsAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _alsAudioCtx;
 }
-// Precargar sonidos en primera interacción
-function _preloadSounds(){
-  if(window._soundsLoaded) return;
-  window._soundsLoaded = true;
-  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1046,0.15,0.5), volume:1});
-  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(220, 0.25,0.5), volume:1});
-  window._beepOKEl.load();
-  window._beepErrEl.load();
-}
-function beepOK(){
-  // Doble método: AudioContext + <audio> para máxima compatibilidad iOS
+
+function _playTone(freq, duration, type, vol){
   try{
-    const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
-    if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
-    if(ctx.state==='suspended') ctx.resume().catch(()=>{});
-    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+    const ctx  = _getAudioCtx();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
     osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(1046, ctx.currentTime);
-    gain.gain.setValueAtTime(0.4, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.18);
-  } catch(e){}
-  // Audio element (iOS fallback)
-  try{
-    const el = window._beepOKEl;
-    if(el){ el.currentTime=0; el.play().catch(()=>{}); }
+    osc.type = type || 'square';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    gain.gain.setValueAtTime(vol || 0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
   }catch(e){}
 }
 
+function beepOK(){
+  _playTone(1800, 0.08, 'square', 0.5);
+  setTimeout(()=> _playTone(1800, 0.08, 'square', 0.5), 100);
+  if(navigator.vibrate) navigator.vibrate(80);
+}
+
 function beepError(){
-  try{
-    const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
-    if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
-    if(ctx.state==='suspended') ctx.resume().catch(()=>{});
-    [220, 180].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.12);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime + i*0.12);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.12 + 0.1);
-      osc.start(ctx.currentTime + i*0.12);
-      osc.stop(ctx.currentTime + i*0.12 + 0.1);
-    });
-  } catch(e){}
-  try{ const el=window._beepErrEl; if(el){el.currentTime=0;el.play().catch(()=>{});} }catch(e){}
+  _playTone(400, 0.12, 'square', 0.4);
+  setTimeout(()=> _playTone(280, 0.15, 'square', 0.4), 150);
+  if(navigator.vibrate) navigator.vibrate([80, 40, 80]);
 }
 
 function beepCompletado(){
+  _playTone(1200, 0.08, 'square', 0.4);
+  setTimeout(()=> _playTone(1500, 0.08, 'square', 0.4), 100);
+  setTimeout(()=> _playTone(1800, 0.12, 'square', 0.4), 200);
+  if(navigator.vibrate) navigator.vibrate([80, 40, 160]);
+}
+
+function _desbloquearAudio(){
   try{
-    const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
-    if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
-    if(ctx.state==='suspended') ctx.resume();
-    [784, 988, 1319].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.12);
-      gain.gain.setValueAtTime(0.25, ctx.currentTime + i*0.12);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.12 + 0.2);
-      osc.start(ctx.currentTime + i*0.12);
-      osc.stop(ctx.currentTime + i*0.12 + 0.2);
-    });
-  } catch(e){}
-}
-
-
-// ── Menú contextual del usuario en header ────────────────────────────
-function toggleMenuUsuario(){
-  const menu = document.getElementById('hdr-user-menu');
-  if(!menu) return;
-  const visible = menu.style.display !== 'none';
-  if(visible){ cerrarMenuUsuario(); return; }
-
-  // Rellenar módulos según rol
-  const modulos = document.getElementById('hdr-menu-modulos');
-  const configBtn = document.getElementById('hdr-menu-config');
-  if(modulos && CU){
-    const items = [];
-    if(['admin','oficina','aduanas'].includes(CU.rol))
-      items.push({icon:'🏢', lbl:'Operativa', fn:"enterMod('operativa');cerrarMenuUsuario()"});
-    if(['admin','oficina','almacen','transportista'].includes(CU.rol))
-      items.push({icon:'📦', lbl:'Almacén', fn:"enterMod('almacen');cerrarMenuUsuario()"});
-    if(['admin','oficina','aduanas'].includes(CU.rol))
-      items.push({icon:'✈️', lbl:'Airport Cargo', fn:"window.location.href='airport_cargo.html'"});
-    if(['admin','aduanas'].includes(CU.rol))
-      items.push({icon:'🏛️', lbl:'Módulo Aduanas', fn:"abrirMenuAduanas();cerrarMenuUsuario()"});
-    modulos.innerHTML = items.map(i=>
-      `<button onclick="${i.fn}" style="width:100%;background:none;border:none;padding:10px 16px;font-size:13px;color:var(--g600);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;font-family:var(--f)">
-        ${i.icon} ${i.lbl}
-      </button>`
-    ).join('');
-    if(configBtn) configBtn.style.display = CU.rol==='admin' ? 'flex' : 'none';
-  }
-
-  menu.style.display = 'block';
-  // Cerrar al clicar fuera
-  setTimeout(()=>{
-    document.addEventListener('click', _cerrarMenuUsuarioOutside, {once:true});
-  }, 10);
-}
-
-function _cerrarMenuUsuarioOutside(e){
-  const menu = document.getElementById('hdr-user-menu');
-  const btn  = document.getElementById('hdr-user-btn');
-  if(menu && !menu.contains(e.target) && !btn?.contains(e.target)){
-    cerrarMenuUsuario();
-  }
-}
-
-function cerrarMenuUsuario(){
-  const menu = document.getElementById('hdr-user-menu');
-  if(menu) menu.style.display = 'none';
-}
-
-
-// ── Menú header Aduanas/EORI ─────────────────────────────────────────
-function toggleMenuAduanasHdr(id){
-  const menu = document.getElementById('hdr-menu-'+id);
-  if(!menu) return;
-  if(menu.style.display !== 'none'){ cerrarMenuAduanasHdr(id); return; }
-  // Inyectar nombre usuario
-  const nombreEl = document.getElementById(id+'-hdr-nombre');
-  if(nombreEl && CU?.nombre){
-    nombreEl.textContent = CU.nombre.split(' ')[0];
-  }
-  menu.style.display = 'block';
-  setTimeout(()=>{
-    document.addEventListener('click', (e)=>{
-      if(!menu.contains(e.target) && !document.getElementById('btn-menu-'+id)?.contains(e.target))
-        cerrarMenuAduanasHdr(id);
-    }, {once:true});
-  }, 10);
-}
-function cerrarMenuAduanasHdr(id){
-  const menu = document.getElementById('hdr-menu-'+id);
-  if(menu) menu.style.display = 'none';
-}
-
-
-// ── Helper: restaurar barra de modos del escáner ──────────────────
-function _restaurarBarraModos(){
-  const bar = document.querySelector('#scanner-overlay > div:last-child');
-  if(!bar) return;
-  const modo = window._scannerMode || 'autorizar';
-  const bA = document.createElement('button');
-  bA.id='sc-mode-autorizar'; bA.onclick=()=>_setScannerMode('autorizar');
-  bA.style.cssText='flex:1;background:'+(modo==='autorizar'?'#3b82f6':'rgba(255,255,255,.15)')+';color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;min-height:52px';
-  bA.textContent='✅ Autorización';
-  const bB = document.createElement('button');
-  bB.id='sc-mode-bulto'; bB.onclick=()=>_setScannerMode('bulto');
-  bB.style.cssText='flex:1;background:'+(modo==='bulto'?'#f59e0b':'rgba(255,255,255,.12)')+';color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;min-height:52px';
-  bB.textContent='📦 Bulto suelto';
-  const bC = document.createElement('button');
-  bC.onclick=()=>cerrarScannerQR();
-  bC.style.cssText='background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:12px 16px;font-size:18px;font-weight:700;cursor:pointer;min-height:52px';
-  bC.textContent='✕';
-  bar.innerHTML=''; bar.append(bA,bB,bC);
-}
-
-// ── Helper: poner botones de resultado en barra inferior ────────────
-function _mostrarBotonesResultado(html_btns){
-  const bar = document.querySelector('#scanner-overlay > div:last-child');
-  if(bar) bar.innerHTML = html_btns;
-}
-
-// ── Barra de progreso superior ───────────────────────────────────────
-function loadBarStart(){
-  const bar = document.getElementById('load-bar');
-  if(!bar) return;
-  bar.style.transition = 'width .25s ease';
-  bar.style.width = '30%';
-  setTimeout(()=>{ bar.style.width = '65%'; }, 200);
-}
-function loadBarDone(){
-  const bar = document.getElementById('load-bar');
-  if(!bar) return;
-  bar.style.transition = 'width .15s ease';
-  bar.style.width = '100%';
-  setTimeout(()=>{
-    bar.style.transition = 'opacity .2s';
-    bar.style.opacity = '0';
-    setTimeout(()=>{ bar.style.width='0%'; bar.style.opacity='1'; }, 220);
-  }, 150);
-}
-
-
-// ── Modo compacto / espacioso ────────────────────────────────────────
-function toggleDensity(){
-  const isCompact = document.documentElement.classList.toggle('compact');
-  localStorage.setItem('als_compact', isCompact?'1':'0');
-  const btn = document.getElementById('density-toggle');
-  if(btn){ btn.title = isCompact?'Modo espacioso':'Modo compacto'; btn.style.fontWeight = isCompact?'800':'600'; }
-  showToast(isCompact?'Vista compacta activada':'Vista espaciosa activada');
-}
-// Restaurar preferencia de densidad al cargar
-(function(){
-  if(localStorage.getItem('als_compact')==='1'){
-    document.documentElement.classList.add('compact');
-    document.addEventListener('DOMContentLoaded',()=>{
-      const btn=document.getElementById('density-toggle');
-      if(btn){btn.style.fontWeight='800';btn.title='Modo espacioso';}
-    });
-  }
-})();
-
-
-// ── Gráfica barras dashboard ─────────────────────────────────────────
-async function renderDashCharts(exps){
-  // ── Barras por semana ──
-  const wrap = document.getElementById('dash-chart-wrap');
-  if(!wrap) return;
-  const ahora = new Date();
-  const semanas = [];
-  for(let i=7; i>=0; i--){
-    const d = new Date(ahora); d.setDate(d.getDate() - i*7);
-    const ini = new Date(d); ini.setDate(d.getDate() - d.getDay() + 1);
-    const fin = new Date(ini); fin.setDate(ini.getDate() + 6);
-    semanas.push({ini, fin, n:0, lbl: (ini.getDate()+'/'+(ini.getMonth()+1))});
-  }
-  (exps||[]).forEach(e=>{
-    const d = new Date(e.created_at);
-    semanas.forEach(s=>{ if(d>=s.ini && d<=s.fin) s.n++; });
-  });
-  const max = Math.max(...semanas.map(s=>s.n), 1);
-  wrap.innerHTML = semanas.map((s,i)=>{
-    const h = Math.round((s.n/max)*120);
-    const isLast = i===semanas.length-1;
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;position:relative">
-      ${s.n>0?`<span style="font-size:10px;font-weight:600;color:var(--b600)">${s.n}</span>`:''}
-      <div style="width:100%;height:${Math.max(h,2)}px;background:${isLast?'var(--b500)':'var(--b200)'};border-radius:3px 3px 0 0;transition:height .4s"></div>
-      <span style="font-size:9px;color:var(--g400);position:absolute;bottom:-18px;white-space:nowrap">${s.lbl}</span>
-    </div>`;
-  }).join('');
-
-  // ── Donut de estados ──
-  const donut = document.getElementById('dash-donut-wrap');
-  if(!donut) return;
-  const estados = {};
-  const cols = {'⏳ EN TRÁNSITO':'var(--b400)','⌛ ESPERANDO ALMACÉN':'var(--b300)','📦 UBICADA':'var(--tl500)','🚨 EN ALMACÉN - REVISAR':'var(--rd500)','✅ AUTORIZADO':'var(--gr500)','🚛 CARGADO CAMIÓN':'var(--gr600)'};
-  (exps||[]).forEach(e=>{ const k=e.estado_semaforo||'Otro'; estados[k]=(estados[k]||0)+1; });
-  const total = Object.values(estados).reduce((a,b)=>a+b,0)||1;
-  const items = Object.entries(estados).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
-  // SVG donut
-  let offset = 0; const r=40; const cx=50; const cy=50; const stroke=16;
-  const circ = 2*Math.PI*r;
-  const slices = items.map(([k,v])=>{
-    const pct = v/total;
-    const sl = {k,v,pct,offset,dash:circ*pct,gap:circ*(1-pct),col:cols[k]||'var(--g300)'};
-    offset += circ*pct;
-    return sl;
-  });
-  const svg = `<svg width="100" height="100" viewBox="0 0 100 100" style="flex-shrink:0">
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--g100)" stroke-width="${stroke}"/>
-    ${slices.map(s=>`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.col}" stroke-width="${stroke}"
-      stroke-dasharray="${s.dash} ${s.gap}" stroke-dashoffset="${-s.offset+circ/4}" stroke-linecap="round"/>`).join('')}
-    <text x="${cx}" y="${cy-4}" text-anchor="middle" style="font-size:14px;font-weight:700;fill:var(--g900)">${total}</text>
-    <text x="${cx}" y="${cy+10}" text-anchor="middle" style="font-size:8px;fill:var(--g400)">exp.</text>
-  </svg>`;
-  const legend = items.slice(0,6).map(([k,v])=>`
-    <div style="display:flex;align-items:center;gap:6px;font-size:11px">
-      <div style="width:8px;height:8px;border-radius:50%;background:${cols[k]||'var(--g300)'};flex-shrink:0"></div>
-      <span style="color:var(--g600)">${k.replace(/^[^ ]+ /,'')}</span>
-      <span style="font-weight:700;color:var(--g800);margin-left:auto">${v}</span>
-    </div>`).join('');
-  donut.innerHTML = svg + `<div style="flex:1;display:flex;flex-direction:column;gap:6px;min-width:120px">${legend}</div>`;
-}
-
-function checkNbUnlock(){
-  const n=(document.getElementById('nb-n')?.value||'').trim();
-  const vt=(document.getElementById('nb-vt')?.value||'').trim();
-  const rest=document.getElementById('nb-rest');
-  if(!rest)return;
-  if(n&&vt){rest.style.opacity='1';rest.style.pointerEvents='auto';}
-  else{rest.style.opacity='.35';rest.style.pointerEvents='none';}
-}
-
-async function saveDocs(id,val){const dbVal=val==='No requiere'?null:[val];await sb.from('expediciones').update({docs_puerto:dbVal}).eq('id',id);await logAct('expediciones',id,'','editar','docs_puerto',null,val);showToast('Docs. Puerto → '+val);}
-async function saveStatus(id,val){await sb.from('expediciones').update({status_aduanero:val||null}).eq('id',id);await logAct('expediciones',id,'','editar','status_aduanero',null,val);showToast('Status → '+val);}
-async function saveFmax(id,val){await sb.from('expediciones').update({fecha_max_despacho:val||null}).eq('id',id);await logAct('expediciones',id,'','editar','fecha_max_despacho',null,val);showToast('Fecha máx. despacho actualizada');}
-
-function onCCFoto(){
-  const files=document.getElementById('cc-fi')?.files;
-  if(files&&files.length>0){
-    document.getElementById('cc-confirm-btn').style.display='';
-    const fst=document.getElementById('cc-fst');if(fst)fst.textContent='✅ '+files.length+' foto(s) lista(s)';
-  }
-}
-async function confirmarCarga(){
-  const id=gv('cc-exp');if(!id){alert('Selecciona una expedición');return;}
-  await sb.from('expediciones').update({hora_de_carga:new Date().toISOString()}).eq('id',id);
-  await logAct('expediciones',id,'','editar','hora_de_carga',null,'Carga confirmada por '+CU?.nombre+' — '+new Date().toLocaleString('es-ES'));
-  showToast('Carga registrada ✅');closeModal();loadView(CV);
-}
-async function finalizarTodas(){
-  const bqId=gv('cc-bq-all');if(!bqId){alert('Selecciona un buque');return;}
-  if(!await confirmarAccion('¿Marcar como cargadas TODAS las expediciones autorizadas de este buque?'))return;
-  const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bqId).eq('estado_carga','✅ AUTORIZADO');
-  if(!data||!data.length){alert('No hay expediciones autorizadas para este buque');return;}
-  const ts=new Date().toISOString();
-  for(const e of data){
-    await sb.from('expediciones').update({hora_de_carga:ts}).eq('id',e.id);
-    await logAct('expediciones',e.id,e.nº_expedicion,'editar','hora_de_carga',null,'Carga masiva por '+CU?.nombre+' — '+new Date().toLocaleString('es-ES'));
-  }
-  showToast('Todas cargadas ('+data.length+' expediciones)');closeModal();loadView(CV);
-}
-function onEmbFoto(){
-  const files=document.getElementById('emb-fi')?.files;
-  if(files&&files.length>0){
-    document.getElementById('emb-confirm-btn').style.display='';
-    const fst=document.getElementById('emb-fst');if(fst)fst.textContent='✅ '+files.length+' foto(s) lista(s)';
-  }
-}
-async function confirmarEmbarque(){
-  const bqId=gv('emb-bq');if(!bqId){alert('Selecciona un buque');return;}
-  if(!await confirmarAccion('¿Marcar el buque como EMBARCADO? Esto cambiará el estado de la operación y el color de la etiqueta.'))return;
-  await sb.from('buques').update({estado_operacion:'Finalizado'}).eq('id',bqId);
-  const {data:exps}=await sb.from('expediciones').select('id').eq('buque_id',bqId);
-  for(const e of exps||[]){
-    await sb.from('expediciones').update({estado_semaforo:'🚢 EMBARCADO'}).eq('id',e.id);
-  }
-  await logAct('buques',bqId,'','editar','estado_operacion','En proceso','Embarcado por '+CU?.nombre+' — '+new Date().toLocaleString('es-ES'));
-  showToast('¡Embarcado! Estado actualizado ✅');closeModal();loadView(CV);
-}
-async function saveMRN(id){
-  const mrn=document.getElementById('mrn-inp').value;
-  const updates={nº_mrn:mrn||null};
-  if(mrn){updates.tramite_aduanero='Despachado';updates.estado_carga='✅ AUTORIZADO';}
-  await sb.from('expediciones').update(updates).eq('id',id);
-  await logAct('expediciones',id,'','editar','nº_mrn',null,mrn+(mrn?' → auto Despachado + Autorizado':''));
-  showToast(mrn?'MRN guardado — Despachado + Autorizado ✅':'MRN eliminado');
-  closeModal();loadView(CV);
-}
-async function saveTra(id,val){await sb.from('expediciones').update({tramite_aduanero:val}).eq('id',id);await logAct('expediciones',id,'','editar','tramite_aduanero',null,val);showToast('Trámite actualizado');}
-async function saveUbic(id,val){
-  const upd={ubicacion:val};
-  const sem=semaforoDeUbicacion(val);
-  if(sem) { upd.estado_semaforo=sem; upd.estado_carga=sem; }
-  await sb.from('expediciones').update(upd).eq('id',id);
-  await logAct('expediciones',id,'','editar','ubicacion',null,val+(sem?' → '+sem:''));
-  // Refresh the badge in modal
-  const badgeWrap=document.querySelector('[data-exp-badges]');
-  if(badgeWrap&&sem) badgeWrap.innerHTML=bdg(sem)+badgeWrap.innerHTML.replace(/<span[^>]*badge[^>]*>[^<]*<\/span>/,'');
-  showToast('Ubicación: '+val+(sem?' · '+sem:''));
-}
-
-// Guarda TODOS los campos editables de la ficha de expedición de una vez
-
-// Calcula el estado_semáforo correcto según la ubicación
-function semaforoDeUbicacion(ubic){
-  if(!ubic) return null;
-  if(ubic==='Landed')           return '⌛ ESPERANDO ALMACÉN'; // ⚓ Landed no existe en el enum — se muestra visualmente pero no se guarda
-  if(ubic==='A bordo')          return '🚢 EMBARCADO';
-  if(ubic==='Camión cargado')   return '🚛 CARGADO CAMIÓN';
-  if(ubic==='Pendiente recibir')return '⏳ EN TRÁNSITO';
-  if(ubic.startsWith('Almacén'))return '📦 UBICADA';
-  if(ubic==='Puerto')           return '📦 UBICADA';
-  if(ubic.startsWith('Aeropuerto')) return '⏳ EN TRÁNSITO';
-  return null;
-}
-
-async function guardarExpedicion(id){if(!checkOnline())return;
-  const mrn=(document.getElementById('mrn-inp')?.value||'').trim()||null;
-  const ref=(document.getElementById('ref-inp')?.value||'').trim()||null;
-  const status=document.getElementById('sta-sel')?.value||null;
-  const fmax=document.getElementById('fmax-inp')?.value||null;
-  const tra=document.getElementById('tra-sel')?.value||null;
-  const docs=document.getElementById('docs-sel')?.value||null;
-  const ubic=document.getElementById('ubic-sel')?.value||null;
-  const obj={};
-  if(mrn!==undefined) obj['nº_mrn']=mrn;
-  if(ref) obj['nº_expedicion']=ref;
-  if(status) obj.status_aduanero=status;
-  obj.fecha_max_despacho=fmax||null;
-  if(tra) obj.tramite_aduanero=tra;
-  if(docs!==null) obj.docs_puerto=docs==='No requiere'?null:[docs];
-  if(ubic) obj.ubicacion=ubic;
-  // Auto-lógica semáforo desde ubicación
-  if(ubic){
-    const semUbic=semaforoDeUbicacion(ubic);
-    if(semUbic){ obj.estado_semaforo=semUbic; obj.estado_carga=semUbic; }
-  }
-  // Auto-lógica: MRN + Despachado → Autorizado (sobreescribe lo anterior)
-  if(mrn && tra==='Despachado'){
-    obj.estado_carga='✅ AUTORIZADO';
-    obj.estado_semaforo='✅ AUTORIZADO';
-  }
-  const {error}=await sb.from('expediciones').update(obj).eq('id',id);
-  if(error){alert('Error al guardar: '+error.message);return;}
-  await logAct('expediciones',id,'','editar','múltiples','—','Guardado por '+CU?.nombre);
-  showToast('✅ Cambios guardados');
-  closeModal();loadView(CV);
-}
-
-async function notifAduana(id,ref){
-  const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans,puerto_terminal,place),empresas(nombre,email_confronta,otros_emails)').eq('id',id).single();
-  const {data:incs}=await sb.from('incidencias').select('nombre,descripcion').eq('expedicion_id',id).neq('estado','Cerrada');
-  if(!e)return;
-  const vNombreB=e.buques?.nombre||'Sin Buque',vRefB=e.buques?.ref_visual_trans||'Sin Ref.',vTerminal=e.buques?.puerto_terminal||e.buques?.place||'No especificada',vExp=e.nº_expedicion||'-',vBultos=e.bultos||0,vKilos=e.kilos||0,vUbi=e.ubicacion||'No definida',vStatus=e.status_aduanero||'Pendiente';
-  const listaInc=(incs||[]).map(i=>'❌ '+i.nombre+': '+i.descripcion).join('\n');
-  const bloqueAviso=listaInc?'🚨 --- ADVERTENCIA IMPORTANTE: INCIDENCIAS ---\n'+listaInc:'ℹ️ ESTADO: Mercancía recibida / Pendiente de revisar.';
-  const destinatario=e.empresas?.email_confronta||'marcosvalenciamancilla@gmail.com';
-  const otrosEmails=(e.empresas?.otros_emails||[]).filter(Boolean);
-  const todosDestinatarios=[destinatario,...otrosEmails].join(',');
-  const cc=encodeURIComponent('marcosvalenciamancilla@gmail.com');
-  const asunto=encodeURIComponent('Nueva Expedición Buque '+vNombreB+' // Expediente '+vRefB);
-  const cuerpo=encodeURIComponent('Hola,\n\nuna expedición para el buque '+vNombreB+' requiere de vuestra atención.\n\n📍 Terminal: '+vTerminal+'\n🏢 Ubicación actual: '+vUbi+'\n\n🆔 Nº Expedición: '+vExp+'\n📦 Bultos: '+vBultos+'\n⚖️ Kilos: '+vKilos+' kg\n🚦 Status: '+vStatus+'\n\n'+bloqueAviso+'\n\nAtentamente,\nDepartamento de Operaciones');
-  await sb.from('expediciones').update({notif_aduanas_sent:true,fecha_aviso_aduanas:new Date().toISOString()}).eq('id',id);
-  await logAct('expediciones',id,ref,'email_aduanas','notif_aduanas_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
-  // Abrir cliente de correo en nueva pestaña para no cerrar la app
-  const mailtoUrl='mailto:'+todosDestinatarios+'?cc='+cc+'&subject='+asunto+'&body='+cuerpo;
-  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
-  showToast('📧 Abriendo cliente de correo...');
-  closeModal();loadView(CV);
-}
-async function notifCliente(id,emailDest,ref){
-  const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans),empresas(nombre,email_confronta,otros_emails)').eq('id',id).single();
-  const {data:incs}=await sb.from('incidencias').select('nombre,descripcion').eq('expedicion_id',id).neq('estado','Cerrada');
-  if(!e)return;
-  const listaInc=(incs||[]).map(i=>'❌ '+i.nombre+': '+i.descripcion).join('\n');
-  const bloqueAviso=listaInc?'🚨 INCIDENCIAS:\n'+listaInc:'ℹ️ Mercancía recibida correctamente.';
-  const todosEmails=[emailDest,...(e.empresas?.otros_emails||[])].filter(Boolean).join(',');
-  const asunto=encodeURIComponent('Recepción: '+e.buques?.nombre+' // Exp: '+e.nº_expedicion);
-  const trackingUrl='https://marcoslekolas.github.io/PortalALS/tracking.html?exp='+id;
-  const cuerpo=encodeURIComponent('Estimado cliente,\n\nLe informamos que su mercancía ha sido recibida.\n\n🚢 Buque: '+e.buques?.nombre+'\n🆔 Expedición: '+e.nº_expedicion+'\n📦 Bultos: '+e.bultos+'\n⚖️ Kilos: '+e.kilos+' kg\n📍 Ubicación: '+e.ubicacion+'\n🚦 Status: '+e.status_aduanero+'\n\n'+bloqueAviso+'\n\n──────────────────────────────\n🔍 SEGUIMIENTO EN TIEMPO REAL:\n'+trackingUrl+'\n──────────────────────────────\n\nAcceda al enlace en cualquier momento para consultar el estado actualizado de su expedición.\n\nAtentamente,\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n📞 +34 956 58 13 16 · als@alsalgeciras.com');
-  const cc=encodeURIComponent('marcosvalenciamancilla@gmail.com');
-  await sb.from('expediciones').update({notif_cliente_sent:true,fecha_aviso_cliente:new Date().toISOString()}).eq('id',id);
-  await logAct('expediciones',id,e.nº_expedicion,'email_cliente','notif_cliente_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
-  const mailtoUrl=`mailto:${todosEmails}?cc=${cc}&subject=${asunto}&body=${cuerpo}`;
-  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
-  showToast('📧 Abriendo cliente de correo...');
-  closeModal();loadView(CV);
-}
-async function sendConfronta(buqueId){
-  const {data:b}=await sb.from('buques').select('*,en:consignatario_id(nombre,email_confronta)').eq('id',buqueId).single();
-  const {data:exps}=await sb.from('expediciones').select('bultos,kilos,nº_mrn').eq('buque_id',buqueId);
-  if(!b)return;
-
-  // Solo expediciones con MRN válido (sin guion al inicio) para bultos, kilos y lista MRNs
-  const expsConMRN=(exps||[]).filter(e=>e.nº_mrn && !e.nº_mrn.trimStart().startsWith('-'));
-  const totalBultos=expsConMRN.reduce((a,e)=>a+(e.bultos||0),0);
-  const totalPeso=expsConMRN.reduce((a,e)=>a+(e.kilos||0),0);
-  const mrns=expsConMRN.map(e=>e.nº_mrn).filter(Boolean);
-  const destinatario='ca-pif-algeciras-confronta@guardiacivil.org';
-  const emailCC=b.en?.email_confronta||'';
-  const emailBCC='als@alsalgeciras.com,aduanas@alsalgeciras.com';
-  const asunto=encodeURIComponent('Avituallamiento: '+b.nombre+' // ETA: '+(b.eta_buque?fdl(b.eta_buque):'Sin Fecha'));
-  const cuerpo=encodeURIComponent('Buenos días,\n\nAdjuntamos documentación para el suministro a bordo del buque:\n\n🚢 Buque: '+b.nombre+'\n🆔 Escala: '+(b.nº_escala||'Sin Escala')+'\n🏢 Consignatario: '+(b.en?.nombre||'Sin especificar')+'\n📍 Terminal: '+(b.puerto_terminal||b.place||'No especificada')+'\n📅 ETA: '+(b.eta_buque?fdl(b.eta_buque):'Sin Fecha')+'\n\n📦 Total Bultos: '+totalBultos+'\n⚖️ Peso Total: '+totalPeso+' kg\n\n--- MRNs ---\n'+(mrns.length?mrns.join('\n'):'Ninguno')+'\n\nAtentamente,\n\nDepartamento de Operaciones\nAlgeciras Logistic Solutions\nOPERATIONS 24/7 +34 956 58 13 16\nBOARDINGS 24/7 +34 664 07 49 40');
-  let mailto=`mailto:${destinatario}?subject=${asunto}&body=${cuerpo}`;
-  if(emailCC)mailto+=`&cc=${encodeURIComponent(emailCC)}`;
-  if(emailBCC)mailto+=`&bcc=${encodeURIComponent(emailBCC)}`;
-  const a=document.createElement('a');a.href=mailto;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
-  showToast('📧 Abriendo cliente de correo...');
-}
-
-function abrirExpEnBuque(buqueId,buqueNombre){
-  closeModal();
-  setTimeout(async()=>{
-    const m=MODALS['nueva-expedicion'];
-    document.getElementById('m-title').textContent='📦 Nueva expedición — '+buqueNombre;
-    document.getElementById('m-body').innerHTML='<div class="loading"><div class="spinner"></div>Cargando...</div>';
-    document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-p" id="mab">${m.btn}</button>`;
-    document.getElementById('mo').classList.add('open');
-    // Pasar buqueId directamente a body() para que preseleccione el buque
-    document.getElementById('m-body').innerHTML=await m.body(buqueId);
-    // Restore draft if available
-    const draft=loadDraft('nueva-exp-'+buqueId);
-    if(draft){Object.entries(draft).forEach(([k,v])=>{const el=document.getElementById(k);if(el)el.value=v;});showToast('📝 Borrador restaurado');}
-    document.getElementById('mab').onclick=m.action;
-    if(m.after)m.after();
-  },80);
-}
-
-// ── ALBARÁN ─────────────────────────────────────────────────
-// ── AIRPORT CARGO: crear entrada automática desde expedición ──
-async function crearAirportCargoDesdeExpedicion(expData, obj){
-  const ubicMap={'Aeropuerto-Málaga AGP':'AGP','Aeropuerto-Sevilla SVQ':'SVQ','Aeropuerto-Madrid MAD':'MAD'};
-  const apto=ubicMap[obj.ubicacion]||'AGP';
-
-  // Obtener nombre del buque
-  let nombreBuque='';
-  if(obj.buque_id){
-    const {data:b}=await sb.from('buques').select('nombre').eq('id',obj.buque_id).single();
-    if(b) nombreBuque=b.nombre;
-  }
-
-  // Obtener nombre consignatario/empresa
-  let nombreEmp='';
-  if(obj.empresa_id){
-    const {data:emp}=await sb.from('empresas').select('nombre').eq('id',obj.empresa_id).single();
-    if(emp) nombreEmp=emp.nombre;
-  }
-
-  // Construir objeto — expedicion_id puede ser UUID o bigint según la tabla
-  // Lo convertimos a string para seguridad
-  const expId = expData?.id ? String(expData.id) : null;
-
-  const acObj={
-    awb: obj.nº_expedicion,
-    kilos_tasables: parseFloat(obj.kilos||obj.kilos_tasables)||0,
-    bultos: parseInt(obj.bultos)||null,
-    consignatario: nombreEmp||null,
-    buque: nombreBuque||null,
-    status: obj.status_aduanero||'T1',
-    aeropuerto: apto,
-    fecha_llegada: new Date().toISOString().slice(0,10)
-  };
-
-  // Intentar vincular con la expedición si el campo existe
-  if(expId){
-    try{
-      acObj.expedicion_id=expId;
-    }catch(e){}
-  }
-
-  const {data:acData, error:acError}=await sb.from('airport_cargo').insert(acObj).select().single();
-
-  if(acError){
-    // Si falla por expedicion_id, reintentar sin ese campo
-    if(acError.message&&acError.message.includes('expedicion_id')){
-      delete acObj.expedicion_id;
-      await sb.from('airport_cargo').insert(acObj);
-    } else {
-      console.warn('Airport cargo error:', acError.message);
+    const ctx = _getAudioCtx();
+    if(ctx.state === 'suspended'){
+      ctx.resume().then(()=>{
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.001);
+      }).catch(()=>{});
     }
-  }
-
-  // Modal de confirmación
-  const acId = acData?.id || null;
-  const acUrl = 'airport_cargo.html' + (acId ? `?edit=${acId}` : '?new=1');
-
-  document.getElementById('m-title').textContent='✈️ Expedición de aeropuerto registrada';
-  document.getElementById('m-body').innerHTML=`
-    <div class="info-box" style="margin-bottom:16px">
-      La expedición <strong>${obj.nº_expedicion}</strong> se ha registrado automáticamente en <strong>Airport Cargo</strong>.
-    </div>
-    <div style="background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:14px;margin-bottom:16px">
-      <div style="font-size:12px;color:var(--g500);margin-bottom:8px;font-weight:600;text-transform:uppercase">Datos transferidos</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
-        <div><span style="color:var(--g500)">AWB:</span> <strong>${obj.nº_expedicion}</strong></div>
-        <div><span style="color:var(--g500)">Aeropuerto:</span> <strong>${apto}</strong></div>
-        <div><span style="color:var(--g500)">Kg tasables:</span> <strong>${obj.kilos||0}</strong></div>
-        <div><span style="color:var(--g500)">Bultos:</span> <strong>${obj.bultos||'—'}</strong></div>
-        ${nombreEmp?`<div><span style="color:var(--g500)">Consignatario:</span> <strong>${nombreEmp}</strong></div>`:''}
-        ${nombreBuque?`<div><span style="color:var(--g500)">Buque:</span> <strong>${nombreBuque}</strong></div>`:''}
-      </div>
-    </div>
-    <div style="font-size:13px;color:var(--am600);background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px">
-      ⚠️ Pendiente de completar: <strong>Fecha retirada, Handler y cargos adicionales</strong> para calcular el coste de handling.
-    </div>`;
-  document.getElementById('m-foot').innerHTML=`
-    <button class="btn btn-s" onclick="closeModal()">Más tarde</button>
-    <button class="btn btn-p" onclick="closeModal();window.open('${acUrl}','_blank')">✈️ Completar ahora →</button>`;
-  document.getElementById('mo').classList.add('open');
+  }catch(e){}
 }
 
-// QR fijo ALS
-const QR_ALS_B64 = 'data:image/png;base64,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';
-
-function abrirAlbaran(contenido){
-  const ov=document.createElement('div');
-  ov.id='alb-overlay';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;flex-direction:column;align-items:center;padding:20px;gap:10px';
-  const toolbar=document.createElement('div');
-  toolbar.style.cssText='display:flex;gap:10px;align-items:center;width:100%;max-width:820px';
-  toolbar.innerHTML=`<button onclick="document.getElementById('alb-overlay').remove()" style="padding:7px 16px;background:#fff;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:13px">✕ Cerrar</button><button onclick="document.getElementById('alb-frame').contentWindow.print()" style="padding:7px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">🖨️ Imprimir / Guardar PDF</button>`;
-  const iframe=document.createElement('iframe');
-  iframe.id='alb-frame';
-  iframe.style.cssText='width:100%;max-width:820px;flex:1;border:none;border-radius:8px;background:#fff';
-  ov.appendChild(toolbar);ov.appendChild(iframe);document.body.appendChild(ov);
-  iframe.contentDocument.open();iframe.contentDocument.write(contenido);iframe.contentDocument.close();
-}
-
-function htmlAlb(b, exps, expsLanded, qrBase64=''){
-  const normal=(exps||[]).filter(e=>e.ubicacion!=='Landed');
-  const landed=(expsLanded||exps||[]).filter(e=>e.ubicacion==='Landed');
-  const tb=normal.reduce((a,e)=>a+e.bultos,0), tk=normal.reduce((a,e)=>a+e.kilos,0);
-  const tlb=landed.reduce((a,e)=>a+e.bultos,0), tlk=landed.reduce((a,e)=>a+e.kilos,0);
-  return`<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.supabase.co https://raw.githubusercontent.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://*.openrouter.ai; font-src https://fonts.gstatic.com; worker-src blob:; manifest-src 'self' blob:;"><title>Albarán — ${b.nombre||''}</title>
-  <style>
-  body{font-family:Arial,sans-serif;font-size:12px;padding:30px;max-width:780px;margin:0 auto;color:#000}
-  .hd{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid #000}
-  .logo{font-size:26px;font-weight:900;letter-spacing:-1px;color:#1565c0}
-  .logo-sub{font-size:13px;color:#333;margin-top:2px}
-  .contact{font-size:10px;color:#555;margin-top:6px;line-height:1.7}
-  .cert{background:#cc0000;color:#fff;font-size:9px;padding:4px 8px;border-radius:4px;font-weight:700;line-height:1.4;text-align:center;display:inline-block;-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1px solid #990000}
-  .dt{font-size:14px;font-weight:700;text-align:right}.dd{font-size:11px;color:#666;text-align:right;margin-top:3px}
-  h3{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#666;margin:16px 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}
-  .g2{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px}
-  .f label{font-size:9px;color:#666;text-transform:uppercase;display:block;margin-bottom:2px}.f span{font-weight:600;font-size:12px}
-  table{width:100%;border-collapse:collapse}th{background:#222;color:#fff;padding:7px 10px;font-size:10px;text-align:left;text-transform:uppercase}
-  td{padding:7px 10px;border-bottom:1px solid #e5e5e5;font-size:11px}tr:nth-child(even)td{background:#fafafa}.tot td{font-weight:700;background:#efefef}
-  .landed-hdr th{background:#b45309}
-  .landed-info{background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:8px 10px;margin:10px 0;font-size:11px;color:#92400e;line-height:1.6}
-  .sign{margin-top:36px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}.sb{border-top:1px solid #000;padding-top:8px;font-size:10px;color:#555}
-  @media print{.np{display:none}* {-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}}
-  </style></head><body>
-  <div class="hd">
-    <div>
-      <img src="data:image/png;base64,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" alt="ALS Logo" style="height:56px;width:auto;display:block;margin-bottom:6px">
-      <div class="contact">📞 +34 956 58 13 16 &nbsp;|&nbsp; 📠 +34 956 676591<br>✉️ als@alsalgeciras.com &nbsp;|&nbsp; 📍 GPS: 36.183099, -5.433061</div>
-    </div>
-    <div style="text-align:right">
-      <div class="cert">ISO 9001 · ISO 14001<br>BUREAU VERITAS<br>Certification</div>
-      <div class="dt" style="margin-top:8px">ALBARÁN DE CARGA</div>
-      <div class="dd">${new Date().toLocaleDateString('es-ES')}</div>
-    </div>
-  </div>
-  <div class="np" style="margin-bottom:14px;display:none"></div>
-  <h3>Datos del buque</h3>
-  <div class="g2"><div><div class="f"><label>Buque</label><span>${b.nombre||'—'}</span></div><div class="f"><label>IMO</label><span>${b.imo||'—'}</span></div><div class="f"><label>Nº Escala</label><span>${b.nº_escala||'—'}</span></div><div class="f"><label>Puerto / Terminal</label><span>${b.puerto_terminal||b.place||'—'}</span></div></div><div><div class="f"><label>ETA</label><span>${b.eta_buque?new Date(b.eta_buque).toLocaleDateString('es-ES'):'—'}</span></div><div class="f"><label>Estado</label><span>${b.estado_operacion||'—'}</span></div><div class="f"><label>Cliente</label><span>${b.ec?.nombre||b.cliente||'—'}</span></div><div class="f"><label>Consignatario</label><span>${b.en?.nombre||b.consignatario||'—'}</span></div></div></div>
-  ${normal.length?`<h3>Expediciones para embarcar — ${normal.length} registros</h3>
-  <table><thead><tr><th>#</th><th>Referencia</th><th>Bultos</th><th>Kilos</th><th>MRN</th><th>Status</th><th>Ubicación</th></tr></thead>
-  <tbody>${normal.map((e,i)=>`<tr><td>${i+1}</td><td><strong>${e.nº_expedicion}</strong></td><td>${e.bultos}</td><td>${e.kilos}</td><td style="font-family:monospace;font-size:9px">${e.nº_mrn||'—'}</td><td>${e.status_aduanero||'—'}</td><td>${e.ubicacion||'—'}</td></tr>`).join('')}
-  <tr class="tot"><td colspan="2">TOTAL</td><td>${tb}</td><td>${tk}</td><td colspan="3"></td></tr></tbody></table>`:''}
-  ${landed.length?`<h3 style="color:#b45309;border-bottom-color:#fde68a">⚓ Mercancía Landed — para recoger del barco (${landed.length} registros)</h3>
-  <div class="landed-info">⚠️ <strong>ATENCIÓN:</strong> Las expediciones listadas a continuación son mercancía <strong>Landed</strong>. Una vez realizada la entrega a bordo del resto de expediciones, estas deben <strong>descargarse del barco y recogerse en el muelle</strong> para su posterior gestión en almacén.</div>
-  <table><thead class="landed-hdr"><tr><th>#</th><th>Referencia</th><th>Bultos</th><th>Kilos</th><th>MRN</th><th>Status</th></tr></thead>
-  <tbody>${landed.map((e,i)=>`<tr style="background:#fffbeb"><td>${i+1}</td><td><strong>${e.nº_expedicion}</strong></td><td>${e.bultos}</td><td>${e.kilos}</td><td style="font-family:monospace;font-size:9px">${e.nº_mrn||'—'}</td><td>${e.status_aduanero||'—'}</td></tr>`).join('')}
-  <tr class="tot" style="background:#fef3c7"><td colspan="2">TOTAL LANDED</td><td>${tlb}</td><td>${tlk}</td><td colspan="2"></td></tr></tbody></table>`:''}
-  <div class="sign">
-    <div><div class="sb">Conformidad conductor<br><br><br>Firma y DNI: _______________________<br><br>Fecha: _______________</div></div>
-    <div><div class="sb">Recepción buque<br><br><br>Firma y DNI: _______________________<br><br>Fecha: _______________</div></div>
-    <div style="text-align:center;padding-top:8px">${qrBase64?`<img src="${qrBase64}" style="width:60px;height:60px;display:block;margin:0 auto 4px">`:''}<div style="font-size:8px;color:#999">www.alsalgeciras.com</div></div>
-  </div>
-  <p style="margin-top:18px;font-size:9px;color:#aaa;text-align:center">Generado el ${new Date().toLocaleString('es-ES')} · ALS Portal Operativo · Algeciras Logistic Solutions</p>
-  </body></html>`;
-}
-
-async function impAlb(buqueId){
-  const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').eq('id',buqueId).single();
-  const {data:exps}=await sb.from('expediciones').select('*').eq('buque_id',buqueId).eq('estado_carga','✅ AUTORIZADO');
-  const {data:landedExps}=await sb.from('expediciones').select('*').eq('buque_id',buqueId).eq('ubicacion','Landed');
-  if(!b)return;
-  const allExps=[...(exps||[]),...(landedExps||[]).filter(e=>!(exps||[]).find(x=>x.id===e.id))];
-  abrirAlbaran(htmlAlb(b, allExps, null, QR_ALS_B64));
-}
-async function impExpAlb(expId){
-  const {data:e}=await sb.from('expediciones').select('*,buques(*,ec:cliente_id(nombre),en:consignatario_id(nombre))').eq('id',expId).single();
-  if(!e)return;
-  abrirAlbaran(htmlAlb(e.buques||{},[e], null, QR_ALS_B64));
-}
-
-// ── QR en llegadas — aparece al añadir foto ───────────────────────
-function onFotoLlegadaCambiada(expId, input){
-  // Delegar al setupFotos normal (que ya está configurado)
-  // y además mostrar/ocultar el botón QR según haya foto
-  const prev = document.getElementById('fl-pv-'+expId);
-  const files = Array.from(input.files||[]);
-  if(prev) { prev._files = [...files]; renderFotoPreview(prev, files); }
-  const qrBtn = document.getElementById('qr-ll-btn-'+expId);
-  if(qrBtn) qrBtn.style.display = files.length ? '' : 'none';
-}
-
-async function imprimirQRLlegada(expId, ref){
-  const qrData = qrDataParaExp(expId);
-  showToast('⏳ Generando QR…');
-  const dataUrl = await generarQRDataURL(qrData, 250);
-  if(!dataUrl){ showToast('❌ Error generando QR'); return; }
-
-  const w = window.open('','_blank','width=380,height=480');
-  if(!w){ showToast('⚠️ Permite ventanas emergentes para imprimir'); return; }
-
-  w.document.write(`<!DOCTYPE html><html><head><title>QR Llegada — ${ref}</title>
-    <style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;text-align:center;padding:16px;background:#fff}
-      .logo{font-size:11px;font-weight:700;letter-spacing:1px;color:#1565c0;margin-bottom:4px}
-      .ref{font-size:16px;font-weight:800;margin:6px 0;letter-spacing:.5px}
-      .sub{font-size:10px;color:#666;margin-bottom:10px}
-      .qr-wrap{display:inline-block;border:2px solid #e5e7eb;border-radius:8px;padding:8px;margin-bottom:10px}
-      .qr-wrap img{display:block;width:200px;height:200px}
-      .info{font-size:9px;color:#9ca3af;line-height:1.5}
-      .fecha{font-size:9px;color:#6b7280;margin-top:6px}
-      @media print{
-        body{padding:8px}
-        button{display:none!important}
-        @page{margin:6mm;size:80mm auto}
-      }
-      .btn-print{margin-top:12px;background:#1565c0;color:#fff;border:none;border-radius:8px;
-        padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px}
-    </style>
-  </head><body>
-    <div class="logo">● ALS PORTAL OPERATIVO</div>
-    <div class="ref">${ref}</div>
-    <div class="sub">Escanear para verificar autorización de carga</div>
-    <div class="qr-wrap"><img src="${dataUrl}" alt="QR ${ref}"></div>
-    <div class="info">
-      Leer con escáner del módulo Almacén<br>
-      Verificación en tiempo real · Portal ALS
-    </div>
-    <div class="fecha">Generado: ${new Date().toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
-    <br>
-    <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
-    <button style="margin-top:12px;margin-left:8px;background:#6b7280;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px" onclick="window.close()">✕ Cerrar</button>
-  </body></html>`);
-  w.document.close();
-  // Dar tiempo a que cargue el data URL antes de imprimir
-  setTimeout(()=>{ try{ w.print(); }catch(e){} }, 700);
-}
-
-// ── Escáner de carga camión por buque ────────────────────────────
-window._scanCargaProg = window._scanCargaProg || {};
-
-function _actualizarProgresoCarga(bid, escaneados, total, detalle){
-  const progDiv = document.getElementById('scan-prog-'+bid);
-  const countEl = document.getElementById('scan-count-'+bid);
-  const barEl   = document.getElementById('scan-bar-'+bid);
-  const detEl   = document.getElementById('scan-detail-'+bid);
-  if(!progDiv) return;
-  progDiv.style.display = '';
-  if(countEl) countEl.textContent = `${escaneados} / ${total}`;
-  if(barEl){ barEl.style.width=`${Math.round(escaneados/Math.max(total,1)*100)}%`; barEl.style.background=escaneados>=total?'var(--gr500)':'var(--b500)'; }
-  if(detEl) detEl.innerHTML=(detalle||[]).slice(-3).map(d=>`<span class="badge bb" style="font-size:10px;margin:1px">${d}</span>`).join('');
-}
-
-async function abrirScannerCarga(bid, buqueNombre, totalBultos){
-  if(!window._scanCargaProg[bid]) window._scanCargaProg[bid]={escaneados:0,total:totalBultos,bultos:new Set(),detalle:[]};
-  const estado=window._scanCargaProg[bid];
-  const {data:expsAutorizadas}=await sb.from('expediciones').select('id,nº_expedicion,bultos').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO');
-  const expMap={};(expsAutorizadas||[]).forEach(e=>{expMap[e.id]=e;});
-
-  const ov=document.createElement('div');
-  ov.id='scanner-overlay';
-  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
-  ov.innerHTML=`
-    <!-- Header con contador prominente -->
-    <div style="background:rgba(0,0,0,.9);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px">
-      <div>
-        <div style="color:#fff;font-weight:700;font-size:15px">📷 Escaneo de carga</div>
-        <div style="color:#9ca3af;font-size:12px">${buqueNombre}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <div id="sc-carga-count" style="background:rgba(59,130,246,.4);color:#93c5fd;font-weight:900;font-size:22px;padding:10px 18px;border-radius:10px;min-width:90px;text-align:center">${estado.escaneados} / ${totalBultos}</div>
-        <button onclick="cerrarScannerQR()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:10px;padding:12px 16px;font-size:18px;font-weight:700;cursor:pointer;min-height:48px">✕</button>
-      </div>
-    </div>
-    <!-- Resultado del último escaneo — GRANDE y prominente -->
-    <div id="scanner-result" style="flex:1;background:#000;overflow-y:auto;padding:16px;color:#fff;display:flex;flex-direction:column;gap:12px">
-      <div id="sc-ultimo" style="background:#111;border:2px solid #1f2937;border-radius:16px;padding:20px;text-align:center;min-height:100px;display:flex;align-items:center;justify-content:center">
-        <div style="color:#4b5563;font-size:16px">📷 Apunta al QR del bulto</div>
-      </div>
-      <div id="sc-carga-lista" style="display:flex;flex-direction:column;gap:6px"></div>
-      ${estado.escaneados>0?`<div style="text-align:center;margin-top:4px"><button onclick="resetearEscaneo('${bid}')" style="background:rgba(239,68,68,.2);color:#fca5a5;border:1px solid rgba(239,68,68,.4);border-radius:10px;padding:14px 20px;font-size:14px;font-weight:600;cursor:pointer;min-height:48px;width:100%">↩ Reiniciar escaneo</button></div>`:''}
-    </div>
-    <!-- Cámara compacta en la parte inferior -->
-    <div style="flex-shrink:0;background:#000;padding:8px;display:flex;flex-direction:column;align-items:center;gap:6px">
-      <div id="qr-reader" style="width:100%;max-width:340px;border-radius:12px;overflow:hidden"></div>
-      <div style="font-size:11px;color:#6b7280">Escanea la etiqueta QR de cada bulto</div>
-    </div>`;
-  document.body.appendChild(ov);
-  _renderListaBultos(bid, estado);
-
-  if(!window.Html5Qrcode){
-    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);}).catch(()=>{});
-  }
-  if(!window.Html5Qrcode){document.getElementById('scanner-result').innerHTML='<div style="color:#f87171;padding:16px;text-align:center">❌ No se pudo cargar el escáner</div>';return;}
-  try{
-    _ultimoQRCarga=null; _ultimoQRCargaTs=0; // resetear al abrir nuevo escáner
-    _html5QrScanner=new window.Html5Qrcode('qr-reader');
-    await _html5QrScanner.start({facingMode:'environment'},{fps:10,qrbox:{width:200,height:200},aspectRatio:1.0},
-      (t)=>_procesarQRCarga(t,bid,buqueNombre,totalBultos,expMap),()=>{});
-  }catch(e){document.getElementById('scanner-result').innerHTML=`<div style="color:#f87171;padding:16px;text-align:center">❌ Sin cámara: ${e.message||e}</div>`;}
-}
-
-function _renderListaBultos(bid, estado){
-  // Actualizar panel de último escaneo OK si hay bultos
-  const ultimo = document.getElementById('sc-ultimo');
-  if(ultimo && estado.detalle.length > 0){
-    const ultimoLabel = estado.detalle[estado.detalle.length-1];
-    const quedan = (window._scanCargaProg[bid]?.total||0) - estado.escaneados;
-    ultimo.style.borderColor = '#22c55e';
-    ultimo.style.background = 'rgba(34,197,94,.1)';
-    ultimo.innerHTML = `<div style="text-align:center">
-      <div style="font-size:40px;margin-bottom:8px">✅</div>
-      <div style="font-size:18px;font-weight:800;color:#4ade80">${ultimoLabel}</div>
-      <div style="font-size:14px;color:#6b7280;margin-top:6px">${quedan>0?'Quedan '+quedan+' bulto'+(quedan!==1?'s':''):'¡Todos escaneados!'}</div>
-    </div>`;
-  }
-  const el=document.getElementById('sc-carga-lista');if(!el)return;
-  if(!estado.detalle.length){el.innerHTML='';return;}
-  el.innerHTML=estado.detalle.slice(-8).reverse().map(d=>`
-    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:12px">
-      <span style="color:#22c55e;font-size:16px">✅</span><span style="color:#fff;font-family:monospace">${d}</span>
-    </div>`).join('');
-}
-
-let _ultimoQRCarga=null, _ultimoQRCargaTs=0;
-async function _procesarQRCarga(texto, bid, buqueNombre, totalBultos, expMap){
-  const ahora=Date.now();
-  if(texto===_ultimoQRCarga&&ahora-_ultimoQRCargaTs<2000)return;
-  _ultimoQRCarga=texto; _ultimoQRCargaTs=ahora;
-  const estado=window._scanCargaProg[bid];if(!estado)return;
-
-  const match=texto.match(/^ALS-BLT:([a-f0-9-]{36}):(\d+):(\d+)$/i);
-  if(!match){
-    const matchExp=texto.match(/^ALS-EXP:([a-f0-9-]{36})$/i);
-    if(matchExp&&expMap[matchExp[1]]) _mostrarMensajeScan('⚠️ QR de expedición — usa las etiquetas de bulto impresas en llegada','#fbbf24');
-    else _mostrarMensajeScan('⚠️ QR no reconocido','#fbbf24');
-    return;
-  }
-  const expId=match[1], numBulto=parseInt(match[2]), totalBultosExp=parseInt(match[3]);
-  const bltKey=`${expId}:${numBulto}`;
-  if(!expMap[expId]){
-    if(navigator.vibrate)navigator.vibrate([100,50,100,50,100]); beepError();
-    const {data:otra}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',expId).single();
-    _mostrarMensajeScan(`🚫 Bulto de OTRO buque: ${otra?.nº_expedicion||'—'} (${otra?.buques?.nombre||'—'})`, '#ef4444');
-    return;
-  }
-  if(estado.bultos.has(bltKey)){
-    if(navigator.vibrate)navigator.vibrate(50); beepError();
-    _mostrarMensajeScan(`⚠️ Bulto ${numBulto} de ${expMap[expId].nº_expedicion} ya escaneado`,'#fbbf24');
-    return;
-  }
-  estado.bultos.add(bltKey); estado.escaneados++;
-  beepOK(); if(navigator.vibrate)navigator.vibrate(80);
-  const label=`${expMap[expId].nº_expedicion} — B${numBulto}/${totalBultosExp}`;
-  estado.detalle.push(label);
-  const countEl=document.getElementById('sc-carga-count');
-  if(countEl)countEl.textContent=`${estado.escaneados} / ${totalBultos}`;
-  _renderListaBultos(bid,estado);
-  _actualizarProgresoCarga(bid,estado.escaneados,totalBultos,estado.detalle);
-  if(estado.escaneados>=totalBultos){
-    beepCompletado(); if(navigator.vibrate)navigator.vibrate([200,100,200,100,200]);
-    _mostrarMensajeScan('🎉 ¡Todos los bultos verificados! Haz la foto y confirma la carga.','#22c55e');
-    setTimeout(()=>{
-      cerrarScannerQR();
-      const btn=document.getElementById('cg-btn-'+bid);
-      if(btn)btn.style.display='';
-      showToast('✅ Todos los bultos escaneados — haz la foto para confirmar');
-    },2000);
-  } else {
-    _mostrarMensajeScan(`✅ ${label} — quedan ${totalBultos-estado.escaneados}`, '#22c55e');
-  }
-}
-
-function _mostrarMensajeScan(msg, color){
-  // Mostrar en el panel grande del último resultado
-  const ultimo = document.getElementById('sc-ultimo');
-  if(ultimo){
-    const esOK = color==='#22c55e';
-    const esError = color==='#ef4444';
-    ultimo.style.borderColor = color;
-    ultimo.style.background = esOK?'rgba(34,197,94,.1)':esError?'rgba(239,68,68,.1)':'rgba(251,191,36,.1)';
-    ultimo.innerHTML = `<div style="text-align:center">
-      <div style="font-size:36px;margin-bottom:8px">${esOK?'✅':esError?'🚫':'⚠️'}</div>
-      <div style="font-size:16px;font-weight:700;color:${color};line-height:1.4">${msg}</div>
-    </div>`;
-    return;
-  }
-  // Fallback para otros modos
-  const res=document.getElementById('scanner-result');if(!res)return;
-  const div=document.createElement('div');
-  div.style.cssText=`color:${color};font-size:13px;font-weight:600;text-align:center;padding:6px`;
-  div.textContent=msg;
-  const lista=document.getElementById('sc-carga-lista');
-  if(lista)lista.before(div); else res.prepend(div);
-  setTimeout(()=>div.remove(),3000);
-}
-
-function resetearEscaneo(bid){
-  if(window._scanCargaProg?.[bid]) window._scanCargaProg[bid]={escaneados:0,total:window._scanCargaProg[bid].total,bultos:new Set(),detalle:[]};
-  _actualizarProgresoCarga(bid,0,window._scanCargaProg[bid]?.total||0,[]);
-  const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='none';
-  cerrarScannerQR(); showToast('↩️ Escaneo reiniciado');
-}
-
-async function generarQRDataURL(texto, size=200){
-  return new Promise(resolve=>{
-    if(window.QRCode){
-      _crearQRDiv(texto, size, resolve); return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
-    script.onload = ()=>{ if(!window.QRCode){ resolve(null); return; } _crearQRDiv(texto, size, resolve); };
-    script.onerror = ()=>resolve(null);
-    document.head.appendChild(script);
-  });
-}
-function _crearQRDiv(texto, size, resolve){
-  const div = document.createElement('div');
-  div.style.cssText = 'position:absolute;left:-9999px;top:-9999px';
-  document.body.appendChild(div);
-  try {
-    new window.QRCode(div, {text:texto, width:size, height:size,
-      colorDark:'#000000', colorLight:'#ffffff',
-      correctLevel: window.QRCode.CorrectLevel.M});
-    setTimeout(()=>{
-      const cvs = div.querySelector('canvas');
-      const url = cvs ? cvs.toDataURL('image/png') : null;
-      document.body.removeChild(div);
-      resolve(url);
-    }, 300);
-  } catch(e){ document.body.removeChild(div); resolve(null); }
-}
-
-// El QR codifica: ALS-EXP:{id} — permite identificar unívocamente la expedición
-function qrDataParaExp(id){ return `ALS-EXP:${id}`; }
-
-function mostrarQRExpedicion(id, ref){
-  const qrData = qrDataParaExp(id);
-  const ov = document.createElement('div');
-  ov.id = 'qr-overlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
-  ov.innerHTML = `
-    <div style="background:#fff;border-radius:16px;padding:28px;max-width:320px;width:100%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.3)">
-      <div style="font-size:15px;font-weight:800;color:var(--g900);margin-bottom:4px">📱 Código QR</div>
-      <div style="font-size:12px;color:var(--g500);margin-bottom:2px;font-family:var(--mono)">${ref}</div>
-      <div style="font-size:10px;color:var(--b600);margin-bottom:14px">Escanear con el lector de almacén para autorizar carga</div>
-      <div id="qr-img-wrap" style="display:inline-flex;align-items:center;justify-content:center;border:3px solid var(--g200);border-radius:10px;padding:10px;margin-bottom:14px;min-width:220px;min-height:220px">
-        <div class="spinner"></div>
-      </div>
-      <div style="font-size:11px;color:var(--g500);margin-bottom:16px;line-height:1.5">
-        Al escanear con el módulo <strong>Escáner</strong> del almacén,<br>
-        el sistema verificará en tiempo real si está autorizada para carga.
-      </div>
-      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        <button id="qr-btn-print" style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;display:none">🖨️ Imprimir</button>
-        <button id="qr-btn-dl" style="background:var(--gr600);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;display:none">⬇️ PNG</button>
-        <button onclick="document.getElementById('qr-overlay').remove()"
-          style="background:var(--g100);color:var(--g600);border:none;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer">Cerrar</button>
-      </div>
-    </div>`;
-  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
-  document.body.appendChild(ov);
-
-  generarQRDataURL(qrData, 200).then(dataUrl=>{
-    const wrap = document.getElementById('qr-img-wrap');
-    if(!wrap) return;
-    if(dataUrl){
-      wrap.innerHTML = `<img src="${dataUrl}" style="width:200px;height:200px;display:block;border-radius:4px">`;
-      const btnP = document.getElementById('qr-btn-print');
-      const btnD = document.getElementById('qr-btn-dl');
-      if(btnP){ btnP.style.display=''; btnP.onclick=()=>imprimirQR(ref,qrData,dataUrl); }
-      if(btnD){ btnD.style.display=''; btnD.onclick=()=>{ const a=document.createElement('a');a.href=dataUrl;a.download=`QR_${ref}.png`;a.click(); }; }
-    } else {
-      wrap.innerHTML = `<div style="font-size:11px;color:var(--rd600);padding:20px">❌ Error generando QR</div>`;
-    }
-  });
-}
-
-function imprimirQR(ref, qrData, dataUrl){
-  const w = window.open('','_blank','width=420,height=520');
-  w.document.write(`<!DOCTYPE html><html><head><title>QR — ${ref}</title>
-    <style>body{font-family:Arial,sans-serif;text-align:center;padding:20px;margin:0}
-    .ref{font-size:14px;font-weight:700;margin:10px 0 4px;letter-spacing:1px}
-    .sub{font-size:10px;color:#666;margin-bottom:12px}
-    img{border:2px solid #eee;border-radius:6px;padding:6px}
-    .cod{font-size:9px;color:#999;margin-top:6px;font-family:monospace}
-    @media print{button{display:none}}</style></head><body>
-    <div class="ref">ALS · ${ref}</div>
-    <div class="sub">Portal Operativo ALS — Escáner de autorización</div>
-    <img src="${dataUrl}" width="220" height="220">
-    <div class="cod">${qrData}</div>
-    <br>
-    <div style="display:flex;gap:10px;justify-content:center;margin-top:12px">
-      <button style="min-height:48px;font-size:15px;padding:10px 24px;background:#1565c0;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer" onclick="window.print()">🖨️ Imprimir</button>
-      <button style="min-height:48px;font-size:15px;padding:10px 24px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer" onclick="window.close()">✕ Cerrar</button>
-    </div>
-  </body></html>`);
-  w.document.close();
-  setTimeout(()=>w.print(), 500);
-}
-
-// ── Escáner QR de autorización de carga ──────────────────────────
-let _html5QrScanner = null;
 
 async function abrirScannerQR(){
-  // Reset
-  _scannerPausado = false;
-  _ultimoQRLeido  = null;
-  _ultimoQRTs     = 0;
-  const prev = document.getElementById('scanner-overlay');
-  if(prev) prev.remove();
-
   const ov = document.createElement('div');
   ov.id = 'scanner-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
   ov.innerHTML = `
-    <div id="sc-mode-label" style="background:rgba(59,130,246,.3);color:#93c5fd;font-size:12px;font-weight:600;text-align:center;padding:6px;letter-spacing:.05em;flex-shrink:0">
+    <div style="background:rgba(0,0,0,.85);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;flex-wrap:wrap">
+      <div style="color:#fff;font-weight:700;font-size:15px">📷 Escáner QR</div>
+      <div style="display:flex;gap:6px">
+        <button id="sc-mode-autorizar" onclick="_setScannerMode('autorizar')"
+          style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;min-height:40px">
+          ✅ Autorización
+        </button>
+        <button id="sc-mode-bulto" onclick="_setScannerMode('bulto')"
+          style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;min-height:40px">
+          📦 Bulto suelto
+        </button>
+        <button onclick="cerrarScannerQR()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:8px 16px;font-size:14px;font-weight:700;cursor:pointer;min-height:40px">✕</button>
+      </div>
+    </div>
+    <div id="sc-mode-label" style="background:rgba(59,130,246,.3);color:#93c5fd;font-size:12px;font-weight:600;text-align:center;padding:6px;letter-spacing:.05em">
       MODO: VERIFICACIÓN DE AUTORIZACIÓN
     </div>
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto">
-      <div id="sc-camara-wrap" style="width:100%;max-width:500px">
-        <div id="qr-reader" style="width:100%;max-width:500px"></div>
-      </div>
+      <div id="qr-reader" style="width:100%;max-width:500px"></div>
       <div id="scanner-result" style="width:100%;max-width:500px;padding:16px;color:#fff;text-align:center">
         <div style="font-size:13px;color:#9ca3af">Apunta al código QR de la expedición o bulto</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:6px">O introduce la referencia manualmente:</div>
+        <div style="display:flex;gap:8px;margin-top:8px;padding:0 16px">
+          <input id="scan-manual-inp" placeholder="Ref. expedición…"
+            style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:10px;padding:12px 14px;font-size:15px;min-height:48px"
+            onkeydown="if(event.key==='Enter')_verificarManualScanner()">
+          <button onclick="_verificarManualScanner()"
+            style="background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px 18px;font-size:18px;cursor:pointer;min-height:48px;min-width:54px">🔍</button>
+        </div>
       </div>
-    </div>
-    <div style="flex-shrink:0;background:rgba(0,0,0,.95);padding:10px 12px;display:flex;gap:8px;border-top:1px solid #1f2937">
-      <button id="sc-mode-autorizar" onclick="_setScannerMode('autorizar')"
-        style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;min-height:52px">
-        ✅ Autorización
-      </button>
-      <button id="sc-mode-bulto" onclick="_setScannerMode('bulto')"
-        style="flex:1;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;min-height:52px">
-        📦 Bulto suelto
-      </button>
-      <button onclick="cerrarScannerQR()"
-        style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:12px 16px;font-size:18px;font-weight:700;cursor:pointer;min-height:52px">
-        ✕
-      </button>
     </div>`;
 
   document.body.appendChild(ov);
   window._scannerMode = 'autorizar';
-
-  // Preparar audio en el gesto del usuario (iOS requiere esto)
-  _preloadSounds();
-  try{
-    if(!window._alsAudioCtx || window._alsAudioCtx.state === 'closed')
-      window._alsAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
-    if(window._alsAudioCtx.state === 'suspended') window._alsAudioCtx.resume().catch(()=>{});
-    // Reproducir silencio para "desbloquear" el audio en iOS
-    const osc = window._alsAudioCtx.createOscillator();
-    const g = window._alsAudioCtx.createGain();
-    g.gain.setValueAtTime(0, window._alsAudioCtx.currentTime);
-    osc.connect(g); g.connect(window._alsAudioCtx.destination);
-    osc.start(); osc.stop(window._alsAudioCtx.currentTime + 0.01);
-  }catch(e){}
+  _desbloquearAudio(); // Desbloquear AudioContext en el gesto del usuario
 
   if(!window.Html5Qrcode){
     await new Promise((resolve, reject)=>{
@@ -11388,8 +10412,8 @@ async function abrirScannerQR(){
   }
 
   if(!window.Html5Qrcode){
-    document.getElementById('scanner-result').innerHTML =
-      '<div style="color:#f87171;font-size:13px;padding:16px">❌ No se pudo cargar el escáner.<br>Usa la búsqueda manual.</div>';
+    document.getElementById('scanner-result').innerHTML = `
+      <div style="color:#f87171;font-size:13px;padding:16px">❌ No se pudo cargar el escáner.<br>Usa la búsqueda manual.</div>`;
     return;
   }
 
@@ -11402,29 +10426,29 @@ async function abrirScannerQR(){
       () => {}
     );
   } catch(e){
-    document.getElementById('scanner-result').innerHTML =
-      `<div style="color:#f87171;font-size:13px;padding:16px">❌ Sin acceso a la cámara: ${e.message||e}<br><br>Usa la búsqueda manual.</div>`;
+    document.getElementById('scanner-result').innerHTML = `
+      <div style="color:#f87171;font-size:13px;padding:16px">❌ Sin acceso a la cámara: ${e.message||e}<br><br>Usa la búsqueda manual.</div>`;
   }
 }
 
 function _setScannerMode(mode){
   window._scannerMode = mode;
-  _ultimoQRLeido = null;
   const lblEl = document.getElementById('sc-mode-label');
-  const btnA  = document.getElementById('sc-mode-autorizar');
-  const btnB  = document.getElementById('sc-mode-bulto');
+  const btnA = document.getElementById('sc-mode-autorizar');
+  const btnB = document.getElementById('sc-mode-bulto');
   if(mode === 'autorizar'){
     if(lblEl){ lblEl.textContent='MODO: VERIFICACIÓN DE AUTORIZACIÓN'; lblEl.style.background='rgba(59,130,246,.3)'; lblEl.style.color='#93c5fd'; }
-    if(btnA) btnA.style.background='#3b82f6';
-    if(btnB) btnB.style.background='rgba(255,255,255,.12)';
+    if(btnA){ btnA.style.background='#3b82f6'; }
+    if(btnB){ btnB.style.background='rgba(255,255,255,.15)'; }
   } else {
     if(lblEl){ lblEl.textContent='MODO: IDENTIFICAR BULTO SUELTO'; lblEl.style.background='rgba(245,158,11,.3)'; lblEl.style.color='#fcd34d'; }
-    if(btnA) btnA.style.background='rgba(255,255,255,.15)';
-    if(btnB) btnB.style.background='#f59e0b';
+    if(btnA){ btnA.style.background='rgba(255,255,255,.15)'; }
+    if(btnB){ btnB.style.background='#f59e0b'; }
   }
+  _ultimoQRLeido = null;
   const res = document.getElementById('scanner-result');
   if(res) res.innerHTML=`<div style="font-size:13px;color:#9ca3af;padding:8px">
-    ${mode==='bulto'?'📦 Escanea el QR de cualquier bulto':'✅ Escanea el QR de una expedición'}
+    ${mode==='bulto'?'📦 Escanea el QR de cualquier bulto para identificar su expedición':'✅ Escanea el QR de una expedición para verificar autorización'}
   </div>`;
 }
 
@@ -11436,155 +10460,189 @@ async function _verificarManualScanner(){
   const {data:exps} = await sb.from('expediciones')
     .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
     .ilike('nº_expedicion',`%${ref}%`).limit(3);
-  if(!exps?.length){ res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ No encontrada: '+ref+'</div>'; return; }
+  if(!exps?.length){
+    res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ No encontrada: '+ref+'</div>';
+    return;
+  }
+  // Procesar el primero directamente
   await _mostrarResultadoScan(exps[0], res);
 }
 
-let _pendingExpId = null;
-function abrirExpDesdeScanner(expId){
-  _pendingExpId = expId;
-  cerrarScannerQR();
-}
-
 function cerrarScannerQR(){
-  _scannerPausado = false;
-  _ultimoQRLeido  = null;
   const ov = document.getElementById('scanner-overlay');
-  if(ov) ov.remove();
+  if(ov) ov.remove(); // Primero quitar overlay para feedback inmediato
   if(_html5QrScanner){
-    const sc = _html5QrScanner; _html5QrScanner = null;
+    const sc = _html5QrScanner;
+    _html5QrScanner = null;
     sc.stop().catch(()=>{}).finally(()=>{ try{ sc.clear && sc.clear(); }catch(e){} });
   }
   clearInterval(_scannerInterval); _scannerInterval = null;
   if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream=null; }
-  if(_pendingExpId){ const id=_pendingExpId; _pendingExpId=null; setTimeout(()=>openExpD(id,true),150); }
 }
 
 let _ultimoQRLeido = null;
-let _ultimoQRTs    = 0;
-let _scannerPausado = false;
+let _ultimoQRTs = 0;
 
 async function _procesarQRLeido(texto){
   const ahora = Date.now();
-  if(_scannerPausado) return;
   if(texto === _ultimoQRLeido && ahora - _ultimoQRTs < 4000) return;
   _ultimoQRLeido = texto;
-  _ultimoQRTs    = ahora;
-  _scannerPausado = true;
+  _ultimoQRTs = ahora;
 
   if(navigator.vibrate) navigator.vibrate(100);
 
   const res = document.getElementById('scanner-result');
-  if(!res){ _scannerPausado=false; return; }
+  if(!res) return;
 
-  // ── Modo bulto suelto ──────────────────────────────────────
+  // ── Modo bulto suelto: ALS-BLT:{expId}:{n}:{total} ──────────
   const matchBlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):(\d+):(\d+)$/i);
   if(matchBlt && window._scannerMode === 'bulto'){
-    const expId=matchBlt[1], numBulto=matchBlt[2], totalBultos=matchBlt[3];
+    const expId = matchBlt[1];
+    const numBulto = matchBlt[2];
+    const totalBultos = matchBlt[3];
     res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Identificando bulto…</div>';
-    const {data:e,error} = await sb.from('expediciones')
+    const {data:e, error} = await sb.from('expediciones')
       .select('id,nº_expedicion,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
-      .eq('id',expId).single();
+      .eq('id', expId).single();
     if(error||!e){
-      beepError();
-      res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada</div>';
-      _scannerPausado = false;
+      res.innerHTML = `<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada</div>`;
       return;
     }
     beepOK(); if(navigator.vibrate) navigator.vibrate([100,50,200]);
-    // Ocultar cámara
-    const camB = document.getElementById('sc-camara-wrap');
-    if(camB) camB.style.display = 'none';
     res.innerHTML = `
-      <div style="background:rgba(245,158,11,.15);border:2px solid #f59e0b;border-radius:12px;padding:16px;margin:4px">
-        <div style="font-size:13px;font-weight:700;color:#fcd34d;margin-bottom:8px">📦 BULTO ${numBulto} de ${totalBultos}</div>
-        <div style="font-size:26px;font-weight:900;color:#fff;font-family:monospace;margin-bottom:6px">${e.nº_expedicion}</div>
-        <div style="font-size:13px;color:#d1d5db;margin-bottom:4px">${e.empresas?.nombre||'—'} · ${e.buques?.nombre||'—'}</div>
-        <div style="font-size:12px;color:#9ca3af;margin-bottom:2px">${e.bultos||0} btos · ${e.kilos||0} kg · 📍${e.ubicacion||'—'}</div>
-        <div style="font-size:12px;color:#9ca3af">${e.estado_semaforo||'—'}</div>
+      <div style="background:rgba(245,158,11,.15);border:2px solid #f59e0b;border-radius:10px;padding:14px;margin:8px 16px">
+        <div style="font-size:22px;margin-bottom:6px">📦</div>
+        <div style="font-size:13px;font-weight:700;color:#fcd34d;margin-bottom:4px">BULTO ${numBulto} de ${totalBultos}</div>
+        <div style="font-size:15px;font-weight:800;color:#fff;font-family:monospace">${e.nº_expedicion}</div>
+        <div style="font-size:12px;color:#d1d5db;margin-top:4px">${e.empresas?.nombre||'—'} · ${e.buques?.nombre||'—'}</div>
+        <div style="font-size:11px;color:#9ca3af;margin-top:2px">${e.bultos||0} btos totales · ${e.kilos||0} kg · 📍 ${e.ubicacion||'—'}</div>
+        <div style="font-size:11px;color:#9ca3af;margin-top:4px">${e.estado_semaforo||'—'}</div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:10px 16px">
+        <button id="sc-btn-blt-ficha" style="background:#3b82f6;color:#fff;border:none;border-radius:12px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;min-height:48px;flex:1;max-width:180px">👁 Abrir expedición</button>
+        <button id="sc-btn-blt-sig" style="background:#6b7280;color:#fff;border:none;border-radius:12px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;min-height:48px">🔄 Sig.</button>
       </div>`;
-    const modBarB=document.querySelector('#scanner-overlay > div:last-child');
-    if(modBarB) modBarB.innerHTML='<button id="sc-btn-blt-ficha" style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;min-height:56px">👁 Expedición</button><button id="sc-btn-blt-sig" style="flex:1;background:#374151;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;min-height:56px">🔄 Siguiente</button>';
     requestAnimationFrame(()=>{
-      const f=document.getElementById('sc-btn-blt-ficha');
-      const s=document.getElementById('sc-btn-blt-sig');
-      if(f) f.addEventListener('click',()=>{ cerrarScannerQR(); setTimeout(()=>openExpD(expId),200); });
-      if(s) s.addEventListener('click',()=>{
-        _ultimoQRLeido=null; _scannerPausado=false;
-        const cam=document.getElementById('sc-camara-wrap');
-        if(cam) cam.style.display='';
-        res.innerHTML='<div style="font-size:13px;color:#9ca3af;padding:8px">📦 Escanea el siguiente bulto</div>';
-        _restaurarBarraModos();
-      });
+      const btnFicha = document.getElementById('sc-btn-blt-ficha');
+      const btnSig   = document.getElementById('sc-btn-blt-sig');
+      if(btnFicha) btnFicha.addEventListener('click',()=>{ cerrarScannerQR(); setTimeout(()=>openExpD(expId),200); });
+      if(btnSig)   btnSig.addEventListener('click',()=>{ _ultimoQRLeido=null; res.innerHTML='<div style="font-size:13px;color:#9ca3af;padding:8px">📦 Escanea el siguiente bulto</div>'; });
     });
     return;
   }
 
-  // ── Modo autorización ──────────────────────────────────────
-  const bltAlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):/i);
-  const match  = texto.match(/^ALS-EXP:([a-f0-9-]{36})$/i);
-  if(!match && !bltAlt){
-    res.innerHTML = `<div style="color:#fbbf24;font-size:13px;padding:8px">⚠️ QR no reconocido<br><span style="font-size:10px;color:#6b7280">${texto.substring(0,60)}</span></div>`;
-    beepError();
-    _scannerPausado = false;
+  // ── Modo autorización: ALS-EXP:{uuid} ────────────────────────
+  const match = texto.match(/^ALS-EXP:([a-f0-9-]{36})$/i);
+  if(!match){
+    // Si es un ALS-BLT en modo autorización, extraer la expedición
+    const bltAlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):/i);
+    if(bltAlt){
+      const fakeQR = `ALS-EXP:${bltAlt[1]}`;
+      return _procesarQRLeido(fakeQR);
+    }
+    res.innerHTML = `<div style="color:#fbbf24;font-size:13px;padding:8px">
+      ⚠️ QR no reconocido como expedición ALS<br>
+      <span style="font-size:10px;color:#6b7280">${texto.substring(0,60)}</span></div>`;
     return;
   }
-  const uuid = match ? match[1] : bltAlt[1];
+
   res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Consultando…</div>';
-  const {data:e,error} = await sb.from('expediciones')
+
+  const {data:e, error} = await sb.from('expediciones')
     .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
-    .eq('id',uuid).single();
+    .eq('id', match[1]).single();
+
   if(error||!e){
-    res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada</div>';
-    beepError(); if(navigator.vibrate) navigator.vibrate([100,50,100]);
-    _scannerPausado = false;
+    res.innerHTML = `<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada</div>`;
+    if(navigator.vibrate) navigator.vibrate([100,50,100]);
     return;
   }
+
   await _mostrarResultadoScan(e, res);
 }
 
 async function _mostrarResultadoScan(e, res){
   const autorizada = e.estado_carga === '✅ AUTORIZADO';
   const color = autorizada ? '#22c55e' : '#ef4444';
-  const bg    = autorizada ? 'rgba(34,197,94,.15)' : 'rgba(239,68,68,.15)';
+  const bg = autorizada ? 'rgba(34,197,94,.15)' : 'rgba(239,68,68,.15)';
   if(autorizada){ beepOK(); } else { beepError(); }
   if(navigator.vibrate) navigator.vibrate(autorizada ? [200] : [100,50,100,50,100]);
-  // Ocultar cámara para que el resultado ocupe toda la pantalla
-  const cam = document.getElementById('sc-camara-wrap');
-  if(cam) cam.style.display = 'none';
-  const expId=e.id, expRef=e.nº_expedicion;
-  // Poner resultado en scanner-result (arriba) y botones en barra inferior fija
+
+  // Guardar ID para uso en botones
+  const expId = e.id;
+  const expRef = e.nº_expedicion;
+
   res.innerHTML = `
-    <div style="background:${bg};border:2px solid ${color};border-radius:12px;padding:16px;margin:4px">
-      <div style="font-size:52px;margin-bottom:8px">${autorizada?'✅':'🚫'}</div>
-      <div style="font-size:20px;font-weight:900;color:${color};margin-bottom:10px">${autorizada?'AUTORIZADA':'NO AUTORIZADA'}</div>
-      <div style="font-size:22px;font-weight:800;color:#fff;font-family:monospace;margin-bottom:6px">${e.nº_expedicion}</div>
-      <div style="font-size:13px;color:#d1d5db;margin-bottom:4px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
-      <div style="font-size:12px;color:#9ca3af">${e.bultos||0} btos · ${e.kilos||0} kg · 📍${e.ubicacion||'—'}</div>
+    <div style="background:${bg};border:2px solid ${color};border-radius:10px;padding:14px;margin:8px 16px">
+      <div style="font-size:26px;margin-bottom:6px">${autorizada?'✅':'🚫'}</div>
+      <div style="font-size:15px;font-weight:800;color:${color};margin-bottom:8px">
+        ${autorizada ? 'AUTORIZADA PARA CARGA' : 'NO AUTORIZADA — RECHAZAR'}
+      </div>
+      <div style="font-size:14px;font-weight:700;color:#fff;font-family:monospace">${e.nº_expedicion}</div>
+      <div style="font-size:12px;color:#d1d5db;margin-top:4px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
+      <div style="font-size:11px;color:#9ca3af;margin-top:2px">${e.bultos||0} btos · ${e.kilos||0} kg · ${e.ubicacion||'—'}</div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:10px 16px 16px">
+      ${autorizada ? '<button id="sc-btn-carga" style="background:#22c55e;color:#fff;border:none;border-radius:12px;padding:14px 24px;font-size:16px;font-weight:700;cursor:pointer;min-height:54px;flex:1;max-width:200px">✅ Confirmar carga</button>' : ''}
+      <button id="sc-btn-ficha" style="background:#3b82f6;color:#fff;border:none;border-radius:12px;padding:14px 20px;font-size:15px;font-weight:600;cursor:pointer;min-height:54px">👁 Ficha</button>
+      <button id="sc-btn-sig" style="background:#6b7280;color:#fff;border:none;border-radius:12px;padding:14px 20px;font-size:15px;font-weight:600;cursor:pointer;min-height:54px">🔄 Sig.</button>
     </div>`;
-  // Botones en barra inferior
-  _mostrarBotonesResultado(
-    (autorizada ? '<button id="sc-btn-carga" style="flex:1;background:#22c55e;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;min-height:56px">✅ Confirmar</button>' : '') +
-    '<button id="sc-btn-ficha" style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;min-height:56px">👁 Ficha</button>' +
-    '<button id="sc-btn-sig" style="flex:1;background:#374151;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;min-height:56px">🔄 Siguiente</button>'
-  );
+
+  // Scroll al resultado
+  res.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+  // Asignar eventos con addEventListener para evitar conflictos con closures en onclick
   requestAnimationFrame(()=>{
-    const c=document.getElementById('sc-btn-carga');
-    const f=document.getElementById('sc-btn-ficha');
-    const s=document.getElementById('sc-btn-sig');
-    if(c) c.addEventListener('click',()=>confirmarCargaDesdeScanner(expId,expRef));
-    if(f) f.addEventListener('click',()=>{ cerrarScannerQR(); setTimeout(()=>openExpD(expId),200); });
-    if(s) s.addEventListener('click',()=>{
-      _ultimoQRLeido=null; _scannerPausado=false;
-      const cam=document.getElementById('sc-camara-wrap');
-      if(cam) cam.style.display='';
-      res.innerHTML='<div style="font-size:13px;color:#9ca3af;padding:8px">Apunta al siguiente QR</div>';
-      // Restaurar barra de modos
-      _restaurarBarraModos();
-      });
+    const btnCarga = document.getElementById('sc-btn-carga');
+    const btnFicha = document.getElementById('sc-btn-ficha');
+    const btnSig   = document.getElementById('sc-btn-sig');
+
+    if(btnCarga) btnCarga.addEventListener('click', ()=>confirmarCargaDesdeScanner(expId, expRef));
+
+    if(btnFicha) btnFicha.addEventListener('click', ()=>{
+      const id = expId;
+      cerrarScannerQR();
+      setTimeout(()=>openExpD(id), 200);
+    });
+
+    if(btnSig) btnSig.addEventListener('click', ()=>{
+      _ultimoQRLeido = null;
+      res.innerHTML = `
+        <div style="font-size:13px;color:#9ca3af;padding:8px">Apunta al siguiente QR</div>
+        <div style="display:flex;gap:8px;margin-top:10px;padding:0 16px">
+          <input id="scan-manual-inp" placeholder="O escribe la referencia…"
+            style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:10px;padding:12px 14px;font-size:15px;min-height:48px"
+            onkeydown="if(event.key==='Enter')_verificarManualScanner()">
+          <button onclick="_verificarManualScanner()"
+            style="background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px 18px;font-size:18px;cursor:pointer;min-height:48px;min-width:54px">🔍</button>
+        </div>`;
+      // Scroll al visor para ver la cámara
+      const qrReader = document.getElementById('qr-reader');
+      if(qrReader) qrReader.scrollIntoView({behavior:'smooth', block:'start'});
+    });
   });
 }
 
+async function confirmarCargaDesdeScanner(expId, ref){
+  const res = document.getElementById('scanner-result');
+  if(res) res.innerHTML = '<div style="color:#9ca3af"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Registrando…</div>';
+  const ts = new Date().toISOString();
+  await sb.from('expediciones').update({
+    hora_de_carga:ts, ubicacion:'Camión cargado',
+    estado_semaforo:'🚛 CARGADO CAMIÓN', estado_carga:'🚛 CARGADO CAMIÓN'
+  }).eq('id',expId);
+  await logAct('expediciones',expId,ref,'editar','estado_carga','✅ AUTORIZADO','🚛 CARGADO CAMIÓN');
+  beepCompletado(); if(navigator.vibrate) navigator.vibrate([200,100,200]);
+  if(res) res.innerHTML = `
+    <div style="color:#22c55e;font-size:15px;font-weight:700;padding:16px">
+      ✅ Carga confirmada<br>
+      <span style="font-size:12px;font-family:monospace">${ref}</span>
+    </div>
+    <button onclick="_ultimoQRLeido=null;document.getElementById('scanner-result').innerHTML='<div style=color:#9ca3af;font-size:13px>Apunta al siguiente QR</div>'"
+      style="background:#3b82f6;color:#fff;border:none;border-radius:12px;padding:14px 24px;font-size:16px;font-weight:700;cursor:pointer;margin-top:8px;min-height:54px;width:100%">
+      📷 Siguiente expedición</button>`;
+  showToast(`✅ ${ref} — cargada`);
+}
 
 function abrirScannerManual(){
   cerrarScannerQR();
@@ -11645,49 +10703,5 @@ checkSession();
 if(typeof sb!=="undefined"&&sb){loadEmailPlantillas();}else{setTimeout(()=>{if(sb)loadEmailPlantillas();},2000);}
 
 </script>
-
-<!-- ── Morning Briefing Modal ──────────────────────────── -->
-<div id="brief-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30000;align-items:center;justify-content:center;padding:20px">
-  <div style="background:var(--w);border-radius:20px;width:100%;max-width:520px;box-shadow:0 16px 60px rgba(0,0,0,.25);overflow:hidden">
-    <div style="background:linear-gradient(135deg,#1d4ed8,#2563eb);padding:20px 24px 16px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Resumen operativo</div>
-          <div style="font-size:18px;font-weight:800;color:#fff" id="brief-saludo">Buenos días</div>
-        </div>
-        <div style="font-size:11px;color:rgba(255,255,255,.6);text-align:right;line-height:1.6" id="brief-fecha"></div>
-      </div>
-    </div>
-    <div style="padding:22px 24px;min-height:100px" id="brief-body">
-      <div style="display:flex;align-items:center;gap:10px;color:var(--g400);font-size:13px">
-        <div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;flex-shrink:0"></div>
-        Preparando tu resumen del día…
-      </div>
-    </div>
-    <div style="padding:8px 24px 20px;display:flex;justify-content:flex-end">
-      <button onclick="cerrarBriefing()" class="btn btn-p" style="min-width:130px;min-height:44px;font-size:15px">Comenzar →</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Onboarding Modal ──────────────────────────────────── -->
-<div id="onboarding-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:31000;align-items:center;justify-content:center;padding:20px">
-  <div style="background:var(--w);border-radius:20px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
-    <div id="onb-header" style="background:linear-gradient(135deg,#1d4ed8,#7c3aed);padding:24px 24px 20px">
-      <div style="font-size:32px;margin-bottom:8px" id="onb-icon">👋</div>
-      <div style="font-size:18px;font-weight:800;color:#fff" id="onb-title">Bienvenido al Portal ALS</div>
-      <div style="font-size:12px;color:rgba(255,255,255,.7);margin-top:4px" id="onb-subtitle">Paso 1 de 4</div>
-    </div>
-    <div style="padding:20px 24px" id="onb-body"></div>
-    <div style="padding:12px 24px 20px;display:flex;align-items:center;justify-content:space-between">
-      <button onclick="cerrarOnboarding()" style="background:none;border:none;color:var(--g400);font-size:12px;cursor:pointer">Saltar tour</button>
-      <div style="display:flex;gap:6px;align-items:center">
-        <div id="onb-dots" style="display:flex;gap:4px"></div>
-        <button id="onb-next" onclick="onbSiguiente()" class="btn btn-p" style="min-width:100px">Siguiente →</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-</body>
-</html>
+<script>
+(function(){var code=documen
