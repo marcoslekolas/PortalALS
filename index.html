@@ -11321,13 +11321,15 @@ async function abrirScannerQR(){
 
   // Callback con protección: usa timestamp para ignorar llamadas duplicadas
   let _lastProcessed = 0;
+  // Exponer para que _setScannerMode pueda resetear al cambiar modo
+  window._scannerLastProcessed = () => { _lastProcessed = 0; };
   const onQR = (txt) => {
     const now = Date.now();
     if(_scannerPausado) return;
-    if(txt === _ultimoQRLeido && now - _ultimoQRTs < 2000) return;
-    if(now - _lastProcessed < 1500) return; // mínimo 1.5s entre procesados
+    if(txt === _ultimoQRLeido && now - _ultimoQRTs < 800) return;
+    if(now - _lastProcessed < 800) return;
     _lastProcessed = now;
-    _scannerPausado = true; // bloquear ANTES del async
+    _scannerPausado = true;
     _ultimoQRLeido = txt;
     _ultimoQRTs = now;
     _procesarQRLeido(txt).catch(e => {
@@ -11367,10 +11369,13 @@ function _setScannerMode(mode){
     if(btnB){ btnB.style.background='#f59e0b'; }
   }
   _ultimoQRLeido = null;
+  _scannerPausado = false;
+  if(window._scannerLastProcessed) window._scannerLastProcessed();
   const res = document.getElementById('scanner-result');
-  if(res) res.innerHTML=`<div style="font-size:13px;color:#9ca3af;padding:8px">
-    ${mode==='bulto'?'📦 Escanea el QR de cualquier bulto para identificar su expedición':'✅ Escanea el QR de una expedición para verificar autorización'}
-  </div>`;
+  // Resetear panel principal
+  const pp = document.getElementById('sc-resultado-principal');
+  if(pp){ pp.style.borderColor='#1f2937'; pp.style.background='#111';
+    pp.innerHTML='<div style="color:#4b5563;font-size:16px">📷 Apunta al código QR</div>'; }
 }
 
 async function _verificarManualScanner(){
@@ -11535,8 +11540,11 @@ async function _procesarQRLeido(texto){
 }
 
 async function _mostrarResultadoScan(e, res){
-  _scannerPausado = true; // pausar lecturas mientras se muestra resultado
+  _scannerPausado = true;
   const autorizada = e.estado_carga === '✅ AUTORIZADO';
+  // Sonido y vibración
+  if(autorizada){ beepOK(); if(navigator.vibrate) navigator.vibrate(200); }
+  else { beepError(); if(navigator.vibrate) navigator.vibrate([100,50,100,50,100]); }
   const color = autorizada ? '#22c55e' : '#ef4444';
   const bg = autorizada ? 'rgba(34,197,94,.15)' : 'rgba(239,68,68,.15)';
   if(navigator.vibrate) navigator.vibrate(autorizada ? [200] : [100,50,100,50,100]);
