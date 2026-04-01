@@ -9608,7 +9608,7 @@ async function openExpD(id, forceOpen=false){
     </div>
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR</button><button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   window._modalExpId = e.id; // para refresh Realtime
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
@@ -11429,182 +11429,142 @@ let _ultimoQRTs = 0;
 let _scannerPausado = false; // true mientras se muestra un resultado — evita parpadeo
 
 async function _procesarQRLeido(texto){
-  // Sin mutex interno — el caller (onQR closure) ya gestiona _scannerPausado
-  if(navigator.vibrate) navigator.vibrate(100);
+  if(navigator.vibrate) navigator.vibrate(80);
 
+  const p = document.getElementById('sc-resultado-principal');
   const res = document.getElementById('scanner-result');
-  if(!res){ _scannerPausado = false; return; }
+  if(!res){ _scannerPausado=false; return; }
 
-  // ── Modo bulto suelto: ALS-BLT:{expId}:{n}:{total} ──────────
+  // ── MODO BULTO SUELTO ────────────────────────────────────────
   const matchBlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):(\d+):(\d+)$/i);
-  if(matchBlt && window._scannerMode === 'bulto'){
-    const expId = matchBlt[1];
-    const numBulto = matchBlt[2];
-    const totalBultos = matchBlt[3];
-    const pBlt = document.getElementById('sc-resultado-principal');
-    if(pBlt){
-      pBlt.style.borderColor = '#374151';
-      pBlt.style.background = '#111';
-      pBlt.innerHTML = '<div style="color:#9ca3af;font-size:14px"><div class="spinner" style="display:inline-block;margin-right:8px;width:20px;height:20px;border-width:2px"></div>Identificando bulto…</div>';
-    }
-    const {data:e, error} = await sb.from('expediciones')
+  if(matchBlt && window._scannerMode==='bulto'){
+    const expId=matchBlt[1], numBulto=matchBlt[2], totalBultos=matchBlt[3];
+    if(p){ p.style.cssText='background:#111;border:2px solid #374151;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';
+      p.innerHTML='<div style="color:#9ca3af;font-size:15px"><div class="spinner" style="display:inline-block;margin-right:8px"></div>Identificando bulto…</div>'; }
+
+    const {data:e, error}=await sb.from('expediciones')
       .select('id,nº_expedicion,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
-      .eq('id', expId).single();
+      .eq('id',expId).single();
+
     if(error||!e){
-      beepError();
-      if(pBlt){ pBlt.style.borderColor='#ef4444'; pBlt.style.background='rgba(239,68,68,.1)';
-        pBlt.innerHTML='<div style="font-size:40px;margin-bottom:8px">❌</div><div style="color:#f87171;font-size:16px;font-weight:700">Expedición no encontrada</div>'; }
-      _scannerPausado = false;
+      beepError(); if(navigator.vibrate) navigator.vibrate([100,50,100]);
+      if(p){ p.style.borderColor='#ef4444'; p.style.background='rgba(239,68,68,.12)';
+        p.innerHTML='<div style="font-size:48px;margin-bottom:10px">❌</div><div style="color:#f87171;font-size:18px;font-weight:700">Expedición no encontrada</div>'; }
+      setTimeout(()=>{ _scannerPausado=false; _ultimoQRLeido=null; if(p){p.style.borderColor='#1f2937';p.style.background='#111';p.innerHTML='<div style="color:#4b5563;font-size:16px">📷 Apunta al QR</div>';} }, 2500);
       return;
     }
-    beepOK(); if(navigator.vibrate) navigator.vibrate([100,50,200]);
 
-    // Mostrar en panel principal grande
-    const principal = document.getElementById('sc-resultado-principal');
-    const btnIrExp = !['almacen','transportista'].includes(CU?.rol)
-      ? `<button onclick="abrirExpDesdeScanner('${expId}')"
-           style="background:#2563eb;color:#fff;border:none;border-radius:12px;padding:16px 24px;font-size:16px;font-weight:800;cursor:pointer;min-height:56px;width:100%">
-           📂 Ir a expedición</button>` : '';
-
-    // _scannerPausado queda TRUE — el botón "Siguiente bulto" lo libera
-    if(principal){
-      principal.style.borderColor = '#22c55e';
-      principal.style.background = 'rgba(34,197,94,.08)';
-      principal.innerHTML = `<div style="width:100%">
-        <div style="font-size:11px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">📦 Bulto ${numBulto} / ${totalBultos}</div>
-        <div style="font-size:28px;font-weight:900;color:#fff;font-family:monospace;margin-bottom:4px">${e.nº_expedicion}</div>
-        <div style="font-size:15px;font-weight:600;color:#86efac;margin-bottom:14px">${e.estado_semaforo||''}</div>
+    beepOK(); if(navigator.vibrate) navigator.vibrate([80,40,160]);
+    if(p){
+      p.style.cssText='background:rgba(34,197,94,.1);border:2px solid #22c55e;border-radius:16px;padding:20px;text-align:center;width:100%;box-sizing:border-box;overflow-y:auto';
+      p.innerHTML=`
+        <div style="font-size:12px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">📦 Bulto ${numBulto} de ${totalBultos}</div>
+        <div style="font-size:32px;font-weight:900;color:#fff;font-family:monospace;margin-bottom:6px">${e.nº_expedicion}</div>
+        <div style="font-size:14px;color:#86efac;margin-bottom:14px">${e.estado_semaforo||''}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;text-align:left">
-          <div style="background:#111;border:1px solid #1f2937;border-radius:10px;padding:12px">
-            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:3px">Empresa</div>
-            <div style="font-size:14px;font-weight:700;color:#fff;line-height:1.2">${e.empresas?.nombre||'—'}</div>
+          <div style="background:#0d1117;border-radius:10px;padding:10px">
+            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:2px">Empresa</div>
+            <div style="font-size:13px;font-weight:700;color:#fff">${e.empresas?.nombre||'—'}</div>
           </div>
-          <div style="background:#111;border:1px solid #1f2937;border-radius:10px;padding:12px">
-            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:3px">Buque</div>
-            <div style="font-size:14px;font-weight:700;color:#fff;line-height:1.2">${e.buques?.nombre||'—'}</div>
+          <div style="background:#0d1117;border-radius:10px;padding:10px">
+            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:2px">Buque</div>
+            <div style="font-size:13px;font-weight:700;color:#fff">${e.buques?.nombre||'—'}</div>
           </div>
-          <div style="background:#111;border:1px solid #1f2937;border-radius:10px;padding:12px">
-            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:3px">Bultos · Kilos</div>
-            <div style="font-size:15px;font-weight:800;color:#fff">${e.bultos||0} · ${e.kilos||0} kg</div>
+          <div style="background:#0d1117;border-radius:10px;padding:10px">
+            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:2px">Bultos · Kilos</div>
+            <div style="font-size:14px;font-weight:800;color:#fff">${e.bultos||0} · ${e.kilos||0} kg</div>
           </div>
-          <div style="background:#111;border:1px solid #1f2937;border-radius:10px;padding:12px">
-            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:3px">Ubicación</div>
-            <div style="font-size:14px;font-weight:700;color:#fff">📍 ${e.ubicacion||'—'}</div>
+          <div style="background:#0d1117;border-radius:10px;padding:10px">
+            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:2px">Ubicación</div>
+            <div style="font-size:13px;font-weight:700;color:#fff">📍 ${e.ubicacion||'—'}</div>
           </div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          ${btnIrExp}
-          <button onclick="_ultimoQRLeido=null;_scannerPausado=false;const p=document.getElementById('sc-resultado-principal');if(p){p.style.borderColor='#1f2937';p.style.background='#111';p.innerHTML='<div style=color:#4b5563;font-size:16px>📷 Escanea el siguiente bulto</div>';}"
-            style="background:#1f2937;color:#fff;border:1px solid #374151;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;min-height:50px;width:100%">
-            🔄 Escanear siguiente bulto
-          </button>
-        </div>
-      </div>`;
+        <button onclick="_scannerPausado=false;_ultimoQRLeido=null;if(window._scannerLastProcessed)window._scannerLastProcessed();const p=document.getElementById('sc-resultado-principal');if(p){p.style.cssText='background:#111;border:2px solid #1f2937;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';p.innerHTML='<div style=color:#4b5563;font-size:16px>📷 Escanea el siguiente bulto</div>';}"
+          style="width:100%;background:#1f2937;color:#fff;border:1px solid #374151;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;min-height:50px;margin-top:4px">
+          🔄 Siguiente bulto
+        </button>`;
     }
     return;
   }
 
-  // ── Modo autorización: ALS-EXP:{uuid} ────────────────────────
+  // ── MODO AUTORIZACIÓN: ALS-EXP:{uuid} ────────────────────────
+  // Si es ALS-BLT en modo autorización, extraer el uuid de expedición
+  const bltAlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):/i);
+  const expUuid = bltAlt ? bltAlt[1] : null;
   const match = texto.match(/^ALS-EXP:([a-f0-9-]{36})$/i);
-  if(!match){
-    // Si es un ALS-BLT en modo autorización, extraer la expedición
-    const bltAlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):/i);
-    if(bltAlt){
-      const fakeQR = `ALS-EXP:${bltAlt[1]}`;
-      return _procesarQRLeido(fakeQR);
-    }
+  const uuid = match ? match[1] : expUuid;
+
+  if(!uuid){
     beepError();
-  const _pErr = document.getElementById('sc-resultado-principal');
-  if(_pErr){_pErr.style.borderColor='#fbbf24';_pErr.style.background='rgba(251,191,36,.1)';_pErr.innerHTML='<div style="font-size:40px;margin-bottom:8px">⚠️</div><div style="color:#fbbf24;font-size:16px;font-weight:700">QR no reconocido</div>';}
-  else res.innerHTML = `<div style="color:#fbbf24;font-size:13px;padding:8px">
-      ⚠️ QR no reconocido como expedición ALS<br>
-      <span style="font-size:10px;color:#6b7280">${texto.substring(0,60)}</span></div>`;
+    if(p){ p.style.borderColor='#fbbf24'; p.style.background='rgba(251,191,36,.08)';
+      p.innerHTML='<div style="font-size:40px;margin-bottom:8px">⚠️</div><div style="color:#fbbf24;font-size:16px;font-weight:700">QR no reconocido</div><div style="color:#6b7280;font-size:12px;margin-top:6px">'+texto.substring(0,40)+'</div>'; }
+    setTimeout(()=>{ _scannerPausado=false; _ultimoQRLeido=null; if(p){p.style.cssText='background:#111;border:2px solid #1f2937;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';p.innerHTML='<div style=color:#4b5563;font-size:16px>📷 Apunta al QR</div>';} }, 2500);
     return;
   }
 
-  res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Consultando…</div>';
+  if(p){ p.style.cssText='background:#111;border:2px solid #374151;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';
+    p.innerHTML='<div style="color:#9ca3af;font-size:15px"><div class="spinner" style="display:inline-block;margin-right:8px"></div>Consultando…</div>'; }
 
-  const {data:e, error} = await sb.from('expediciones')
+  const {data:e, error}=await sb.from('expediciones')
     .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
-    .eq('id', match[1]).single();
+    .eq('id',uuid).single();
 
   if(error||!e){
     beepError(); if(navigator.vibrate) navigator.vibrate([100,50,100]);
-    const pNF = document.getElementById('sc-resultado-principal');
-    if(pNF){ pNF.style.borderColor='#ef4444'; pNF.style.background='rgba(239,68,68,.1)'; pNF.innerHTML='<div style="font-size:40px;margin-bottom:8px">❌</div><div style="color:#f87171;font-size:16px;font-weight:700">Expedición no encontrada</div>'; }
-    else res.innerHTML = `<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada</div>`;
+    if(p){ p.style.borderColor='#ef4444'; p.style.background='rgba(239,68,68,.12)';
+      p.innerHTML='<div style="font-size:48px;margin-bottom:10px">❌</div><div style="color:#f87171;font-size:18px;font-weight:700">Expedición no encontrada</div>'; }
+    setTimeout(()=>{ _scannerPausado=false; _ultimoQRLeido=null; if(p){p.style.cssText='background:#111;border:2px solid #1f2937;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';p.innerHTML='<div style=color:#4b5563;font-size:16px>📷 Apunta al QR</div>';} }, 2500);
     return;
   }
 
-  await _mostrarResultadoScan(e, res);
+  await _mostrarResultadoScan(e);
 }
 
-async function _mostrarResultadoScan(e, res){
-  _scannerPausado = true;
-  const autorizada = e.estado_carga === '✅ AUTORIZADO';
+async function _mostrarResultadoScan(e){
+  const autorizada = e.estado_carga==='✅ AUTORIZADO';
+  const color  = autorizada ? '#22c55e' : '#ef4444';
+  const bgCol  = autorizada ? 'rgba(34,197,94,.1)' : 'rgba(239,68,68,.1)';
+  const emoji  = autorizada ? '✅' : '🚫';
+  const titulo = autorizada ? 'AUTORIZADA' : 'NO AUTORIZADA';
+
   // Sonido y vibración
   if(autorizada){ beepOK(); if(navigator.vibrate) navigator.vibrate(200); }
   else { beepError(); if(navigator.vibrate) navigator.vibrate([100,50,100,50,100]); }
-  const color = autorizada ? '#22c55e' : '#ef4444';
-  const bg = autorizada ? 'rgba(34,197,94,.15)' : 'rgba(239,68,68,.15)';
-  if(navigator.vibrate) navigator.vibrate(autorizada ? [200] : [100,50,100,50,100]);
 
-  // Guardar ID para uso en botones
-  const expId = e.id;
+  const p = document.getElementById('sc-resultado-principal');
+  const expId  = e.id;
   const expRef = e.nº_expedicion;
 
-  // Beep según autorización
-  if(autorizada){ beepOK(); } else { beepError(); }
+  if(p){
+    p.style.cssText=`background:${bgCol};border:2px solid ${color};border-radius:16px;padding:20px;text-align:center;width:100%;box-sizing:border-box;overflow-y:auto`;
+    p.innerHTML=`
+      <div style="font-size:56px;margin-bottom:8px">${emoji}</div>
+      <div style="font-size:22px;font-weight:900;color:${color};margin-bottom:10px;letter-spacing:.02em">${titulo}</div>
+      <div style="font-size:26px;font-weight:800;color:#fff;font-family:monospace;margin-bottom:6px">${expRef}</div>
+      <div style="font-size:13px;color:#d1d5db;margin-bottom:4px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
+      <div style="font-size:12px;color:#9ca3af;margin-bottom:16px">${e.bultos||0} btos · ${e.kilos||0} kg · 📍${e.ubicacion||'—'}</div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        ${autorizada?`<button id="sc-btn-carga" style="background:#22c55e;color:#fff;border:none;border-radius:12px;padding:14px 22px;font-size:16px;font-weight:700;cursor:pointer;min-height:52px;flex:1;max-width:200px">✅ Confirmar carga</button>`:''}
+        <button id="sc-btn-ficha" style="background:#3b82f6;color:#fff;border:none;border-radius:12px;padding:14px 18px;font-size:15px;font-weight:600;cursor:pointer;min-height:52px">👁 Ficha</button>
+        <button id="sc-btn-sig" style="background:#374151;color:#fff;border:none;border-radius:12px;padding:14px 18px;font-size:15px;font-weight:600;cursor:pointer;min-height:52px">🔄 Sig.</button>
+      </div>`;
+  }
 
-  // Mostrar en panel principal grande
-  const principal = document.getElementById('sc-resultado-principal');
-  const targetEl = principal || res;
-
-  targetEl.style.borderColor = color;
-  targetEl.style.background = bg;
-  targetEl.innerHTML = `
-    <div style="width:100%">
-      <div style="font-size:52px;margin-bottom:10px">${autorizada?'✅':'🚫'}</div>
-      <div style="font-size:20px;font-weight:900;color:${color};margin-bottom:12px;letter-spacing:.02em">
-        ${autorizada ? 'AUTORIZADA' : 'NO AUTORIZADA'}
-      </div>
-      <div style="font-size:22px;font-weight:800;color:#fff;font-family:monospace;margin-bottom:6px">${e.nº_expedicion}</div>
-      <div style="font-size:14px;color:#d1d5db;margin-bottom:4px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
-      <div style="font-size:13px;color:#9ca3af;margin-bottom:16px">${e.bultos||0} btos · ${e.kilos||0} kg · 📍 ${e.ubicacion||'—'}</div>
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        ${autorizada ? `<button id="sc-btn-carga" style="background:#22c55e;color:#fff;border:none;border-radius:12px;padding:16px 28px;font-size:17px;font-weight:800;cursor:pointer;min-height:58px;flex:1;max-width:220px">✅ Confirmar carga</button>` : ''}
-        <button id="sc-btn-ficha" style="background:#3b82f6;color:#fff;border:none;border-radius:12px;padding:16px 22px;font-size:16px;font-weight:600;cursor:pointer;min-height:58px">👁 Ficha</button>
-        <button id="sc-btn-sig" style="background:#374151;color:#fff;border:none;border-radius:12px;padding:16px 22px;font-size:16px;font-weight:600;cursor:pointer;min-height:58px">🔄 Sig.</button>
-      </div>
-    </div>`;
-
-  // Asignar eventos con addEventListener para evitar conflictos con closures en onclick
   requestAnimationFrame(()=>{
-    const btnCarga = document.getElementById('sc-btn-carga');
-    const btnFicha = document.getElementById('sc-btn-ficha');
-    const btnSig   = document.getElementById('sc-btn-sig');
-
-    if(btnCarga) btnCarga.addEventListener('click', ()=>confirmarCargaDesdeScanner(expId, expRef));
-
-    if(btnFicha) btnFicha.addEventListener('click', ()=>{
-      const id = expId;
-      cerrarScannerQR();
-      setTimeout(()=>openExpD(id), 200);
-    });
-
-    if(btnSig) btnSig.addEventListener('click', ()=>{
-      _scannerPausado = false;
-      _ultimoQRLeido = null;
-      // Resetear panel principal
-      const principal = document.getElementById('sc-resultado-principal');
-      if(principal){
-        principal.style.borderColor = '#1f2937';
-        principal.style.background = '#111';
-        principal.innerHTML = '<div style="color:#4b5563;font-size:16px">📷 Apunta al siguiente QR</div>';
-      }
+    const btnCarga=document.getElementById('sc-btn-carga');
+    const btnFicha=document.getElementById('sc-btn-ficha');
+    const btnSig  =document.getElementById('sc-btn-sig');
+    if(btnCarga) btnCarga.addEventListener('click',()=>confirmarCargaDesdeScanner(expId,expRef));
+    if(btnFicha) btnFicha.addEventListener('click',()=>{ cerrarScannerQR(); setTimeout(()=>openExpD(expId),200); });
+    if(btnSig)   btnSig.addEventListener('click',()=>{
+      _scannerPausado=false; _ultimoQRLeido=null;
+      if(window._scannerLastProcessed) window._scannerLastProcessed();
+      if(p){ p.style.cssText='background:#111;border:2px solid #1f2937;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';
+        p.innerHTML='<div style="color:#4b5563;font-size:16px">📷 Apunta al QR</div>'; }
     });
   });
 }
+
 
 async function confirmarCargaDesdeScanner(expId, ref){
   const res = document.getElementById('scanner-result');
