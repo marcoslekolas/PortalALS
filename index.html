@@ -7646,23 +7646,6 @@ async function imprimirEtiquetasBultos(expId, ref, numBultos){
   </div>
 
 <!-- ── Panel Centro de Notificaciones ─────────────────────────────── -->
-<div id="notif-panel" style="display:none;position:fixed;top:0;right:0;width:360px;max-width:100vw;height:100%;background:var(--w);border-left:1px solid var(--g200);z-index:25000;display:flex;flex-direction:column;box-shadow:-4px 0 24px rgba(0,0,0,.12);transform:translateX(100%);transition:transform .25s ease">
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--g200);flex-shrink:0">
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="font-size:18px">🔔</span>
-      <span style="font-size:15px;font-weight:700;color:var(--g900)">Notificaciones</span>
-      <span id="notif-count-lbl" style="font-size:11px;color:var(--g500)"></span>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <button onclick="marcarTodasLeidas()" id="notif-mark-all" style="display:none;font-size:11px;color:var(--b600);background:none;border:none;cursor:pointer;font-weight:600;padding:4px 8px;border-radius:6px" onmouseenter="this.style.background='var(--b50)'" onmouseleave="this.style.background='none'">Marcar leídas</button>
-      <button onclick="cerrarCentroNotificaciones()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--g500);padding:4px;line-height:1;border-radius:6px" onmouseenter="this.style.background='var(--g100)'" onmouseleave="this.style.background='none'">✕</button>
-    </div>
-  </div>
-  <div id="notif-list" style="flex:1;overflow-y:auto;padding:0">
-    <div class="empty" style="padding:40px 20px">Sin notificaciones</div>
-  </div>
-</div>
-<div id="notif-backdrop" onclick="cerrarCentroNotificaciones()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:24999"></div>
 
 </body></html>`);
   w.document.close();
@@ -10278,7 +10261,7 @@ async function enviarNota(expId, expRef){
     await loadNotasExp(expId);
 
     // Notificar a usuarios mencionados con @nombre
-    const menciones = [...texto.matchAll(/@(\w+)/g)].map(m=>m[1].toLowerCase());
+    const menciones = [...texto.matchAll(/@([\w\u00C0-\u024F]+)/g)].map(m=>m[1].toLowerCase());
     if(menciones.length){
       const {data:usu} = await sb.from('usuarios').select('id,nombre,rol').eq('activo',true);
       const mencionados = (usu||[]).filter(u=>
@@ -10297,11 +10280,13 @@ async function enviarNota(expId, expRef){
           expedicion_id: expId
         }));
       if(notifRows.length){
-        await sb.from('als_notificaciones').insert(notifRows);
-        // Push local si el destinatario está en este mismo navegador (mismo tab)
-        mencionados.filter(u=>u.id!==CU?.id).forEach(u=>{
-          notifSistema('💬 '+CU.nombre+' te mencionó', expRef+': '+texto.slice(0,60));
-        });
+        const {error:eInsert} = await sb.from('als_notificaciones').insert(notifRows);
+        if(eInsert){
+          console.warn('Error insertando notificación:', eInsert);
+          showToast('⚠️ Nota enviada pero notificación falló: '+eInsert.message);
+        } else {
+          showToast('💬 Nota enviada · '+notifRows.length+' usuario'+( notifRows.length>1?'s':'')+' notificado'+( notifRows.length>1?'s':''));
+        }
       }
     }
   } catch(ex){ showToast('❌ Error al enviar nota: '+ex.message); }
@@ -11679,6 +11664,7 @@ function abrirCentroNotificaciones(){
   const backdrop = document.getElementById('notif-backdrop');
   if(!panel) return;
   panel.style.display = 'flex';
+  panel.style.flexDirection = 'column';
   backdrop.style.display = 'block';
   requestAnimationFrame(()=>{ panel.style.transform = 'translateX(0)'; });
   _renderNotificaciones();
@@ -11834,7 +11820,26 @@ function imprimirQR(ref, qrData, dataUrl){
       <button style="min-height:48px;font-size:15px;padding:10px 24px;background:#1565c0;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer" onclick="window.print()">🖨️ Imprimir</button>
       <button style="min-height:48px;font-size:15px;padding:10px 24px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer" onclick="window.close()">✕ Cerrar</button>
     </div>
-  </body></html>`);
+  
+<!-- Centro de notificaciones -->
+<div id="notif-panel" style="display:none;position:fixed;top:0;right:0;width:360px;max-width:100vw;height:100%;background:var(--w);border-left:1px solid var(--g200);z-index:25000;flex-direction:column;box-shadow:-4px 0 24px rgba(0,0,0,.12);transform:translateX(100%);transition:transform .25s ease">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--g200);flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">🔔</span>
+      <span style="font-size:15px;font-weight:700;color:var(--g900)">Notificaciones</span>
+      <span id="notif-count-lbl" style="font-size:11px;color:var(--g500)"></span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button onclick="marcarTodasLeidas()" id="notif-mark-all" style="display:none;font-size:11px;color:var(--b600);background:none;border:none;cursor:pointer;font-weight:600;padding:4px 8px;border-radius:6px">Marcar leídas</button>
+      <button onclick="cerrarCentroNotificaciones()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--g500);padding:4px;line-height:1;border-radius:6px">✕</button>
+    </div>
+  </div>
+  <div id="notif-list" style="flex:1;overflow-y:auto;padding:0">
+    <div class="empty" style="padding:40px 20px">Sin notificaciones</div>
+  </div>
+</div>
+<div id="notif-backdrop" onclick="cerrarCentroNotificaciones()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:24999"></div>
+</body></html>`);
   w.document.close();
   setTimeout(()=>w.print(), 500);
 }
