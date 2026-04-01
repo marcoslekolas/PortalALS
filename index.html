@@ -1313,8 +1313,8 @@ textarea.fi{resize:vertical;min-height:72px}
           </select>
           <select class="fi fs" style="width:auto;min-width:130px" onchange="filtrarExp()" id="fil-est">
             <option value="">Todos los estados</option>
-            <option>⏳ EN TRÁNSITO</option><option>⌛ ESPERANDO ALMACÉN</option>
-            <option>📦 UBICADA</option><option>🚨 EN ALMACÉN - REVISAR</option>
+            <option>⏳ EN TRÁNSITO</option>
+            <option>📦 UBICADA</option>
             <option>✅ AUTORIZADO</option><option>🚛 CARGADO CAMIÓN</option><option>🚢 EMBARCADO</option>
           </select>
           <select class="fi fs" style="width:auto" onchange="filtrarExp()" id="fil-sta">
@@ -1961,8 +1961,8 @@ async function offlineSyncPendientes(){
         const p = item.payload;
         await sb.from('expediciones').update({
           ubicacion: p.ubicacion||'Almacén-Sin Ubicar',
-          estado_semaforo:'⌛ ESPERANDO ALMACÉN',
-          estado_carga:'⌛ ESPERANDO ALMACÉN',
+          estado_semaforo:'🚨 EN ALMACÉN - REVISAR',
+          estado_carga:'🚨 EN ALMACÉN - REVISAR',
           notif_llegada_sent:true
         }).eq('id',p.expId);
         await logAct('expediciones',p.expId,p.ref,'editar','ubicacion','Pendiente recibir',p.ubicacion||'Almacén-Sin Ubicar');
@@ -4417,7 +4417,7 @@ function bdg(s){
     '🚛 CARGADO CAMIÓN': 'bg',
     '🚢 EMBARCADO':      'bg',
     '⏳ EN TRÁNSITO':    'bb',
-    '⌛ ESPERANDO ALMACÉN':'bb',
+
     '📦 UBICADA':        'bt',
     '🚨 EN ALMACÉN - REVISAR':'br',
     '⚓ Landed':          'ba'
@@ -5333,7 +5333,7 @@ async function loadDash(){
         <div style="text-align:center;padding:12px;background:var(--gr50);border-radius:var(--r)"><div style="font-size:10px;color:var(--gr600);font-weight:600;text-transform:uppercase">Kilos</div><div style="font-size:26px;font-weight:700;color:var(--gr700)">${totalKilos.toLocaleString('es-ES')}</div></div>
       </div>
       <div class="ct">Estado expediciones</div>
-      ${[{k:'✅ AUTORIZADO',c:'var(--gr500)'},{k:'🚛 CARGADO CAMIÓN',c:'var(--gr500)'},{k:'📦 UBICADA',c:'var(--tl500)'},{k:'🚨 EN ALMACÉN - REVISAR',c:'var(--rd500)'},{k:'⏳ EN TRÁNSITO',c:'var(--b500)'},{k:'⌛ ESPERANDO ALMACÉN',c:'var(--b500)'}].map(s=>{const v=Efilt.filter(e=>e.estado_semaforo===s.k).length;if(!v)return'';return`<div class="bar-row"><div class="bar-lbl">${s.k}</div><div class="bar-track"><div class="bar-fill" style="width:${Efilt.length?Math.round(v/Efilt.length*100):0}%;background:${s.c}"></div></div><div class="bar-val">${v}</div></div>`;}).join('')||'<div class="empty-txt" style="font-size:12px;padding:8px">Sin expediciones</div>'}
+      ${[{k:'✅ AUTORIZADO',c:'var(--gr500)'},{k:'🚛 CARGADO CAMIÓN',c:'var(--gr500)'},{k:'📦 UBICADA',c:'var(--tl500)'},{k:'🚨 EN ALMACÉN - REVISAR',c:'var(--rd500)'},{k:'⏳ EN TRÁNSITO',c:'var(--b500)'},].map(s=>{const v=Efilt.filter(e=>e.estado_semaforo===s.k).length;if(!v)return'';return`<div class="bar-row"><div class="bar-lbl">${s.k}</div><div class="bar-track"><div class="bar-fill" style="width:${Efilt.length?Math.round(v/Efilt.length*100):0}%;background:${s.c}"></div></div><div class="bar-val">${v}</div></div>`;}).join('')||'<div class="empty-txt" style="font-size:12px;padding:8px">Sin expediciones</div>'}
     </div>`;
 }
 
@@ -5521,7 +5521,7 @@ function renderE(list){
     const fmax=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null;
     const fmaxStr=fmax?fd(e.fecha_max_despacho):'—';
     const fmaxAlerta=fmax&&fmax<hoy&&e.tramite_aduanero!=='Despachado';
-    const hasFoto=e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url||(e.ubicacion==='Landed'&&e.estado_semaforo==='⌛ ESPERANDO ALMACÉN');
+    const hasFoto=e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url||(e.ubicacion==='Landed');
     // Corregir semáforo visualmente si es Landed/UBICADA (pending DB fix)
     const semDisplay=e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo;
     return`<tr onclick="openExpD('${e.id}')">
@@ -5808,7 +5808,7 @@ async function loadKanban(){
 
   const ESTADOS=[
     {key:'⏳ EN TRÁNSITO',          lbl:'En tránsito',  icon:'⏳', col:'var(--b500)'},
-    {key:'⌛ ESPERANDO ALMACÉN',     lbl:'Esp. almacén', icon:'⌛', col:'var(--b400)'},
+
     {key:'📦 UBICADA',              lbl:'Ubicada',       icon:'📦', col:'var(--tl500)'},
     {key:'🚨 EN ALMACÉN - REVISAR', lbl:'Revisar',       icon:'🚨', col:'var(--rd500)'},
     {key:'✅ AUTORIZADO',           lbl:'Autorizado',    icon:'✅', col:'var(--gr500)'},
@@ -5829,7 +5829,7 @@ function renderKanban(lista){
   if(!kb) return;
   const ESTADOS = window._kbEstados || [
     {key:'⏳ EN TRÁNSITO',          lbl:'En tránsito',  icon:'⏳', col:'var(--b500)'},
-    {key:'⌛ ESPERANDO ALMACÉN',     lbl:'Esp. almacén', icon:'⌛', col:'var(--b400)'},
+
     {key:'📦 UBICADA',              lbl:'Ubicada',       icon:'📦', col:'var(--tl500)'},
     {key:'🚨 EN ALMACÉN - REVISAR', lbl:'Revisar',       icon:'🚨', col:'var(--rd500)'},
     {key:'✅ AUTORIZADO',           lbl:'Autorizado',    icon:'✅', col:'var(--gr500)'},
@@ -6583,7 +6583,7 @@ async function loadAlertas(){
 async function loadAlmacen(){
   var pEl=document.getElementById("alm-pend"); if(pEl) pEl.innerHTML=skeletonTable(3);
   const {data}=await sb.from('expediciones').select('*,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO');
-  const pend=(data||[]).filter(e=>e.estado_semaforo==='⏳ EN TRÁNSITO'||e.estado_semaforo==='⌛ ESPERANDO ALMACÉN');
+  const pend=(data||[]).filter(e=>e.estado_semaforo==='⏳ EN TRÁNSITO');
   const rev=(data||[]).filter(e=>e.estado_semaforo==='🚨 EN ALMACÉN - REVISAR');
   const lis=(data||[]).filter(e=>e.estado_carga==='✅ AUTORIZADO');
   const rP=e=>`<div class="ll-row" onclick="openExpD('${e.id}')"><span style="font-size:18px">📦</span><div class="ll-info"><div class="ll-ref">${e.nº_expedicion}</div><div class="ll-sub">${e.buques?.nombre||'—'} · ${e.bultos} btos · ${bdg(e.estado_semaforo)}</div></div><div class="ll-acts">${e.foto_llegada_url?`<div class="ib" title="Ver foto" onclick="event.stopPropagation();abrirGaleriaFotos(['${e.foto_llegada_url}'],'Llegada')">🖼️</div>`:''}<div class="ib" title="Confirmar llegada" onclick="event.stopPropagation();confirmLlegada('${e.id}')">✅</div><div class="ib" title="Con fotos" onclick="event.stopPropagation();modalFotos('${e.id}','${e.nº_expedicion}')">📸</div></div></div>`;
@@ -6929,7 +6929,7 @@ async function loadAlmDash(){
     b.total_autorizadas=em.auth;
   });
 
-  const pend=E.filter(e=>e.estado_semaforo==='⏳ EN TRÁNSITO'||e.estado_semaforo==='⌛ ESPERANDO ALMACÉN').length;
+  const pend=E.filter(e=>e.estado_semaforo==='⏳ EN TRÁNSITO').length;
   const rev=E.filter(e=>e.estado_semaforo==='🚨 EN ALMACÉN - REVISAR').length;
   const aut=E.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
   const lis=B.filter(b=>b.total_expediciones>0&&b.total_expediciones===b.total_autorizadas);
@@ -7217,7 +7217,7 @@ async function loadAlmFotos(tab){
     if(!buques.length){cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay buques activos</div></div>';return;}
     // Solo mostrar expediciones YA marcadas como Landed (ubicacion='Landed') por buque
     // Mostrar solo Landed pendientes de recoger (excluir los ya recogidos = ESPERANDO ALMACÉN)
-    const {data:landedExps}=await sb.from('expediciones').select('id,buque_id,nº_expedicion,bultos,kilos,foto_llegada_url').eq('ubicacion','Landed').neq('estado_semaforo','⌛ ESPERANDO ALMACÉN');
+    const {data:landedExps}=await sb.from('expediciones').select('id,buque_id,nº_expedicion,bultos,kilos,foto_llegada_url').eq('ubicacion','Landed').eq('estado_semaforo','⏳ EN TRÁNSITO');
     const landedByBuque={};
     (landedExps||[]).forEach(e=>{if(!e.buque_id)return;if(!landedByBuque[e.buque_id])landedByBuque[e.buque_id]=[];landedByBuque[e.buque_id].push(e);});
     // Filtrar buques que tienen al menos una expedición Landed
@@ -8088,9 +8088,8 @@ async function confirmarLandedBuque(buqueId, buqueNombre){
     }
   }
 
-  // Estado: mercancía recogida del muelle → queda en ubicacion Landed
-  // pero semáforo cambia a ESPERANDO ALMACÉN para que mozo la confirme en pestaña Llegadas
-  const upd={estado_semaforo:'⌛ ESPERANDO ALMACÉN', estado_carga:'⌛ ESPERANDO ALMACÉN'};
+  // Estado: mercancía recogida del muelle → queda en ubicacion Landed (en tránsito hasta almacén)
+  const upd={estado_semaforo:'⏳ EN TRÁNSITO', estado_carga:'⏳ EN TRÁNSITO'};
   // Guardar foto en foto_llegada_url para que el indicador 📸 funcione en la lista
   if(fotoUrl){ upd.foto_llegada_url=fotoUrl; }
   await sb.from('expediciones').update(upd)
@@ -9014,7 +9013,7 @@ async function loadStats(){
   const mI=Math.max(...Object.values(byTipoInc),1);
   const mU=Math.max(...Object.values(byUsuario),1);
   const mM=Math.max(...Object.values(byMes),1);
-  const sC={'✅ AUTORIZADO':'var(--gr500)','🚛 CARGADO CAMIÓN':'var(--gr500)','🚨 EN ALMACÉN - REVISAR':'var(--rd500)','⏳ EN TRÁNSITO':'var(--b500)','⌛ ESPERANDO ALMACÉN':'var(--b500)','📦 UBICADA':'var(--tl500)'};
+  const sC={'✅ AUTORIZADO':'var(--gr500)','🚛 CARGADO CAMIÓN':'var(--gr500)','🚨 EN ALMACÉN - REVISAR':'var(--rd500)','⏳ EN TRÁNSITO':'var(--b500)','📦 UBICADA':'var(--tl500)'};
 
   const barHtml=(entries,max,colorFn)=>entries.sort((a,b)=>b[1]-a[1]).map(([n,v])=>`
     <div class="bar-row">
@@ -10833,7 +10832,7 @@ async function renderDashCharts(exps){
   const donut = document.getElementById('dash-donut-wrap');
   if(!donut) return;
   const estados = {};
-  const cols = {'⏳ EN TRÁNSITO':'var(--b400)','⌛ ESPERANDO ALMACÉN':'var(--b300)','📦 UBICADA':'var(--tl500)','🚨 EN ALMACÉN - REVISAR':'var(--rd500)','✅ AUTORIZADO':'var(--gr500)','🚛 CARGADO CAMIÓN':'var(--gr600)'};
+  const cols = {'⏳ EN TRÁNSITO':'var(--b400)','📦 UBICADA':'var(--tl500)','🚨 EN ALMACÉN - REVISAR':'var(--rd500)','✅ AUTORIZADO':'var(--gr500)','🚛 CARGADO CAMIÓN':'var(--gr600)'};
   (exps||[]).forEach(e=>{ const k=e.estado_semaforo||'Otro'; estados[k]=(estados[k]||0)+1; });
   const total = Object.values(estados).reduce((a,b)=>a+b,0)||1;
   const items = Object.entries(estados).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
@@ -10945,12 +10944,13 @@ async function saveUbic(id,val){
 // Calcula el estado_semáforo correcto según la ubicación
 function semaforoDeUbicacion(ubic){
   if(!ubic) return null;
-  if(ubic==='Landed')           return '⌛ ESPERANDO ALMACÉN'; // ⚓ Landed no existe en el enum — se muestra visualmente pero no se guarda
-  if(ubic==='A bordo')          return '🚢 EMBARCADO';
-  if(ubic==='Camión cargado')   return '🚛 CARGADO CAMIÓN';
-  if(ubic==='Pendiente recibir')return '⏳ EN TRÁNSITO';
-  if(ubic.startsWith('Almacén'))return '📦 UBICADA';
-  if(ubic==='Puerto')           return '📦 UBICADA';
+  if(ubic==='Almacén-Sin Ubicar') return '🚨 EN ALMACÉN - REVISAR';  // Sin ubicar → revisar
+  if(ubic.startsWith('Almacén'))  return '📦 UBICADA';               // Resto almacén → ubicada
+  if(ubic==='A bordo')            return '🚢 EMBARCADO';
+  if(ubic==='Camión cargado')     return '🚛 CARGADO CAMIÓN';
+  if(ubic==='Pendiente recibir')  return '⏳ EN TRÁNSITO';
+  if(ubic==='Landed')             return '⏳ EN TRÁNSITO';           // Landed = en tránsito
+  if(ubic==='Puerto')             return '📦 UBICADA';
   if(ubic.startsWith('Aeropuerto')) return '⏳ EN TRÁNSITO';
   return null;
 }
