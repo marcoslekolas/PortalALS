@@ -4999,7 +4999,30 @@ function detectarAnomalias(buques, expediciones){
   const hoy   = new Date(); hoy.setHours(0,0,0,0);
   const anomalias = [];
 
-  // ── 1. Expediciones paradas demasiado tiempo en almacén ──────────
+  // ── 1. Depósito temporal T1 en ADT próximo a vencer (90 días) ────
+  expediciones.forEach(e => {
+    if(e.ubicacion !== 'Almacén-ADT') return;
+    if(e.tramite_aduanero === 'Despachado') return;
+    const sta = Array.isArray(e.status_aduanero) ? e.status_aduanero[0] : e.status_aduanero;
+    if(sta !== 'T1') return;
+    // Usar updated_at como proxy de fecha de entrada en ADT
+    if(!e.updated_at) return;
+    const entrada = new Date(e.updated_at); entrada.setHours(0,0,0,0);
+    const dias = Math.round((hoy - entrada) / 86400000);
+    const restantes = 90 - dias;
+    if(restantes <= 30){
+      anomalias.push({
+        tipo:'deposito_temporal',
+        icono: restantes <= 0 ? '🔴' : restantes <= 5 ? '🔴' : restantes <= 15 ? '🟠' : '🟡',
+        color: restantes <= 5 ? '#ef4444' : restantes <= 15 ? '#f97316' : '#eab308',
+        bg: restantes <= 5 ? 'rgba(239,68,68,.08)' : restantes <= 15 ? 'rgba(249,115,22,.08)' : 'rgba(234,179,8,.08)',
+        titulo: restantes <= 0 ? 'Depósito temporal VENCIDO ('+Math.abs(restantes)+'d)' : 'Depósito temporal vence en '+restantes+'d',
+        detalle: (e.nº_expedicion||'—')+' · T1 · ADT · '+dias+'d de 90'
+      });
+    }
+  });
+
+  // ── 1b. Expediciones paradas demasiado tiempo en almacén ──────────
   // Más de 15 días en estado que no avanza
   const estadosParados = ['🟡 EN ALMACÉN','🔵 PENDIENTE MRN','🟠 PENDIENTE ADUANA'];
   expediciones.forEach(e => {
@@ -11500,8 +11523,11 @@ function _renderIndicadoresPlazos(e){
 
   // ── Depósito temporal 90 días ─────────────────────────────────────
   // Solo si la expedición ya está en almacén (no pendiente de recibir ni cargada)
-  const enAlmacen = e.ubicacion && e.ubicacion !== 'Pendiente recibir' && e.ubicacion !== 'Camión cargado' && e.ubicacion !== 'Landed';
-  if(enAlmacen && e.updated_at){
+  // Depósito temporal solo aplica a: Almacén-ADT + T1 + pendiente despachar
+  const esDepositoTemporal = e.ubicacion === 'Almacén-ADT'
+    && (e.status_aduanero === 'T1' || (Array.isArray(e.status_aduanero) && e.status_aduanero.includes('T1')))
+    && e.tramite_aduanero !== 'Despachado';
+  if(esDepositoTemporal && e.updated_at){
     // Buscar la fecha más antigua posible como inicio depósito
     // Usamos updated_at cuando cambió a ubicación de almacén — proxy razonable
     const fechaLlegada = new Date(e.updated_at); fechaLlegada.setHours(0,0,0,0);
