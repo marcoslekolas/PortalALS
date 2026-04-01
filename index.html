@@ -5062,6 +5062,29 @@ function detectarAnomalias(buques, expediciones){
     });
   }
 
+  // ── 3b. Expediciones con fecha máx. despacho vencida o crítica ─────
+  // (datos de expediciones deben incluir fecha_max_despacho)
+  const hoyStr = hoy.toISOString().slice(0,10);
+  expediciones.forEach(e => {
+    if(!e.fecha_max_despacho) return;
+    if(e.tramite_aduanero === 'Despachado') return;
+    const fmax = new Date(e.fecha_max_despacho); fmax.setHours(0,0,0,0);
+    const dias = Math.round((fmax - hoy) / 86400000);
+    if(dias < 0){
+      anomalias.push({
+        tipo:'fmax_vencida', icono:'🔴', color:'#ef4444', bg:'rgba(239,68,68,.08)',
+        titulo:'Fecha máx. despacho VENCIDA hace '+Math.abs(dias)+'d',
+        detalle:(e.nº_expedicion||e.id?.slice(0,8)||'—')+' · '+new Date(e.fecha_max_despacho).toLocaleDateString('es-ES')
+      });
+    } else if(dias <= 3){
+      anomalias.push({
+        tipo:'fmax_critica', icono:'🟠', color:'#f97316', bg:'rgba(249,115,22,.08)',
+        titulo:'Fecha máx. despacho en '+dias+'d',
+        detalle:(e.nº_expedicion||e.id?.slice(0,8)||'—')+' · Vence '+new Date(e.fecha_max_despacho).toLocaleDateString('es-ES')
+      });
+    }
+  });
+
   // ── 4. Buques con ETA en las próximas 48h sin expediciones listas ─
   const en48h = buques.filter(b => {
     if(!b.eta_buque) return false;
@@ -5155,7 +5178,7 @@ async function loadDash(){
 
   // 2. Cargar TODAS las expediciones activas
   const {data:EALL} = await sb.from('expediciones')
-    .select('id,buque_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,bultos,kilos')
+    .select('id,buque_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,bultos,kilos,fecha_max_despacho,tramite_aduanero,nº_expedicion')
     .neq('estado_semaforo','🚢 EMBARCADO');
 
   // Filtrar en JS: excluir solo Embarcado y Finalizado
@@ -9702,6 +9725,7 @@ async function openExpD(id, forceOpen=false){
       <div class="fg2"><label class="fl2">Status aduanero</label><select id="sta-sel" class="fi fs" ><option value="" ${!e.status_aduanero?'selected':''}>— Seleccionar —</option>${(()=>{const sv=Array.isArray(e.status_aduanero)?e.status_aduanero[0]:e.status_aduanero;return['Comunitario','DAE','T1','Terceros','X'].map(s=>`<option ${sv===s?'selected':''}>${s}</option>`).join('');})()}</select></div>
       <div class="fg2"><label class="fl2">Fecha máx. despacho</label><input id="fmax-inp" class="fi" type="date" value="${e.fecha_max_despacho?e.fecha_max_despacho.slice(0,10):''}" ></div>
     </div>
+    ${_renderIndicadoresPlazos(e)}
     <div class="df"><div class="dl">Nº MRN</div><div style="font-family:var(--mono);font-size:13px;font-weight:500;color:${e.nº_mrn?'var(--g900)':'var(--am600)'}">${e.nº_mrn||'⚠️ Sin MRN — requerido para autorizar'}</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px" data-exp-badges>${bdg(e.estado_semaforo)}<span class="badge ${e.estado_carga==='✅ AUTORIZADO'?'bg':'br'}">${e.estado_carga}</span></div>
     ${e.created_by_nombre?`<div style="font-size:11px;color:var(--g400);margin-bottom:12px">Creado por <strong>${e.created_by_nombre}</strong>${e.updated_at?` · Última edición: ${fdt(e.updated_at)}`:''}</div>`:''}
@@ -11468,6 +11492,59 @@ async function generarInstruccionesTransportista(expId){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   showToast('🚛 Instrucciones abiertas en email');
 }
+
+// ── Indicadores de plazos legales en ficha expedición ────────────────
+function _renderIndicadoresPlazos(e){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  let out = '';
+
+  // ── Depósito temporal 90 días ─────────────────────────────────────
+  // Solo si la expedición ya está en almacén (no pendiente de recibir ni cargada)
+  const enAlmacen = e.ubicacion && e.ubicacion !== 'Pendiente recibir' && e.ubicacion !== 'Camión cargado' && e.ubicacion !== 'Landed';
+  if(enAlmacen && e.updated_at){
+    // Buscar la fecha más antigua posible como inicio depósito
+    // Usamos updated_at cuando cambió a ubicación de almacén — proxy razonable
+    const fechaLlegada = new Date(e.updated_at); fechaLlegada.setHours(0,0,0,0);
+    const diasTranscurridos = Math.max(0, Math.round((hoy - fechaLlegada) / 86400000));
+    const pct = Math.min(100, Math.round(diasTranscurridos / 90 * 100));
+    const diasRestantes = 90 - diasTranscurridos;
+    const color = pct >= 90 ? '#ef4444' : pct >= 78 ? '#f97316' : pct >= 56 ? '#eab308' : '#22c55e';
+    const bgColor = pct >= 90 ? 'rgba(239,68,68,.08)' : pct >= 78 ? 'rgba(249,115,22,.08)' : pct >= 56 ? 'rgba(234,179,8,.08)' : 'rgba(34,197,94,.08)';
+    const label = diasRestantes <= 0 ? '⚠️ PLAZO VENCIDO' : diasRestantes <= 5 ? '🔴 Vence en '+diasRestantes+'d' : diasRestantes <= 15 ? '🟠 Vence en '+diasRestantes+'d' : diasRestantes <= 30 ? '🟡 Vence en '+diasRestantes+'d' : '🟢 '+diasRestantes+'d restantes';
+
+    out += '<div style="background:'+bgColor+';border:1px solid '+color+'40;border-radius:10px;padding:10px 14px;margin:10px 0;border-left:3px solid '+color+'">';
+    out += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
+    out += '<span style="font-size:11px;font-weight:700;color:'+color+';text-transform:uppercase;letter-spacing:.05em">⏱️ Depósito temporal (90 días)</span>';
+    out += '<span style="font-size:12px;font-weight:700;color:'+color+'">'+label+'</span>';
+    out += '</div>';
+    out += '<div style="background:rgba(0,0,0,.06);border-radius:6px;height:8px;overflow:hidden">';
+    out += '<div style="height:100%;width:'+pct+'%;background:'+color+';border-radius:6px;transition:width .3s"></div>';
+    out += '</div>';
+    out += '<div style="font-size:10px;color:var(--g500);margin-top:4px">'+diasTranscurridos+' días en almacén de 90 permitidos</div>';
+    out += '</div>';
+  }
+
+  // ── Fecha máxima de despacho ──────────────────────────────────────
+  if(e.fecha_max_despacho && e.tramite_aduanero !== 'Despachado'){
+    const fmax = new Date(e.fecha_max_despacho); fmax.setHours(0,0,0,0);
+    const diasHastaVenc = Math.round((fmax - hoy) / 86400000);
+    const vencido = diasHastaVenc < 0;
+    const color2 = vencido ? '#ef4444' : diasHastaVenc <= 2 ? '#ef4444' : diasHastaVenc <= 5 ? '#f97316' : diasHastaVenc <= 10 ? '#eab308' : '#3b82f6';
+    const bg2 = vencido ? 'rgba(239,68,68,.08)' : diasHastaVenc <= 5 ? 'rgba(249,115,22,.08)' : diasHastaVenc <= 10 ? 'rgba(234,179,8,.08)' : 'rgba(59,130,246,.06)';
+    const label2 = vencido ? '🔴 VENCIDA hace '+Math.abs(diasHastaVenc)+'d' : diasHastaVenc === 0 ? '🔴 Vence HOY' : diasHastaVenc <= 2 ? '🔴 Vence en '+diasHastaVenc+'d' : diasHastaVenc <= 5 ? '🟠 Vence en '+diasHastaVenc+'d' : diasHastaVenc <= 10 ? '🟡 Vence en '+diasHastaVenc+'d' : '🔵 Vence en '+diasHastaVenc+'d';
+
+    out += '<div style="background:'+bg2+';border:1px solid '+color2+'40;border-radius:10px;padding:10px 14px;margin:10px 0;border-left:3px solid '+color2+'">';
+    out += '<div style="display:flex;align-items:center;justify-content:space-between">';
+    out += '<span style="font-size:11px;font-weight:700;color:'+color2+';text-transform:uppercase;letter-spacing:.05em">📋 Fecha límite despacho</span>';
+    out += '<span style="font-size:12px;font-weight:700;color:'+color2+'">'+label2+'</span>';
+    out += '</div>';
+    out += '<div style="font-size:10px;color:var(--g500);margin-top:3px">'+new Date(e.fecha_max_despacho).toLocaleDateString('es-ES',{day:"2-digit",month:"long",year:"numeric"})+'</div>';
+    out += '</div>';
+  }
+
+  return out;
+}
+
 
 function mostrarQRExpedicion(id, ref){
   const qrData = qrDataParaExp(id);
