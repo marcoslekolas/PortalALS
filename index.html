@@ -11424,18 +11424,7 @@ let _ultimoQRTs = 0;
 let _scannerPausado = false; // true mientras se muestra un resultado — evita parpadeo
 
 async function _procesarQRLeido(texto){
-  // Mutex robusto: bloquear INMEDIATAMENTE antes de cualquier check
-  if(_scannerPausado) return;
-  _scannerPausado = true; // bloquear nuevas lecturas ya
-
-  const ahora = Date.now();
-  // Deduplicar solo para doble-disparo inmediato (500ms)
-  if(texto === _ultimoQRLeido && ahora - _ultimoQRTs < 500){
-    _scannerPausado = false; return;
-  }
-  _ultimoQRLeido = texto;
-  _ultimoQRTs = ahora;
-
+  // Sin mutex interno — el caller (onQR closure) ya gestiona _scannerPausado
   if(navigator.vibrate) navigator.vibrate(100);
 
   const res = document.getElementById('scanner-result');
