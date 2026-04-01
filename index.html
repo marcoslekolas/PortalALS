@@ -1521,7 +1521,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <li>📋 Línea de vida: historial cronológico completo de cada expedición con fotos</li>
         <li>🔍 Detector de anomalías: expediciones con tiempo en almacén fuera de lo normal</li>
         <li>📊 Dashboard Ejecutivo: comparativa ▲/▼ vs mismo período año anterior</li>
-        <li>📧 Email automático al cliente al confirmar embarque con foto y CC a <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="27464b5467464b54464b4042444e5546540944484a">[email&#160;protected]</a></li>
+        <li>📧 Email automático al cliente al confirmar embarque con foto y CC a <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="a6c7cad5e6c7cad5c7cac1c3c5cfd4c7d588c5c9cb">[email&#160;protected]</a></li>
         <li>📸 Galería fotográfica: fecha, tipo y autor visible en cada foto</li>
         <li>🟢 Indicador Realtime en header — estado de conexión en tiempo real</li>
         <li>📅 Dashboard Ejecutivo: selector de rango libre de fechas</li>
@@ -10332,78 +10332,61 @@ function mostrarAtajos(){
 // ── Sonidos de validación escáner ────────────────────────────────────
 // Genera un WAV PCM mono 8bit en base64 para uso como Audio src
 function _makeToneWav(freq, duration, vol){
-  // Onda cuadrada 16-bit — sonido más fuerte tipo lector código barras
-  const sampleRate = 22050;
+  const sampleRate = 8000;
   const numSamples = Math.floor(sampleRate * duration);
-  const dataSize = numSamples * 2;
-  const buf = new ArrayBuffer(44 + dataSize);
-  const dv = new DataView(buf);
+  const buf = new Uint8Array(44 + numSamples);
+  // WAV header
+  const dv = new DataView(buf.buffer);
   const writeStr = (off, s) => { for(let i=0;i<s.length;i++) dv.setUint8(off+i, s.charCodeAt(i)); };
-  writeStr(0,'RIFF'); dv.setUint32(4, 36+dataSize, true);
+  writeStr(0,'RIFF'); dv.setUint32(4, 36+numSamples, true);
   writeStr(8,'WAVE'); writeStr(12,'fmt ');
   dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
-  dv.setUint32(24,sampleRate,true); dv.setUint32(28,sampleRate*2,true);
-  dv.setUint16(32,2,true); dv.setUint16(34,16,true);
-  writeStr(36,'data'); dv.setUint32(40,dataSize,true);
+  dv.setUint32(24,sampleRate,true); dv.setUint32(28,sampleRate,true);
+  dv.setUint16(32,1,true); dv.setUint16(34,8,true);
+  writeStr(36,'data'); dv.setUint32(40,numSamples,true);
   for(let i=0;i<numSamples;i++){
     const t = i/sampleRate;
-    const env = Math.min(1, t/0.005) * Math.max(0, 1 - t/duration);
-    // Onda cuadrada
-    const sq = Math.sin(2*Math.PI*freq*t) >= 0 ? 1 : -1;
-    const val = Math.round(sq * vol * env * 32767);
-    dv.setInt16(44 + i*2, Math.max(-32768, Math.min(32767, val)), true);
+    const env = Math.max(0, 1 - t/duration); // fade out
+    buf[44+i] = Math.round(128 + 127 * vol * env * Math.sin(2*Math.PI*freq*t));
   }
-  const bytes = new Uint8Array(buf);
-  let bin=''; bytes.forEach(b=>{ bin+=String.fromCharCode(b); });
+  let bin=''; buf.forEach(b=>{ bin+=String.fromCharCode(b); });
   return 'data:audio/wav;base64,'+btoa(bin);
 }
 // Precargar sonidos en primera interacción
-function _testBeep(){
-  // Toque directo del usuario — desbloquea Safari iOS definitivamente
-  _soundsLoaded = false; // forzar recarga
-  window._soundsLoaded = false;
-  _preloadSounds();
-  try{
-    if(!window._alsAudioCtx || window._alsAudioCtx.state==='closed')
-      window._alsAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
-    window._alsAudioCtx.resume().then(()=>{
-      beepOK();
-    }).catch(()=>{ beepOK(); });
-  }catch(e){ beepOK(); }
-  // Feedback visual
-  const btn = document.getElementById('sc-beep-btn');
-  if(btn){ btn.textContent='✅'; setTimeout(()=>{ btn.textContent='🔊'; }, 800); }
-}
-
 function _preloadSounds(){
   if(window._soundsLoaded) return;
   window._soundsLoaded = true;
-  // 1800Hz onda cuadrada — pitido fuerte tipo lector código barras
-  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1800,0.15,1.0), volume:1});
-  // 300Hz onda cuadrada — error grave
-  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(300, 0.20,1.0), volume:1});
+  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1046,0.15,0.5), volume:1});
+  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(220, 0.25,0.5), volume:1});
   window._beepOKEl.load();
   window._beepErrEl.load();
 }
 function beepOK(){
-  // Doble método: AudioContext + <audio> para máxima compatibilidad iOS
+  // AudioContext (Opera, Chrome, Android)
   try{
     const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
     if(ctx.state==='suspended') ctx.resume().catch(()=>{});
     const osc = ctx.createOscillator(); const gain = ctx.createGain();
     osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(1046, ctx.currentTime);
-    gain.gain.setValueAtTime(0.4, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.18);
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1800, ctx.currentTime);
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.12);
   } catch(e){}
-  // Audio element (iOS fallback)
+  // Audio element
+  try{ const el=window._beepOKEl; if(el){el.currentTime=0;el.play().catch(()=>{});} }catch(e){}
+  // Speech Synthesis — funciona en Safari iOS sin restricciones
   try{
-    const el = window._beepOKEl;
-    if(el){ el.currentTime=0; el.play().catch(()=>{}); }
+    if(window.speechSynthesis){
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance('bip');
+      u.volume = 1; u.rate = 10; u.pitch = 2;
+      window.speechSynthesis.speak(u);
+    }
   }catch(e){}
+  if(navigator.vibrate) navigator.vibrate(80);
 }
 
 function beepError(){
@@ -10411,19 +10394,27 @@ function beepError(){
     const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
     if(ctx.state==='suspended') ctx.resume().catch(()=>{});
-    [220, 180].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+    [400, 280].forEach((freq, i) => {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
       osc.type = 'square';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.12);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime + i*0.12);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.12 + 0.1);
-      osc.start(ctx.currentTime + i*0.12);
-      osc.stop(ctx.currentTime + i*0.12 + 0.1);
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.15);
+      gain.gain.setValueAtTime(0.4, ctx.currentTime + i*0.15);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.15 + 0.12);
+      osc.start(ctx.currentTime + i*0.15);
+      osc.stop(ctx.currentTime + i*0.15 + 0.12);
     });
   } catch(e){}
   try{ const el=window._beepErrEl; if(el){el.currentTime=0;el.play().catch(()=>{});} }catch(e){}
+  try{
+    if(window.speechSynthesis){
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance('error');
+      u.volume = 1; u.rate = 10; u.pitch = 0.1;
+      window.speechSynthesis.speak(u);
+    }
+  }catch(e){}
+  if(navigator.vibrate) navigator.vibrate([80,40,80]);
 }
 
 function beepCompletado(){
@@ -10432,8 +10423,7 @@ function beepCompletado(){
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
     if(ctx.state==='suspended') ctx.resume();
     [784, 988, 1319].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.12);
@@ -10443,6 +10433,15 @@ function beepCompletado(){
       osc.stop(ctx.currentTime + i*0.12 + 0.2);
     });
   } catch(e){}
+  try{
+    if(window.speechSynthesis){
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance('ok');
+      u.volume = 1; u.rate = 10; u.pitch = 2;
+      window.speechSynthesis.speak(u);
+    }
+  }catch(e){}
+  if(navigator.vibrate) navigator.vibrate([80,40,160]);
 }
 
 
@@ -11359,14 +11358,8 @@ async function abrirScannerQR(){
   ov.id = 'scanner-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
   ov.innerHTML = `
-    <div style="display:flex;align-items:center;flex-shrink:0">
-      <div id="sc-mode-label" style="flex:1;background:rgba(59,130,246,.3);color:#93c5fd;font-size:12px;font-weight:600;text-align:center;padding:6px;letter-spacing:.05em">
-        MODO: VERIFICACIÓN DE AUTORIZACIÓN
-      </div>
-      <button onclick="_testBeep()" title="Probar sonido"
-        style="background:rgba(255,255,255,.1);border:none;color:rgba(255,255,255,.7);padding:6px 12px;font-size:16px;cursor:pointer;flex-shrink:0" id="sc-beep-btn">
-        🔊
-      </button>
+    <div id="sc-mode-label" style="background:rgba(59,130,246,.3);color:#93c5fd;font-size:12px;font-weight:600;text-align:center;padding:6px;letter-spacing:.05em;flex-shrink:0">
+      MODO: VERIFICACIÓN DE AUTORIZACIÓN
     </div>
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto">
       <div id="sc-camara-wrap" style="width:100%;max-width:500px">
@@ -11394,23 +11387,13 @@ async function abrirScannerQR(){
   document.body.appendChild(ov);
   window._scannerMode = 'autorizar';
 
-  // Desbloquear audio en el gesto del usuario — iOS requiere play() síncrono
+  // Preparar audio en el gesto del usuario (iOS requiere esto)
   _preloadSounds();
-  // Intentar play() en el gesto para desbloquear iOS
-  try{
-    if(window._beepOKEl){
-      window._beepOKEl.volume = 0;
-      window._beepOKEl.play().then(()=>{
-        window._beepOKEl.pause();
-        window._beepOKEl.currentTime = 0;
-        window._beepOKEl.volume = 1;
-      }).catch(()=>{});
-    }
-  }catch(e){}
   try{
     if(!window._alsAudioCtx || window._alsAudioCtx.state === 'closed')
       window._alsAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
     if(window._alsAudioCtx.state === 'suspended') window._alsAudioCtx.resume().catch(()=>{});
+    // Reproducir silencio para "desbloquear" el audio en iOS
     const osc = window._alsAudioCtx.createOscillator();
     const g = window._alsAudioCtx.createGain();
     g.gain.setValueAtTime(0, window._alsAudioCtx.currentTime);
