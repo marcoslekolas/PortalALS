@@ -11270,32 +11270,34 @@ async function abrirScannerQR(){
   ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column;overflow:hidden';
 
   ov.innerHTML = `
-    <!-- Label modo — compacto arriba -->
-    <div style="flex-shrink:0;background:rgba(0,0,0,.9);padding:8px 16px;text-align:center">
-      <div id="sc-mode-label" style="color:#93c5fd;font-size:12px;font-weight:600;letter-spacing:.05em">MODO: VERIFICACIÓN DE AUTORIZACIÓN</div>
+    <!-- ZONA RESULTADO — ocupa toda la pantalla menos la barra de botones -->
+    <div id="sc-zona-resultado" style="flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column">
+
+      <!-- Panel de resultado — visible cuando hay lectura -->
+      <div id="sc-resultado-principal"
+        style="position:absolute;inset:0;background:#000;z-index:2;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto">
+        <!-- Vacío al inicio: se ve la cámara debajo -->
+      </div>
+
+      <!-- Cámara — ocupa toda la zona de resultado -->
+      <div id="sc-camara-wrap" style="flex:1;display:flex;flex-direction:column">
+        <div style="background:rgba(0,0,0,.7);padding:8px 16px;text-align:center;flex-shrink:0">
+          <div id="sc-mode-label" style="color:#93c5fd;font-size:12px;font-weight:600;letter-spacing:.05em">MODO: VERIFICACIÓN DE AUTORIZACIÓN</div>
+        </div>
+        <div id="qr-reader" style="flex:1;overflow:hidden"></div>
+        <!-- Input manual debajo de la cámara -->
+        <div style="padding:8px 12px;background:#000;display:flex;gap:8px;flex-shrink:0">
+          <input id="scan-manual-inp" placeholder="Referencia manual…"
+            style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:10px;padding:10px 12px;font-size:14px"
+            onkeydown="if(event.key==='Enter')_verificarManualScanner()">
+          <button onclick="_verificarManualScanner()"
+            style="background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:18px;cursor:pointer">🔍</button>
+        </div>
+      </div>
+
     </div>
 
-    <!-- Cámara con altura fija — html5-qrcode necesita píxeles reales -->
-    <div id="sc-camara-wrap" style="flex-shrink:0;position:relative;width:100%;height:260px;background:#111;overflow:hidden">
-      <div id="qr-reader" style="width:100%;height:100%"></div>
-    </div>
-
-    <!-- Input manual -->
-    <div style="flex-shrink:0;padding:8px 12px;background:#000;display:flex;gap:8px">
-      <input id="scan-manual-inp" placeholder="Referencia manual…"
-        style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:10px;padding:10px 12px;font-size:14px"
-        onkeydown="if(event.key==='Enter')_verificarManualScanner()">
-      <button onclick="_verificarManualScanner()"
-        style="background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:18px;cursor:pointer">🔍</button>
-    </div>
-
-    <!-- Panel resultado — flex:1 crece para llenar el resto -->
-    <div id="sc-resultado-principal"
-      style="flex:1;background:#111;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;text-align:center">
-      <div style="color:#4b5563;font-size:16px">📷 Apunta al código QR</div>
-    </div>
-
-    <!-- Botones abajo -->
+    <!-- BARRA BOTONES — siempre visible abajo -->
     <div style="flex-shrink:0;background:rgba(0,0,0,.95);padding:10px 12px;display:flex;gap:8px;border-top:1px solid #1f2937">
       <button id="sc-mode-autorizar" onclick="_setScannerMode('autorizar')"
         style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;min-height:52px">
@@ -11359,25 +11361,26 @@ async function abrirScannerQR(){
   }
 }
 
-// Mostrar resultado en el panel inferior (cámara queda arriba siempre visible)
+// Mostrar resultado y OCULTAR cámara para que ocupe toda la pantalla
 function _mostrarEnPrincipal(htmlContent, borderColor, bgColor){
-  const p = document.getElementById('sc-resultado-principal');
+  const p   = document.getElementById('sc-resultado-principal');
+  const cam = document.getElementById('sc-camara-wrap');
+  if(cam) cam.style.display = 'none'; // ocultar cámara
   if(p){
-    p.style.cssText = `flex:1;background:${bgColor};border-top:3px solid ${borderColor};display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;text-align:center`;
+    p.style.cssText = `position:absolute;inset:0;background:${bgColor};z-index:2;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;border:3px solid ${borderColor}`;
     p.innerHTML = htmlContent;
   }
 }
 
-// Volver a estado inicial listo para escanear
+// Restaurar cámara (llamado por botones Siguiente/Sig.)
 function _volverACamara(){
   _scannerPausado = false;
   _ultimoQRLeido  = null;
   if(window._scannerLastProcessed) window._scannerLastProcessed();
-  const p = document.getElementById('sc-resultado-principal');
-  if(p){
-    p.style.cssText = 'flex:1;background:#111;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;text-align:center';
-    p.innerHTML = '<div style="color:#4b5563;font-size:16px">📷 Apunta al código QR</div>';
-  }
+  const p   = document.getElementById('sc-resultado-principal');
+  const cam = document.getElementById('sc-camara-wrap');
+  if(cam) cam.style.display = 'flex';
+  if(p){ p.style.cssText='position:absolute;inset:0;background:transparent;z-index:2;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box'; p.innerHTML=''; }
 }
 
 function _mostrarResultadoError(msg){
@@ -11405,7 +11408,13 @@ function _setScannerMode(mode){
     if(btnB){ btnB.style.background='#f59e0b'; }
   }
   _ultimoQRLeido = null;
-  _volverACamara();
+  _scannerPausado = false;
+  if(window._scannerLastProcessed) window._scannerLastProcessed();
+  const res = document.getElementById('scanner-result');
+  // Resetear panel principal
+  const pp = document.getElementById('sc-resultado-principal');
+  if(pp){ pp.style.borderColor='#1f2937'; pp.style.background='#111';
+    pp.innerHTML='<div style="color:#4b5563;font-size:16px">📷 Apunta al código QR</div>'; }
 }
 
 async function _verificarManualScanner(){
