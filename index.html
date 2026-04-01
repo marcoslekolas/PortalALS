@@ -1247,6 +1247,14 @@ textarea.fi{resize:vertical;min-height:72px}
         </div>
         <!-- KPIs -->
         <div class="kpi-grid" id="kpi-grid"></div>
+        <!-- Detector de anomalías -->
+        <div id="dash-anomalias-sec" style="margin-bottom:20px;display:none">
+          <div class="ph" style="cursor:pointer" onclick="toggleAnomalias()">
+            <div class="pt">⚠️ Anomalías detectadas</div>
+            <span id="dash-anom-count" class="badge" style="background:#ef4444;color:#fff"></span>
+          </div>
+          <div id="dash-anomalias-list" style="display:flex;flex-direction:column;gap:8px;padding:4px 0"></div>
+        </div>
         <!-- Secciones operativas -->
         <div id="dash-listos-sec">
           <div class="ph"><div class="pt">✅ Listos para embarcar</div></div>
@@ -1521,7 +1529,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <li>📋 Línea de vida: historial cronológico completo de cada expedición con fotos</li>
         <li>🔍 Detector de anomalías: expediciones con tiempo en almacén fuera de lo normal</li>
         <li>📊 Dashboard Ejecutivo: comparativa ▲/▼ vs mismo período año anterior</li>
-        <li>📧 Email automático al cliente al confirmar embarque con foto y CC a <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="d1b0bda291b0bda2b0bdb6b4b2b8a3b0a2ffb2bebc">[email&#160;protected]</a></li>
+        <li>📧 Email automático al cliente al confirmar embarque con foto y CC a <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="a6c7cad5e6c7cad5c7cac1c3c5cfd4c7d588c5c9cb">[email&#160;protected]</a></li>
         <li>📸 Galería fotográfica: fecha, tipo y autor visible en cada foto</li>
         <li>🟢 Indicador Realtime en header — estado de conexión en tiempo real</li>
         <li>📅 Dashboard Ejecutivo: selector de rango libre de fechas</li>
@@ -4987,6 +4995,123 @@ function buqueCard(b,listo){
 }
 
 let _dashInited=false;
+function detectarAnomalias(buques, expediciones){
+  const hoy   = new Date(); hoy.setHours(0,0,0,0);
+  const anomalias = [];
+
+  // ── 1. Expediciones paradas demasiado tiempo en almacén ──────────
+  // Más de 15 días en estado que no avanza
+  const estadosParados = ['🟡 EN ALMACÉN','🔵 PENDIENTE MRN','🟠 PENDIENTE ADUANA'];
+  expediciones.forEach(e => {
+    if(estadosParados.some(s => e.estado_semaforo?.includes(s.replace(/[🟡🔵🟠]/g,'').trim()))){
+      // Usar fecha de la expedición del buque para calcular días
+      const buque = buques.find(b => b.id === e.buque_id);
+      if(buque?.eta_buque){
+        const eta = new Date(buque.eta_buque); eta.setHours(0,0,0,0);
+        const dias = Math.round((hoy - eta) / 86400000);
+        if(dias > 15){
+          anomalias.push({
+            tipo: 'parada',
+            icono: '⏱️',
+            color: '#f59e0b',
+            bg: 'rgba(245,158,11,.08)',
+            titulo: `Expedición parada ${dias} días`,
+            detalle: `${e.nº_expedicion||e.id.slice(0,8)} · ${e.estado_semaforo||'—'} · Buque: ${buque.nombre}`,
+            accion: null
+          });
+        }
+      }
+    }
+  });
+
+  // ── 2. Buques con ETA vencida y sin embarcar ──────────────────────
+  buques.forEach(b => {
+    if(!b.eta_buque) return;
+    const eta = new Date(b.eta_buque); eta.setHours(0,0,0,0);
+    const diasRetraso = Math.round((hoy - eta) / 86400000);
+    if(diasRetraso > 3 && b.estado_operacion !== 'Embarcado' && b.estado_operacion !== 'Finalizado'){
+      anomalias.push({
+        tipo: 'eta_vencida',
+        icono: '🚢',
+        color: '#ef4444',
+        bg: 'rgba(239,68,68,.08)',
+        titulo: `ETA vencida hace ${diasRetraso} días`,
+        detalle: `${b.nombre} · ETA: ${new Date(b.eta_buque).toLocaleDateString('es-ES')} · Estado: ${b.estado_operacion||'—'}`,
+        accion: null
+      });
+    }
+  });
+
+  // ── 3. Expediciones sin MRN con ETA de buque ya pasada ───────────
+  const sinMrn = expediciones.filter(e => {
+    if(e.nº_mrn) return false;
+    const b = buques.find(x => x.id === e.buque_id);
+    if(!b?.eta_buque) return false;
+    const eta = new Date(b.eta_buque); eta.setHours(0,0,0,0);
+    return (hoy - eta) / 86400000 > 5;
+  });
+  if(sinMrn.length > 0){
+    anomalias.push({
+      tipo: 'sin_mrn',
+      icono: '📋',
+      color: '#8b5cf6',
+      bg: 'rgba(139,92,246,.08)',
+      titulo: `${sinMrn.length} expedición${sinMrn.length>1?'es':''} sin MRN (>5 días tras ETA)`,
+      detalle: sinMrn.slice(0,3).map(e=>e.nº_expedicion||e.id.slice(0,8)).join(', ') + (sinMrn.length>3?'…':''),
+      accion: null
+    });
+  }
+
+  // ── 4. Buques con ETA en las próximas 48h sin expediciones listas ─
+  const en48h = buques.filter(b => {
+    if(!b.eta_buque) return false;
+    const eta = new Date(b.eta_buque); eta.setHours(0,0,0,0);
+    const diff = (eta - hoy) / 86400000;
+    return diff >= 0 && diff <= 2;
+  });
+  en48h.forEach(b => {
+    const expsB = expediciones.filter(e => e.buque_id === b.id);
+    const autorizadas = expsB.filter(e => e.estado_carga === '✅ AUTORIZADO').length;
+    const total = expsB.length;
+    if(total > 0 && autorizadas < total){
+      anomalias.push({
+        tipo: 'prox_eta',
+        icono: '⚡',
+        color: '#3b82f6',
+        bg: 'rgba(59,130,246,.08)',
+        titulo: `ETA en ${Math.round((new Date(b.eta_buque)-hoy)/86400000)}h — ${total-autorizadas} exp. sin autorizar`,
+        detalle: `${b.nombre} · ${autorizadas}/${total} autorizadas`,
+        accion: null
+      });
+    }
+  });
+
+  // ── Renderizar ────────────────────────────────────────────────────
+  const sec  = document.getElementById('dash-anomalias-sec');
+  const list = document.getElementById('dash-anomalias-list');
+  const cnt  = document.getElementById('dash-anom-count');
+
+  if(!sec || !list) return;
+
+  if(anomalias.length === 0){
+    sec.style.display = 'none';
+    return;
+  }
+
+  sec.style.display = '';
+  if(cnt) cnt.textContent = anomalias.length;
+  list.style.display = 'flex';
+
+  list.innerHTML = anomalias.map(a => `
+    <div style="background:${a.bg};border-left:3px solid ${a.color};border-radius:10px;padding:12px 14px;display:flex;align-items:flex-start;gap:10px">
+      <span style="font-size:20px;flex-shrink:0">${a.icono}</span>
+      <div style="min-width:0">
+        <div style="font-size:13px;font-weight:700;color:var(--g900);margin-bottom:2px">${a.titulo}</div>
+        <div style="font-size:12px;color:var(--g500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.detalle}</div>
+      </div>
+    </div>`).join('');
+}
+
 async function initDashFilters(){
   if(_dashInited)return; _dashInited=true;
   const [{data:emps},{data:buques}]=await Promise.all([
@@ -5121,6 +5246,9 @@ async function loadDash(){
     <div class="kpi bl"><div class="kpi-lbl">Kilos${filtros.length?' (filtrados)':''}</div><div class="kpi-val">${Math.round(totalKilos/1000).toLocaleString('es-ES')}t</div><div class="kpi-sub" style="color:var(--b600)">${totalKilos.toLocaleString('es-ES')} kg</div></div>
     <div class="kpi rd"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>
     <div class="kpi am"><div class="kpi-lbl">Sin MRN en almacén</div><div class="kpi-val">${alc}</div>${alc>0?'<div class="kpi-sub ks-a">⚠️ requieren acción</div>':''}</div>`;
+
+  // ── Detector de anomalías ────────────────────────────────────────
+  detectarAnomalias(allBuques, EALL||[]);
 
   // Secciones operativas — SIEMPRE muestran la realidad sin filtros
   const cntEl=document.getElementById('dash-proceso-count');
@@ -5757,6 +5885,8 @@ function calSetView(v){
 
 async function renderCal(){
   const now = new Date();
+  // Helper fecha local YYYY-MM-DD (evita desfase UTC en España)
+  const todayLocal = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
   if(!calY){ calY = now.getFullYear(); calM = now.getMonth(); }
@@ -5881,8 +6011,8 @@ async function renderCal(){
     }
     for(let i = 0; i < 15; i++){
       const cur = new Date(start); cur.setDate(start.getDate() + i);
-      const ds  = cur.toISOString().slice(0,10);
-      const isT = ds === now.toISOString().slice(0,10);
+      const ds  = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+      const isT = ds === todayLocal;
       const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
       calBody.appendChild(buildDayCell(ds, cur.getDate(), isT, false, bq));
     }
@@ -5903,8 +6033,8 @@ async function renderCal(){
 
     for(let i = 0; i < 7; i++){
       const cur = new Date(mon); cur.setDate(mon.getDate() + i);
-      const ds  = cur.toISOString().slice(0,10);
-      const isT = ds === now.toISOString().slice(0,10);
+      const ds  = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+      const isT = ds === todayLocal;
       const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
       // In week view use taller cells
       const cell = buildDayCell(ds, cur.getDate(), isT, false, bq);
@@ -5912,6 +6042,11 @@ async function renderCal(){
       calBody.appendChild(cell);
     }
   }
+}
+
+function toggleAnomalias(){
+  const list = document.getElementById('dash-anomalias-list');
+  if(list) list.style.display = list.style.display==='none' ? 'flex' : 'none';
 }
 
 function calP(){
@@ -10356,30 +10491,40 @@ function _makeToneWav(freq, duration, vol){
 function _preloadSounds(){
   if(window._soundsLoaded) return;
   window._soundsLoaded = true;
-  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1046,0.15,0.5), volume:1});
-  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(220, 0.25,0.5), volume:1});
+  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(2200,0.08,1.0), volume:1});
+  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(280, 0.20,1.0), volume:1});
   window._beepOKEl.load();
   window._beepErrEl.load();
 }
 function beepOK(){
-  // Doble método: AudioContext + <audio> para máxima compatibilidad iOS
+  // AudioContext (Opera, Chrome, Android) — doble pitido agudo tipo lector
   try{
     const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
     if(ctx.state==='suspended') ctx.resume().catch(()=>{});
-    const osc = ctx.createOscillator(); const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(1046, ctx.currentTime);
-    gain.gain.setValueAtTime(0.4, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.18);
+    [0, 0.1].forEach(offset => {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(2200, ctx.currentTime + offset);
+      gain.gain.setValueAtTime(1.0, ctx.currentTime + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.08);
+      osc.start(ctx.currentTime + offset);
+      osc.stop(ctx.currentTime + offset + 0.08);
+    });
   } catch(e){}
-  // Audio element (iOS fallback)
+  // Audio element
+  try{ const el=window._beepOKEl; if(el){el.currentTime=0;el.play().catch(()=>{});} }catch(e){}
+  // Speech Synthesis — funciona en Safari iOS sin restricciones
   try{
-    const el = window._beepOKEl;
-    if(el){ el.currentTime=0; el.play().catch(()=>{}); }
+    if(window.speechSynthesis){
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance('bip');
+      u.volume = 1; u.rate = 10; u.pitch = 2;
+      window.speechSynthesis.speak(u);
+    }
   }catch(e){}
+  if(navigator.vibrate) navigator.vibrate(80);
 }
 
 function beepError(){
@@ -10387,19 +10532,27 @@ function beepError(){
     const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
     if(ctx.state==='suspended') ctx.resume().catch(()=>{});
-    [220, 180].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+    [400, 280].forEach((freq, i) => {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
       osc.type = 'square';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.12);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime + i*0.12);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.12 + 0.1);
-      osc.start(ctx.currentTime + i*0.12);
-      osc.stop(ctx.currentTime + i*0.12 + 0.1);
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.15);
+      gain.gain.setValueAtTime(0.4, ctx.currentTime + i*0.15);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.15 + 0.12);
+      osc.start(ctx.currentTime + i*0.15);
+      osc.stop(ctx.currentTime + i*0.15 + 0.12);
     });
   } catch(e){}
   try{ const el=window._beepErrEl; if(el){el.currentTime=0;el.play().catch(()=>{});} }catch(e){}
+  try{
+    if(window.speechSynthesis){
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance('error');
+      u.volume = 1; u.rate = 10; u.pitch = 0.1;
+      window.speechSynthesis.speak(u);
+    }
+  }catch(e){}
+  if(navigator.vibrate) navigator.vibrate([80,40,80]);
 }
 
 function beepCompletado(){
@@ -10408,8 +10561,7 @@ function beepCompletado(){
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
     if(ctx.state==='suspended') ctx.resume();
     [784, 988, 1319].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.12);
@@ -10419,6 +10571,15 @@ function beepCompletado(){
       osc.stop(ctx.currentTime + i*0.12 + 0.2);
     });
   } catch(e){}
+  try{
+    if(window.speechSynthesis){
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance('ok');
+      u.volume = 1; u.rate = 10; u.pitch = 2;
+      window.speechSynthesis.speak(u);
+    }
+  }catch(e){}
+  if(navigator.vibrate) navigator.vibrate([80,40,160]);
 }
 
 
