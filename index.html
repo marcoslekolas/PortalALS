@@ -11256,7 +11256,6 @@ function imprimirQR(ref, qrData, dataUrl){
 let _html5QrScanner = null;
 
 async function abrirScannerQR(){
-  // Limpiar estado y overlay previo
   if(window._scannerStop){ window._scannerStop(); window._scannerStop=null; }
   if(window._scannerStream){ window._scannerStream.getTracks().forEach(t=>t.stop()); window._scannerStream=null; }
   const prev = document.getElementById('scanner-overlay');
@@ -11268,26 +11267,37 @@ async function abrirScannerQR(){
 
   const ov = document.createElement('div');
   ov.id = 'scanner-overlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
+  ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column;overflow:hidden';
+
   ov.innerHTML = `
-    <div style="background:rgba(0,0,0,.9);padding:10px 16px;flex-shrink:0">
-      <div id="sc-mode-label" style="color:#93c5fd;font-size:12px;font-weight:600;letter-spacing:.05em;text-align:center">MODO: VERIFICACIÓN DE AUTORIZACIÓN</div>
-    </div>
-    <div id="scanner-result" style="flex:1;background:#000;overflow-y:auto;padding:16px;color:#fff;display:flex;flex-direction:column;gap:10px">
-      <div id="sc-resultado-principal" style="background:#111;border:2px solid #1f2937;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1">
-        <div style="color:#9ca3af;font-size:15px">📷 Apunta al código QR</div>
+    <!-- ZONA RESULTADO — ocupa toda la pantalla menos la barra de botones -->
+    <div id="sc-zona-resultado" style="flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column">
+
+      <!-- Panel de resultado — visible cuando hay lectura -->
+      <div id="sc-resultado-principal"
+        style="position:absolute;inset:0;background:#000;z-index:2;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto">
+        <!-- Vacío al inicio: se ve la cámara debajo -->
       </div>
-      <div style="display:flex;gap:8px">
-        <input id="scan-manual-inp" placeholder="O escribe la referencia manualmente…"
-          style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:10px;padding:12px 14px;font-size:14px;min-height:48px"
-          onkeydown="if(event.key==='Enter')_verificarManualScanner()">
-        <button onclick="_verificarManualScanner()"
-          style="background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px 18px;font-size:18px;cursor:pointer;min-height:48px;min-width:54px">🔍</button>
+
+      <!-- Cámara — ocupa toda la zona de resultado -->
+      <div id="sc-camara-wrap" style="flex:1;display:flex;flex-direction:column">
+        <div style="background:rgba(0,0,0,.7);padding:8px 16px;text-align:center;flex-shrink:0">
+          <div id="sc-mode-label" style="color:#93c5fd;font-size:12px;font-weight:600;letter-spacing:.05em">MODO: VERIFICACIÓN DE AUTORIZACIÓN</div>
+        </div>
+        <div id="qr-reader" style="flex:1;overflow:hidden"></div>
+        <!-- Input manual debajo de la cámara -->
+        <div style="padding:8px 12px;background:#000;display:flex;gap:8px;flex-shrink:0">
+          <input id="scan-manual-inp" placeholder="Referencia manual…"
+            style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:10px;padding:10px 12px;font-size:14px"
+            onkeydown="if(event.key==='Enter')_verificarManualScanner()">
+          <button onclick="_verificarManualScanner()"
+            style="background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:18px;cursor:pointer">🔍</button>
+        </div>
       </div>
+
     </div>
-    <div style="flex-shrink:0;background:#000;padding:8px 8px 0;display:flex;justify-content:center">
-      <div id="qr-reader" style="width:100%;max-width:360px;border-radius:12px;overflow:hidden"></div>
-    </div>
+
+    <!-- BARRA BOTONES — siempre visible abajo -->
     <div style="flex-shrink:0;background:rgba(0,0,0,.95);padding:10px 12px;display:flex;gap:8px;border-top:1px solid #1f2937">
       <button id="sc-mode-autorizar" onclick="_setScannerMode('autorizar')"
         style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;min-height:52px">
@@ -11302,6 +11312,7 @@ async function abrirScannerQR(){
         ✕
       </button>
     </div>`;
+
   document.body.appendChild(ov);
 
   // Cargar html5-qrcode
@@ -11314,42 +11325,70 @@ async function abrirScannerQR(){
     }).catch(()=>{});
   }
   if(!window.Html5Qrcode){
-    const p=document.getElementById('sc-resultado-principal');
-    if(p) p.innerHTML='<div style="color:#f87171">❌ No se pudo cargar el escáner</div>';
-    return;
+    _mostrarResultadoError('❌ No se pudo cargar el escáner'); return;
   }
 
-  // Callback con protección: usa timestamp para ignorar llamadas duplicadas
+  // Activar AudioContext con gesto — iOS requiere esto
+  try{
+    if(!window._alsAudioCtx) window._alsAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if(window._alsAudioCtx.state === 'suspended') await window._alsAudioCtx.resume();
+  }catch(e){}
+
   let _lastProcessed = 0;
-  // Exponer para que _setScannerMode pueda resetear al cambiar modo
-  window._scannerLastProcessed = () => { _lastProcessed = 0; };
-  const onQR = (txt) => {
+  window._scannerLastProcessed = ()=>{ _lastProcessed=0; };
+
+  const onQR = (txt)=>{
     const now = Date.now();
     if(_scannerPausado) return;
-    if(txt === _ultimoQRLeido && now - _ultimoQRTs < 800) return;
-    if(now - _lastProcessed < 800) return;
+    if(txt===_ultimoQRLeido && now-_ultimoQRTs < 800) return;
+    if(now-_lastProcessed < 800) return;
     _lastProcessed = now;
     _scannerPausado = true;
-    _ultimoQRLeido = txt;
-    _ultimoQRTs = now;
-    _procesarQRLeido(txt).catch(e => {
-      console.error('_procesarQRLeido error:', e);
-      _scannerPausado = false;
-    });
+    _ultimoQRLeido  = txt;
+    _ultimoQRTs     = now;
+    _procesarQRLeido(txt).catch(e=>{ console.error(e); _scannerPausado=false; });
   };
 
   try{
     window._html5QrScanner = new window.Html5Qrcode('qr-reader');
     await window._html5QrScanner.start(
-      { facingMode: 'environment' },
-      { fps: 6, qrbox: { width: 250, height: 250 }, aspectRatio: 1.333 },
-      onQR,
-      () => {} // error silencioso
+      {facingMode:'environment'},
+      {fps:6, qrbox:{width:250,height:250}, aspectRatio:1.333},
+      onQR, ()=>{}
     );
   }catch(e){
-    const p=document.getElementById('sc-resultado-principal');
-    if(p) p.innerHTML=`<div style="color:#f87171;font-size:13px">❌ Sin cámara: ${e.message||e}<br>Usa la entrada manual</div>`;
+    _mostrarResultadoError('❌ Sin cámara: '+(e.message||e)+'<br>Usa la entrada manual');
   }
+}
+
+// Mostrar resultado y OCULTAR cámara para que ocupe toda la pantalla
+function _mostrarEnPrincipal(htmlContent, borderColor, bgColor){
+  const p   = document.getElementById('sc-resultado-principal');
+  const cam = document.getElementById('sc-camara-wrap');
+  if(cam) cam.style.display = 'none'; // ocultar cámara
+  if(p){
+    p.style.cssText = `position:absolute;inset:0;background:${bgColor};z-index:2;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;border:3px solid ${borderColor}`;
+    p.innerHTML = htmlContent;
+  }
+}
+
+// Restaurar cámara (llamado por botones Siguiente/Sig.)
+function _volverACamara(){
+  _scannerPausado = false;
+  _ultimoQRLeido  = null;
+  if(window._scannerLastProcessed) window._scannerLastProcessed();
+  const p   = document.getElementById('sc-resultado-principal');
+  const cam = document.getElementById('sc-camara-wrap');
+  if(cam) cam.style.display = 'flex';
+  if(p){ p.style.cssText='position:absolute;inset:0;background:transparent;z-index:2;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box'; p.innerHTML=''; }
+}
+
+function _mostrarResultadoError(msg){
+  _mostrarEnPrincipal(
+    `<div style="text-align:center"><div style="font-size:48px;margin-bottom:12px">❌</div><div style="color:#f87171;font-size:16px;font-weight:700">${msg}</div></div>`,
+    '#ef4444','rgba(239,68,68,.1)'
+  );
+  setTimeout(_volverACamara, 3000);
 }
 
 
@@ -11431,137 +11470,130 @@ let _scannerPausado = false; // true mientras se muestra un resultado — evita 
 async function _procesarQRLeido(texto){
   if(navigator.vibrate) navigator.vibrate(80);
 
-  const p = document.getElementById('sc-resultado-principal');
-  const res = document.getElementById('scanner-result');
-  if(!res){ _scannerPausado=false; return; }
-
   // ── MODO BULTO SUELTO ────────────────────────────────────────
   const matchBlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):(\d+):(\d+)$/i);
   if(matchBlt && window._scannerMode==='bulto'){
     const expId=matchBlt[1], numBulto=matchBlt[2], totalBultos=matchBlt[3];
-    if(p){ p.style.cssText='background:#111;border:2px solid #374151;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';
-      p.innerHTML='<div style="color:#9ca3af;font-size:15px"><div class="spinner" style="display:inline-block;margin-right:8px"></div>Identificando bulto…</div>'; }
-
-    const {data:e, error}=await sb.from('expediciones')
+    _mostrarEnPrincipal(
+      '<div style="text-align:center"><div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto 12px"></div><div style="color:#9ca3af;font-size:15px">Identificando bulto…</div></div>',
+      '#374151','#111'
+    );
+    const {data:e,error}=await sb.from('expediciones')
       .select('id,nº_expedicion,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
       .eq('id',expId).single();
-
     if(error||!e){
       beepError(); if(navigator.vibrate) navigator.vibrate([100,50,100]);
-      if(p){ p.style.borderColor='#ef4444'; p.style.background='rgba(239,68,68,.12)';
-        p.innerHTML='<div style="font-size:48px;margin-bottom:10px">❌</div><div style="color:#f87171;font-size:18px;font-weight:700">Expedición no encontrada</div>'; }
-      setTimeout(()=>{ _scannerPausado=false; _ultimoQRLeido=null; if(p){p.style.borderColor='#1f2937';p.style.background='#111';p.innerHTML='<div style="color:#4b5563;font-size:16px">📷 Apunta al QR</div>';} }, 2500);
+      _mostrarEnPrincipal(
+        '<div style="text-align:center"><div style="font-size:56px;margin-bottom:10px">❌</div><div style="color:#f87171;font-size:18px;font-weight:700">Expedición no encontrada</div></div>',
+        '#ef4444','rgba(239,68,68,.1)'
+      );
+      setTimeout(_volverACamara, 2500);
       return;
     }
-
     beepOK(); if(navigator.vibrate) navigator.vibrate([80,40,160]);
-    if(p){
-      p.style.cssText='background:rgba(34,197,94,.1);border:2px solid #22c55e;border-radius:16px;padding:20px;text-align:center;width:100%;box-sizing:border-box;overflow-y:auto';
-      p.innerHTML=`
-        <div style="font-size:12px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">📦 Bulto ${numBulto} de ${totalBultos}</div>
-        <div style="font-size:32px;font-weight:900;color:#fff;font-family:monospace;margin-bottom:6px">${e.nº_expedicion}</div>
-        <div style="font-size:14px;color:#86efac;margin-bottom:14px">${e.estado_semaforo||''}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;text-align:left">
-          <div style="background:#0d1117;border-radius:10px;padding:10px">
-            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:2px">Empresa</div>
-            <div style="font-size:13px;font-weight:700;color:#fff">${e.empresas?.nombre||'—'}</div>
+    _mostrarEnPrincipal(`
+      <div style="width:100%;text-align:center">
+        <div style="font-size:13px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">📦 Bulto ${numBulto} de ${totalBultos}</div>
+        <div style="font-size:36px;font-weight:900;color:#fff;font-family:monospace;margin-bottom:6px">${e.nº_expedicion}</div>
+        <div style="font-size:14px;color:#86efac;margin-bottom:16px">${e.estado_semaforo||''}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;text-align:left">
+          <div style="background:#0d1117;border-radius:12px;padding:12px">
+            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:3px">Empresa</div>
+            <div style="font-size:14px;font-weight:700;color:#fff">${e.empresas?.nombre||'—'}</div>
           </div>
-          <div style="background:#0d1117;border-radius:10px;padding:10px">
-            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:2px">Buque</div>
-            <div style="font-size:13px;font-weight:700;color:#fff">${e.buques?.nombre||'—'}</div>
+          <div style="background:#0d1117;border-radius:12px;padding:12px">
+            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:3px">Buque</div>
+            <div style="font-size:14px;font-weight:700;color:#fff">${e.buques?.nombre||'—'}</div>
           </div>
-          <div style="background:#0d1117;border-radius:10px;padding:10px">
-            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:2px">Bultos · Kilos</div>
-            <div style="font-size:14px;font-weight:800;color:#fff">${e.bultos||0} · ${e.kilos||0} kg</div>
+          <div style="background:#0d1117;border-radius:12px;padding:12px">
+            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:3px">Bultos · Kilos</div>
+            <div style="font-size:15px;font-weight:800;color:#fff">${e.bultos||0} · ${e.kilos||0} kg</div>
           </div>
-          <div style="background:#0d1117;border-radius:10px;padding:10px">
-            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:2px">Ubicación</div>
-            <div style="font-size:13px;font-weight:700;color:#fff">📍 ${e.ubicacion||'—'}</div>
+          <div style="background:#0d1117;border-radius:12px;padding:12px">
+            <div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:3px">Ubicación</div>
+            <div style="font-size:14px;font-weight:700;color:#fff">📍 ${e.ubicacion||'—'}</div>
           </div>
         </div>
-        <button onclick="_scannerPausado=false;_ultimoQRLeido=null;if(window._scannerLastProcessed)window._scannerLastProcessed();const p=document.getElementById('sc-resultado-principal');if(p){p.style.cssText='background:#111;border:2px solid #1f2937;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';p.innerHTML='<div style=color:#4b5563;font-size:16px>📷 Escanea el siguiente bulto</div>';}"
-          style="width:100%;background:#1f2937;color:#fff;border:1px solid #374151;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;min-height:50px;margin-top:4px">
-          🔄 Siguiente bulto
-        </button>`;
-    }
+        <button onclick="_volverACamara()"
+          style="width:100%;background:#1f2937;color:#fff;border:1px solid #374151;border-radius:14px;padding:16px;font-size:16px;font-weight:700;cursor:pointer;min-height:54px">
+          🔄 Escanear siguiente bulto
+        </button>
+      </div>`,
+      '#22c55e','rgba(34,197,94,.08)'
+    );
     return;
   }
 
-  // ── MODO AUTORIZACIÓN: ALS-EXP:{uuid} ────────────────────────
-  // Si es ALS-BLT en modo autorización, extraer el uuid de expedición
+  // ── MODO AUTORIZACIÓN ────────────────────────────────────────
   const bltAlt = texto.match(/^ALS-BLT:([a-f0-9-]{36}):/i);
-  const expUuid = bltAlt ? bltAlt[1] : null;
-  const match = texto.match(/^ALS-EXP:([a-f0-9-]{36})$/i);
-  const uuid = match ? match[1] : expUuid;
+  const match  = texto.match(/^ALS-EXP:([a-f0-9-]{36})$/i);
+  const uuid   = match?.[1] || bltAlt?.[1];
 
   if(!uuid){
     beepError();
-    if(p){ p.style.borderColor='#fbbf24'; p.style.background='rgba(251,191,36,.08)';
-      p.innerHTML='<div style="font-size:40px;margin-bottom:8px">⚠️</div><div style="color:#fbbf24;font-size:16px;font-weight:700">QR no reconocido</div><div style="color:#6b7280;font-size:12px;margin-top:6px">'+texto.substring(0,40)+'</div>'; }
-    setTimeout(()=>{ _scannerPausado=false; _ultimoQRLeido=null; if(p){p.style.cssText='background:#111;border:2px solid #1f2937;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';p.innerHTML='<div style=color:#4b5563;font-size:16px>📷 Apunta al QR</div>';} }, 2500);
+    _mostrarResultadoError('⚠️ QR no reconocido');
     return;
   }
 
-  if(p){ p.style.cssText='background:#111;border:2px solid #374151;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';
-    p.innerHTML='<div style="color:#9ca3af;font-size:15px"><div class="spinner" style="display:inline-block;margin-right:8px"></div>Consultando…</div>'; }
+  _mostrarEnPrincipal(
+    '<div style="text-align:center"><div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto 12px"></div><div style="color:#9ca3af;font-size:15px">Consultando…</div></div>',
+    '#374151','#111'
+  );
 
-  const {data:e, error}=await sb.from('expediciones')
+  const {data:e,error}=await sb.from('expediciones')
     .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
     .eq('id',uuid).single();
 
   if(error||!e){
     beepError(); if(navigator.vibrate) navigator.vibrate([100,50,100]);
-    if(p){ p.style.borderColor='#ef4444'; p.style.background='rgba(239,68,68,.12)';
-      p.innerHTML='<div style="font-size:48px;margin-bottom:10px">❌</div><div style="color:#f87171;font-size:18px;font-weight:700">Expedición no encontrada</div>'; }
-    setTimeout(()=>{ _scannerPausado=false; _ultimoQRLeido=null; if(p){p.style.cssText='background:#111;border:2px solid #1f2937;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';p.innerHTML='<div style=color:#4b5563;font-size:16px>📷 Apunta al QR</div>';} }, 2500);
+    _mostrarResultadoError('❌ Expedición no encontrada');
     return;
   }
 
   await _mostrarResultadoScan(e);
 }
 
+
 async function _mostrarResultadoScan(e){
   const autorizada = e.estado_carga==='✅ AUTORIZADO';
+
+  // Sonido — activar AudioContext en iOS y reproducir
+  try{
+    if(!window._alsAudioCtx) window._alsAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const ctx = window._alsAudioCtx;
+    if(ctx.state==='suspended') await ctx.resume();
+    if(autorizada) beepOK(); else beepError();
+  }catch(ex){ console.warn('beep error',ex); }
+  if(navigator.vibrate) navigator.vibrate(autorizada ? 200 : [100,50,100,50,100]);
+
   const color  = autorizada ? '#22c55e' : '#ef4444';
   const bgCol  = autorizada ? 'rgba(34,197,94,.1)' : 'rgba(239,68,68,.1)';
   const emoji  = autorizada ? '✅' : '🚫';
   const titulo = autorizada ? 'AUTORIZADA' : 'NO AUTORIZADA';
-
-  // Sonido y vibración
-  if(autorizada){ beepOK(); if(navigator.vibrate) navigator.vibrate(200); }
-  else { beepError(); if(navigator.vibrate) navigator.vibrate([100,50,100,50,100]); }
-
-  const p = document.getElementById('sc-resultado-principal');
   const expId  = e.id;
   const expRef = e.nº_expedicion;
 
-  if(p){
-    p.style.cssText=`background:${bgCol};border:2px solid ${color};border-radius:16px;padding:20px;text-align:center;width:100%;box-sizing:border-box;overflow-y:auto`;
-    p.innerHTML=`
-      <div style="font-size:56px;margin-bottom:8px">${emoji}</div>
-      <div style="font-size:22px;font-weight:900;color:${color};margin-bottom:10px;letter-spacing:.02em">${titulo}</div>
-      <div style="font-size:26px;font-weight:800;color:#fff;font-family:monospace;margin-bottom:6px">${expRef}</div>
-      <div style="font-size:13px;color:#d1d5db;margin-bottom:4px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
-      <div style="font-size:12px;color:#9ca3af;margin-bottom:16px">${e.bultos||0} btos · ${e.kilos||0} kg · 📍${e.ubicacion||'—'}</div>
-      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        ${autorizada?`<button id="sc-btn-carga" style="background:#22c55e;color:#fff;border:none;border-radius:12px;padding:14px 22px;font-size:16px;font-weight:700;cursor:pointer;min-height:52px;flex:1;max-width:200px">✅ Confirmar carga</button>`:''}
-        <button id="sc-btn-ficha" style="background:#3b82f6;color:#fff;border:none;border-radius:12px;padding:14px 18px;font-size:15px;font-weight:600;cursor:pointer;min-height:52px">👁 Ficha</button>
-        <button id="sc-btn-sig" style="background:#374151;color:#fff;border:none;border-radius:12px;padding:14px 18px;font-size:15px;font-weight:600;cursor:pointer;min-height:52px">🔄 Sig.</button>
-      </div>`;
-  }
+  _mostrarEnPrincipal(`
+    <div style="width:100%;text-align:center">
+      <div style="font-size:64px;margin-bottom:10px">${emoji}</div>
+      <div style="font-size:24px;font-weight:900;color:${color};margin-bottom:12px;letter-spacing:.02em">${titulo}</div>
+      <div style="font-size:30px;font-weight:800;color:#fff;font-family:monospace;margin-bottom:6px">${expRef}</div>
+      <div style="font-size:14px;color:#d1d5db;margin-bottom:4px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
+      <div style="font-size:13px;color:#9ca3af;margin-bottom:20px">${e.bultos||0} btos · ${e.kilos||0} kg · 📍${e.ubicacion||'—'}</div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        ${autorizada?`<button id="sc-btn-carga" style="background:#22c55e;color:#fff;border:none;border-radius:14px;padding:16px 24px;font-size:16px;font-weight:700;cursor:pointer;min-height:54px;flex:1;max-width:180px">✅ Confirmar carga</button>`:''}
+        <button id="sc-btn-ficha" style="background:#3b82f6;color:#fff;border:none;border-radius:14px;padding:16px 20px;font-size:15px;font-weight:600;cursor:pointer;min-height:54px">👁 Ficha</button>
+        <button onclick="_volverACamara()" style="background:#374151;color:#fff;border:none;border-radius:14px;padding:16px 20px;font-size:15px;font-weight:600;cursor:pointer;min-height:54px">🔄 Sig.</button>
+      </div>
+    </div>`,
+    color, bgCol
+  );
 
   requestAnimationFrame(()=>{
     const btnCarga=document.getElementById('sc-btn-carga');
     const btnFicha=document.getElementById('sc-btn-ficha');
-    const btnSig  =document.getElementById('sc-btn-sig');
     if(btnCarga) btnCarga.addEventListener('click',()=>confirmarCargaDesdeScanner(expId,expRef));
     if(btnFicha) btnFicha.addEventListener('click',()=>{ cerrarScannerQR(); setTimeout(()=>openExpD(expId),200); });
-    if(btnSig)   btnSig.addEventListener('click',()=>{
-      _scannerPausado=false; _ultimoQRLeido=null;
-      if(window._scannerLastProcessed) window._scannerLastProcessed();
-      if(p){ p.style.cssText='background:#111;border:2px solid #1f2937;border-radius:16px;padding:24px;text-align:center;min-height:140px;display:flex;align-items:center;justify-content:center;flex:1';
-        p.innerHTML='<div style="color:#4b5563;font-size:16px">📷 Apunta al QR</div>'; }
-    });
   });
 }
 
