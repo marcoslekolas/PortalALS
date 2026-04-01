@@ -10378,14 +10378,19 @@ async function enviarNota(expId, expRef){
     await loadNotasExp(expId);
 
     // Notificar a usuarios mencionados con @nombre
-    const menciones = [...texto.matchAll(/@([\w\u00C0-\u024F]+)/g)].map(m=>m[1].toLowerCase());
+    const menciones = [...texto.matchAll(/@([\wÀ-ɏ]+)/g)].map(m=>m[1].toLowerCase());
+    console.log('[Menciones] Texto:', texto, '| Menciones detectadas:', menciones);
     if(menciones.length){
-      const {data:usu} = await sb.from('usuarios').select('id,nombre,rol').eq('activo',true);
+      // Intentar sin filtro activo primero (por si la columna no existe)
+      let {data:usu, error:eusu} = await sb.from('usuarios').select('id,nombre,rol');
+      if(eusu) console.warn('[Menciones] Error cargando usuarios:', eusu);
+      console.log('[Menciones] Usuarios cargados:', (usu||[]).map(u=>u.nombre));
       const mencionados = (usu||[]).filter(u=>
         menciones.some(m=>(u.nombre||'').toLowerCase().includes(m))
       );
+      console.log('[Menciones] Mencionados encontrados:', mencionados.map(u=>u.nombre));
       const notifRows = mencionados
-        .filter(u => u.id !== CU?.id)
+        .filter(u => u.id !== CU?.id)  // excluir al propio remitente
         .map(u => ({
           destinatario_id: u.id,
           remitente_id: CU.id,
@@ -10396,14 +10401,18 @@ async function enviarNota(expId, expRef){
           leida: false,
           expedicion_id: expId
         }));
+      console.log('[Menciones] Filas a insertar:', notifRows.length, '| CU.id:', CU?.id);
       if(notifRows.length){
         const {error:eInsert} = await sb.from('als_notificaciones').insert(notifRows);
         if(eInsert){
-          console.warn('Error insertando notificación:', eInsert);
+          console.warn('[Menciones] Error insertando:', eInsert);
           showToast('⚠️ Nota enviada pero notificación falló: '+eInsert.message);
         } else {
           showToast('💬 Nota enviada · '+notifRows.length+' usuario'+( notifRows.length>1?'s':'')+' notificado'+( notifRows.length>1?'s':''));
         }
+      } else {
+        console.log('[Menciones] Sin filas — usuario mencionado es el remitente o no encontrado');
+        showToast('💬 Nota enviada (sin menciones resueltas — revisa la consola)');
       }
     }
   } catch(ex){ showToast('❌ Error al enviar nota: '+ex.message); }
@@ -11731,12 +11740,13 @@ async function cargarNotificacionesPendientes(){
     const btn = document.getElementById('hdr-notif-btn');
     if(btn) btn.style.display = '';
 
-    const {data} = await sb.from('als_notificaciones')
+    const {data, error:eNotif} = await sb.from('als_notificaciones')
       .select('*')
       .eq('destinatario_id', CU.id)
       .eq('leida', false)
       .order('created_at', {ascending:false});
 
+    console.log('[Notificaciones] CU.id:', CU.id, '| no leídas:', (data||[]).length, '| error:', eNotif?.message);
     _actualizarBadge((data||[]).length);
 
     // Suscribir a Realtime para recibir menciones al instante
