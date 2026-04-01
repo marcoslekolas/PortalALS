@@ -10332,12 +10332,14 @@ function mostrarAtajos(){
 // ── Sonidos de validación escáner ────────────────────────────────────
 function beepOK(){
   try{
-    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
+    if(ctx.state==='suspended') ctx.resume();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain); gain.connect(ctx.destination);
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(1046, ctx.currentTime); // Do5
+    osc.frequency.setValueAtTime(1046, ctx.currentTime);
     gain.gain.setValueAtTime(0.3, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
     osc.start(ctx.currentTime);
@@ -10347,7 +10349,9 @@ function beepOK(){
 
 function beepError(){
   try{
-    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
+    if(ctx.state==='suspended') ctx.resume();
     [220, 180].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -10364,7 +10368,9 @@ function beepError(){
 
 function beepCompletado(){
   try{
-    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
+    if(ctx.state==='suspended') ctx.resume();
     [784, 988, 1319].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -11271,7 +11277,9 @@ async function abrirScannerQR(){
       MODO: VERIFICACIÓN DE AUTORIZACIÓN
     </div>
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto">
-      <div id="qr-reader" style="width:100%;max-width:500px"></div>
+      <div id="sc-camara-wrap" style="width:100%;max-width:500px">
+        <div id="qr-reader" style="width:100%;max-width:500px"></div>
+      </div>
       <div id="scanner-result" style="width:100%;max-width:500px;padding:16px;color:#fff;text-align:center">
         <div style="font-size:13px;color:#9ca3af">Apunta al código QR de la expedición o bulto</div>
       </div>
@@ -11293,6 +11301,13 @@ async function abrirScannerQR(){
 
   document.body.appendChild(ov);
   window._scannerMode = 'autorizar';
+
+  // Crear AudioContext aprovechando el gesto del usuario — iOS lo requiere
+  try{
+    if(!window._alsAudioCtx || window._alsAudioCtx.state === 'closed')
+      window._alsAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if(window._alsAudioCtx.state === 'suspended') window._alsAudioCtx.resume();
+  }catch(e){}
 
   if(!window.Html5Qrcode){
     await new Promise((resolve, reject)=>{
@@ -11408,6 +11423,9 @@ async function _procesarQRLeido(texto){
       return;
     }
     beepOK(); if(navigator.vibrate) navigator.vibrate([100,50,200]);
+    // Ocultar cámara
+    const camB = document.getElementById('sc-camara-wrap');
+    if(camB) camB.style.display = 'none';
     res.innerHTML = `
       <div style="background:rgba(245,158,11,.15);border:2px solid #f59e0b;border-radius:10px;padding:14px;margin:4px">
         <div style="font-size:13px;font-weight:700;color:#fcd34d;margin-bottom:6px">📦 BULTO ${numBulto} de ${totalBultos}</div>
@@ -11424,8 +11442,12 @@ async function _procesarQRLeido(texto){
       const f=document.getElementById('sc-btn-blt-ficha');
       const s=document.getElementById('sc-btn-blt-sig');
       if(f) f.addEventListener('click',()=>{ cerrarScannerQR(); setTimeout(()=>openExpD(expId),200); });
-      if(s) s.addEventListener('click',()=>{ _ultimoQRLeido=null; _scannerPausado=false;
-        res.innerHTML='<div style="font-size:13px;color:#9ca3af;padding:8px">📦 Escanea el siguiente bulto</div>'; });
+      if(s) s.addEventListener('click',()=>{
+        _ultimoQRLeido=null; _scannerPausado=false;
+        const cam=document.getElementById('sc-camara-wrap');
+        if(cam) cam.style.display='';
+        res.innerHTML='<div style="font-size:13px;color:#9ca3af;padding:8px">📦 Escanea el siguiente bulto</div>';
+      });
     });
     return;
   }
@@ -11459,6 +11481,9 @@ async function _mostrarResultadoScan(e, res){
   const bg    = autorizada ? 'rgba(34,197,94,.15)' : 'rgba(239,68,68,.15)';
   if(autorizada){ beepOK(); } else { beepError(); }
   if(navigator.vibrate) navigator.vibrate(autorizada ? [200] : [100,50,100,50,100]);
+  // Ocultar cámara para que el resultado ocupe toda la pantalla
+  const cam = document.getElementById('sc-camara-wrap');
+  if(cam) cam.style.display = 'none';
   const expId=e.id, expRef=e.nº_expedicion;
   res.innerHTML = `
     <div style="background:${bg};border:2px solid ${color};border-radius:10px;padding:14px;margin:4px">
@@ -11479,8 +11504,12 @@ async function _mostrarResultadoScan(e, res){
     const s=document.getElementById('sc-btn-sig');
     if(c) c.addEventListener('click',()=>confirmarCargaDesdeScanner(expId,expRef));
     if(f) f.addEventListener('click',()=>{ cerrarScannerQR(); setTimeout(()=>openExpD(expId),200); });
-    if(s) s.addEventListener('click',()=>{ _ultimoQRLeido=null; _scannerPausado=false;
-      res.innerHTML='<div style="font-size:13px;color:#9ca3af;padding:8px">Apunta al siguiente QR</div>'; });
+    if(s) s.addEventListener('click',()=>{
+      _ultimoQRLeido=null; _scannerPausado=false;
+      const cam=document.getElementById('sc-camara-wrap');
+      if(cam) cam.style.display='';
+      res.innerHTML='<div style="font-size:13px;color:#9ca3af;padding:8px">Apunta al siguiente QR</div>';
+    });
   });
 }
 
