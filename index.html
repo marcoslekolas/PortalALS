@@ -9744,6 +9744,13 @@ async function openExpD(id, forceOpen=false){
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
   document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  if(e.estado_carga==='✅ AUTORIZADO'){
+    const btnInstr = document.createElement('button');
+    btnInstr.className='btn btn-s btn-sm';
+    btnInstr.textContent='🚛 Instruc.';
+    btnInstr.onclick = ()=>generarInstruccionesTransportista(''+e.id+'');
+    document.getElementById('m-foot').appendChild(btnInstr);
+  }
   window._modalExpId = e.id; // para refresh Realtime
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
@@ -11415,6 +11422,52 @@ function _crearQRDiv(texto, size, resolve){
 
 // El QR codifica: ALS-EXP:{id} — permite identificar unívocamente la expedición
 function qrDataParaExp(id){ return `ALS-EXP:${id}`; }
+
+// ── Instrucciones para el transportista ──────────────────────────────
+async function generarInstruccionesTransportista(expId){
+  const {data:e} = await sb.from('expediciones')
+    .select('*,buques(nombre,eta_buque,nº_escala),empresas(nombre,email_confronta)')
+    .eq('id',expId).single();
+  if(!e){ showToast('No se pudo cargar la expedición'); return; }
+  const hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const cuerpo =
+    'INSTRUCCIONES DE RETIRADA DE MERCANCÍA\n' +
+    '═══════════════════════════════════════\n\n' +
+    '📋 Nº EXPEDICIÓN: ' + (e.nº_expedicion||'—') + '\n' +
+    '🏢 EMPRESA: ' + (e.empresas?.nombre||'—') + '\n' +
+    '🚢 BUQUE: ' + (e.buques?.nombre||'—') + (e.buques?.nº_escala?' (Escala: '+e.buques.nº_escala+')':'') + '\n' +
+    '📅 FECHA: ' + hoy + '\n\n' +
+    '─────────────────────────────────────────\n' +
+    'MERCANCÍA\n' +
+    '─────────────────────────────────────────\n' +
+    '📦 Bultos: ' + (e.bultos||0) + '\n' +
+    '⚖️ Kilos: ' + (e.kilos||0) + ' kg\n' +
+    '📍 Ubicación: ' + (e.ubicacion||'Consultar con ALS') + '\n' +
+    (e.nº_mrn?'📋 MRN: '+e.nº_mrn+'\n':'') +
+    (e.nº_referencia_cliente?'🔖 Ref. cliente: '+e.nº_referencia_cliente+'\n':'') +
+    '\n─────────────────────────────────────────\n' +
+    'INSTRUCCIONES\n' +
+    '─────────────────────────────────────────\n' +
+    '1. Presentarse con este documento en instalaciones ALS\n' +
+    '2. Identificarse como transportista autorizado\n' +
+    '3. Aportar documentación del vehículo y conductor\n' +
+    '4. Confirmar recogida con el responsable de almacén\n\n' +
+    '─────────────────────────────────────────\n' +
+    'CONTACTO ALS\n' +
+    '─────────────────────────────────────────\n' +
+    '📞 +34 956 58 13 16\n' +
+    '📧 als@alsalgeciras.com\n' +
+    '🕐 Operations 24/7: +34 664 07 49 40\n\n' +
+    'ALGECIRAS LOGISTIC SOLUTIONS (ALS)\n' +
+    'Customs Way — Puerto de Algeciras';
+  const emailDest = e.empresas?.email_confronta||'';
+  const asunto = encodeURIComponent('🚛 Instrucciones retirada — '+(e.nº_expedicion||'')+' · '+hoy);
+  const mailto = 'mailto:'+emailDest+'?cc='+encodeURIComponent('als@alsalgeciras.com')+'&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
+  const a = document.createElement('a');
+  a.href=mailto; a.target='_blank';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  showToast('🚛 Instrucciones abiertas en email');
+}
 
 function mostrarQRExpedicion(id, ref){
   const qrData = qrDataParaExp(id);
