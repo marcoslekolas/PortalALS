@@ -1247,14 +1247,6 @@ textarea.fi{resize:vertical;min-height:72px}
         </div>
         <!-- KPIs -->
         <div class="kpi-grid" id="kpi-grid"></div>
-        <!-- Detector de anomalías -->
-        <div id="dash-anomalias-sec" style="margin-bottom:20px;display:none">
-          <div class="ph" style="cursor:pointer" onclick="toggleAnomalias()">
-            <div class="pt">⚠️ Anomalías detectadas</div>
-            <span id="dash-anom-count" class="badge" style="background:#ef4444;color:#fff"></span>
-          </div>
-          <div id="dash-anomalias-list" style="display:flex;flex-direction:column;gap:8px;padding:4px 0"></div>
-        </div>
         <!-- Secciones operativas -->
         <div id="dash-listos-sec">
           <div class="ph"><div class="pt">✅ Listos para embarcar</div></div>
@@ -1529,7 +1521,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <li>📋 Línea de vida: historial cronológico completo de cada expedición con fotos</li>
         <li>🔍 Detector de anomalías: expediciones con tiempo en almacén fuera de lo normal</li>
         <li>📊 Dashboard Ejecutivo: comparativa ▲/▼ vs mismo período año anterior</li>
-        <li>📧 Email automático al cliente al confirmar embarque con foto y CC a <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="a6c7cad5e6c7cad5c7cac1c3c5cfd4c7d588c5c9cb">[email&#160;protected]</a></li>
+        <li>📧 Email automático al cliente al confirmar embarque con foto y CC a <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="d1b0bda291b0bda2b0bdb6b4b2b8a3b0a2ffb2bebc">[email&#160;protected]</a></li>
         <li>📸 Galería fotográfica: fecha, tipo y autor visible en cada foto</li>
         <li>🟢 Indicador Realtime en header — estado de conexión en tiempo real</li>
         <li>📅 Dashboard Ejecutivo: selector de rango libre de fechas</li>
@@ -4995,123 +4987,6 @@ function buqueCard(b,listo){
 }
 
 let _dashInited=false;
-function detectarAnomalias(buques, expediciones){
-  const hoy   = new Date(); hoy.setHours(0,0,0,0);
-  const anomalias = [];
-
-  // ── 1. Expediciones paradas demasiado tiempo en almacén ──────────
-  // Más de 15 días en estado que no avanza
-  const estadosParados = ['🟡 EN ALMACÉN','🔵 PENDIENTE MRN','🟠 PENDIENTE ADUANA'];
-  expediciones.forEach(e => {
-    if(estadosParados.some(s => e.estado_semaforo?.includes(s.replace(/[🟡🔵🟠]/g,'').trim()))){
-      // Usar fecha de la expedición del buque para calcular días
-      const buque = buques.find(b => b.id === e.buque_id);
-      if(buque?.eta_buque){
-        const eta = new Date(buque.eta_buque); eta.setHours(0,0,0,0);
-        const dias = Math.round((hoy - eta) / 86400000);
-        if(dias > 15){
-          anomalias.push({
-            tipo: 'parada',
-            icono: '⏱️',
-            color: '#f59e0b',
-            bg: 'rgba(245,158,11,.08)',
-            titulo: `Expedición parada ${dias} días`,
-            detalle: `${e.nº_expedicion||e.id.slice(0,8)} · ${e.estado_semaforo||'—'} · Buque: ${buque.nombre}`,
-            accion: null
-          });
-        }
-      }
-    }
-  });
-
-  // ── 2. Buques con ETA vencida y sin embarcar ──────────────────────
-  buques.forEach(b => {
-    if(!b.eta_buque) return;
-    const eta = new Date(b.eta_buque); eta.setHours(0,0,0,0);
-    const diasRetraso = Math.round((hoy - eta) / 86400000);
-    if(diasRetraso > 3 && b.estado_operacion !== 'Embarcado' && b.estado_operacion !== 'Finalizado'){
-      anomalias.push({
-        tipo: 'eta_vencida',
-        icono: '🚢',
-        color: '#ef4444',
-        bg: 'rgba(239,68,68,.08)',
-        titulo: `ETA vencida hace ${diasRetraso} días`,
-        detalle: `${b.nombre} · ETA: ${new Date(b.eta_buque).toLocaleDateString('es-ES')} · Estado: ${b.estado_operacion||'—'}`,
-        accion: null
-      });
-    }
-  });
-
-  // ── 3. Expediciones sin MRN con ETA de buque ya pasada ───────────
-  const sinMrn = expediciones.filter(e => {
-    if(e.nº_mrn) return false;
-    const b = buques.find(x => x.id === e.buque_id);
-    if(!b?.eta_buque) return false;
-    const eta = new Date(b.eta_buque); eta.setHours(0,0,0,0);
-    return (hoy - eta) / 86400000 > 5;
-  });
-  if(sinMrn.length > 0){
-    anomalias.push({
-      tipo: 'sin_mrn',
-      icono: '📋',
-      color: '#8b5cf6',
-      bg: 'rgba(139,92,246,.08)',
-      titulo: `${sinMrn.length} expedición${sinMrn.length>1?'es':''} sin MRN (>5 días tras ETA)`,
-      detalle: sinMrn.slice(0,3).map(e=>e.nº_expedicion||e.id.slice(0,8)).join(', ') + (sinMrn.length>3?'…':''),
-      accion: null
-    });
-  }
-
-  // ── 4. Buques con ETA en las próximas 48h sin expediciones listas ─
-  const en48h = buques.filter(b => {
-    if(!b.eta_buque) return false;
-    const eta = new Date(b.eta_buque); eta.setHours(0,0,0,0);
-    const diff = (eta - hoy) / 86400000;
-    return diff >= 0 && diff <= 2;
-  });
-  en48h.forEach(b => {
-    const expsB = expediciones.filter(e => e.buque_id === b.id);
-    const autorizadas = expsB.filter(e => e.estado_carga === '✅ AUTORIZADO').length;
-    const total = expsB.length;
-    if(total > 0 && autorizadas < total){
-      anomalias.push({
-        tipo: 'prox_eta',
-        icono: '⚡',
-        color: '#3b82f6',
-        bg: 'rgba(59,130,246,.08)',
-        titulo: `ETA en ${Math.round((new Date(b.eta_buque)-hoy)/86400000)}h — ${total-autorizadas} exp. sin autorizar`,
-        detalle: `${b.nombre} · ${autorizadas}/${total} autorizadas`,
-        accion: null
-      });
-    }
-  });
-
-  // ── Renderizar ────────────────────────────────────────────────────
-  const sec  = document.getElementById('dash-anomalias-sec');
-  const list = document.getElementById('dash-anomalias-list');
-  const cnt  = document.getElementById('dash-anom-count');
-
-  if(!sec || !list) return;
-
-  if(anomalias.length === 0){
-    sec.style.display = 'none';
-    return;
-  }
-
-  sec.style.display = '';
-  if(cnt) cnt.textContent = anomalias.length;
-  list.style.display = 'flex';
-
-  list.innerHTML = anomalias.map(a => `
-    <div style="background:${a.bg};border-left:3px solid ${a.color};border-radius:10px;padding:12px 14px;display:flex;align-items:flex-start;gap:10px">
-      <span style="font-size:20px;flex-shrink:0">${a.icono}</span>
-      <div style="min-width:0">
-        <div style="font-size:13px;font-weight:700;color:var(--g900);margin-bottom:2px">${a.titulo}</div>
-        <div style="font-size:12px;color:var(--g500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.detalle}</div>
-      </div>
-    </div>`).join('');
-}
-
 async function initDashFilters(){
   if(_dashInited)return; _dashInited=true;
   const [{data:emps},{data:buques}]=await Promise.all([
@@ -5246,9 +5121,6 @@ async function loadDash(){
     <div class="kpi bl"><div class="kpi-lbl">Kilos${filtros.length?' (filtrados)':''}</div><div class="kpi-val">${Math.round(totalKilos/1000).toLocaleString('es-ES')}t</div><div class="kpi-sub" style="color:var(--b600)">${totalKilos.toLocaleString('es-ES')} kg</div></div>
     <div class="kpi rd"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>
     <div class="kpi am"><div class="kpi-lbl">Sin MRN en almacén</div><div class="kpi-val">${alc}</div>${alc>0?'<div class="kpi-sub ks-a">⚠️ requieren acción</div>':''}</div>`;
-
-  // ── Detector de anomalías ────────────────────────────────────────
-  detectarAnomalias(allBuques, EALL||[]);
 
   // Secciones operativas — SIEMPRE muestran la realidad sin filtros
   const cntEl=document.getElementById('dash-proceso-count');
@@ -5885,8 +5757,6 @@ function calSetView(v){
 
 async function renderCal(){
   const now = new Date();
-  // Helper fecha local YYYY-MM-DD (evita desfase UTC en España)
-  const todayLocal = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
   if(!calY){ calY = now.getFullYear(); calM = now.getMonth(); }
@@ -6011,8 +5881,8 @@ async function renderCal(){
     }
     for(let i = 0; i < 15; i++){
       const cur = new Date(start); cur.setDate(start.getDate() + i);
-      const ds  = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
-      const isT = ds === todayLocal;
+      const ds  = cur.toISOString().slice(0,10);
+      const isT = ds === now.toISOString().slice(0,10);
       const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
       calBody.appendChild(buildDayCell(ds, cur.getDate(), isT, false, bq));
     }
@@ -6033,8 +5903,8 @@ async function renderCal(){
 
     for(let i = 0; i < 7; i++){
       const cur = new Date(mon); cur.setDate(mon.getDate() + i);
-      const ds  = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
-      const isT = ds === todayLocal;
+      const ds  = cur.toISOString().slice(0,10);
+      const isT = ds === now.toISOString().slice(0,10);
       const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
       // In week view use taller cells
       const cell = buildDayCell(ds, cur.getDate(), isT, false, bq);
@@ -6042,11 +5912,6 @@ async function renderCal(){
       calBody.appendChild(cell);
     }
   }
-}
-
-function toggleAnomalias(){
-  const list = document.getElementById('dash-anomalias-list');
-  if(list) list.style.display = list.style.display==='none' ? 'flex' : 'none';
 }
 
 function calP(){
@@ -9743,7 +9608,7 @@ async function openExpD(id, forceOpen=false){
     </div>
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>${e.estado_carga==="✅ AUTORIZADO"?`<button class="btn btn-s btn-sm" onclick="generarInstruccionesTransportista('${e.id}')">🚛 Instruc.</button>`:''}\`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   window._modalExpId = e.id; // para refresh Realtime
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
@@ -9784,61 +9649,90 @@ async function revertirCarga(expId, expRef){
 
 // ── Línea de vida de expedición ───────────────────────────────────────
 async function abrirLineaVida(expId, expRef){
-  document.getElementById('m-title').innerHTML = '📋 Línea de vida — ' + (expRef||'');
-  document.getElementById('m-body').innerHTML = '<div style="text-align:center;padding:20px;color:var(--g400)"><div class="spinner" style="display:inline-block;width:20px;height:20px;border-width:2px;margin-right:8px"></div>Cargando historial…</div>';
+  // Abrir modal con toda la historia cronológica de la expedición
+  document.getElementById('m-title').innerHTML = '📋 Línea de vida — ' + expRef;
+  document.getElementById('m-body').innerHTML = '<div style="text-align:center;padding:20px;color:var(--g400)"><div class="spinner" style="display:inline-block;width:20px;height:20px;border-width:2px;margin-right:8px"></div>Cargando historial completo…</div>';
   document.getElementById('m-foot').innerHTML = '<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>';
   document.getElementById('mo').classList.add('open');
+
   try{
-    const [{data:exp},{data:log},{data:incs}] = await Promise.all([
+    const [{data:exp}, {data:log}, {data:incs}] = await Promise.all([
       sb.from('expediciones').select('*,buques(nombre,eta_buque),empresas(nombre)').eq('id',expId).single(),
       sb.from('activity_log').select('*').eq('tabla','expediciones').eq('registro_id',expId).order('created_at',{ascending:true}),
       sb.from('incidencias').select('*').eq('expedicion_id',expId).order('created_at',{ascending:true})
     ]);
+
     if(!exp){ document.getElementById('m-body').innerHTML='<div class="empty">No encontrada</div>'; return; }
+
     const fdt2 = d => d ? new Date(d).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+
+    // Construir eventos cronológicos
     const eventos = [];
-    eventos.push({ts:exp.created_at, icon:'🆕', titulo:'Expedición creada', detalle:(exp.bultos||0)+' btos · '+(exp.kilos||0)+' kg · '+(exp.empresas?.nombre||'—')+' · '+(exp.buques?.nombre||'—'), color:'var(--b600)', foto:null});
+
+    // Creación
+    eventos.push({ts:exp.created_at, icon:'🆕', titulo:'Expedición creada', detalle:`${exp.bultos||0} btos · ${exp.kilos||0} kg · ${exp.empresas?.nombre||'—'} · ${exp.buques?.nombre||'—'}`, color:'var(--b600)', foto:null});
+
+    // Cambios de activity_log
     (log||[]).forEach(l=>{
       const icon = l.campo_modificado==='ubicacion'?'📍':l.accion==='alerta_llegada'?'📦':l.campo_modificado==='hora_de_carga'?'🚛':l.campo_modificado==='nº_mrn'?'📋':l.campo_modificado==='estado_semaforo'?'🚦':'✏️';
-      const titulo = l.campo_modificado==='ubicacion'?('Ubicación → '+(l.valor_nuevo||'—')):l.accion==='alerta_llegada'?'Llegada confirmada':l.campo_modificado==='hora_de_carga'?'Cargado en camión':l.campo_modificado==='nº_mrn'?'MRN registrado':l.campo_modificado==='estado_semaforo'?('Estado → '+(l.valor_nuevo||'—')):(l.campo_modificado||l.accion||'Cambio');
-      eventos.push({ts:l.created_at, icon, titulo, detalle:'por '+(l.usuario_nombre||'—'), color:'var(--g600)', foto:null});
+      const titulo = l.campo_modificado==='ubicacion'?('Ubicación → '+l.valor_nuevo):l.accion==='alerta_llegada'?'Llegada confirmada al almacén':l.campo_modificado==='hora_de_carga'?'Cargado en camión':l.campo_modificado==='nº_mrn'?'MRN registrado':l.campo_modificado==='estado_semaforo'?('Estado → '+l.valor_nuevo):(l.campo_modificado||l.accion||'Cambio');
+      eventos.push({ts:l.created_at, icon, titulo, detalle:'por '+l.usuario_nombre, color:'var(--g600)', foto:null});
     });
+
+    // Fotos de la expedición
     const {data:fotos} = await sb.from('fotos_operativas').select('*').eq('entidad','expediciones').eq('entidad_id',expId).order('created_at',{ascending:true});
     (fotos||[]).forEach(f=>{
-      const lbl = {'llegada':'Foto de llegada','carga':'Foto de carga','embarque':'Foto de embarque'}[f.tipo]||'Foto';
-      eventos.push({ts:f.created_at, icon:'📸', titulo:lbl, detalle:'por '+(f.subida_por||'—'), color:'var(--tl600)', foto:f.storage_url});
+      const tipoLabel = {'llegada':'Foto de llegada','carga':'Foto de carga','embarque':'Foto de embarque'}[f.tipo]||'Foto';
+      eventos.push({ts:f.created_at, icon:'📸', titulo:tipoLabel, detalle:'por '+(f.subida_por||'—'), color:'var(--tl600)', foto:f.storage_url});
     });
+    if(exp.foto_llegada_url)   eventos.push({ts:exp.created_at, icon:'📸', titulo:'Foto de llegada (campo directo)', detalle:'', color:'var(--tl600)', foto:exp.foto_llegada_url});
+    if(exp.foto_embarque_url)  eventos.push({ts:null, icon:'🚢', titulo:'Foto de embarque', detalle:'', color:'var(--gr600)', foto:exp.foto_embarque_url});
+
+    // Incidencias
     (incs||[]).forEach(i=>{
       eventos.push({ts:i.created_at, icon:'⚠️', titulo:'Incidencia: '+i.tipo, detalle:i.descripcion||'', color:'var(--rd600)', foto:null, incEstado:i.estado});
     });
+
+    // Ordenar cronológicamente
     eventos.sort((a,b)=> (a.ts||'9999') < (b.ts||'9999') ? -1 : 1);
+
+    // Calcular duración total
     const tsInicio = new Date(exp.created_at);
     const tsFin = eventos[eventos.length-1]?.ts ? new Date(eventos[eventos.length-1].ts) : new Date();
     const diasTotal = Math.round((tsFin-tsInicio)/86400000);
-    let out = '<div style="font-size:12px;color:var(--g500);margin-bottom:16px;background:var(--g50);border-radius:8px;padding:8px 12px">';
-    out += '<strong>'+(exp.nº_expedicion||'—')+'</strong> · '+(exp.empresas?.nombre||'—')+' · '+(exp.buques?.nombre||'—')+' · '+diasTotal+' días de ciclo</div>';
-    out += '<div style="position:relative;padding-left:28px"><div style="position:absolute;left:9px;top:0;bottom:0;width:2px;background:var(--g200);border-radius:2px"></div>';
+
+    let html = `<div style="font-size:12px;color:var(--g500);margin-bottom:16px;background:var(--g50);border-radius:8px;padding:8px 12px">
+      <strong>${exp.nº_expedicion}</strong> · ${exp.empresas?.nombre||'—'} · ${exp.buques?.nombre||'—'} · ${diasTotal} días de ciclo
+    </div>
+    <div style="position:relative;padding-left:28px">
+      <div style="position:absolute;left:9px;top:0;bottom:0;width:2px;background:var(--g200);border-radius:2px"></div>`;
+
     eventos.forEach((ev,i)=>{
-      const mb = i===eventos.length-1?'0':'16px';
-      out += '<div style="position:relative;margin-bottom:'+mb+'">';
-      out += '<div style="position:absolute;left:-22px;top:3px;width:12px;height:12px;border-radius:50%;background:'+ev.color+';border:2px solid #fff"></div>';
-      out += '<div style="display:flex;gap:8px;align-items:flex-start"><span style="font-size:15px;flex-shrink:0">'+ev.icon+'</span>';
-      out += '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:var(--g900)">'+ev.titulo;
-      if(ev.incEstado) out += ' <span style="background:'+(ev.incEstado==='Cerrada'?'#22c55e':'#ef4444')+';color:#fff;border-radius:4px;padding:1px 6px;font-size:10px">'+ev.incEstado+'</span>';
-      out += '</div>';
-      if(ev.detalle) out += '<div style="font-size:11px;color:var(--g500)">'+ev.detalle+'</div>';
-      if(ev.ts) out += '<div style="font-size:10px;color:var(--g300);margin-top:2px">'+fdt2(ev.ts)+'</div>';
-      if(ev.foto) out += '<div style="margin-top:6px"><img src="'+ev.foto+'" style="max-width:120px;max-height:80px;border-radius:6px;cursor:pointer" onclick="abrirGaleriaFotos([\''+ev.foto+'\'],\''+ev.titulo+'\')"></div>';
-      out += '</div></div></div>';
+      const esUltimo = i===eventos.length-1;
+      html += `<div style="position:relative;margin-bottom:${esUltimo?'0':'16px'}">
+        <div style="position:absolute;left:-22px;top:3px;width:12px;height:12px;border-radius:50%;background:${ev.color};border:2px solid #fff;box-shadow:0 0 0 2px ${ev.color}33"></div>
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          <span style="font-size:15px;flex-shrink:0">${ev.icon}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700;color:var(--g900)">${ev.titulo}${ev.incEstado?` <span class="badge ${ev.incEstado==='Cerrada'?'bg':'br'}" style="font-size:10px">${ev.incEstado}</span>`:''}</div>
+            ${ev.detalle?`<div style="font-size:11px;color:var(--g500)">${ev.detalle}</div>`:''}
+            ${ev.ts?`<div style="font-size:10px;color:var(--g300);margin-top:2px">${fdt2(ev.ts)}</div>`:''}
+            ${ev.foto?`<div style="margin-top:6px"><img src="${ev.foto}" style="max-width:120px;max-height:80px;border-radius:6px;cursor:pointer;border:1px solid var(--g200)" onclick="abrirGaleriaFotos(['${ev.foto}'],'${ev.titulo}')"></div>`:''}
+          </div>
+        </div>
+      </div>`;
     });
-    out += '</div>';
-    document.getElementById('m-body').innerHTML = out;
-  }catch(ex){
+
+    html += '</div>';
+    document.getElementById('m-body').innerHTML = html;
+
+  } catch(ex){
     document.getElementById('m-body').innerHTML = '<div class="empty">Error: '+ex.message+'</div>';
   }
 }
 
 
+// ── Morning Briefing — popup al login ───────────────────────────────
 async function cargarMorningBriefing(){
   // Mostrar overlay INMEDIATAMENTE — sin esperar async
   const ov = document.getElementById('brief-overlay');
@@ -9890,9 +9784,9 @@ async function cargarMorningBriefing(){
 
     // Construir prompt para IA
     const contexto = [
-      nBuques  ? (nBuques+' buque'+(nBuques>1?'s':'')+' con ETA en las próximas 48h: '+nombresBuques) : null,
-      nFmax    ? (nFmax+' expedición'+(nFmax>1?'es':'')+' con fecha máxima de despacho esta semana') : null,
-      nSinUbic ? (nSinUbic+' expedición'+(nSinUbic>1?'es':'')+' sin ubicar en almacén') : null,
+      nBuques  ? `${nBuques} buque${nBuques>1?'s':''} con ETA en las próximas 48h: ${nombresBuques}` : null,
+      nFmax    ? `${nFmax} expedición${nFmax>1?'es':''} con fecha máxima de despacho esta semana` : null,
+      nSinUbic ? `${nSinUbic} expedición${nSinUbic>1?'es':''} sin ubicar en almacén` : null,
     ].filter(Boolean);
 
     if(!contexto.length){
@@ -10462,40 +10356,30 @@ function _makeToneWav(freq, duration, vol){
 function _preloadSounds(){
   if(window._soundsLoaded) return;
   window._soundsLoaded = true;
-  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(2200,0.08,1.0), volume:1});
-  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(280, 0.20,1.0), volume:1});
+  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1046,0.15,0.5), volume:1});
+  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(220, 0.25,0.5), volume:1});
   window._beepOKEl.load();
   window._beepErrEl.load();
 }
 function beepOK(){
-  // AudioContext (Opera, Chrome, Android) — doble pitido agudo tipo lector
+  // Doble método: AudioContext + <audio> para máxima compatibilidad iOS
   try{
     const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
     if(ctx.state==='suspended') ctx.resume().catch(()=>{});
-    [0, 0.1].forEach(offset => {
-      const osc = ctx.createOscillator(); const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(2200, ctx.currentTime + offset);
-      gain.gain.setValueAtTime(1.0, ctx.currentTime + offset);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.08);
-      osc.start(ctx.currentTime + offset);
-      osc.stop(ctx.currentTime + offset + 0.08);
-    });
+    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1046, ctx.currentTime);
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.18);
   } catch(e){}
-  // Audio element
-  try{ const el=window._beepOKEl; if(el){el.currentTime=0;el.play().catch(()=>{});} }catch(e){}
-  // Speech Synthesis — funciona en Safari iOS sin restricciones
+  // Audio element (iOS fallback)
   try{
-    if(window.speechSynthesis){
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance('bip');
-      u.volume = 1; u.rate = 10; u.pitch = 2;
-      window.speechSynthesis.speak(u);
-    }
+    const el = window._beepOKEl;
+    if(el){ el.currentTime=0; el.play().catch(()=>{}); }
   }catch(e){}
-  if(navigator.vibrate) navigator.vibrate(80);
 }
 
 function beepError(){
@@ -10503,27 +10387,19 @@ function beepError(){
     const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
     if(ctx.state==='suspended') ctx.resume().catch(()=>{});
-    [400, 280].forEach((freq, i) => {
-      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+    [220, 180].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
       osc.type = 'square';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.15);
-      gain.gain.setValueAtTime(0.4, ctx.currentTime + i*0.15);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.15 + 0.12);
-      osc.start(ctx.currentTime + i*0.15);
-      osc.stop(ctx.currentTime + i*0.15 + 0.12);
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.12);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime + i*0.12);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.12 + 0.1);
+      osc.start(ctx.currentTime + i*0.12);
+      osc.stop(ctx.currentTime + i*0.12 + 0.1);
     });
   } catch(e){}
   try{ const el=window._beepErrEl; if(el){el.currentTime=0;el.play().catch(()=>{});} }catch(e){}
-  try{
-    if(window.speechSynthesis){
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance('error');
-      u.volume = 1; u.rate = 10; u.pitch = 0.1;
-      window.speechSynthesis.speak(u);
-    }
-  }catch(e){}
-  if(navigator.vibrate) navigator.vibrate([80,40,80]);
 }
 
 function beepCompletado(){
@@ -10532,7 +10408,8 @@ function beepCompletado(){
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
     if(ctx.state==='suspended') ctx.resume();
     [784, 988, 1319].forEach((freq, i) => {
-      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.12);
@@ -10542,15 +10419,6 @@ function beepCompletado(){
       osc.stop(ctx.currentTime + i*0.12 + 0.2);
     });
   } catch(e){}
-  try{
-    if(window.speechSynthesis){
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance('ok');
-      u.volume = 1; u.rate = 10; u.pitch = 2;
-      window.speechSynthesis.speak(u);
-    }
-  }catch(e){}
-  if(navigator.vibrate) navigator.vibrate([80,40,160]);
 }
 
 
