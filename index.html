@@ -10356,24 +10356,27 @@ function _makeToneWav(freq, duration, vol){
 function _preloadSounds(){
   if(window._soundsLoaded) return;
   window._soundsLoaded = true;
-  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1046,0.15,0.5), volume:1});
-  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(220, 0.25,0.5), volume:1});
+  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(2200,0.08,1.0), volume:1});
+  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(280, 0.20,1.0), volume:1});
   window._beepOKEl.load();
   window._beepErrEl.load();
 }
 function beepOK(){
-  // AudioContext (Opera, Chrome, Android)
+  // AudioContext (Opera, Chrome, Android) — doble pitido agudo tipo lector
   try{
     const ctx = window._alsAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
     if(!window._alsAudioCtx) window._alsAudioCtx = ctx;
     if(ctx.state==='suspended') ctx.resume().catch(()=>{});
-    const osc = ctx.createOscillator(); const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(1800, ctx.currentTime);
-    gain.gain.setValueAtTime(0.5, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.12);
+    [0, 0.1].forEach(offset => {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(2200, ctx.currentTime + offset);
+      gain.gain.setValueAtTime(1.0, ctx.currentTime + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.08);
+      osc.start(ctx.currentTime + offset);
+      osc.stop(ctx.currentTime + offset + 0.08);
+    });
   } catch(e){}
   // Audio element
   try{ const el=window._beepOKEl; if(el){el.currentTime=0;el.play().catch(()=>{});} }catch(e){}
