@@ -1521,7 +1521,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <li>📋 Línea de vida: historial cronológico completo de cada expedición con fotos</li>
         <li>🔍 Detector de anomalías: expediciones con tiempo en almacén fuera de lo normal</li>
         <li>📊 Dashboard Ejecutivo: comparativa ▲/▼ vs mismo período año anterior</li>
-        <li>📧 Email automático al cliente al confirmar embarque con foto y CC a als@alsalgeciras.com</li>
+        <li>📧 Email automático al cliente al confirmar embarque con foto y CC a <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="27464b5467464b54464b4042444e5546540944484a">[email&#160;protected]</a></li>
         <li>📸 Galería fotográfica: fecha, tipo y autor visible en cada foto</li>
         <li>🟢 Indicador Realtime en header — estado de conexión en tiempo real</li>
         <li>📅 Dashboard Ejecutivo: selector de rango libre de fechas</li>
@@ -1792,7 +1792,7 @@ textarea.fi{resize:vertical;min-height:72px}
 </div>
 <div id="toast" class="toast"></div>
 
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script type="text/javascript" id="als-js">
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script type="text/javascript" id="als-js">
 // ── Load Supabase SDK then boot app ──
 (function(){
   var s=document.createElement('script');
@@ -10332,32 +10332,39 @@ function mostrarAtajos(){
 // ── Sonidos de validación escáner ────────────────────────────────────
 // Genera un WAV PCM mono 8bit en base64 para uso como Audio src
 function _makeToneWav(freq, duration, vol){
-  const sampleRate = 8000;
+  // Onda cuadrada 16-bit — sonido más fuerte tipo lector código barras
+  const sampleRate = 22050;
   const numSamples = Math.floor(sampleRate * duration);
-  const buf = new Uint8Array(44 + numSamples);
-  // WAV header
-  const dv = new DataView(buf.buffer);
+  const dataSize = numSamples * 2;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const dv = new DataView(buf);
   const writeStr = (off, s) => { for(let i=0;i<s.length;i++) dv.setUint8(off+i, s.charCodeAt(i)); };
-  writeStr(0,'RIFF'); dv.setUint32(4, 36+numSamples, true);
+  writeStr(0,'RIFF'); dv.setUint32(4, 36+dataSize, true);
   writeStr(8,'WAVE'); writeStr(12,'fmt ');
   dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
-  dv.setUint32(24,sampleRate,true); dv.setUint32(28,sampleRate,true);
-  dv.setUint16(32,1,true); dv.setUint16(34,8,true);
-  writeStr(36,'data'); dv.setUint32(40,numSamples,true);
+  dv.setUint32(24,sampleRate,true); dv.setUint32(28,sampleRate*2,true);
+  dv.setUint16(32,2,true); dv.setUint16(34,16,true);
+  writeStr(36,'data'); dv.setUint32(40,dataSize,true);
   for(let i=0;i<numSamples;i++){
     const t = i/sampleRate;
-    const env = Math.max(0, 1 - t/duration); // fade out
-    buf[44+i] = Math.round(128 + 127 * vol * env * Math.sin(2*Math.PI*freq*t));
+    const env = Math.min(1, t/0.005) * Math.max(0, 1 - t/duration);
+    // Onda cuadrada
+    const sq = Math.sin(2*Math.PI*freq*t) >= 0 ? 1 : -1;
+    const val = Math.round(sq * vol * env * 32767);
+    dv.setInt16(44 + i*2, Math.max(-32768, Math.min(32767, val)), true);
   }
-  let bin=''; buf.forEach(b=>{ bin+=String.fromCharCode(b); });
+  const bytes = new Uint8Array(buf);
+  let bin=''; bytes.forEach(b=>{ bin+=String.fromCharCode(b); });
   return 'data:audio/wav;base64,'+btoa(bin);
 }
 // Precargar sonidos en primera interacción
 function _preloadSounds(){
   if(window._soundsLoaded) return;
   window._soundsLoaded = true;
-  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1046,0.15,0.5), volume:1});
-  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(220, 0.25,0.5), volume:1});
+  // 1800Hz onda cuadrada — pitido fuerte tipo lector código barras
+  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1800,0.12,0.8), volume:1});
+  // 300Hz onda cuadrada — error grave
+  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(300, 0.20,0.8), volume:1});
   window._beepOKEl.load();
   window._beepErrEl.load();
 }
@@ -11364,13 +11371,23 @@ async function abrirScannerQR(){
   document.body.appendChild(ov);
   window._scannerMode = 'autorizar';
 
-  // Preparar audio en el gesto del usuario (iOS requiere esto)
+  // Desbloquear audio en el gesto del usuario — iOS requiere play() síncrono
   _preloadSounds();
+  // Intentar play() en el gesto para desbloquear iOS
+  try{
+    if(window._beepOKEl){
+      window._beepOKEl.volume = 0;
+      window._beepOKEl.play().then(()=>{
+        window._beepOKEl.pause();
+        window._beepOKEl.currentTime = 0;
+        window._beepOKEl.volume = 1;
+      }).catch(()=>{});
+    }
+  }catch(e){}
   try{
     if(!window._alsAudioCtx || window._alsAudioCtx.state === 'closed')
       window._alsAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
     if(window._alsAudioCtx.state === 'suspended') window._alsAudioCtx.resume().catch(()=>{});
-    // Reproducir silencio para "desbloquear" el audio en iOS
     const osc = window._alsAudioCtx.createOscillator();
     const g = window._alsAudioCtx.createGain();
     g.gain.setValueAtTime(0, window._alsAudioCtx.currentTime);
@@ -11682,12 +11699,4 @@ if(typeof sb!=="undefined"&&sb){loadEmailPlantillas();}else{setTimeout(()=>{if(s
     <div style="padding:12px 24px 20px;display:flex;align-items:center;justify-content:space-between">
       <button onclick="cerrarOnboarding()" style="background:none;border:none;color:var(--g400);font-size:12px;cursor:pointer">Saltar tour</button>
       <div style="display:flex;gap:6px;align-items:center">
-        <div id="onb-dots" style="display:flex;gap:4px"></div>
-        <button id="onb-next" onclick="onbSiguiente()" class="btn btn-p" style="min-width:100px">Siguiente →</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-</body>
-</html>
+        
