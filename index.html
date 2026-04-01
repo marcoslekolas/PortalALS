@@ -10358,13 +10358,30 @@ function _makeToneWav(freq, duration, vol){
   return 'data:audio/wav;base64,'+btoa(bin);
 }
 // Precargar sonidos en primera interacción
+function _testBeep(){
+  // Toque directo del usuario — desbloquea Safari iOS definitivamente
+  _soundsLoaded = false; // forzar recarga
+  window._soundsLoaded = false;
+  _preloadSounds();
+  try{
+    if(!window._alsAudioCtx || window._alsAudioCtx.state==='closed')
+      window._alsAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    window._alsAudioCtx.resume().then(()=>{
+      beepOK();
+    }).catch(()=>{ beepOK(); });
+  }catch(e){ beepOK(); }
+  // Feedback visual
+  const btn = document.getElementById('sc-beep-btn');
+  if(btn){ btn.textContent='✅'; setTimeout(()=>{ btn.textContent='🔊'; }, 800); }
+}
+
 function _preloadSounds(){
   if(window._soundsLoaded) return;
   window._soundsLoaded = true;
   // 1800Hz onda cuadrada — pitido fuerte tipo lector código barras
-  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1800,0.12,0.8), volume:1});
+  window._beepOKEl  = Object.assign(new Audio(), {src:_makeToneWav(1800,0.15,1.0), volume:1});
   // 300Hz onda cuadrada — error grave
-  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(300, 0.20,0.8), volume:1});
+  window._beepErrEl = Object.assign(new Audio(), {src:_makeToneWav(300, 0.20,1.0), volume:1});
   window._beepOKEl.load();
   window._beepErrEl.load();
 }
@@ -11342,8 +11359,14 @@ async function abrirScannerQR(){
   ov.id = 'scanner-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
   ov.innerHTML = `
-    <div id="sc-mode-label" style="background:rgba(59,130,246,.3);color:#93c5fd;font-size:12px;font-weight:600;text-align:center;padding:6px;letter-spacing:.05em;flex-shrink:0">
-      MODO: VERIFICACIÓN DE AUTORIZACIÓN
+    <div style="display:flex;align-items:center;flex-shrink:0">
+      <div id="sc-mode-label" style="flex:1;background:rgba(59,130,246,.3);color:#93c5fd;font-size:12px;font-weight:600;text-align:center;padding:6px;letter-spacing:.05em">
+        MODO: VERIFICACIÓN DE AUTORIZACIÓN
+      </div>
+      <button onclick="_testBeep()" title="Probar sonido"
+        style="background:rgba(255,255,255,.1);border:none;color:rgba(255,255,255,.7);padding:6px 12px;font-size:16px;cursor:pointer;flex-shrink:0" id="sc-beep-btn">
+        🔊
+      </button>
     </div>
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto">
       <div id="sc-camara-wrap" style="width:100%;max-width:500px">
