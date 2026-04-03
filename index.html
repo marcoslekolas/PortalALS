@@ -5335,7 +5335,7 @@ async function loadDash(){
     bQ = bQ.gte('eta_buque',`${año}-01-01`).lte('eta_buque',`${año}-12-31`);
   }
 
-  let eQ = sb.from('expediciones').select('*,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)')
+  let eQ = sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,tramite_aduanero,bultos,kilos,hora_de_carga,notif_llegada_sent,notif_cliente_sent,notif_aduanas_sent,fecha_max_despacho,foto_llegada_url,updated_at,created_at,cliente_override_id,cliente_override_nombre,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)')
     .neq('estado_semaforo','🚢 EMBARCADO');
   if(sta) eQ = eQ.eq('status_aduanero', sta);
 
@@ -9839,7 +9839,7 @@ async function saveBuqueEst(id,val){
 async function openExpD(id, forceOpen=false){
   // Bloquear solo en vistas informativas del módulo almacén (flota, timeline, exp-buque)
   if(!forceOpen && MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
-  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas(nombre,email_confronta)').eq('id',id).single();
+  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas(nombre,email_confronta),cliente_override:cliente_override_id(nombre)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
   const emailCli=e.empresas?.email_confronta||'';
@@ -9871,7 +9871,7 @@ async function openExpD(id, forceOpen=false){
       <div class="df"><div class="dl">Empresa</div><div class="dv">${e.empresas?.nombre||'—'}</div></div>
       <div class="df" id="exp-cli-override-row" style="${e.cliente_override_id?'':'display:none'}">
         <div class="dl" style="color:var(--am600)">⚠️ Cliente facturación</div>
-        <div class="dv" style="color:var(--am600);font-weight:600" id="exp-cli-override-val">${e.cliente_override_nombre||'—'}</div>
+        <div class="dv" style="color:var(--am600);font-weight:600" id="exp-cli-override-val">${e.cliente_override?.nombre||e.cliente_override_nombre||'—'}</div>
       </div>
       <div class="df"><div class="dl">Bultos</div><div class="dv">${e.bultos}</div></div>
       <div class="df"><div class="dl">Kilos</div><div class="dv">${e.kilos} kg</div></div>
