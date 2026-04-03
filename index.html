@@ -11660,7 +11660,7 @@ function qrDataParaExp(id){ return `ALS-EXP:${id}`; }
 // ── Instrucciones para el transportista ──────────────────────────────
 async function generarInstruccionesTransportista(expId){
   const {data:e} = await sb.from('expediciones')
-    .select('*,buques(nombre,eta_buque,nº_escala),empresas(nombre,email_confronta)')
+    .select('*,buques(nombre,eta_buque,nº_escala),empresas!empresa_id(nombre,email_confronta)')
     .eq('id',expId).single();
   if(!e){ showToast('No se pudo cargar la expedición'); return; }
 
@@ -11725,7 +11725,7 @@ async function _enviarInstruccionesTransportista(expId){
 
   closeModal();
   const {data:e} = await sb.from('expediciones')
-    .select('*,buques(nombre,eta_buque,nº_escala),empresas(nombre,email_confronta)')
+    .select('*,buques(nombre,eta_buque,nº_escala),empresas!empresa_id(nombre,email_confronta)')
     .eq('id',expId).single();
   if(!e){ showToast('No se pudo cargar la expedición'); return; }
   const hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
@@ -12009,6 +12009,44 @@ function actualizarDescRol(rol){
   };
   const el = document.getElementById('nu-rol-desc');
   if(el) el.textContent = descs[rol] || '';
+}
+
+
+// ── Cliente de facturación distinto por expedición ────────────────────
+async function cambiarClienteFacturacion(expId){
+  const {data:empresas} = await sb.from('empresas').select('id,nombre,email_confronta').order('nombre');
+  const opts = (empresas||[]).map(e=>
+    '<option value="'+e.id+'">'+e.nombre+(e.email_confronta?' · '+e.email_confronta:'')+'</option>'
+  ).join('');
+  document.getElementById('m-title').textContent = '💼 Cliente de facturación';
+  document.getElementById('m-body').innerHTML =
+    '<div style="margin-bottom:12px;font-size:13px;color:var(--g600)">Por defecto se usa el cliente del buque. Si esta expedición debe facturarse a un cliente distinto, selecciónalo aquí.</div>'+
+    '<div class="fg2"><label class="fl2">Cliente facturación</label>'+
+    '<select id="cli-fact-sel" class="fi fs" style="margin-top:4px">'+
+    '<option value="">— Usar cliente del buque (por defecto) —</option>'+
+    opts+'</select></div>';
+  document.getElementById('m-foot').innerHTML =
+    '<button class="btn btn-s btn-sm" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-p btn-sm" id="btn-guardar-cli-fact">💾 Guardar</button>';
+  document.getElementById('mo').classList.add('open');
+  document.getElementById('btn-guardar-cli-fact').onclick = () => _guardarClienteFacturacion(expId);
+}
+
+async function _guardarClienteFacturacion(expId){
+  const sel = document.getElementById('cli-fact-sel');
+  const clienteId = sel?.value || null;
+  const clienteNombre = clienteId ? sel.options[sel.selectedIndex].text.split(' · ')[0] : null;
+  const {error} = await sb.from('expediciones').update({
+    cliente_override_id: clienteId || null,
+    cliente_override_nombre: clienteNombre || null
+  }).eq('id', expId);
+  if(error){ showToast('❌ Error: '+error.message); return; }
+  showToast(clienteId ? '✅ Cliente facturación → '+clienteNombre : '✅ Restaurado cliente del buque');
+  closeModal();
+  const row = document.getElementById('exp-cli-override-row');
+  const val = document.getElementById('exp-cli-override-val');
+  if(row) row.style.display = clienteId ? '' : 'none';
+  if(val) val.textContent = clienteNombre || '—';
 }
 
 

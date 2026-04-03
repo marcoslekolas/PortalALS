@@ -287,14 +287,9 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
     </div>
     <!-- Actions -->
     <button class="hdr-btn" onclick="openNueva()">+ Nueva</button>
-    <button onclick="toggleDarkMode()" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px 6px;color:rgba(255,255,255,.7)" title="Modo oscuro" id="dark-toggle">🌙</button>
-    <div onclick="goTo('home')" title="Ir a inicio" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.25);transition:background .15s" onmouseenter="this.style.background='rgba(255,255,255,.1)'" onmouseleave="this.style.background='transparent'">
-      <div id="hdr-av" style="width:30px;height:30px;border-radius:50%;background:var(--b600,#2563eb);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">ALS</div>
-      <div style="display:flex;flex-direction:column;line-height:1.3" class="nav-item-txt">
-        <span id="hdr-user-name" style="font-size:12px;font-weight:600;color:#fff">—</span>
-        <span id="hdr-user-role" style="font-size:10px;color:rgba(255,255,255,.55)">← Inicio</span>
-      </div>
-    </div>
+    <button id="dark-toggle" onclick="toggleDarkMode()" class="hdr-icon-btn-air" title="Modo oscuro/claro">🌙</button>
+    <button class="hdr-icon-btn-air" onclick="goTo('home')" title="Volver al Portal ALS">🏠</button>
+    <button class="hdr-icon-btn-air hdr-logout-air" onclick="exitApp()" title="Salir">🚪</button>
   </header>
   <div id="body">
     <nav id="sidebar">
@@ -435,13 +430,6 @@ let sb;
 // ── NAVEGACIÓN ───────────────────────────────────────────
 
 // ── Modo oscuro ───────────────────────────────────────────────
-function setDarkAuto(){
-  localStorage.removeItem('als_dark');
-  const p=window.matchMedia?.('(prefers-color-scheme:dark)').matches;
-  p?document.documentElement.classList.add('dark'):document.documentElement.classList.remove('dark');
-  const btn=document.getElementById('dark-toggle');
-  if(btn)btn.textContent=p?'☀️':'🌙';
-}
 function toggleDarkMode(){
   const isDark=document.documentElement.classList.toggle('dark');
   localStorage.setItem('als_dark', isDark?'1':'0');
@@ -472,13 +460,27 @@ function initDarkMode(){
 }
 
 function goTo(mod){
-  if(window.opener && !window.opener.closed){
-    try{
-      if(typeof window.opener.showHome==='function'){ window.opener.showHome(); window.opener.focus(); return; }
-      if(typeof window.opener.volverHome==='function'){ window.opener.volverHome(); window.opener.focus(); return; }
-    }catch(e){}
+  // Navegar al Portal ALS — funciona siempre
+  try {
+    var base = window.location.href.replace(/\/airport_cargo\.html.*$/, '');
+    var target = base + '/index.html';
+    // Si fue abierto como popup, usar el opener
+    if(window.opener && !window.opener.closed){
+      try {
+        if(typeof window.opener.showHome==='function'){ window.opener.showHome(); window.opener.focus(); return; }
+        if(typeof window.opener.volverHome==='function'){ window.opener.volverHome(); window.opener.focus(); return; }
+      } catch(e){}
+    }
+    // Si hay historial (navegación desde la misma pestaña), volver atrás
+    if(window.history.length > 1){
+      window.history.back();
+      return;
+    }
+    // Navegar en esta misma pestaña
+    window.location.href = target;
+  } catch(e){
+    window.location.href = '../index.html';
   }
-  window.location.href = 'index.html';
 }
 
 function exitApp(){
@@ -1480,65 +1482,70 @@ async function abrirEmail(){
   var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL;
   if(!sel.length){toast('Sin entradas. Selecciona una o varias en la tabla.');return;}
 
-  // Validar mismo cliente
-  var clientes=Array.from(new Set(sel.map(function(e){
-    return (e.cliente||e.consignatario||'').trim().toLowerCase();
-  }).filter(Boolean)));
-  if(clientes.length>1){
-    toast('⚠️ Selección incompatible: las entradas pertenecen a '+clientes.length+' clientes distintos.');
-    return;
-  }
+  // Agrupar por cliente — un email por cliente
+  var porCliente={};
+  sel.forEach(function(e){
+    var ckey=(e.cliente||e.consignatario||'__sin_cliente__').trim();
+    if(!porCliente[ckey]) porCliente[ckey]=[];
+    porCliente[ckey].push(e);
+  });
+  var grupos=Object.keys(porCliente);
+  if(grupos.length>1) toast('📧 Abriendo '+grupos.length+' emails — uno por cliente…');
 
-  var clienteNombre=sel.map(function(e){return e.cliente||e.consignatario||'';}).filter(Boolean)[0]||'';
-
-  // Buscar email del cliente en la BD
-  var emailDest='';
+  // Cargar emails de empresas
+  var empresasDB=[];
   try{
     var er=await sb.from('empresas').select('nombre,email_confronta').order('nombre');
-    var empresas=er.data||[];
-    if(clienteNombre&&empresas.length){
+    empresasDB=er.data||[];
+  }catch(ex){}
+
+  // Abrir un email por cada grupo de cliente
+  grupos.forEach(function(clienteNombre, gIdx){
+    var gSel=porCliente[clienteNombre];
+    // Buscar email
+    var emailDest='';
+    if(clienteNombre!=='__sin_cliente__'&&empresasDB.length){
       var q=clienteNombre.toLowerCase();
-      var match=empresas.filter(function(emp){
+      var match=empresasDB.filter(function(emp){
         return(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase().substring(0,5));
       })[0]||null;
       if(match) emailDest=match.email_confronta||'';
     }
-  }catch(e){}
+    if(!emailDest){
+      toast('⚠️ Sin email para "'+clienteNombre+'". Configúralo en la ficha de empresa.');
+      return;
+    }
 
-  if(!emailDest){
-    toast('⚠️ No se encontró email para "'+clienteNombre+'". Configúralo en la ficha de empresa.');
-    return;
-  }
+    setTimeout(function(){
+      var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+      var apts=Array.from(new Set(gSel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
+      var totalKg=gSel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
+      var totalBlt=gSel.reduce(function(a,e){return a+(e.bultos||0);},0);
 
-  var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
-  var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
-  var totalKg=sel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
-  var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
+      // Construir cuerpo agrupado por buque
+      var byBuque={};
+      gSel.forEach(function(e){
+        var bkey=e.buque||'(Sin buque asignado)';
+        if(!byBuque[bkey]) byBuque[bkey]=[];
+        byBuque[bkey].push(e);
+      });
 
-  // Construir cuerpo agrupado por buque
-  var byBuque={};
-  sel.forEach(function(e){
-    var bkey=e.buque||'(Sin buque asignado)';
-    if(!byBuque[bkey]) byBuque[bkey]=[];
-    byBuque[bkey].push(e);
-  });
+      var detalle=Object.keys(byBuque).map(function(buque){
+        var exps=byBuque[buque];
+        var bloque='  Buque: '+buque+'\n';
+        exps.forEach(function(e){
+          var diffCons=(e.consignatario||'').toLowerCase()!==(clienteNombre||'').toLowerCase();
+          var consStr=diffCons?' | Consignatario: '+(e.consignatario||'—'):'';
+          var obsStr=e.observaciones?'\n    Obs: '+e.observaciones:'';
+          bloque+='  · AWB: '+(e.awb||'—')+consStr+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+
+            ' | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+
+            ' | Llegada: '+fd(e.fecha_llegada)+obsStr+'\n';
+        });
+        return bloque;
+      }).join('\n');
 
-  var detalle=Object.keys(byBuque).map(function(buque){
-    var exps=byBuque[buque];
-    var bloque='  Buque: '+buque+'\n';
-    exps.forEach(function(e){
-      var diffCons=(e.consignatario||'').toLowerCase()!==(clienteNombre||'').toLowerCase();
-      var consStr=diffCons?' | Consignatario: '+(e.consignatario||'—'):'';
-      var obsStr=e.observaciones?'\n    Obs: '+e.observaciones:'';
-      bloque+='  · AWB: '+(e.awb||'—')+consStr+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+
-        ' | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+
-        ' | Llegada: '+fd(e.fecha_llegada)+obsStr+'\n';
-    });
-    return bloque;
-  }).join('\n');
-
-  var NL='\n';
-  var cuerpo=[
+      var NL='\n';
+      var cuerpo=[
     'Estimados Sres. / Dear Sirs,',NL,NL,
     'Nos dirigimos a ustedes para informarles de la situación actual de sus expediciones aéreas en tránsito hacia '+apts+'.',NL,NL,
     '── RESUMEN ──────────────────────────────────────────────',NL,NL,
@@ -1560,12 +1567,14 @@ async function abrirEmail(){
     hoy
   ].join('');
 
-  var cc='als@alsalgeciras.com';
-  var asunto=encodeURIComponent('Situación expediciones aeropuerto — '+(clienteNombre||'ALS')+' · '+new Date().toLocaleDateString('es-ES'));
-  var mailtoUrl='mailto:'+emailDest+'?cc='+encodeURIComponent(cc)+'&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
-  var a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  toast('📧 Abriendo cliente de correo…');
+      var cc='als@alsalgeciras.com';
+      var asunto=encodeURIComponent('Situación expediciones aeropuerto — '+(clienteNombre||'ALS')+' · '+new Date().toLocaleDateString('es-ES'));
+      var mailtoUrl='mailto:'+emailDest+'?cc='+encodeURIComponent(cc)+'&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
+      var a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      toast('📧 Email abierto para '+clienteNombre+'…');
+    }, gIdx * 900);
+  }); // fin forEach grupos
 }
 
 // ── OCR AWB — prellenado formulario Airport Cargo ─────────────────
@@ -1721,24 +1730,6 @@ async function crearEmpresaDesdeConsignatario(){
   };
 }
 
-
-// Inyectar nombre usuario en avatar al cargar
-(function(){
-  try{
-    var cu = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'{}');
-    if(cu && cu.nombre){
-      var init = cu.nombre.split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();
-      document.addEventListener('DOMContentLoaded', function(){
-        var av = document.getElementById('hdr-av');
-        var nm = document.getElementById('hdr-user-name');
-        var rl = document.getElementById('hdr-user-role');
-        if(av) av.textContent = init;
-        if(nm) nm.textContent = cu.nombre.split(' ').slice(0,2).join(' ');
-        if(rl) rl.textContent = cu.rol || '← Inicio';
-      });
-    }
-  }catch(e){}
-})();
 </script>
 </body>
 </html>
