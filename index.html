@@ -2150,7 +2150,7 @@ function iniciarRealtime(){
           const autor  = payload.new?.usuario_nombre || '';
           if(autor === CU.nombre) return; // ignorar propios
           if(accion === 'alerta_llegada'){
-            if(['admin','oficina','aduanas'].includes(CU.rol)){
+            if(['admin','operativa','aduanas'].includes(CU.rol)){
               mostrarBanner('📦 Llegada al almacén: '+ref+' — '+autor, 'amber');
               notifSistema('📦 Llegada al almacén', ref);
               if(CV === 'alertas') loadAlertas();
@@ -2675,7 +2675,7 @@ async function doLogin(){
       }
     }catch(e){}
     // Morning Briefing — mostrar antes de navegar al módulo
-    if(['admin','oficina','aduanas'].includes(CU.rol)){
+    if(['admin','operativa','aduanas'].includes(CU.rol)){
       cargarMorningBriefing();
     }
     showHome();
@@ -2794,7 +2794,7 @@ function showHome(){
   const hdrName=document.getElementById('hdr-user-name'); if(hdrName) hdrName.textContent=(CU.nombre||'').split(' ').slice(0,2).join(' ');
   const hdrRole=document.getElementById('hdr-user-role');
   if(hdrRole){
-    const rolLabel={admin:'⚡ Admin',oficina:'🏢 Oficina',aduanas:'🏛 Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista'};
+    const rolLabel={admin:'⚡ Admin',operativa:'🏢 Operativa',aduanas:'🏛 Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista'};
     hdrRole.textContent = rolLabel[CU.rol] || CU.rol || '';
     hdrRole.style.color = CU.rol==='admin'?'var(--rd400)':CU.rol==='aduanas'?'var(--tl400)':'var(--g400)';
   }
@@ -2805,7 +2805,7 @@ function showHome(){
   const c=document.getElementById('hm-cards');
   c.innerHTML='';
 
-  if(['admin','oficina','aduanas'].includes(CU.rol))
+  if(['admin','operativa','aduanas'].includes(CU.rol))
     c.innerHTML+=`<div class="hm-card hm-card-op" onclick="enterMod('operativa')">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">🏢</div>
@@ -2820,7 +2820,7 @@ function showHome(){
     </div>`;
 
 
-  if(['admin','oficina','aduanas','almacen','transportista'].includes(CU.rol))
+  if(['admin','operativa','aduanas','almacen','transportista'].includes(CU.rol))
     c.innerHTML+=`<div class="hm-card hm-card-alm" onclick="enterMod('almacen')">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">📦</div>
@@ -2834,7 +2834,7 @@ function showHome(){
       </div>
     </div>`;
 
-  if(['admin','oficina','aduanas'].includes(CU.rol))
+  if(['admin','operativa','aduanas'].includes(CU.rol))
     c.innerHTML+=`<div class="hm-card hm-card-air" style="position:relative" onclick="window.location.href='airport_cargo.html'">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">✈️</div>
@@ -2890,7 +2890,7 @@ function enterMod(mod){
       cargarPermisosRol(CU.rol).catch(()=>{ _permisosListos=true; });
     } else { showHome(); return; }
   }
-  const puedeOperativa=['admin','oficina','aduanas'];
+  const puedeOperativa=['admin','operativa','aduanas'];
   const esExclusivoAlmacen=['almacen','transportista'].includes(CU.rol);
   if(mod==='operativa'&&!puedeOperativa.includes(CU.rol)) mod='almacen';
   if(mod==='configuracion'&&CU.rol!=='admin'){ showHome(); return; }
@@ -2955,7 +2955,7 @@ function enterMod(mod){
     if(btnAlmacen){btnAlmacen.style.display='';btnAlmacen.title='Almacén & Embarque';}
     if(btnAirport) btnAirport.style.display=puedeAirport?'':'none';
     const btnTaric=document.getElementById('btn-to-taric');
-    if(btnTaric) btnTaric.style.display=['admin','oficina','aduanas'].includes(CU.rol)?'flex':'none';
+    if(btnTaric) btnTaric.style.display=['admin','operativa','aduanas'].includes(CU.rol)?'flex':'none';
     if(btnOperativa) btnOperativa.style.display='none';
     const btnConfig=document.getElementById('btn-to-config');
     if(btnConfig) btnConfig.style.display=CU.rol==='admin'?'':'none';
@@ -5707,27 +5707,60 @@ async function loteNotifCliente(){
     .in('id', ids);
   if(!exps?.length){ showToast('No se encontraron las expediciones'); return; }
 
-  const totalBultos = exps.reduce((a,e)=>a+(e.bultos||0),0);
-  const totalKilos  = exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
-  const buques      = [...new Set(exps.map(e=>e.buques?.nombre).filter(Boolean))].join(', ');
-  const empresaNombre = [...new Set(exps.map(e=>e.empresas?.nombre).filter(Boolean))].join(', ') || 'cliente';
-  const fecha       = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  const fecha = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  const sepLineaL = '─'.repeat(52);
+  const firmaL = 'Atentamente,\n\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n📞 +34 956 58 13 16 · als@alsalgeciras.com\nOPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40';
 
-  // Recoger emails
-  const emailsSet = new Set();
-  const ccSet = new Set();
+  // Agrupar expediciones por empresa (cliente)
+  const porCliente = {};
   exps.forEach(e=>{
-    if(e.empresas?.email_confronta) emailsSet.add(e.empresas.email_confronta);
-    (e.empresas?.otros_emails||[]).forEach(m=>{ if(m) ccSet.add(m); });
+    const cid = e.empresas?.email_confronta || '__sin_email__';
+    if(!porCliente[cid]) porCliente[cid] = {empresa:e.empresas, exps:[]};
+    porCliente[cid].exps.push(e);
   });
-  emailsSet.forEach(m=>ccSet.delete(m));
-  const toEmail  = [...emailsSet].join(',') || '';
-  const ccEmail  = [...ccSet].join(',');
 
-  // Asunto con buque
-  const asunto = buques.includes(',')
-    ? `Aviso mercancía en almacén — Buques: ${buques} · ${exps.length} expedición${exps.length!==1?'es':''}`
-    : `Aviso mercancía en almacén — Buque ${buques} · ${exps.length} expedición${exps.length!==1?'es':''}`;
+  const grupos = Object.values(porCliente);
+  if(grupos.length > 1){
+    showToast('📧 Abriendo '+grupos.length+' emails — uno por cliente…');
+  }
+
+  // Abrir un email por cliente con delay entre ellos
+  grupos.forEach((grupo, idx)=>{
+    setTimeout(()=>{
+      const gExps = grupo.exps;
+      const empresa = grupo.empresa;
+      const toEmail = empresa?.email_confronta || '';
+      if(!toEmail){ showToast('⚠️ '+( empresa?.nombre||'Cliente')+' sin email configurado'); return; }
+      const ccEmails = (empresa?.otros_emails||[]).filter(Boolean);
+      const buquesG = [...new Set(gExps.map(e=>e.buques?.nombre).filter(Boolean))].join(', ');
+      const totBlt = gExps.reduce((a,e)=>a+(e.bultos||0),0);
+      const totKg  = gExps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+      const asunto = 'Aviso mercancía en almacén — '+(buquesG||'Buque')+ ' · '+gExps.length+' expedición'+(gExps.length!==1?'es':'');
+      const detalle = gExps.map((e,i)=>
+        '  '+(i+1)+'. '+e.nº_expedicion+
+        '\n     • Buque:       '+(e.buques?.nombre||'—')+
+        '\n     • Bultos:      '+(e.bultos||0)+' btos · '+(parseFloat(e.kilos)||0)+' kg'+
+        '\n     • Ubicación:   '+(e.ubicacion||'—')+
+        '\n     • Estado:      '+(e.estado_semaforo||'—')+
+        '\n     • Trámite:     '+(e.tramite_aduanero||'—')+
+        '\n     • Status:      '+(e.status_aduanero||'—')+
+        (e.nº_mrn?'\n     • MRN:        '+e.nº_mrn:'')
+      ).join('\n\n');
+      const cuerpo =
+        'Estimado cliente,\n\n'+
+        'Le comunicamos que las siguientes expediciones se encuentran bajo control logístico, documental y en trámite para su próximo embarque.\n\n'+
+        'BUQUE: '+buquesG+'\nFECHA: '+fecha+'\nRESUMEN: '+gExps.length+' expedición'+(gExps.length!==1?'es':'')+' · '+totBlt+' bultos · '+totKg+' kg\n\n'+
+        sepLineaL+'\nDETALLE DE EXPEDICIONES\n'+sepLineaL+'\n\n'+detalle+'\n\n'+
+        sepLineaL+'\nTOTALES: '+totBlt+' bultos · '+totKg+' kg\n'+sepLineaL+'\n\n'+
+        'Quedamos a su disposición para cualquier consulta.\n\n'+firmaL;
+      let mailto = 'mailto:'+toEmail+'?subject='+encodeURIComponent(asunto)+'&body='+encodeURIComponent(cuerpo);
+      if(ccEmails.length) mailto += '&cc='+encodeURIComponent(['als@alsalgeciras.com',...ccEmails].join(','));
+      else mailto += '&cc='+encodeURIComponent('als@alsalgeciras.com');
+      const a = document.createElement('a'); a.href=mailto; a.target='_blank';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }, idx * 800); // delay entre emails para que el cliente de correo los procese
+  });
+  return; // evitar que continúe al código antiguo
 
   // Detalle por expedición — tabla de texto
   const sepLinea = '─'.repeat(52);
@@ -8643,7 +8676,7 @@ async function loadUsuarios(){
   if(error){ if(el) el.innerHTML=`<div class="empty"><div class="empty-txt">Error: ${error.message}</div></div>`; return; }
   if(!data||!data.length){ if(el) el.innerHTML='<div class="empty"><div class="empty-txt">Sin usuarios encontrados</div></div>'; return; }
 
-  const rolColor={admin:'var(--rd500)',oficina:'var(--b600)',aduanas:'var(--tl500)',almacen:'var(--am500)',transportista:'var(--g500)'};
+  const rolColor={admin:'var(--rd500)',operativa:'var(--b600)',aduanas:'var(--tl500)',almacen:'var(--am500)',transportista:'var(--g500)'};
   const rolLabel={admin:'⚡ Admin',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista'};
   const esAdmin=CU?.rol==='admin';
 
@@ -8677,7 +8710,7 @@ async function loadUsuarios(){
   </div>
   ${esAdmin?`<div style="padding:12px 16px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
     <span style="font-size:12px;color:var(--g500);align-self:center">Gestión de roles →</span>
-    ${['admin','oficina','aduanas','almacen','transportista'].map(r=>`
+    ${['admin','operativa','aduanas','almacen','transportista'].map(r=>`
       <button class="btn btn-s btn-sm" onclick="verPermisosRol('${r}')" style="font-size:11px">
         🔑 ${rolLabel[r]||r}
       </button>`).join('')}
@@ -8689,7 +8722,7 @@ async function editUser(id){
   const {data:u}=await sb.from('usuarios').select('*').eq('id',id).single();
   if(!u)return;
   const isMe=u.id===CU?.id;
-  const rolOpts=['almacen','oficina','aduanas','transportista','admin'].map(r=>`
+  const rolOpts=['almacen','operativa','aduanas','transportista','admin'].map(r=>`
     <option value="${r}" ${u.rol===r?'selected':''}>${
       {almacen:'📦 Almacén',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',transportista:'🚛 Transportista',admin:'⚡ Administrador'}[r]
     }</option>`).join('');
@@ -8983,7 +9016,7 @@ async function loadPermisos(){
     // Agrupar por rol
     const porRol = {};
     data.forEach(p => { if(!porRol[p.rol]) porRol[p.rol] = []; porRol[p.rol].push(p); });
-    const rolColors = {admin:'var(--rd500)',oficina:'var(--b600)',aduanas:'var(--tl500)',almacen:'var(--am600)',transportista:'var(--g500)'};
+    const rolColors = {admin:'var(--rd500)',operativa:'var(--b600)',aduanas:'var(--tl500)',almacen:'var(--am600)',transportista:'var(--g500)'};
     const acc = accion => `<span style="font-size:11px;color:var(--gr600);font-weight:700">✓</span>`;
     const rej = () => `<span style="font-size:11px;color:var(--g300)">–</span>`;
     const check = (p, k) => p[k] ? acc() : rej();
@@ -9504,7 +9537,7 @@ const MODALS={
   after:()=>setTimeout(()=>setupFotos('gl-fi','gl-fpv','gl-fst'),100)
 },
 'nuevo-usuario':{t:'👤 Nuevo usuario',btn:'👤 Crear usuario',
-  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre o email"></div><div class="fg2"><label class="fl2">Email <span style="font-weight:400;color:var(--g400)">(opcional)</span></label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="oficina">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
+  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre o email"></div><div class="fg2"><label class="fl2">Email <span style="font-weight:400;color:var(--g400)">(opcional)</span></label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="operativa">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
   action:async()=>{
   const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');
   if(!n||!p){alert('Nombre y contraseña son obligatorios');return;}
@@ -9828,7 +9861,7 @@ async function openExpD(id, forceOpen=false){
   } else {
     titleEl.textContent='📦 '+e.nº_expedicion;
   }
-  const btnRevertirCarga = (e.hora_de_carga && ['admin','oficina','aduanas'].includes(CU?.rol))
+  const btnRevertirCarga = (e.hora_de_carga && ['admin','operativa','aduanas'].includes(CU?.rol))
     ? ' <button class="btn btn-w btn-sm" style="color:var(--am600);border-color:var(--am500);font-size:11px;padding:3px 9px" onclick="revertirCarga(\''+ e.id +'\',\''+ (e.nº_expedicion||'').replace(/'/g,"\\\\'") +'\')">↩ Revertir carga</button>'
     : '';
   document.getElementById('m-body').innerHTML=`
@@ -9836,6 +9869,10 @@ async function openExpD(id, forceOpen=false){
     <div class="dg">
       <div class="df"><div class="dl">Buque</div><div class="dv" style="padding:0"><select id="buq-sel" class="fi fs" style="border:none;background:transparent;font-weight:500;padding:4px 0;color:var(--g900)"><option value="${e.buque_id||''}">${e.buques?.nombre||'Cargando…'}</option></select></div></div>
       <div class="df"><div class="dl">Empresa</div><div class="dv">${e.empresas?.nombre||'—'}</div></div>
+      <div class="df" id="exp-cli-override-row" style="${e.cliente_override_id?'':'display:none'}">
+        <div class="dl" style="color:var(--am600)">⚠️ Cliente facturación</div>
+        <div class="dv" style="color:var(--am600);font-weight:600" id="exp-cli-override-val">${e.cliente_override_nombre||'—'}</div>
+      </div>
       <div class="df"><div class="dl">Bultos</div><div class="dv">${e.bultos}</div></div>
       <div class="df"><div class="dl">Kilos</div><div class="dv">${e.kilos} kg</div></div>
     </div>
@@ -9859,6 +9896,7 @@ async function openExpD(id, forceOpen=false){
       <div class="fg2"><label class="fl2">Carga camión</label><div style="font-size:13px;font-weight:500;padding:8px 0;color:${e.hora_de_carga?(e.estado_carga==='🚛 CARGADO CAMIÓN'?'var(--gr600)':'var(--am600)'):'var(--g400)'}">${e.hora_de_carga?(e.estado_carga==='🚛 CARGADO CAMIÓN'?'🚛 Cargado: ':'⚠️ Intento fallido: ')+fdt(e.hora_de_carga):'Sin registrar'}${btnRevertirCarga}</div></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      ${['admin','operativa','aduanas'].includes(CU?.rol)?`<button class="btn btn-w btn-sm" onclick="cambiarClienteFacturacion('${e.id}')">💼 Cliente facturación</button>`:''}
       <button class="btn btn-w btn-sm" onclick="notifAduana('${e.id}','${e.nº_expedicion}')">🏢 Notif. Aduanas${e.notif_aduanas_sent?' ✓':''}</button>
       ${emailCli?`<button class="btn btn-s btn-sm" onclick="notifCliente('${e.id}','${emailCli}','${e.nº_expedicion}')">📧 Notif. Cliente${e.notif_cliente_sent?' ✓':''}</button>`:''}
       <button class="btn btn-s btn-sm" onclick="openModal('nueva-incidencia','${e.id}')">⚠️ Incidencia</button>
@@ -10560,7 +10598,7 @@ let _onbStep = 0;
 let _onbPasosRol = [];
 
 function iniciarOnboarding(){
-  const rol = CU?.rol || 'oficina';
+  const rol = CU?.rol || 'operativa';
   _onbPasosRol = _onbPasos[rol] || _onbPasos.oficina;
   _onbStep = 0;
   renderOnbStep();
@@ -10630,7 +10668,7 @@ document.addEventListener('keydown', function(e){
     case 'k': if(MOD==='operativa') nav('kanban', null); break;
     case 'u': if(MOD==='operativa') nav('ubicaciones', null); break;
     case 'n':
-      if(MOD==='operativa' && ['admin','oficina'].includes(CU.rol)){
+      if(MOD==='operativa' && ['admin','operativa'].includes(CU.rol)){
         e.preventDefault();
         openModal('nueva-expedicion');
       }
@@ -10797,11 +10835,11 @@ function toggleMenuUsuario(){
   const configBtn = document.getElementById('hdr-menu-config');
   if(modulos && CU){
     const items = [];
-    if(['admin','oficina','aduanas'].includes(CU.rol))
+    if(['admin','operativa','aduanas'].includes(CU.rol))
       items.push({icon:'🏢', lbl:'Operativa', fn:"enterMod('operativa');cerrarMenuUsuario()"});
-    if(['admin','oficina','almacen','transportista'].includes(CU.rol))
+    if(['admin','operativa','almacen','transportista'].includes(CU.rol))
       items.push({icon:'📦', lbl:'Almacén', fn:"enterMod('almacen');cerrarMenuUsuario()"});
-    if(['admin','oficina','aduanas'].includes(CU.rol))
+    if(['admin','operativa','aduanas'].includes(CU.rol))
       items.push({icon:'✈️', lbl:'Airport Cargo', fn:"window.location.href='airport_cargo.html'"});
     if(['admin','aduanas'].includes(CU.rol))
       items.push({icon:'🏛️', lbl:'Módulo Aduanas', fn:"abrirMenuAduanas();cerrarMenuUsuario()"});
@@ -11625,6 +11663,71 @@ async function generarInstruccionesTransportista(expId){
     .select('*,buques(nombre,eta_buque,nº_escala),empresas(nombre,email_confronta)')
     .eq('id',expId).single();
   if(!e){ showToast('No se pudo cargar la expedición'); return; }
+
+  // Cargar transportistas existentes
+  const {data:transp} = await sb.from('empresas')
+    .select('id,nombre,email_confronta')
+    .contains('rol',['Transportista'])
+    .order('nombre');
+
+  // Mostrar selector de transportista antes de abrir email
+  const optsHtml = (transp||[]).map(t=>
+    '<option value="'+t.id+'" data-email="'+(t.email_confronta||'')+'">'+t.nombre+(t.email_confronta?' · '+t.email_confronta:'')+'</option>'
+  ).join('');
+
+  document.getElementById('m-title').textContent = '🚛 Instrucciones — seleccionar transportista';
+  document.getElementById('m-body').innerHTML =
+    '<div style="margin-bottom:12px"><label class="fl2">Transportista destinatario</label>'+
+    '<select id="instruc-transp" class="fi fs" style="margin-top:4px">'+
+    '<option value="">— Seleccionar transportista —</option>'+
+    optsHtml+
+    '<option value="__nuevo__">➕ Nuevo transportista…</option>'+
+    '</select></div>'+
+    '<div id="instruc-nuevo-wrap" style="display:none">'+
+    '<div class="fg2"><label class="fl2">Nombre transportista</label><input id="instruc-nombre" class="fi" placeholder="Nombre empresa"></div>'+
+    '<div class="fg2"><label class="fl2">Email</label><input id="instruc-email" class="fi" type="email" placeholder="email@transportista.com"></div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--g400);margin-top:8px">El email se enviará al transportista seleccionado con los datos de recogida.</div>';
+  document.getElementById('m-foot').innerHTML =
+    '<button class="btn btn-s btn-sm" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-p btn-sm" id="btn-enviar-instruc">📧 Generar email</button>';
+  document.getElementById('mo').classList.add('open');
+
+  // Mostrar/ocultar nuevo transportista
+  document.getElementById('instruc-transp').onchange = function(){
+    document.getElementById('instruc-nuevo-wrap').style.display = this.value==='__nuevo__' ? '' : 'none';
+  };
+  // Botón enviar con referencia directa
+  const btnEnviar = document.getElementById('btn-enviar-instruc');
+  if(btnEnviar) btnEnviar.onclick = () => _enviarInstruccionesTransportista(expId);
+}
+
+async function _enviarInstruccionesTransportista(expId){
+  const sel = document.getElementById('instruc-transp');
+  let emailDest = '';
+  let transpNombre = '';
+
+  if(sel.value === '__nuevo__'){
+    transpNombre = document.getElementById('instruc-nombre')?.value?.trim();
+    emailDest    = document.getElementById('instruc-email')?.value?.trim();
+    if(!transpNombre || !emailDest){ showToast('⚠️ Introduce nombre y email del transportista'); return; }
+    // Crear el transportista en BD
+    const {error} = await sb.from('empresas').insert({nombre:transpNombre, email_confronta:emailDest, rol:['Transportista']});
+    if(error){ showToast('⚠️ Error al crear transportista: '+error.message); return; }
+    showToast('✅ Transportista creado');
+  } else if(sel.value){
+    const opt = sel.options[sel.selectedIndex];
+    transpNombre = opt.text.split(' · ')[0];
+    emailDest    = opt.dataset.email || '';
+  } else {
+    showToast('⚠️ Selecciona un transportista'); return;
+  }
+
+  closeModal();
+  const {data:e} = await sb.from('expediciones')
+    .select('*,buques(nombre,eta_buque,nº_escala),empresas(nombre,email_confronta)')
+    .eq('id',expId).single();
+  if(!e){ showToast('No se pudo cargar la expedición'); return; }
   const hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
   const cuerpo =
     'INSTRUCCIONES DE RETIRADA DE MERCANCÍA\n' +
@@ -11656,13 +11759,13 @@ async function generarInstruccionesTransportista(expId){
     '🕐 Operations 24/7: +34 664 07 49 40\n\n' +
     'ALGECIRAS LOGISTIC SOLUTIONS (ALS)\n' +
     'Customs Way — Puerto de Algeciras';
-  const emailDest = e.empresas?.email_confronta||'';
   const asunto = encodeURIComponent('🚛 Instrucciones retirada — '+(e.nº_expedicion||'')+' · '+hoy);
+  const cuerpoConTransp = cuerpo + '\n\nDESTINATARIO: ' + transpNombre;
   const mailto = 'mailto:'+emailDest+'?cc='+encodeURIComponent('als@alsalgeciras.com')+'&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
   const a = document.createElement('a');
   a.href=mailto; a.target='_blank';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  showToast('🚛 Instrucciones abiertas en email');
+  showToast('🚛 Instrucciones abiertas para '+transpNombre);
 }
 
 // ── Indicadores de plazos legales en ficha expedición ────────────────
@@ -11895,6 +11998,20 @@ async function cargarNotificacionesPendientes_legacy(){ return cargarNotificacio
 
 
 
+// ── Descripción dinámica de roles al crear usuario ───────────────────
+function actualizarDescRol(rol){
+  const descs = {
+    admin:        '⚡ Acceso total — configuración, usuarios, todos los módulos',
+    operativa:    '🏢 Gestión operativa completa — buques, expediciones, facturación, estadísticas',
+    aduanas:      '🏛 Módulo aduanas — clasificación TARIC, DUA, gestión documental',
+    almacen:      '📦 Almacén y embarque — llegadas, fotos, autorización, escáner QR',
+    transportista:'🚛 Solo vista de autorización de carga — sin edición'
+  };
+  const el = document.getElementById('nu-rol-desc');
+  if(el) el.textContent = descs[rol] || '';
+}
+
+
 function mostrarQRExpedicion(id, ref){
   const qrData = qrDataParaExp(id);
   const ov = document.createElement('div');
@@ -11960,6 +12077,35 @@ function imprimirQR(ref, qrData, dataUrl){
   w.document.close();
   setTimeout(()=>w.print(), 500);
 }
+
+// ── Swipe derecha para cerrar modal (estándar móvil) ─────────────────
+(function(){
+  let _swX = null, _swY = null;
+  document.addEventListener('touchstart', e => {
+    if(e.touches.length !== 1) return;
+    _swX = e.touches[0].clientX;
+    _swY = e.touches[0].clientY;
+  }, {passive:true});
+  document.addEventListener('touchend', e => {
+    if(_swX === null) return;
+    const dx = e.changedTouches[0].clientX - _swX;
+    const dy = Math.abs(e.changedTouches[0].clientY - _swY);
+    _swX = null; _swY = null;
+    // Swipe derecha: >80px horizontal, <60px vertical, desde el borde izquierdo (<80px) o sobre el modal
+    const mo = document.getElementById('mo');
+    const panel = document.getElementById('notif-panel');
+    if(dx > 80 && dy < 60){
+      // Cerrar panel de notificaciones si está abierto
+      if(panel && panel.style.display === 'flex' && panel.style.transform === 'translateX(0px)'){
+        cerrarCentroNotificaciones(); return;
+      }
+      // Cerrar modal si está abierto
+      if(mo && mo.classList.contains('open')){
+        closeModal(); return;
+      }
+    }
+  }, {passive:true});
+})();
 
 // ── Escáner QR de autorización de carga ──────────────────────────
 let _html5QrScanner = null;
