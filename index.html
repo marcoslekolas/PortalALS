@@ -5335,7 +5335,7 @@ async function loadDash(){
     bQ = bQ.gte('eta_buque',`${año}-01-01`).lte('eta_buque',`${año}-12-31`);
   }
 
-  let eQ = sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,tramite_aduanero,bultos,kilos,hora_de_carga,notif_llegada_sent,notif_cliente_sent,notif_aduanas_sent,fecha_max_despacho,foto_llegada_url,updated_at,created_at,cliente_override_id,cliente_override_nombre,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)')
+  let eQ = sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,tramite_aduanero,bultos,kilos,hora_de_carga,notif_llegada_sent,notif_cliente_sent,notif_aduanas_sent,fecha_max_despacho,foto_llegada_url,updated_at,created_at,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)')
     .neq('estado_semaforo','🚢 EMBARCADO');
   if(sta) eQ = eQ.eq('status_aduanero', sta);
 
@@ -5535,7 +5535,7 @@ function filtrarB(q){const s=q.toLowerCase();renderB(allB.filter(b=>(b.nombre||'
 
 let allE=[];
 async function loadExp(){
-  const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas(nombre)').order('created_at',{ascending:false});
+  const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas!empresa_id(nombre)').order('created_at',{ascending:false});
   allE=data||[];
   _poblarFiltrosExp();
   renderE(allE);
@@ -6703,7 +6703,7 @@ async function loadAlertas(){
 
 async function loadAlmacen(){
   var pEl=document.getElementById("alm-pend"); if(pEl) pEl.innerHTML=skeletonTable(3);
-  const {data}=await sb.from('expediciones').select('*,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO');
+  const {data}=await sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,tramite_aduanero,bultos,kilos,hora_de_carga,notif_llegada_sent,updated_at,foto_llegada_url,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO');
   const pend=(data||[]).filter(e=>e.estado_semaforo==='⏳ EN TRÁNSITO');
   const rev=(data||[]).filter(e=>e.estado_semaforo==='🚨 EN ALMACÉN - REVISAR');
   const lis=(data||[]).filter(e=>e.estado_carga==='✅ AUTORIZADO');
@@ -7029,7 +7029,7 @@ async function marcarCarg(id){if(!confirm('¿Confirmar carga en camión?'))retur
 async function loadAlmDash(){
   const [{data:BALL},{data:exps},{data:incs}]=await Promise.all([
     sb.from('buques').select('*,ec:cliente_id(nombre)').order('eta_buque',{ascending:true,nullsFirst:false}),
-    sb.from('expediciones').select('*,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO'),
+    sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,tramite_aduanero,bultos,kilos,hora_de_carga,notif_llegada_sent,updated_at,foto_llegada_url,buques(nombre)').neq('estado_semaforo','🚢 EMBARCADO'),
     sb.from('incidencias').select('tipo,estado,created_at').neq('estado','Cerrada')
   ]);
   const B=(BALL||[]).filter(b=>b.estado_operacion!=='Finalizado');
@@ -7099,7 +7099,7 @@ async function loadAlmExpBuque(){
   cont.innerHTML='<div class="loading"><div class="spinner"></div>Cargando...</div>';
   const [{data:BALL},{data:exps}]=await Promise.all([
     sb.from('buques').select('id,nombre,eta_buque,estado_operacion,puerto_terminal').order('eta_buque',{ascending:true,nullsFirst:false}),
-    sb.from('expediciones').select('*,empresas(nombre)').neq('estado_semaforo','🚢 EMBARCADO')
+    sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,tramite_aduanero,bultos,kilos,empresas!empresa_id(nombre)').neq('estado_semaforo','🚢 EMBARCADO')
   ]);
   const buques=(BALL||[]).filter(b=>b.estado_operacion!=='Finalizado');
   const expMap={};
@@ -9089,7 +9089,7 @@ async function loadStats(){
   const year=document.getElementById('st-f-year')?.value||'';
   const mes=document.getElementById('st-f-mes')?.value||'';
 
-  let qE=sb.from('expediciones').select('*,empresas(nombre),buques(nombre)');
+  let qE=sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,tramite_aduanero,status_aduanero,ubicacion,bultos,kilos,nº_mrn,created_at,empresas!empresa_id(nombre),buques(nombre)');
   let qB=sb.from('buques').select('*');
   if(year && mes){
     const m=mes.padStart(2,'0');
@@ -9839,7 +9839,7 @@ async function saveBuqueEst(id,val){
 async function openExpD(id, forceOpen=false){
   // Bloquear solo en vistas informativas del módulo almacén (flota, timeline, exp-buque)
   if(!forceOpen && MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
-  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas(nombre,email_confronta),cliente_override:cliente_override_id(nombre)').eq('id',id).single();
+  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas!empresa_id(nombre,email_confronta)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
   const emailCli=e.empresas?.email_confronta||'';
@@ -10005,7 +10005,7 @@ async function abrirLineaVida(expId, expRef){
 
   try{
     const [{data:exp}, {data:log}, {data:incs}] = await Promise.all([
-      sb.from('expediciones').select('*,buques(nombre,eta_buque),empresas(nombre)').eq('id',expId).single(),
+      sb.from('expediciones').select('*,buques(nombre,eta_buque),empresas!empresa_id(nombre)').eq('id',expId).single(),
       sb.from('activity_log').select('*').eq('tabla','expediciones').eq('registro_id',expId).order('created_at',{ascending:true}),
       sb.from('incidencias').select('*').eq('expedicion_id',expId).order('created_at',{ascending:true})
     ]);
@@ -11152,7 +11152,7 @@ async function guardarExpedicion(id){if(!checkOnline())return;
 }
 
 async function notifAduana(id,ref){
-  const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans,puerto_terminal,place),empresas(nombre,email_confronta,otros_emails)').eq('id',id).single();
+  const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans,puerto_terminal,place),empresas!empresa_id(nombre,email_confronta,otros_emails)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('nombre,descripcion').eq('expedicion_id',id).neq('estado','Cerrada');
   if(!e)return;
   const vNombreB=e.buques?.nombre||'Sin Buque',vRefB=e.buques?.ref_visual_trans||'Sin Ref.',vTerminal=e.buques?.puerto_terminal||e.buques?.place||'No especificada',vExp=e.nº_expedicion||'-',vBultos=e.bultos||0,vKilos=e.kilos||0,vUbi=e.ubicacion||'No definida',vStatus=e.status_aduanero||'Pendiente';
@@ -11173,7 +11173,7 @@ async function notifAduana(id,ref){
   closeModal();loadView(CV);
 }
 async function notifCliente(id,emailDest,ref){
-  const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans),empresas(nombre,email_confronta,otros_emails)').eq('id',id).single();
+  const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans),empresas!empresa_id(nombre,email_confronta,otros_emails)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('nombre,descripcion').eq('expedicion_id',id).neq('estado','Cerrada');
   if(!e)return;
   const listaInc=(incs||[]).map(i=>'❌ '+i.nombre+': '+i.descripcion).join('\n');
