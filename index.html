@@ -5535,7 +5535,7 @@ function filtrarB(q){const s=q.toLowerCase();renderB(allB.filter(b=>(b.nombre||'
 
 let allE=[];
 async function loadExp(){
-  const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas!empresa_id(nombre)').order('created_at',{ascending:false});
+  const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas!empresa_id(nombre),cliente_override:cliente_override_id(nombre)').order('created_at',{ascending:false});
   allE=data||[];
   _poblarFiltrosExp();
   renderE(allE);
@@ -9839,7 +9839,7 @@ async function saveBuqueEst(id,val){
 async function openExpD(id, forceOpen=false){
   // Bloquear solo en vistas informativas del módulo almacén (flota, timeline, exp-buque)
   if(!forceOpen && MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
-  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas!empresa_id(nombre,email_confronta)').eq('id',id).single();
+  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas!empresa_id(nombre,email_confronta),cliente_override:cliente_override_id(nombre)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
   const emailCli=e.empresas?.email_confronta||'';
