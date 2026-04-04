@@ -12140,11 +12140,10 @@ async function _enviarInstruccionesBuque(buqueId, buqueNombre){
   const {data:exps} = await sb.from('expediciones')
     .select('id,nº_expedicion,bultos,kilos,ubicacion,nº_mrn,nº_referencia_cliente,estado_semaforo,empresas!empresa_id(nombre)')
     .eq('buque_id', buqueId)
-    .neq('estado_semaforo','🚢 EMBARCADO')
-    .neq('estado_semaforo','⏳ EN TRÁNSITO')
+    .eq('estado_carga','✅ AUTORIZADO')
     .order('nº_expedicion');
 
-  if(!exps?.length){ showToast('Sin expediciones activas para este buque'); return; }
+  if(!exps?.length){ showToast('Sin expediciones autorizadas para este buque'); return; }
   closeModal();
 
   const hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
