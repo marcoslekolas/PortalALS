@@ -9686,7 +9686,7 @@ async function openBuque(id){
     : (b.estado_operacion==='Embarcado' ? '<span class="badge bb">⏳ Fact. pendiente</span>' : '');
   const factEstado = b.estado_facturacion==='facturado' ? '<span class="badge bg" style="margin-left:4px">✅ Facturado</span>' : '';
 
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="notifClienteBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📨 Notif. cliente</button>`:''} ${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="notifClienteBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📨 Notif. cliente</button>`:''} ${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="instruccionesBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🚛 Instruc. transportista</button>`:''}`;
   // Añadir badge de facturación en el modal body si procede
   if(factBadge||factEstado){
     const mbody = document.getElementById('m-body');
@@ -12074,6 +12074,126 @@ async function _guardarClienteFacturacion(expId){
   const val = document.getElementById('exp-cli-override-val');
   if(row) row.style.display = clienteId ? '' : 'none';
   if(val) val.textContent = clienteNombre || '—';
+}
+
+
+// ── Instrucciones transportista desde ficha de buque ─────────────────
+async function instruccionesBuque(buqueId, buqueNombre){
+  // Cargar transportistas para el selector
+  const {data:transp} = await sb.from('empresas')
+    .select('id,nombre,email_confronta')
+    .contains('rol',['Transportista'])
+    .order('nombre');
+
+  const optsHtml = (transp||[]).map(t=>
+    '<option value="'+t.id+'" data-email="'+(t.email_confronta||'')+'">'+t.nombre+(t.email_confronta?' · '+t.email_confronta:'')+'</option>'
+  ).join('');
+
+  document.getElementById('m-title').textContent = '🚛 Instrucciones transportista — '+buqueNombre;
+  document.getElementById('m-body').innerHTML =
+    '<div style="margin-bottom:12px;font-size:13px;color:var(--g600)">Se incluirán <strong>todas las expediciones</strong> activas del buque en las instrucciones de recogida.</div>'+
+    '<div class="fg2"><label class="fl2">Transportista destinatario</label>'+
+    '<select id="instruc-b-transp" class="fi fs" style="margin-top:4px">'+
+    '<option value="">— Seleccionar transportista —</option>'+
+    optsHtml+
+    '<option value="__nuevo__">➕ Nuevo transportista…</option>'+
+    '</select></div>'+
+    '<div id="instruc-b-nuevo-wrap" style="display:none">'+
+    '<div class="fg2"><label class="fl2">Nombre</label><input id="instruc-b-nombre" class="fi" placeholder="Nombre empresa"></div>'+
+    '<div class="fg2"><label class="fl2">Email</label><input id="instruc-b-email" class="fi" type="email" placeholder="email@transportista.com"></div>'+
+    '<div class="fg2"><label class="fl2">Teléfono</label><input id="instruc-b-tel" class="fi" type="tel" placeholder="+34 600 000 000"></div>'+
+    '</div>';
+
+  document.getElementById('m-foot').innerHTML =
+    '<button class="btn btn-s btn-sm" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-p btn-sm" id="btn-instruc-buque-enviar">📧 Generar email</button>';
+  document.getElementById('mo').classList.add('open');
+
+  document.getElementById('instruc-b-transp').onchange = function(){
+    document.getElementById('instruc-b-nuevo-wrap').style.display = this.value==='__nuevo__' ? '' : 'none';
+  };
+  document.getElementById('btn-instruc-buque-enviar').onclick = () => _enviarInstruccionesBuque(buqueId, buqueNombre);
+}
+
+async function _enviarInstruccionesBuque(buqueId, buqueNombre){
+  const sel = document.getElementById('instruc-b-transp');
+  let emailDest = '', transpNombre = '';
+
+  if(sel.value === '__nuevo__'){
+    transpNombre = document.getElementById('instruc-b-nombre')?.value?.trim();
+    emailDest    = document.getElementById('instruc-b-email')?.value?.trim();
+    const tel    = document.getElementById('instruc-b-tel')?.value?.trim()||null;
+    if(!transpNombre || !emailDest){ showToast('⚠️ Introduce nombre y email del transportista'); return; }
+    const {error} = await sb.from('empresas').insert({nombre:transpNombre, email_confronta:emailDest, telefono:tel, rol:['Transportista']});
+    if(error){ showToast('⚠️ Error al crear transportista: '+error.message); return; }
+    showToast('✅ Transportista creado');
+  } else if(sel.value){
+    const opt = sel.options[sel.selectedIndex];
+    transpNombre = opt.text.split(' · ')[0];
+    emailDest    = opt.dataset.email || '';
+  } else {
+    showToast('⚠️ Selecciona un transportista'); return;
+  }
+  if(!emailDest){ showToast('⚠️ El transportista no tiene email configurado'); return; }
+
+  // Cargar expediciones activas del buque
+  const {data:exps} = await sb.from('expediciones')
+    .select('id,nº_expedicion,bultos,kilos,ubicacion,nº_mrn,nº_referencia_cliente,estado_semaforo,empresas!empresa_id(nombre)')
+    .eq('buque_id', buqueId)
+    .neq('estado_semaforo','🚢 EMBARCADO')
+    .neq('estado_semaforo','⏳ EN TRÁNSITO')
+    .order('nº_expedicion');
+
+  if(!exps?.length){ showToast('Sin expediciones activas para este buque'); return; }
+  closeModal();
+
+  const hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const totalBultos = exps.reduce((a,e)=>a+(e.bultos||0),0);
+  const totalKilos  = exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+
+  const detalleExps = exps.map((e,i)=>
+    '  '+(i+1)+'. '+e.nº_expedicion+
+    '\n     • Empresa:    '+(e.empresas?.nombre||'—')+
+    '\n     • Bultos:     '+(e.bultos||0)+' bultos · '+(e.kilos||0)+' kg'+
+    '\n     • Ubicación:  '+(e.ubicacion||'Consultar con ALS')+
+    (e.nº_mrn?'\n     • MRN:        '+e.nº_mrn:'')+
+    (e.nº_referencia_cliente?'\n     • Ref. cliente: '+e.nº_referencia_cliente:'')
+  ).join('\n\n');
+
+  const cuerpo =
+    'INSTRUCCIONES DE RETIRADA DE MERCANCÍA\n'+
+    '═══════════════════════════════════════\n\n'+
+    'Transportista: '+transpNombre+'\n'+
+    'Buque:         '+buqueNombre+'\n'+
+    'Fecha:         '+hoy+'\n'+
+    'Expediciones:  '+exps.length+'\n'+
+    'Total bultos:  '+totalBultos+'\n'+
+    'Total kilos:   '+totalKilos+' kg\n\n'+
+    '───────────────────────────────────────\n'+
+    'DETALLE DE EXPEDICIONES\n'+
+    '───────────────────────────────────────\n\n'+
+    detalleExps+'\n\n'+
+    '───────────────────────────────────────\n'+
+    'INSTRUCCIONES\n'+
+    '───────────────────────────────────────\n'+
+    '1. Presentarse con este documento en instalaciones ALS\n'+
+    '2. Identificarse como transportista autorizado\n'+
+    '3. Aportar documentación del vehículo y conductor\n'+
+    '4. Confirmar recogida con el responsable de almacén\n\n'+
+    '───────────────────────────────────────\n'+
+    'CONTACTO ALS\n'+
+    '───────────────────────────────────────\n'+
+    '📞 +34 956 58 13 16\n'+
+    '📧 als@alsalgeciras.com\n'+
+    '🕐 Operations 24/7: +34 664 07 49 40\n\n'+
+    'ALGECIRAS LOGISTIC SOLUTIONS (ALS)\n'+
+    'Customs Way — Puerto de Algeciras';
+
+  const asunto = encodeURIComponent('🚛 Instrucciones retirada — Buque '+buqueNombre+' · '+exps.length+' exp. · '+hoy);
+  const mailto = 'mailto:'+emailDest+'?cc='+encodeURIComponent('als@alsalgeciras.com')+'&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
+  const a = document.createElement('a'); a.href=mailto; a.target='_blank';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  showToast('🚛 Instrucciones abiertas para '+transpNombre+' · '+exps.length+' exp.');
 }
 
 
