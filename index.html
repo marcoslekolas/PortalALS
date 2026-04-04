@@ -12143,12 +12143,17 @@ async function _enviarInstruccionesBuque(buqueId, buqueNombre){
     .neq('estado_semaforo','🚢 EMBARCADO')
     .order('nº_expedicion');
 
-  // Filtrar autorizadas en cliente (estado_carga O estado_semaforo puede contener AUTORIZADO)
+  // Log diagnóstico
+  console.log('[InstrucBuque] Total cargadas:', (expsAll||[]).length);
+  (expsAll||[]).forEach(e => console.log('  exp:', e.nº_expedicion, '| estado_carga:', JSON.stringify(e.estado_carga), '| estado_semaforo:', JSON.stringify(e.estado_semaforo)));
+
+  // Filtrar autorizadas — comprobando ambos campos
   const exps = (expsAll||[]).filter(e=>
-    e.estado_carga==='✅ AUTORIZADO' || e.estado_semaforo==='✅ AUTORIZADO'
+    (e.estado_carga||'').includes('AUTORIZADO') || (e.estado_semaforo||'').includes('AUTORIZADO')
   );
 
-  if(!exps?.length){ showToast('Sin expediciones autorizadas para este buque'); return; }
+  console.log('[InstrucBuque] Autorizadas:', exps.length);
+  if(!exps?.length){ showToast('Sin expediciones autorizadas — revisa consola (F12)'); return; }
   closeModal();
 
   const hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
