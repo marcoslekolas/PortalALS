@@ -12137,11 +12137,22 @@ async function _enviarInstruccionesBuque(buqueId, buqueNombre){
   if(!emailDest){ showToast('⚠️ El transportista no tiene email configurado'); return; }
 
   // Cargar expediciones activas del buque
-  const {data:expsAll} = await sb.from('expediciones')
-    .select('id,nº_expedicion,bultos,kilos,ubicacion,nº_mrn,nº_referencia_cliente,estado_semaforo,estado_carga,empresas!empresa_id(nombre)')
+  const {data:expsAll, error:eQ} = await sb.from('expediciones')
+    .select('id,nº_expedicion,bultos,kilos,ubicacion,nº_mrn,nº_referencia_cliente,estado_semaforo,estado_carga,empresa_id')
     .eq('buque_id', buqueId)
     .neq('estado_semaforo','🚢 EMBARCADO')
     .order('nº_expedicion');
+
+  if(eQ){ console.error('[InstrucBuque] Error query:', eQ); showToast('❌ Error: '+eQ.message); return; }
+
+  // Cargar nombres de empresa por separado si hace falta
+  const empIds = [...new Set((expsAll||[]).map(e=>e.empresa_id).filter(Boolean))];
+  const empMap = {};
+  if(empIds.length){
+    const {data:emps} = await sb.from('empresas').select('id,nombre').in('id',empIds);
+    (emps||[]).forEach(e=>{ empMap[e.id]=e.nombre; });
+  }
+  (expsAll||[]).forEach(e=>{ e._empresaNombre = empMap[e.empresa_id]||'—'; });
 
   // Log diagnóstico
   console.log('[InstrucBuque] Total cargadas:', (expsAll||[]).length);
