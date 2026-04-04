@@ -9625,7 +9625,7 @@ async function openBuque(id){
   if(MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
   const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre,email_confronta,otros_emails),en:consignatario_id(nombre,email_confronta)').eq('id',id).single();
   if(!b)return;
-  const [{data:exps},{data:emps}]=await Promise.all([sb.from('expediciones').select('*').eq('buque_id',id).order('nº_expedicion'),sb.from('empresas').select('id,nombre').order('nombre')]);
+  const [{data:exps},{data:emps}]=await Promise.all([sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,ubicacion,bultos,kilos,nº_mrn,status_aduanero,tramite_aduanero,foto_llegada_url,foto_carga_url,foto_embarque_url,cliente_override_id,cliente_override_nombre,empresas!empresa_id(nombre)').eq('buque_id',id).order('nº_expedicion'),sb.from('empresas').select('id,nombre').order('nombre')]);
   const stCls=estOpCls(b.estado_operacion||b.estado||'');
   const totalBultos=(exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
   const totalKilos=(exps||[]).reduce((a,e)=>a+(e.kilos||0),0);
@@ -9669,10 +9669,17 @@ async function openBuque(id){
       <button class="btn btn-p btn-sm" onclick="abrirExpEnBuque('${b.id}','${b.nombre}')">+ Nueva expedición</button>
     </div>
     <input type="hidden" id="bq-modal-nombre" value="${(b.nombre||'').replace(/"/g,'&quot;')}">
-    ${(exps||[]).map(e=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid var(--g200);border-radius:var(--r);margin-bottom:5px;cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--g50)'" onmouseleave="this.style.background=''" onclick="openExpDesdeBuque('${e.id}','${b.id}')">
-      <div><div style="font-weight:600;font-size:13px">${e.nº_expedicion}</div><div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div></div>
-      ${bdg(e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo)}${(e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url)?'<span title="Tiene fotos" style="font-size:11px;margin-left:4px">📸</span>':''}
-    </div>`).join('')||'<div class="empty" style="padding:20px"><div class="empty-txt">Sin expediciones</div></div>'}`;
+    ${(exps||[]).map(e=>{
+      const tieneOverride = e.cliente_override_id && e.cliente_override_id !== b.cliente_id;
+      const overrideNombre = e.cliente_override_nombre || e.empresas?.nombre || '—';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid ${tieneOverride?'var(--am300)':'var(--g200)'};border-radius:var(--r);margin-bottom:5px;cursor:pointer;transition:background .12s;background:${tieneOverride?'var(--am50)':''}" onmouseenter="this.style.background='${tieneOverride?'#fef9c3':'var(--g50)'}'" onmouseleave="this.style.background='${tieneOverride?'var(--am50)':''}'" onclick="openExpDesdeBuque('${e.id}','${b.id}')">
+        <div>
+          <div style="font-weight:600;font-size:13px">${e.nº_expedicion}${tieneOverride?` <span style="font-size:10px;background:var(--am100);color:var(--am700);border-radius:4px;padding:1px 5px;font-weight:700">💼 ${overrideNombre}</span>`:''}</div>
+          <div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div>
+        </div>
+        ${bdg(e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo)}${(e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url)?'<span title="Tiene fotos" style="font-size:11px;margin-left:4px">📸</span>':''}
+      </div>`;
+    }).join('')||'<div class="empty" style="padding:20px"><div class="empty-txt">Sin expediciones</div></div>'}`;
   // Info facturación en ficha de buque
   const factBadge = b.email_facturacion_sent
     ? `<span class="badge bg" title="Email enviado el ${b.email_facturacion_fecha ? new Date(b.email_facturacion_fecha).toLocaleDateString('es-ES') : '—'}">📧 Email fact. ${b.email_facturacion_fecha ? new Date(b.email_facturacion_fecha).toLocaleDateString('es-ES') : ''}</span>`
@@ -9712,25 +9719,43 @@ async function openExpDesdeBuque(expId,buqueId){
 // ── Notificación cliente desde ficha buque ────────────────────────
 async function notifClienteBuque(buqueId, buqueNombre){
   showToast('⏳ Cargando expediciones…');
-  const {data:exps} = await sb.from('expediciones')
-    .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,tramite_aduanero,status_aduanero,nº_mrn,empresas(nombre,email_confronta,otros_emails),buques(nombre)')
+  // Cargar el cliente del buque para saber a quién notificar
+  const {data:buque} = await sb.from('buques').select('cliente_id,ec:cliente_id(nombre,email_confronta,otros_emails)').eq('id',buqueId).single();
+  const clienteBuqueId = buque?.cliente_id;
+
+  const {data:expsAll} = await sb.from('expediciones')
+    .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,tramite_aduanero,status_aduanero,nº_mrn,cliente_override_id,cliente_override_nombre,empresas!empresa_id(nombre,email_confronta,otros_emails)')
     .eq('buque_id', buqueId)
     .neq('estado_semaforo','🚢 EMBARCADO');
 
-  if(!exps?.length){ showToast('No hay expediciones activas para este buque'); return; }
+  if(!expsAll?.length){ showToast('No hay expediciones activas para este buque'); return; }
+
+  // Separar: expediciones del cliente del buque vs las que tienen cliente distinto
+  const exps = expsAll.filter(e => !e.cliente_override_id || e.cliente_override_id === clienteBuqueId);
+  const expsOtrosClientes = expsAll.filter(e => e.cliente_override_id && e.cliente_override_id !== clienteBuqueId);
+
+  if(!exps.length){
+    showToast('⚠️ Todas las expediciones tienen cliente distinto al del buque');
+    return;
+  }
 
   const totalBultos = exps.reduce((a,e)=>a+(e.bultos||0),0);
   const totalKilos  = exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
-  const empresaNombre = [...new Set(exps.map(e=>e.empresas?.nombre).filter(Boolean))].join(', ') || 'cliente';
+  const empresaNombre = buque?.ec?.nombre || [...new Set(exps.map(e=>e.empresas?.nombre).filter(Boolean))].join(', ') || 'cliente';
   const fecha = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
 
-  // Emails
+  // Emails del cliente del buque
   const emailsSet = new Set();
   const ccSet = new Set();
-  exps.forEach(e=>{
-    if(e.empresas?.email_confronta) emailsSet.add(e.empresas.email_confronta);
-    (e.empresas?.otros_emails||[]).forEach(m=>{ if(m) ccSet.add(m); });
-  });
+  if(buque?.ec?.email_confronta) emailsSet.add(buque.ec.email_confronta);
+  (buque?.ec?.otros_emails||[]).forEach(m=>{ if(m) ccSet.add(m); });
+  // Fallback: emails de las empresas de las expediciones
+  if(!emailsSet.size){
+    exps.forEach(e=>{
+      if(e.empresas?.email_confronta) emailsSet.add(e.empresas.email_confronta);
+      (e.empresas?.otros_emails||[]).forEach(m=>{ if(m) ccSet.add(m); });
+    });
+  }
   emailsSet.forEach(m=>ccSet.delete(m));
   const toEmail = [...emailsSet].join(',') || '';
   const ccEmail = [...ccSet].join(',');
@@ -11686,6 +11711,7 @@ async function generarInstruccionesTransportista(expId){
     '<div id="instruc-nuevo-wrap" style="display:none">'+
     '<div class="fg2"><label class="fl2">Nombre transportista</label><input id="instruc-nombre" class="fi" placeholder="Nombre empresa"></div>'+
     '<div class="fg2"><label class="fl2">Email</label><input id="instruc-email" class="fi" type="email" placeholder="email@transportista.com"></div>'+
+    '<div class="fg2"><label class="fl2">Teléfono</label><input id="instruc-tel" class="fi" type="tel" placeholder="+34 600 000 000"></div>'+
     '</div>'+
     '<div style="font-size:11px;color:var(--g400);margin-top:8px">El email se enviará al transportista seleccionado con los datos de recogida.</div>';
   document.getElementById('m-foot').innerHTML =
@@ -11712,7 +11738,8 @@ async function _enviarInstruccionesTransportista(expId){
     emailDest    = document.getElementById('instruc-email')?.value?.trim();
     if(!transpNombre || !emailDest){ showToast('⚠️ Introduce nombre y email del transportista'); return; }
     // Crear el transportista en BD
-    const {error} = await sb.from('empresas').insert({nombre:transpNombre, email_confronta:emailDest, rol:['Transportista']});
+    const telTransp = document.getElementById('instruc-tel')?.value?.trim()||null;
+    const {error} = await sb.from('empresas').insert({nombre:transpNombre, email_confronta:emailDest, telefono:telTransp, rol:['Transportista']});
     if(error){ showToast('⚠️ Error al crear transportista: '+error.message); return; }
     showToast('✅ Transportista creado');
   } else if(sel.value){
