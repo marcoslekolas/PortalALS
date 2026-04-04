@@ -1363,6 +1363,7 @@ textarea.fi{resize:vertical;min-height:72px}
             <button class="btn btn-d btn-sm" onclick="loteEliminar()" title="Eliminar seleccionadas (solo admin)" id="btn-lote-del" style="${CU?.rol==='admin'?'':'display:none'}">🗑️ Eliminar</button>
           </div>
           <button class="btn btn-s btn-sm" onclick="exportarExpedicionesCSV()" style="margin-left:auto" title="Exportar a CSV">⬇️ CSV</button>
+          <button class="btn btn-s btn-sm" onclick="exportarExpPDF()" title="Exportar listado a PDF imprimible">📄 PDF</button>
         </div>
         <div class="tc"><table class="tbl"><thead><tr>
           <th style="width:38px;padding:0"></th>
@@ -1792,7 +1793,6 @@ textarea.fi{resize:vertical;min-height:72px}
     }
     // Ping silencioso para verificar conexión
     fetch(SB_URL+'/rest/v1/usuarios?select=email&limit=1',{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}})
-      .then(function(r){ console.log(r.ok?'✅ Supabase OK':'⚠️ Supabase status '+r.status); })
       .catch(function(e){ console.warn('Ping:',e); });
   };
   s.onerror=function(){
@@ -2305,8 +2305,8 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.10.0';
-const APP_VERSION_DATE = '30/03/2026';
+const APP_VERSION = 'v3.11.0';
+const APP_VERSION_DATE = '04/04/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
@@ -2427,7 +2427,6 @@ function checkSession(){
       if(errEl){errEl.style.color='var(--rd600)';errEl.textContent='⚠️ Error BD ('+r.status+'): '+txt.slice(0,120);}
       console.error('Ping failed:',r.status,txt);
     } else {
-      console.log('✅ Supabase conectado OK');
     }
   }catch(e){
     if(errEl){errEl.style.color='var(--rd600)';errEl.textContent='⚠️ Sin conexión: '+e.message;}
@@ -3075,13 +3074,15 @@ async function _bgBuscar(q){
 
   _searchTimer = setTimeout(async()=>{
     try{
-      const [rb, re, rmrn, remp, rinc] = await Promise.all([
+      const [rb, re, rmrn, rempSearch, remp, rinc] = await Promise.all([
         sb.from('buques').select('id,nombre,imo,estado_operacion,nº_escala,eta_buque')
           .or(`nombre.ilike.%${q}%,nº_escala.ilike.%${q}%`).limit(4),
-        sb.from('expediciones').select('id,nº_expedicion,buques(nombre),empresas(nombre),estado_semaforo,ubicacion')
+        sb.from('expediciones').select('id,nº_expedicion,buques(nombre),empresas!empresa_id(nombre),estado_semaforo,ubicacion')
           .or(`nº_expedicion.ilike.%${q}%`).limit(5),
         sb.from('expediciones').select('id,nº_expedicion,nº_mrn,buques(nombre),estado_semaforo')
           .ilike('nº_mrn',`%${q}%`).limit(3),
+        sb.from('expediciones').select('id,nº_expedicion,empresas!empresa_id(nombre),buques(nombre),estado_semaforo,ubicacion')
+          .ilike('empresas.nombre',`%${q}%`).limit(3),
         sb.from('empresas').select('id,nombre,email_confronta')
           .or(`nombre.ilike.%${q}%,email_confronta.ilike.%${q}%`).limit(4),
         sb.from('incidencias').select('id,tipo,descripcion,estado,expediciones(id,nº_expedicion)')
@@ -3093,6 +3094,7 @@ async function _bgBuscar(q){
       const buques = rb.data||[];
       const expRef = re.data||[];
       const expMrn = (rmrn.data||[]).filter(e=>!expRef.find(x=>x.id===e.id));
+      const expEmp = (rempSearch?.data||[]).filter(e=>!expRef.find(x=>x.id===e.id)&&!expMrn.find(x=>x.id===e.id));
       const empresas = remp.data||[];
       const incs = rinc.data||[];
 
@@ -3118,6 +3120,12 @@ async function _bgBuscar(q){
           ...expMrn.map(e=>({
             titulo: e.nº_mrn,
             sub: `Exp: ${e.nº_expedicion} · ${e.buques?.nombre||'—'}`,
+            badge: e.estado_semaforo||'',
+            action: ()=>{ cerrarBusquedaGlobal(); openExpD(e.id); nav('expediciones',null); }
+          })),
+          ...expEmp.map(e=>({
+            titulo: e.nº_expedicion,
+            sub: [e.empresas?.nombre, e.buques?.nombre, e.ubicacion].filter(Boolean).join(' · ') || '—',
             badge: e.estado_semaforo||'',
             action: ()=>{ cerrarBusquedaGlobal(); openExpD(e.id); nav('expediciones',null); }
           }))
@@ -5265,6 +5273,100 @@ function resetDashFilters(){
   loadDash();
 }
 
+// ── Filtrar expediciones por buque desde dashboard ────────────────────
+function filtrarExpPorBuque(buqueNombre){
+  nav('expediciones', document.querySelector('[onclick*="expediciones"]'));
+  // Esperar a que cargue la vista y luego aplicar filtro
+  setTimeout(()=>{
+    // Seleccionar el buque en el filtro multi-select
+    const chks = document.querySelectorAll('.fil-buque-chk');
+    chks.forEach(c => {
+      if(c.value === buqueNombre){
+        c.checked = true;
+      } else {
+        c.checked = false;
+      }
+    });
+    onBuqueChkChange();
+    // Actualizar label del botón
+    const lbl = document.getElementById('fil-buque-lbl');
+    if(lbl) lbl.textContent = buqueNombre;
+    showToast('🔍 Filtrando por: '+buqueNombre);
+  }, 400);
+}
+
+
+// ── Exportar expediciones filtradas a PDF ────────────────────────────
+function exportarExpPDF(){
+  const exps = window._expFiltradas || allE || [];
+  if(!exps.length){ showToast('Sin expediciones para exportar'); return; }
+
+  const fecha = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const hora  = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+
+  const filas = exps.map((e,i)=>`
+    <tr>
+      <td>${i+1}</td>
+      <td><strong>${e.nº_expedicion||'—'}</strong></td>
+      <td>${e.buques?.nombre||'—'}</td>
+      <td>${e.empresas?.nombre||'—'}</td>
+      <td>${e.bultos||0} btos · ${e.kilos||0} kg</td>
+      <td>${e.estado_semaforo||'—'}</td>
+      <td>${e.status_aduanero||'—'}</td>
+      <td>${e.tramite_aduanero||'—'}</td>
+      <td>${e.ubicacion||'—'}</td>
+      <td>${e.nº_mrn||'—'}</td>
+    </tr>`).join('');
+
+  const totalBultos = exps.reduce((a,e)=>a+(e.bultos||0),0);
+  const totalKilos  = exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Expediciones ALS · ${fecha}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,sans-serif;font-size:10px;color:#1a1a1a;padding:20px}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:12px;border-bottom:2px solid #2563eb}
+    .logo{font-size:22px;font-weight:900;color:#2563eb;letter-spacing:-1px}
+    .logo span{color:#1a1a1a}
+    .meta{text-align:right;font-size:9px;color:#6b7280}
+    h2{font-size:13px;color:#374151;margin-bottom:4px}
+    .resumen{display:flex;gap:20px;margin-bottom:14px;padding:8px 12px;background:#f0f9ff;border-radius:6px;border:1px solid #bae6fd}
+    .res-item{text-align:center}
+    .res-val{font-size:16px;font-weight:700;color:#2563eb}
+    .res-lbl{font-size:9px;color:#6b7280;text-transform:uppercase}
+    table{width:100%;border-collapse:collapse}
+    th{background:#2563eb;color:#fff;padding:6px 5px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.3px}
+    td{padding:5px;border-bottom:1px solid #e5e7eb;font-size:9px;vertical-align:top}
+    tr:nth-child(even) td{background:#f9fafb}
+    .footer{margin-top:16px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:8px;color:#9ca3af;display:flex;justify-content:space-between}
+    @media print{body{padding:10px}}
+  </style></head><body>
+  <div class="header">
+    <div><div class="logo">ALS<span>·CW</span></div><div style="font-size:9px;color:#6b7280;margin-top:2px">Algeciras Logistic Solutions</div></div>
+    <div class="meta"><div style="font-size:12px;font-weight:700">Listado de Expediciones</div><div>${fecha} · ${hora}</div><div>Generado por: ${CU?.nombre||'—'}</div></div>
+  </div>
+  <div class="resumen">
+    <div class="res-item"><div class="res-val">${exps.length}</div><div class="res-lbl">Expediciones</div></div>
+    <div class="res-item"><div class="res-val">${totalBultos.toLocaleString('es-ES')}</div><div class="res-lbl">Bultos</div></div>
+    <div class="res-item"><div class="res-val">${(totalKilos/1000).toFixed(1)}t</div><div class="res-lbl">Toneladas</div></div>
+    <div class="res-item"><div class="res-val">${exps.filter(e=>e.estado_carga==='✅ AUTORIZADO').length}</div><div class="res-lbl">Autorizadas</div></div>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>Referencia</th><th>Buque</th><th>Empresa</th><th>Mercancía</th><th>Estado</th><th>Status adua.</th><th>Trámite</th><th>Ubicación</th><th>MRN</th></tr></thead>
+    <tbody>${filas}</tbody>
+  </table>
+  <div class="footer"><span>ALS · Customs Way · Puerto de Algeciras · als@alsalgeciras.com · +34 956 58 13 16</span><span>v${APP_VERSION}</span></div>
+  </body></html>`;
+
+  const w = window.open('','_blank','width=1000,height=700');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(()=>w.print(), 600);
+  showToast('📄 PDF listo para imprimir');
+}
+
+
 async function loadDash(){
   await initDashFilters();
   // checkAlertasDespacho(); // desactivado
@@ -5367,7 +5469,7 @@ async function loadDash(){
   renderDashCharts(allExps || Efilt || []);
   const dashCS=document.getElementById('dash-charts-section');if(dashCS)dashCS.style.display='';
   document.getElementById('kpi-grid').innerHTML=`
-    <div class="kpi bl"><div class="kpi-lbl">Buques activos</div><div class="kpi-val">${allBuques.length}</div><div class="kpi-sub" style="color:var(--b600)">${enProceso.length} en proceso · ${listos.length} listos</div></div>
+    <div class="kpi bl" style="cursor:pointer" onclick="nav('buques',null)" title="Ver todos los buques"><div class="kpi-lbl">Buques activos</div><div class="kpi-val">${allBuques.length}</div><div class="kpi-sub" style="color:var(--b600)">${enProceso.length} en proceso · ${listos.length} listos</div></div>
     <div class="kpi gr"><div class="kpi-lbl">Expediciones${filtros.length?' (filtradas)':''}</div><div class="kpi-val">${Efilt.length}</div><div class="kpi-sub ${pct>70?'ks-g':'ks-a'}">${authF} autorizadas (${pct}%)</div></div>
     <div class="kpi am"><div class="kpi-lbl">Bultos${filtros.length?' (filtrados)':''}</div><div class="kpi-val">${totalBultos.toLocaleString('es-ES')}</div></div>
     <div class="kpi bl"><div class="kpi-lbl">Kilos${filtros.length?' (filtrados)':''}</div><div class="kpi-val">${Math.round(totalKilos/1000).toLocaleString('es-ES')}t</div><div class="kpi-sub" style="color:var(--b600)">${totalKilos.toLocaleString('es-ES')} kg</div></div>
@@ -9901,7 +10003,8 @@ async function openExpD(id, forceOpen=false){
     </div>
     ${_renderIndicadoresPlazos(e)}
     <div class="df"><div class="dl">Nº MRN</div><div style="font-family:var(--mono);font-size:13px;font-weight:500;color:${e.nº_mrn?'var(--g900)':'var(--am600)'}">${e.nº_mrn||'⚠️ Sin MRN — requerido para autorizar'}</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px" data-exp-badges>${bdg(e.estado_semaforo)}<span class="badge ${e.estado_carga==='✅ AUTORIZADO'?'bg':'br'}">${e.estado_carga}</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 8px" data-exp-badges>${bdg(e.estado_semaforo)}<span class="badge ${e.estado_carga==='✅ AUTORIZADO'?'bg':'br'}">${e.estado_carga}</span></div>
+    <div id="exp-mini-feed" style="margin-bottom:12px;padding:8px;background:var(--g50);border-radius:var(--r);border:1px solid var(--g100)"></div>
     ${e.created_by_nombre?`<div style="font-size:11px;color:var(--g400);margin-bottom:12px">Creado por <strong>${e.created_by_nombre}</strong>${e.updated_at?` · Última edición: ${fdt(e.updated_at)}`:''}</div>`:''}
     <hr class="fdiv">
     <div class="fg2"><label class="fl2">Nº MRN</label><input id="mrn-inp" class="fi" value="${e.nº_mrn||''}" placeholder="26ES…"><div style="font-size:10px;color:var(--g400);margin-top:3px">💡 Si empieza por <code style="background:var(--g100);padding:1px 4px;border-radius:3px;font-size:10px">-</code> no se incluye en el email de confronta</div></div>
@@ -9975,11 +10078,13 @@ async function openExpD(id, forceOpen=false){
     document.getElementById('m-foot').appendChild(btnInstr);
   }
   window._modalExpId = e.id; // para refresh Realtime
+  window._modalExpUpdatedAt = e.updated_at || null; // para bloqueo optimista
   _presenciaAnunciar(e.id); // indicar que este usuario está editando
   _presenciaRenderizar(e.id); // mostrar si hay otros editando
   document.getElementById('mo').classList.add('open');
   loadHistorialExp(e.id);
   loadNotasExp(e.id);
+  _renderMiniFeed(e.id);
 }
 
 
@@ -10436,16 +10541,13 @@ async function enviarNota(expId, expRef){
 
     // Notificar a usuarios mencionados con @nombre
     const menciones = [...texto.matchAll(/@([\wÀ-ɏ]+)/g)].map(m=>m[1].toLowerCase());
-    console.log('[Menciones] Texto:', texto, '| Menciones detectadas:', menciones);
-    if(menciones.length){
+      if(menciones.length){
       // Intentar sin filtro activo primero (por si la columna no existe)
       let {data:usu, error:eusu} = await sb.from('usuarios').select('id,nombre,rol');
       if(eusu) console.warn('[Menciones] Error cargando usuarios:', eusu);
-      console.log('[Menciones] Usuarios cargados:', (usu||[]).map(u=>u.nombre));
       const mencionados = (usu||[]).filter(u=>
         menciones.some(m=>(u.nombre||'').toLowerCase().includes(m))
       );
-      console.log('[Menciones] Mencionados encontrados:', mencionados.map(u=>u.nombre));
       const notifRows = mencionados
         .filter(u => u.id !== CU?.id)  // excluir al propio remitente
         .map(u => ({
@@ -10458,7 +10560,6 @@ async function enviarNota(expId, expRef){
           leida: false,
           expedicion_id: expId
         }));
-      console.log('[Menciones] Filas a insertar:', notifRows.length, '| CU.id:', CU?.id);
       if(notifRows.length){
         const {error:eInsert} = await sb.from('als_notificaciones').insert(notifRows);
         if(eInsert){
@@ -11159,16 +11260,60 @@ async function guardarExpedicion(id){if(!checkOnline())return;
     if(semUbic){ obj.estado_semaforo=semUbic; obj.estado_carga=semUbic; }
   }
   // Auto-lógica: MRN + Despachado → Autorizado (sobreescribe lo anterior)
+  const yaEraAutorizado = window._modalExpUpdatedAt && 
+    document.querySelector('[data-exp-badges]')?.innerHTML?.includes('AUTORIZADO');
   if(mrn && tra==='Despachado'){
     obj.estado_carga='✅ AUTORIZADO';
     obj.estado_semaforo='✅ AUTORIZADO';
+    // Notificar al almacén si no estaba ya autorizada
+    if(!yaEraAutorizado) window._pendingNotifAutorizado = id;
+  }
+  // Bloqueo optimista: verificar que nadie más guardó mientras editábamos
+  if(window._modalExpUpdatedAt){
+    const {data:fresh} = await sb.from('expediciones').select('updated_at').eq('id',id).single();
+    if(fresh && fresh.updated_at && fresh.updated_at !== window._modalExpUpdatedAt){
+      const conf = confirm('⚠️ Esta expedición fue modificada por otro usuario mientras la editabas.\n\n¿Quieres sobrescribir sus cambios con los tuyos?');
+      if(!conf){ closeModal(); loadView(CV); return; }
+    }
   }
   const {error}=await sb.from('expediciones').update(obj).eq('id',id);
   if(error){alert('Error al guardar: '+error.message);return;}
   await logAct('expediciones',id,'','editar','múltiples','—','Guardado por '+CU?.nombre);
+  // Notificar al almacén si se acaba de autorizar
+  if(window._pendingNotifAutorizado === id){
+    window._pendingNotifAutorizado = null;
+    _notificarAlmacenAutorizacion(id);
+  }
   showToast('✅ Cambios guardados');
   closeModal();loadView(CV);
 }
+
+// ── Mini-feed de últimos cambios en ficha expedición ─────────────────
+async function _renderMiniFeed(expId){
+  const el = document.getElementById('exp-mini-feed');
+  if(!el) return;
+  const {data} = await sb.from('activity_log')
+    .select('created_at,usuario_nombre,accion,campo_modificado,valor_nuevo')
+    .eq('registro_id', expId)
+    .order('created_at', {ascending:false})
+    .limit(4);
+  if(!data?.length){ el.innerHTML = ''; return; }
+  const ahora = new Date();
+  el.innerHTML = '<div style="font-size:10px;color:var(--g400);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Últimos cambios</div>'+
+    data.map(r=>{
+      const dt = new Date(r.created_at);
+      const diff = Math.round((ahora-dt)/60000);
+      const ts = diff < 1 ? 'ahora' : diff < 60 ? 'hace '+diff+'m' : diff < 1440 ? 'hace '+Math.round(diff/60)+'h' : dt.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'});
+      const campo = r.campo_modificado || r.accion || '—';
+      const val = (r.valor_nuevo||'').slice(0,30);
+      return '<div style="display:flex;align-items:baseline;gap:6px;padding:3px 0;border-bottom:1px solid var(--g100);font-size:11px">'
+        +'<span style="color:var(--g400);flex-shrink:0;min-width:36px">'+ts+'</span>'
+        +'<span style="color:var(--b600);font-weight:600;flex-shrink:0">'+( r.usuario_nombre||'—').split(' ')[0]+'</span>'
+        +'<span style="color:var(--g600);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+campo+(val?' → '+val:'')+'</span>'
+        +'</div>';
+    }).join('');
+}
+
 
 async function notifAduana(id,ref){
   const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans,puerto_terminal,place),empresas!empresa_id(nombre,email_confronta,otros_emails)').eq('id',id).single();
@@ -11872,7 +12017,6 @@ async function cargarNotificacionesPendientes(){
       .eq('leida', false)
       .order('created_at', {ascending:false});
 
-    console.log('[Notificaciones] CU.id:', CU.id, '| no leídas:', (data||[]).length, '| error:', eNotif?.message);
     _actualizarBadge((data||[]).length);
 
     // Suscribir a Realtime para recibir menciones al instante
@@ -12149,15 +12293,12 @@ async function _enviarInstruccionesBuque(buqueId, buqueNombre){
   (expsAll||[]).forEach(e=>{ e._empresaNombre = empMap[e.empresa_id]||'—'; });
 
   // Log diagnóstico
-  console.log('[InstrucBuque] Total cargadas:', (expsAll||[]).length);
-  (expsAll||[]).forEach(e => console.log('  exp:', e.nº_expedicion, '| estado_carga:', JSON.stringify(e.estado_carga), '| estado_semaforo:', JSON.stringify(e.estado_semaforo)));
 
   // Filtrar autorizadas — comprobando ambos campos
   const exps = (expsAll||[]).filter(e=>
     (e.estado_carga||'').includes('AUTORIZADO') || (e.estado_semaforo||'').includes('AUTORIZADO')
   );
 
-  console.log('[InstrucBuque] Autorizadas:', exps.length);
   if(!exps?.length){ showToast('Sin expediciones autorizadas — revisa consola (F12)'); return; }
   closeModal();
 
