@@ -12137,11 +12137,16 @@ async function _enviarInstruccionesBuque(buqueId, buqueNombre){
   if(!emailDest){ showToast('⚠️ El transportista no tiene email configurado'); return; }
 
   // Cargar expediciones activas del buque
-  const {data:exps} = await sb.from('expediciones')
-    .select('id,nº_expedicion,bultos,kilos,ubicacion,nº_mrn,nº_referencia_cliente,estado_semaforo,empresas!empresa_id(nombre)')
+  const {data:expsAll} = await sb.from('expediciones')
+    .select('id,nº_expedicion,bultos,kilos,ubicacion,nº_mrn,nº_referencia_cliente,estado_semaforo,estado_carga,empresas!empresa_id(nombre)')
     .eq('buque_id', buqueId)
-    .eq('estado_carga','✅ AUTORIZADO')
+    .neq('estado_semaforo','🚢 EMBARCADO')
     .order('nº_expedicion');
+
+  // Filtrar autorizadas en cliente (estado_carga O estado_semaforo puede contener AUTORIZADO)
+  const exps = (expsAll||[]).filter(e=>
+    e.estado_carga==='✅ AUTORIZADO' || e.estado_semaforo==='✅ AUTORIZADO'
+  );
 
   if(!exps?.length){ showToast('Sin expediciones autorizadas para este buque'); return; }
   closeModal();
