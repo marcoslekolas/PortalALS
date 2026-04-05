@@ -10323,8 +10323,18 @@ async function revertirCarga(expId, expRef){
   );
 
   showToast('↩ Carga revertida — expedición disponible para nueva carga');
-  // Recargar la ficha para que los badges se actualicen
-  openExpD(expId, true);
+
+  // Actualizar badges visualmente de inmediato sin esperar recarga
+  const badgeWrap = document.querySelector('[data-exp-badges]');
+  if(badgeWrap){
+    badgeWrap.innerHTML = '<span class="badge bg">✅ AUTORIZADO</span><span class="badge bg">✅ AUTORIZADO</span>';
+  }
+  // Ocultar el botón revertir y el aviso de intento fallido
+  const btnRevertir = document.querySelector('[onclick*="revertirCarga"]');
+  if(btnRevertir) btnRevertir.style.display = 'none';
+
+  // Recargar la ficha completa
+  setTimeout(() => openExpD(expId, true), 300);
 }
 
 
