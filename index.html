@@ -1268,11 +1268,11 @@ textarea.fi{resize:vertical;min-height:72px}
         </div>
         <!-- KPIs -->
         <div class="kpi-grid" id="kpi-grid"></div>
-        <!-- Detector de anomalías -->
+        <!-- Próximos embarques -->
         <div id="dash-anomalias-sec" style="margin-bottom:20px;display:none">
-          <div class="ph" style="cursor:pointer" onclick="toggleAnomalias()">
-            <div class="pt">⚠️ Anomalías detectadas</div>
-            <span id="dash-anom-count" class="badge" style="background:#ef4444;color:#fff"></span>
+          <div class="ph">
+            <div class="pt">🚢 Próximos embarques</div>
+            <span id="dash-anom-count" class="badge bb"></span>
           </div>
           <div id="dash-anomalias-list" style="display:flex;flex-direction:column;gap:8px;padding:4px 0"></div>
         </div>
@@ -5085,167 +5085,78 @@ function buqueCard(b,listo){
 
 let _dashInited=false;
 function detectarAnomalias(buques, expediciones){
-  const hoy   = new Date(); hoy.setHours(0,0,0,0);
-  const anomalias = [];
-
-  // ── 1. Depósito temporal T1 en ADT próximo a vencer (90 días) ────
-  expediciones.forEach(e => {
-    if(e.ubicacion !== 'Almacén-ADT') return;
-    if(e.tramite_aduanero === 'Despachado') return;
-    const sta = Array.isArray(e.status_aduanero) ? e.status_aduanero[0] : e.status_aduanero;
-    if(sta !== 'T1') return;
-    // Usar updated_at como proxy de fecha de entrada en ADT
-    if(!e.updated_at) return;
-    const entrada = new Date(e.updated_at); entrada.setHours(0,0,0,0);
-    const dias = Math.round((hoy - entrada) / 86400000);
-    const restantes = 90 - dias;
-    if(restantes <= 30){
-      anomalias.push({
-        tipo:'deposito_temporal',
-        icono: restantes <= 0 ? '🔴' : restantes <= 5 ? '🔴' : restantes <= 15 ? '🟠' : '🟡',
-        color: restantes <= 5 ? '#ef4444' : restantes <= 15 ? '#f97316' : '#eab308',
-        bg: restantes <= 5 ? 'rgba(239,68,68,.08)' : restantes <= 15 ? 'rgba(249,115,22,.08)' : 'rgba(234,179,8,.08)',
-        titulo: restantes <= 0 ? 'Depósito temporal VENCIDO ('+Math.abs(restantes)+'d)' : 'Depósito temporal vence en '+restantes+'d',
-        detalle: (e.nº_expedicion||'—')+' · T1 · ADT · '+dias+'d de 90'
-      });
-    }
-  });
-
-  // ── 1b. Expediciones paradas demasiado tiempo en almacén ──────────
-  // Más de 15 días en estado que no avanza
-  const estadosParados = ['🟡 EN ALMACÉN','🔵 PENDIENTE MRN','🟠 PENDIENTE ADUANA'];
-  expediciones.forEach(e => {
-    if(estadosParados.some(s => e.estado_semaforo?.includes(s.replace(/[🟡🔵🟠]/g,'').trim()))){
-      // Usar fecha de la expedición del buque para calcular días
-      const buque = buques.find(b => b.id === e.buque_id);
-      if(buque?.eta_buque){
-        const eta = new Date(buque.eta_buque); eta.setHours(0,0,0,0);
-        const dias = Math.round((hoy - eta) / 86400000);
-        if(dias > 15){
-          anomalias.push({
-            tipo: 'parada',
-            icono: '⏱️',
-            color: '#f59e0b',
-            bg: 'rgba(245,158,11,.08)',
-            titulo: `Expedición parada ${dias} días`,
-            detalle: `${e.nº_expedicion||e.id.slice(0,8)} · ${e.estado_semaforo||'—'} · Buque: ${buque.nombre}`,
-            accion: null
-          });
-        }
-      }
-    }
-  });
-
-  // ── 2. Buques con ETA vencida y sin embarcar ──────────────────────
-  buques.forEach(b => {
-    if(!b.eta_buque) return;
-    const eta = new Date(b.eta_buque); eta.setHours(0,0,0,0);
-    const diasRetraso = Math.round((hoy - eta) / 86400000);
-    if(diasRetraso > 3 && b.estado_operacion !== 'Embarcado' && b.estado_operacion !== 'Finalizado'){
-      anomalias.push({
-        tipo: 'eta_vencida',
-        icono: '🚢',
-        color: '#ef4444',
-        bg: 'rgba(239,68,68,.08)',
-        titulo: `ETA vencida hace ${diasRetraso} días`,
-        detalle: `${b.nombre} · ETA: ${new Date(b.eta_buque).toLocaleDateString('es-ES')} · Estado: ${b.estado_operacion||'—'}`,
-        accion: null
-      });
-    }
-  });
-
-  // ── 3. Expediciones sin MRN con ETA de buque ya pasada ───────────
-  const sinMrn = expediciones.filter(e => {
-    if(e.nº_mrn) return false;
-    const b = buques.find(x => x.id === e.buque_id);
-    if(!b?.eta_buque) return false;
-    const eta = new Date(b.eta_buque); eta.setHours(0,0,0,0);
-    return (hoy - eta) / 86400000 > 5;
-  });
-  if(sinMrn.length > 0){
-    anomalias.push({
-      tipo: 'sin_mrn',
-      icono: '📋',
-      color: '#8b5cf6',
-      bg: 'rgba(139,92,246,.08)',
-      titulo: `${sinMrn.length} expedición${sinMrn.length>1?'es':''} sin MRN (>5 días tras ETA)`,
-      detalle: sinMrn.slice(0,3).map(e=>e.nº_expedicion||e.id.slice(0,8)).join(', ') + (sinMrn.length>3?'…':''),
-      accion: null
-    });
-  }
-
-  // ── 3b. Expediciones con fecha máx. despacho vencida o crítica ─────
-  // (datos de expediciones deben incluir fecha_max_despacho)
-  const hoyStr = hoy.toISOString().slice(0,10);
-  expediciones.forEach(e => {
-    if(!e.fecha_max_despacho) return;
-    if(e.tramite_aduanero === 'Despachado') return;
-    const fmax = new Date(e.fecha_max_despacho); fmax.setHours(0,0,0,0);
-    const dias = Math.round((fmax - hoy) / 86400000);
-    if(dias < 0){
-      anomalias.push({
-        tipo:'fmax_vencida', icono:'🔴', color:'#ef4444', bg:'rgba(239,68,68,.08)',
-        titulo:'Fecha máx. despacho VENCIDA hace '+Math.abs(dias)+'d',
-        detalle:(e.nº_expedicion||e.id?.slice(0,8)||'—')+' · '+new Date(e.fecha_max_despacho).toLocaleDateString('es-ES')
-      });
-    } else if(dias <= 3){
-      anomalias.push({
-        tipo:'fmax_critica', icono:'🟠', color:'#f97316', bg:'rgba(249,115,22,.08)',
-        titulo:'Fecha máx. despacho en '+dias+'d',
-        detalle:(e.nº_expedicion||e.id?.slice(0,8)||'—')+' · Vence '+new Date(e.fecha_max_despacho).toLocaleDateString('es-ES')
-      });
-    }
-  });
-
-  // ── 4. Buques con ETA en las próximas 48h sin expediciones listas ─
-  const en48h = buques.filter(b => {
-    if(!b.eta_buque) return false;
-    const eta = new Date(b.eta_buque); eta.setHours(0,0,0,0);
-    const diff = (eta - hoy) / 86400000;
-    return diff >= 0 && diff <= 2;
-  });
-  en48h.forEach(b => {
-    const expsB = expediciones.filter(e => e.buque_id === b.id);
-    const autorizadas = expsB.filter(e => e.estado_carga === '✅ AUTORIZADO').length;
-    const total = expsB.length;
-    if(total > 0 && autorizadas < total){
-      anomalias.push({
-        tipo: 'prox_eta',
-        icono: '⚡',
-        color: '#3b82f6',
-        bg: 'rgba(59,130,246,.08)',
-        titulo: `ETA en ${Math.round((new Date(b.eta_buque)-hoy)/86400000)}h — ${total-autorizadas} exp. sin autorizar`,
-        detalle: `${b.nombre} · ${autorizadas}/${total} autorizadas`,
-        accion: null
-      });
-    }
-  });
-
-  // ── Renderizar ────────────────────────────────────────────────────
+  // Muestra próximos embarques (48h) y su situación operativa
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
   const sec  = document.getElementById('dash-anomalias-sec');
   const list = document.getElementById('dash-anomalias-list');
   const cnt  = document.getElementById('dash-anom-count');
-
   if(!sec || !list) return;
 
-  if(anomalias.length === 0){
+  // Buques con ETA en los próximos 5 días (ventana ampliada para utilidad)
+  const proximos = buques.filter(b => {
+    if(!b.eta_buque) return false;
+    const eta = new Date(b.eta_buque);
+    const diff = (eta - hoy) / (1000*3600*24);
+    return diff >= -1 && diff <= 5; // desde ayer hasta 5 días vista
+  }).sort((a,b) => new Date(a.eta_buque) - new Date(b.eta_buque));
+
+  if(!proximos.length){
     sec.style.display = 'none';
     return;
   }
 
   sec.style.display = '';
-  if(cnt) cnt.textContent = anomalias.length;
-  list.style.display = 'flex';
+  if(cnt){ cnt.textContent = proximos.length; }
 
-  list.innerHTML = anomalias.map(a => `
-    <div style="background:${a.bg};border-left:3px solid ${a.color};border-radius:10px;padding:12px 14px;display:flex;align-items:flex-start;gap:10px">
-      <span style="font-size:20px;flex-shrink:0">${a.icono}</span>
-      <div style="min-width:0">
-        <div style="font-size:13px;font-weight:700;color:var(--g900);margin-bottom:2px">${a.titulo}</div>
-        <div style="font-size:12px;color:var(--g500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.detalle}</div>
+  list.innerHTML = proximos.map(b => {
+    const eta      = new Date(b.eta_buque);
+    const diffDias = (eta - hoy) / (1000*3600*24);
+    const diffH    = Math.round(diffDias * 24);
+    const expsB    = expediciones.filter(e => e.buque_id === b.id);
+    const total    = expsB.length;
+    const auth     = expsB.filter(e => e.estado_carga === '✅ AUTORIZADO').length;
+    const sinMrn   = expsB.filter(e => !e.nº_mrn && e.tramite_aduanero !== 'Despachado').length;
+    const pct      = total ? Math.round(auth/total*100) : 0;
+
+    // Color según urgencia
+    const esHoy    = diffDias >= -0.5 && diffDias < 1;
+    const esManana = diffDias >= 1 && diffDias < 2;
+    const esMuy    = diffDias < 0;
+    const color    = esMuy ? '#ef4444' : esHoy ? '#f97316' : esManana ? '#eab308' : '#3b82f6';
+    const bg       = esMuy ? 'rgba(239,68,68,.07)' : esHoy ? 'rgba(249,115,22,.07)' : esManana ? 'rgba(234,179,8,.07)' : 'rgba(59,130,246,.07)';
+    const etaLbl   = esMuy ? 'ETA vencida' : esHoy ? 'Hoy' : esManana ? 'Mañana' : (diffH < 48 ? 'En '+diffH+'h' : 'En '+Math.round(diffDias)+'d');
+    const etaFmt   = eta.toLocaleDateString('es-ES',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const cliente  = b.ec?.nombre || '—';
+
+    // Barra progreso autorización
+    const barColor = pct===100 ? '#22c55e' : pct>50 ? '#eab308' : '#ef4444';
+    const barHtml  = total > 0 ? `
+      <div style="margin-top:8px">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--g500);margin-bottom:3px">
+          <span>${auth}/${total} exp. autorizadas</span>
+          <span style="font-weight:700;color:${barColor}">${pct}%</span>
+        </div>
+        <div style="height:5px;background:var(--g200);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width .4s"></div>
+        </div>
+        ${sinMrn > 0 ? `<div style="font-size:10px;color:#8b5cf6;margin-top:3px">⚠️ ${sinMrn} sin MRN</div>` : ''}
+      </div>` : '<div style="font-size:11px;color:var(--g400);margin-top:6px">Sin expediciones registradas</div>';
+
+    return `<div style="background:${bg};border:1px solid ${color}33;border-left:3px solid ${color};border-radius:10px;padding:12px 14px;cursor:pointer"
+      onclick="openBuque('${b.id}')">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+        <div style="min-width:0;flex:1">
+          <div style="font-size:13px;font-weight:700;color:var(--g900)">${b.nombre}</div>
+          <div style="font-size:11px;color:var(--g500);margin-top:1px">${etaFmt} · ${cliente}</div>
+        </div>
+        <span style="font-size:11px;font-weight:700;color:${color};background:${bg};border:1px solid ${color}55;border-radius:20px;padding:2px 8px;flex-shrink:0">${etaLbl}</span>
       </div>
-    </div>`).join('');
+      ${barHtml}
+    </div>`;
+  }).join('');
 }
+
+
 
 async function initDashFilters(){
   if(_dashInited)return; _dashInited=true;
