@@ -1114,6 +1114,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <!-- Indicador Realtime -->
         <div id="rt-indicator" title="Realtime: desconectado" style="width:8px;height:8px;border-radius:50%;background:var(--g300);flex-shrink:0;cursor:pointer;transition:background .4s;display:none" onclick="mostrarEstadoRealtime()"></div>
         <span id="rt-last-update" style="font-size:10px;color:var(--g400);display:none;white-space:nowrap"></span>
+        <div id="hdr-presencia-global" style="display:flex;gap:3px;align-items:center" title="Usuarios conectados ahora"></div>
         <button id="btn-recientes" onclick="mostrarRecientes()" title="Vistos recientemente" style="background:none;border:none;cursor:pointer;font-size:16px;padding:4px;color:var(--g400);display:none">🕐</button>
 
         <!-- Modo compacto/espacioso -->
@@ -1368,6 +1369,7 @@ textarea.fi{resize:vertical;min-height:72px}
             ${UBICACIONES.map(u=>`<option>${u}</option>`).join('')}
           </select>
           <button class="btn btn-s btn-sm" onclick="resetFiltrosExp()" title="Limpiar filtros" style="flex-shrink:0">✕ Limpiar</button>
+          <button class="btn btn-w btn-sm" onclick="filtrarSinMRN()" title="Ver solo expediciones sin MRN en almacén" style="flex-shrink:0;color:var(--am700);border-color:var(--am400)">📋 Sin MRN</button>
         </div>
         <!-- Toolbar de acciones -->
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:var(--g50);border-radius:var(--r);border:1px solid var(--g200)" id="exp-toolbar">
@@ -2245,6 +2247,10 @@ function _onRealtimeExpedicion(payload){
 
   // FIX: actualizar modal si está abierto con esta expedición
   if(expId && window._modalExpId === expId){
+    // Solo recargar si algo relevante cambió (ignorar cambios solo de updated_at)
+    const camposRelevantes = ['estado_carga','estado_semaforo','ubicacion','nº_mrn','tramite_aduanero','status_aduanero','cliente_override_id'];
+    const hayCambio = !payload.old || camposRelevantes.some(k => payload.new?.[k] !== payload.old?.[k]);
+    if(!hayCambio) return; // Solo metadata cambió — ignorar para evitar scroll en bucle
     clearTimeout(window._modalRefreshTimer);
     window._modalRefreshTimer = setTimeout(() => {
       if(document.getElementById('mo')?.classList.contains('open') && window._modalExpId === expId){
@@ -2253,7 +2259,7 @@ function _onRealtimeExpedicion(payload){
         openExpD(expId, true);
       }
     }, 1500);
-    return; // No recargar la vista entera si el modal está enfocado
+    return;
   }
 
   // Acumular en cola con debounce adaptativo
@@ -2888,6 +2894,7 @@ function showHome(){
     </div>`;
 
   cargarNotificacionesPendientes();
+  iniciarPresenciaGlobal();
 
   if(CU.rol==='admin')
     c.innerHTML+=`<div class="hm-card hm-card-cfg" onclick="enterMod('configuracion')">
@@ -3106,7 +3113,7 @@ async function _bgBuscar(q){
 
   _searchTimer = setTimeout(async()=>{
     try{
-      const [rb, re, rmrn, rempSearch, remp, rinc] = await Promise.all([
+      const [rb, re, rmrn, rempSearch, remp, rinc, rawb] = await Promise.all([
         sb.from('buques').select('id,nombre,imo,estado_operacion,nº_escala,eta_buque')
           .or(`nombre.ilike.%${q}%,nº_escala.ilike.%${q}%`).limit(4),
         sb.from('expediciones').select('id,nº_expedicion,buques(nombre),empresas!empresa_id(nombre),estado_semaforo,ubicacion')
@@ -3119,6 +3126,9 @@ async function _bgBuscar(q){
           .or(`nombre.ilike.%${q}%,email_confronta.ilike.%${q}%`).limit(4),
         sb.from('incidencias').select('id,tipo,descripcion,estado,expediciones(id,nº_expedicion)')
           .ilike('descripcion',`%${q}%`).limit(3),
+        // Airport cargo: buscar por AWB
+        sb.from('airport_cargo_entradas').select('id,awb,cliente,consignatario,status,aeropuerto')
+          .or(`awb.ilike.%${q}%,cliente.ilike.%${q}%`).limit(3),
       ]);
 
       const grupos = [];
@@ -3171,6 +3181,17 @@ async function _bgBuscar(q){
           sub: e.email_confronta||'Sin email',
           badge: '',
           action: ()=>{ cerrarBusquedaGlobal(); openEmpD(e.id); nav('empresas',null); }
+        }))
+      });
+
+      const awbRes = rawb?.data||[];
+      if(awbRes.length) grupos.push({
+        label:'✈️ Airport Cargo',
+        items: awbRes.map(e=>({
+          titulo: e.awb,
+          sub: [e.cliente||e.consignatario, e.aeropuerto, e.status].filter(Boolean).join(' · ') || '—',
+          badge: e.status||'',
+          action: ()=>{ cerrarBusquedaGlobal(); window.location.href='airport_cargo.html'; }
         }))
       });
 
@@ -5330,6 +5351,49 @@ function _aplicarColumnas(){
 }
 
 
+// ── Presencia global: usuarios conectados ────────────────────────────
+let _presenciaGlobalChannel = null;
+const _usuariosOnline = {}; // userId → {nombre, ts}
+
+function iniciarPresenciaGlobal(){
+  if(_presenciaGlobalChannel || !CU?.id) return;
+  _presenciaGlobalChannel = sb.channel('als-online', {
+    config: { presence: { key: CU.id } }
+  });
+  _presenciaGlobalChannel
+    .on('presence', { event: 'sync' }, () => {
+      const state = _presenciaGlobalChannel.presenceState();
+      Object.keys(_usuariosOnline).forEach(k => delete _usuariosOnline[k]);
+      Object.values(state).flat().forEach(p => {
+        if(p.userId) _usuariosOnline[p.userId] = {nombre: p.nombre, rol: p.rol, ts: Date.now()};
+      });
+      _renderPresenciaGlobal();
+    })
+    .subscribe(status => {
+      if(status === 'SUBSCRIBED'){
+        _presenciaGlobalChannel.track({
+          userId: CU.id,
+          nombre: CU.nombre,
+          rol: CU.rol
+        });
+      }
+    });
+}
+
+function _renderPresenciaGlobal(){
+  const el = document.getElementById('hdr-presencia-global');
+  if(!el) return;
+  const otros = Object.values(_usuariosOnline).filter(u => u.nombre !== CU?.nombre);
+  if(!otros.length){ el.innerHTML = ''; return; }
+  const colores = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4'];
+  el.innerHTML = otros.slice(0,5).map((u,i) => {
+    const init = (u.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const color = colores[i % colores.length];
+    return '<div title="'+u.nombre+' ('+u.rol+')" style="width:22px;height:22px;border-radius:50%;background:'+color+';color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid var(--w);cursor:default">'+init+'</div>';
+  }).join('') + (otros.length > 5 ? '<div style="font-size:10px;color:var(--g400);margin-left:2px">+'+( otros.length-5)+'</div>' : '');
+}
+
+
 async function initDashFilters(){
   if(_dashInited)return; _dashInited=true;
   const [{data:emps},{data:buques}]=await Promise.all([
@@ -5816,6 +5880,13 @@ function renderE(list){
     </tr>`;
   }).join('')||'<tr><td colspan="9"><div class="empty"><div class="empty-txt">Sin expediciones</div></div></td></tr>';
   _aplicarColumnas();
+  // Actualizar contador en breadcrumb
+  const bcPage = document.getElementById('bc-page');
+  if(bcPage && bcPage.textContent.startsWith('Expediciones')){
+    const sinMrn = list.filter(e=>!e.nº_mrn && e.tramite_aduanero!=='Despachado' && e.ubicacion && e.ubicacion!=='Pendiente recibir').length;
+    const auth   = list.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
+    bcPage.textContent = 'Expediciones ('+list.length+(sinMrn?' · '+sinMrn+' sin MRN':'')+(auth?' · '+auth+' ✅':'')+ ')';
+  }
 }
 // ── Filtrado unificado de expediciones ───────────────────────────
 let _expFiltradas = []; // lista actualmente visible
