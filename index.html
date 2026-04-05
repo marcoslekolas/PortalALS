@@ -5394,6 +5394,26 @@ function _renderPresenciaGlobal(){
 }
 
 
+// ── Filtro rápido: Sin MRN ───────────────────────────────────────────
+function filtrarSinMRN(){
+  nav('expediciones', document.querySelector('.nav-item[onclick*="expediciones"]'));
+  setTimeout(()=>{
+    _expFiltradas = allE.filter(e =>
+      !e.nº_mrn &&
+      e.tramite_aduanero !== 'Despachado' &&
+      e.ubicacion && e.ubicacion !== 'Pendiente recibir' &&
+      e.estado_semaforo !== '🚢 EMBARCADO'
+    );
+    renderE(_expFiltradas);
+    _selExpLote.clear();
+    _actualizarToolbarLote();
+    const bcFil = document.getElementById('bc-filtro');
+    if(bcFil) bcFil.textContent = '· Sin MRN ('+_expFiltradas.length+')';
+    showToast('📋 '+_expFiltradas.length+' exp. sin MRN');
+  }, 300);
+}
+
+
 async function initDashFilters(){
   if(_dashInited)return; _dashInited=true;
   const [{data:emps},{data:buques}]=await Promise.all([
@@ -5621,7 +5641,7 @@ async function loadDash(){
     <div class="kpi am"><div class="kpi-lbl">Bultos${filtros.length?' (filtrados)':''}</div><div class="kpi-val">${totalBultos.toLocaleString('es-ES')}</div></div>
     <div class="kpi bl"><div class="kpi-lbl">Kilos${filtros.length?' (filtrados)':''}</div><div class="kpi-val">${Math.round(totalKilos/1000).toLocaleString('es-ES')}t</div><div class="kpi-sub" style="color:var(--b600)">${totalKilos.toLocaleString('es-ES')} kg</div></div>
     <div class="kpi rd"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>
-    <div class="kpi am"><div class="kpi-lbl">Sin MRN en almacén</div><div class="kpi-val">${alc}</div>${alc>0?'<div class="kpi-sub ks-a">⚠️ requieren acción</div>':''}</div>`;
+    <div class="kpi am" style="cursor:pointer" onclick="filtrarSinMRN()" title="Ver expediciones sin MRN"><div class="kpi-lbl">Sin MRN en almacén</div><div class="kpi-val">${alc}</div>${alc>0?'<div class="kpi-sub ks-a">⚠️ clic para ver</div>':''}</div>`;
 
   // ── Próximos embarques ───────────────────────────────────────────
   detectarAnomalias(allBuques, EALL||[]);
