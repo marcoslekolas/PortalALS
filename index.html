@@ -2448,6 +2448,7 @@ function checkSession(){
     else if(destMod==='almacen') enterMod('almacen');
     else showHome();
     iniciarRealtime();
+    iniciarPresenciaGlobal();
   } else {
     // SDK aún no cargado — guardar destino, el onload lo recogerá
     window._pendingMod = destMod;
@@ -5465,7 +5466,12 @@ function filtrarExpPorBuque(buqueNombre){
 
 // ── Exportar expediciones filtradas a PDF ────────────────────────────
 function exportarExpPDF(){
-  const exps = window._expFiltradas || allE || [];
+  // Si hay seleccionadas, exportar solo esas; si no, las filtradas
+  const selIds = [...(_selExpLote||[])];
+  const exps = selIds.length > 0
+    ? (window._expFiltradas || allE || []).filter(e => selIds.includes(e.id))
+    : (window._expFiltradas || allE || []);
+  if(selIds.length > 0) showToast('📄 PDF con '+selIds.length+' expedición'+(selIds.length!==1?'es':'')+' seleccionadas');
   if(!exps.length){ showToast('Sin expediciones para exportar'); return; }
 
   const fecha = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
@@ -5890,13 +5896,7 @@ function renderE(list){
       <td class="sm">${e.tramite_aduanero||'—'}</td>
       <td class="sm">${e.ubicacion||'—'}</td>
       <td class="sm" style="${fmaxAlerta?'color:var(--rd600);font-weight:700':''}">${fmaxAlerta?'⚠️ ':''} ${fmaxStr}</td>
-      <td class="exp-actions-col" style="padding:0;width:80px" onclick="event.stopPropagation()">
-        <div class="exp-quick-actions" style="display:none;gap:2px;padding:0 4px">
-          <button title="Cambiar ubicación" onclick="abrirCambioUbicLote('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:3px;border-radius:4px" onmouseenter="this.style.background='var(--g100)'" onmouseleave="this.style.background='none'">📍</button>
-          ${e.estado_carga!=='✅ AUTORIZADO'?`<button title="Autorizar" onclick="autorizarRapido('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:3px;border-radius:4px" onmouseenter="this.style.background='var(--g100)'" onmouseleave="this.style.background='none'">✅</button>`:''}
-          <button title="Notificar" onclick="loteNotifOne('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:3px;border-radius:4px" onmouseenter="this.style.background='var(--g100)'" onmouseleave="this.style.background='none'">📧</button>
-        </div>
-      </td>
+
     </tr>`;
   }).join('')||'<tr><td colspan="9"><div class="empty"><div class="empty-txt">Sin expediciones</div></div></td></tr>';
   _aplicarColumnas();
@@ -10171,16 +10171,17 @@ async function openExpD(id, forceOpen=false){
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
   const emailCli=e.empresas?.email_confronta||'';
-  // Auto-corregir semáforo si hay inconsistencia con la ubicación
-  const semCorrect=semaforoDeUbicacion(e.ubicacion);
-  // Corrección forzada para Landed: '📦 UBICADA' es incorrecto cuando ubicacion=Landed
-  const forceCorrect = e.ubicacion==='Landed' && e.estado_semaforo==='📦 UBICADA';
-  if(semCorrect && (forceCorrect || (e.estado_semaforo !== semCorrect &&
-     !['✅ AUTORIZADO','🚢 EMBARCADO','🚛 CARGADO CAMIÓN'].includes(e.estado_semaforo)))){
-    // Corregir en BD de forma silenciosa
-    sb.from('expediciones').update({estado_semaforo:semCorrect,estado_carga:semCorrect}).eq('id',id).then(()=>{});
-    e.estado_semaforo=semCorrect;
-    e.estado_carga=semCorrect;
+  // Auto-corregir semáforo — NO en aeropuerto (causa bucle Realtime)
+  const esAeropuertoCheck=(e.ubicacion||'').toLowerCase().includes('aeropuerto');
+  if(!esAeropuertoCheck){
+    const semCorrect=semaforoDeUbicacion(e.ubicacion);
+    const forceCorrect = e.ubicacion==='Landed' && e.estado_semaforo==='📦 UBICADA';
+    if(semCorrect && (forceCorrect || (e.estado_semaforo !== semCorrect &&
+       !['✅ AUTORIZADO','🚢 EMBARCADO','🚛 CARGADO CAMIÓN'].includes(e.estado_semaforo)))){
+      sb.from('expediciones').update({estado_semaforo:semCorrect,estado_carga:semCorrect}).eq('id',id).then(()=>{});
+      e.estado_semaforo=semCorrect;
+      e.estado_carga=semCorrect;
+    }
   }
   var titleEl=document.getElementById('m-title');
   var esAeropuerto=(e.ubicacion||'').toLowerCase().includes('aeropuerto');
