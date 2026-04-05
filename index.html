@@ -8250,16 +8250,7 @@ async function enviarEmailFacturacion(buqueId){
   const asunto = encodeURIComponent('FACTURACIÓN — Buque '+b.nombre+' ('+( b.ref_visual_trans||'Sin Ref.')+') — '+hoy);
   const body = encodeURIComponent(cuerpo);
 
-  // Abrir cliente de correo — compatible móvil (iOS/Android)
-  // En móvil, window.open es más fiable que location.href para mailto:
-  const mailtoUrl = `mailto:${emailDest}?subject=${asunto}&body=${body}`;
-  try {
-    const win = window.open(mailtoUrl, '_blank');
-    // Si el navegador bloquea window.open (PWA fullscreen), fallback
-    if(!win || win.closed) setTimeout(() => { window.location.href = mailtoUrl; }, 100);
-  } catch(e) { window.location.href = mailtoUrl; }
-
-  // Registrar en BD que el email fue enviado
+  // Actualizar BD ANTES de abrir el mailto — window.open congela el JS en Safari/iOS
   const ahora = new Date().toISOString();
   const {error:eUpd} = await sb.from('buques').update({
     email_facturacion_sent: true,
@@ -8268,11 +8259,20 @@ async function enviarEmailFacturacion(buqueId){
   }).eq('id',buqueId);
 
   if(eUpd) console.warn('[Facturación] Error update:', eUpd.message);
+  else {
+    await logAct('buques',buqueId,b.nombre,'editar','email_facturacion_sent','false',
+      'Email facturación enviado a '+emailDest+' por '+CU?.nombre);
+  }
 
-  await logAct('buques',buqueId,b.nombre,'editar','email_facturacion_sent','false',
-    'Email facturación enviado a '+emailDest+' por '+CU?.nombre);
+  // Abrir cliente de correo sin abrir pestaña en blanco
+  const mailtoUrl = `mailto:${emailDest}?subject=${asunto}&body=${body}`;
+  const _a = document.createElement('a');
+  _a.href = mailtoUrl;
+  document.body.appendChild(_a);
+  _a.click();
+  document.body.removeChild(_a);
 
-  showToast('📧 Email de facturación abierto — '+b.nombre+(eUpd?' (⚠️ estado no actualizado)':''));
+  showToast('📧 Email de facturación abierto — '+b.nombre+(eUpd?' (⚠️ error al guardar)':''));
 
   // Actualizar vista
   setTimeout(()=>loadFacturacion(), 1000);
