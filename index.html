@@ -1270,7 +1270,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="kpi-grid" id="kpi-grid"></div>
         <!-- Próximos embarques -->
         <div id="dash-anomalias-sec" style="margin-bottom:20px;display:none">
-          <div class="ph" style="cursor:pointer;user-select:none" onclick="_toggleDashSec('dash-anomalias-list','ic-prox')">
+          <div class="ph" style="cursor:pointer;user-select:none" ondblclick="_toggleDashSec('dash-anomalias-list','ic-prox')" title="Doble clic para colapsar">
             <div class="pt">🚢 Próximos embarques</div>
             <div style="display:flex;align-items:center;gap:6px">
               <span id="dash-anom-count" class="badge bb"></span>
@@ -1281,14 +1281,14 @@ textarea.fi{resize:vertical;min-height:72px}
         </div>
         <!-- Secciones operativas -->
         <div id="dash-listos-sec">
-          <div class="ph" style="cursor:pointer;user-select:none" onclick="_toggleDashSec('listos-dash','ic-listos')">
+          <div class="ph" style="cursor:pointer;user-select:none" ondblclick="_toggleDashSec('listos-dash','ic-listos')" title="Doble clic para colapsar">
             <div class="pt">✅ Listos para embarcar</div>
             <span id="ic-listos" style="font-size:11px;color:var(--g400);transition:transform .2s">▾</span>
           </div>
           <div id="listos-dash" class="buque-list"></div>
         </div>
         <div id="dash-proceso-sec" style="margin-top:20px">
-          <div class="ph" style="cursor:pointer;user-select:none" onclick="_toggleDashSec('buques-dash','ic-proceso')">
+          <div class="ph" style="cursor:pointer;user-select:none" ondblclick="_toggleDashSec('buques-dash','ic-proceso')" title="Doble clic para colapsar">
             <div class="pt">🚢 Buques en operación</div>
             <div style="display:flex;align-items:center;gap:6px">
               <span id="dash-proceso-count" class="badge bb"></span>
@@ -5168,6 +5168,33 @@ function detectarAnomalias(buques, expediciones){
   }).join('');
 }
 
+
+
+// ── Secciones colapsables del dashboard (doble clic) ─────────────────
+function _toggleDashSec(listId, iconId){
+  const list = document.getElementById(listId);
+  const icon = document.getElementById(iconId);
+  if(!list) return;
+  const collapsed = list.style.display === 'none';
+  list.style.display = collapsed ? '' : 'none';
+  if(icon) icon.style.transform = collapsed ? '' : 'rotate(-90deg)';
+  try{ localStorage.setItem('dash_col_'+listId, collapsed ? '0' : '1'); }catch(e){}
+}
+
+function _restaurarColapsados(){
+  ['dash-anomalias-list','listos-dash','buques-dash'].forEach(id => {
+    try{
+      const col = localStorage.getItem('dash_col_'+id);
+      if(col === '1'){
+        const list = document.getElementById(id);
+        const iconMap = {'dash-anomalias-list':'ic-prox','listos-dash':'ic-listos','buques-dash':'ic-proceso'};
+        const icon = document.getElementById(iconMap[id]);
+        if(list) list.style.display = 'none';
+        if(icon) icon.style.transform = 'rotate(-90deg)';
+      }
+    }catch(e){}
+  });
+}
 
 
 async function initDashFilters(){
