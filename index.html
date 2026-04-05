@@ -5264,6 +5264,72 @@ function _abrirReciente(tipo, id){
 }
 
 
+// ── Columnas configurables en tabla expediciones ─────────────────────
+const _COLS_DEFAULT = {ref:1,buque:1,empresa:1,carga:1,estado:1,status:1,tramite:1,ubic:1,fmax:1};
+let _colsVis = Object.assign({}, _COLS_DEFAULT);
+try{ const s=localStorage.getItem('als_cols_exp'); if(s) _colsVis=JSON.parse(s); }catch(e){}
+
+const _COLS_DEF = [
+  {id:'ref',    lbl:'Referencia',   always:true},
+  {id:'buque',  lbl:'Buque'},
+  {id:'empresa',lbl:'Empresa'},
+  {id:'carga',  lbl:'Carga'},
+  {id:'estado', lbl:'Estado'},
+  {id:'status', lbl:'Status Adua.'},
+  {id:'tramite',lbl:'Trámite'},
+  {id:'ubic',   lbl:'Ubicación'},
+  {id:'fmax',   lbl:'F. Máx. Desp.'},
+];
+
+function abrirColumnas(){
+  document.getElementById('m-title').textContent = '⚙️ Columnas visibles';
+  document.getElementById('m-body').innerHTML =
+    '<div style="font-size:12px;color:var(--g500);margin-bottom:12px">Selecciona qué columnas ver en la tabla de expediciones.</div>'+
+    _COLS_DEF.map(c=>
+      '<label style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--g100);cursor:'+(c.always?'default':'pointer')+'">'
+      +'<input type="checkbox" '+(_colsVis[c.id]?'checked':'')+' '+(c.always?'disabled':'')+' onchange="_toggleCol(\''+c.id+'\',this.checked)"'
+      +' style="accent-color:var(--b600);width:16px;height:16px">'
+      +'<span style="font-size:13px">'+c.lbl+(c.always?' <span style=\'color:var(--g400);font-size:11px\'>(fija)</span>':'')+'</span>'
+      +'</label>'
+    ).join('');
+  document.getElementById('m-foot').innerHTML =
+    '<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>'+
+    '<button class="btn btn-w btn-sm" onclick="_resetCols()">Restablecer todo</button>';
+  document.getElementById('mo').classList.add('open');
+}
+
+function _toggleCol(id, val){
+  _colsVis[id] = val ? 1 : 0;
+  try{ localStorage.setItem('als_cols_exp', JSON.stringify(_colsVis)); }catch(e){}
+  _aplicarColumnas();
+}
+
+function _resetCols(){
+  _colsVis = Object.assign({}, _COLS_DEFAULT);
+  try{ localStorage.setItem('als_cols_exp', JSON.stringify(_colsVis)); }catch(e){}
+  closeModal();
+  if(typeof renderE === 'function') renderE(window._expFiltradas || allE || []);
+}
+
+function _aplicarColumnas(){
+  // Posiciones reales: 1=checkbox, 2=ref, 3=buque, 4=empresa, 5=carga,
+  // 6=estado, 7=status, 8=tramite, 9=ubic, 10=fmax, 11=acciones
+  const mapa = {ref:2, buque:3, empresa:4, carga:5, estado:6, status:7, tramite:8, ubic:9, fmax:10};
+  const tabla = document.querySelector('#view-expediciones .tbl');
+  if(!tabla) return;
+  const ths = tabla.querySelectorAll('thead tr th');
+  Object.entries(mapa).forEach(([id, nth])=>{
+    const vis = _colsVis[id] !== 0;
+    const th = ths[nth-1];
+    if(th) th.style.display = vis ? '' : 'none';
+    tabla.querySelectorAll('tbody tr').forEach(tr=>{
+      const tds = tr.querySelectorAll('td');
+      if(tds[nth-1]) tds[nth-1].style.display = vis ? '' : 'none';
+    });
+  });
+}
+
+
 async function initDashFilters(){
   if(_dashInited)return; _dashInited=true;
   const [{data:emps},{data:buques}]=await Promise.all([
@@ -10078,9 +10144,6 @@ async function openExpD(id, forceOpen=false){
       <div style="display:flex;gap:6px">
         <input id="nota-input" class="fi" placeholder="Escribe una nota… (@nombre para mencionar)" style="flex:1;font-size:12px"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();enviarNota('${e.id}','${e.nº_expedicion}');}">
-        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">
-          ${['📋 Pendiente documentación','✅ MRN recibido','📦 Mercancía lista','🚛 Pendiente autorización','⚠️ Incidencia detectada','📧 Notificado al cliente'].map(t=>`<button class="btn btn-s" style="font-size:10px;padding:2px 6px" onclick="document.getElementById('nota-input').value='${t}';document.getElementById('nota-input').focus()">${t}</button>`).join('')}
-        </div>
         <button class="btn btn-p btn-sm" onclick="enviarNota('${e.id}','${e.nº_expedicion}')">Enviar</button>
       </div>
     </div>
