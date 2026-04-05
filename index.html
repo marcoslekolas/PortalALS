@@ -1306,6 +1306,17 @@ textarea.fi{resize:vertical;min-height:72px}
           </div>
           <div id="buques-dash" class="buque-list"></div>
         </div>
+        <!-- Aeropuerto hoy -->
+        <div id="dash-air-sec" style="margin-top:20px;display:none">
+          <div class="ph" style="cursor:pointer;user-select:none" ondblclick="_toggleDashSec('dash-air-list','ic-air')" title="Doble clic para colapsar">
+            <div class="pt">✈️ Aeropuerto — hoy</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span id="dash-air-count" class="badge bb"></span>
+              <span id="ic-air" style="font-size:11px;color:var(--g400);transition:transform .2s">▾</span>
+            </div>
+          </div>
+          <div id="dash-air-list" style="display:flex;flex-direction:column;gap:6px;padding:4px 0"></div>
+        </div>
         <!-- Feed actividad reciente -->
         <div id="dash-feed-sec" style="margin-top:20px">
           <div class="ph" style="cursor:pointer;user-select:none" ondblclick="_toggleDashSec('dash-feed-list','ic-feed')" title="Doble clic para colapsar">
@@ -5490,6 +5501,50 @@ async function loadDashFeed(){
 }
 
 
+// ── Expediciones de aeropuerto para hoy en el dashboard ──────────────
+async function loadDashAir(){
+  const sec  = document.getElementById('dash-air-sec');
+  const list = document.getElementById('dash-air-list');
+  const cnt  = document.getElementById('dash-air-count');
+  if(!sec || !list) return;
+
+  const hoy = new Date().toISOString().slice(0,10);
+
+  const {data, error} = await sb.from('airport_cargo')
+    .select('id,awb,cliente,consignatario,aeropuerto,status,bultos,kilos_tasables,handling,fecha_llegada')
+    .eq('fecha_llegada', hoy)
+    .order('aeropuerto');
+
+  if(error || !data?.length){
+    sec.style.display = 'none';
+    return;
+  }
+
+  sec.style.display = '';
+  if(cnt){ cnt.textContent = data.length; }
+
+  const statusColor = s => s==='Entregado'?'var(--gr600)':s==='En depósito'?'var(--am600)':'var(--b600)';
+  const statusBg    = s => s==='Entregado'?'var(--gr50)':s==='En depósito'?'var(--am50)':'var(--b50)';
+
+  list.innerHTML = data.map(e=>{
+    const cliente = e.cliente || e.consignatario || '—';
+    const kg = e.kilos_tasables ? e.kilos_tasables.toLocaleString('es-ES')+' kg' : '—';
+    const blt = e.bultos ? e.bultos+' btos' : '';
+    const st = e.status || 'Pendiente';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--w);border:1px solid var(--g200);border-radius:var(--r);cursor:pointer"
+      onclick="window.location.href='airport_cargo.html'"
+      onmouseenter="this.style.background='var(--g50)'" onmouseleave="this.style.background='var(--w)'">
+      <span style="font-size:18px;flex-shrink:0">✈️</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;color:var(--g900)">${e.awb||'Sin AWB'}</div>
+        <div style="font-size:11px;color:var(--g500);margin-top:1px">${cliente} · ${e.aeropuerto||'—'}${blt?' · '+blt:''} · ${kg}</div>
+      </div>
+      <span style="font-size:11px;font-weight:600;color:${statusColor(st)};background:${statusBg(st)};border-radius:20px;padding:2px 8px;flex-shrink:0">${st}</span>
+    </div>`;
+  }).join('');
+}
+
+
 async function initDashFilters(){
   if(_dashInited)return; _dashInited=true;
   const [{data:emps},{data:buques}]=await Promise.all([
@@ -5727,6 +5782,7 @@ async function loadDash(){
   // ── Próximos embarques ───────────────────────────────────────────
   detectarAnomalias(allBuques, EALL||[]);
   _restaurarColapsados();
+  loadDashAir();
   loadDashFeed();
   _restaurarColapsados();
 
