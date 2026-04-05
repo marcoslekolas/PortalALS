@@ -3547,10 +3547,16 @@ async function guardarLote(){
 // EXPORT CSV/EXCEL
 // ═══════════════════════════════════════════════════════════════
 function exportarExpedicionesCSV(){
-  if(!allE||!allE.length){showToast('No hay expediciones para exportar');return;}
+  // Misma lógica que PDF: seleccionadas > filtradas > todas
+  const selIds = [...(_selExpLote||[])];
+  const base = selIds.length > 0
+    ? (window._expFiltradas || allE || []).filter(e => selIds.includes(e.id))
+    : (window._expFiltradas || allE || []);
+  if(!base.length){showToast('No hay expediciones para exportar');return;}
+  if(selIds.length > 0) showToast('⬇️ CSV con '+selIds.length+' expedición'+(selIds.length!==1?'es':'')+' seleccionadas');
   const cols=['nº_expedicion','buques.nombre','empresas.nombre','estado_carga','estado_semaforo','status_aduanero','tramite_aduanero','ubicacion','bultos','kilos','nº_mrn','fecha_max_despacho','created_at'];
   const headers=['Referencia','Buque','Empresa','Estado Carga','Semáforo','Status Adua.','Trámite','Ubicación','Bultos','Kilos','MRN','Fecha Máx. Despacho','Fecha Creación'];
-  const rows=allE.map(e=>cols.map(col=>{
+  const rows=base.map(e=>cols.map(col=>{
     if(col==='buques.nombre') return e.buques?.nombre||'';
     if(col==='empresas.nombre') return e.empresas?.nombre||'';
     const v=e[col];
