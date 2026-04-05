@@ -8102,7 +8102,8 @@ async function loadFacturacion(){
     .order('updated_at',{ascending:false});
 
   const {data:buquesAll, error} = await query;
-  if(error){ console.error('[Facturación]', error); return; }
+  console.log('[Facturación] buquesAll:', buquesAll?.length, '| error:', error?.message);
+  if(error){ console.error('[Facturación]', error); showToast('❌ Error: '+error.message); return; }
 
   // Asegurarse de que todos tienen estado_facturacion inicializado
   let buques = (buquesAll||[]).map(b=>({
@@ -8110,9 +8111,11 @@ async function loadFacturacion(){
     estado_facturacion: b.estado_facturacion || 'pendiente'
   }));
 
+  console.log('[Facturación] buques tras map:', buques.length, '| estadoFil:', estadoFil);
   if(estadoFil) buques = buques.filter(b => b.estado_facturacion === estadoFil);
 
   let lista = buques||[];
+  console.log('[Facturación] lista final:', lista.length);
 
   // Filtrar por mes si aplica
   if(mesFil){
