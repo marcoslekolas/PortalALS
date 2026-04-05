@@ -1306,6 +1306,14 @@ textarea.fi{resize:vertical;min-height:72px}
           </div>
           <div id="buques-dash" class="buque-list"></div>
         </div>
+        <!-- Feed actividad reciente -->
+        <div id="dash-feed-sec" style="margin-top:20px">
+          <div class="ph" style="cursor:pointer;user-select:none" ondblclick="_toggleDashSec('dash-feed-list','ic-feed')" title="Doble clic para colapsar">
+            <div class="pt">⚡ Actividad reciente del equipo</div>
+            <span id="ic-feed" style="font-size:11px;color:var(--g400);transition:transform .2s">▾</span>
+          </div>
+          <div id="dash-feed-list" style="display:flex;flex-direction:column;gap:0"></div>
+        </div>
         <!-- Gráficas resumen -->
         <!-- Gráficas movidas a Gestión Operativa / Estadísticas -->
       <!-- Gráficas dashboard -->
@@ -5426,6 +5434,56 @@ function filtrarSinMRN(){
 }
 
 
+// ── Feed de actividad reciente en dashboard ───────────────────────────
+async function loadDashFeed(){
+  const el = document.getElementById('dash-feed-list');
+  if(!el) return;
+
+  const {data} = await sb.from('activity_log')
+    .select('id,created_at,usuario_nombre,accion,tabla,registro_nombre,campo_modificado,valor_nuevo')
+    .not('accion','in','("login","logout","nota_interna")')
+    .order('created_at',{ascending:false})
+    .limit(12);
+
+  if(!data?.length){
+    el.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-txt">Sin actividad reciente</div></div>';
+    return;
+  }
+
+  const ahora = new Date();
+  const iconMap = {
+    'crear':'🆕', 'editar':'✏️', 'eliminar':'🗑️',
+    'alerta_llegada':'📦', 'autorizar':'✅', 'embarcar':'🚢'
+  };
+  const colorMap = {
+    'crear':'var(--gr600)', 'editar':'var(--b600)', 'eliminar':'var(--rd500)',
+    'alerta_llegada':'var(--am600)', 'autorizar':'var(--gr600)'
+  };
+
+  el.innerHTML = data.map(r=>{
+    const dt   = new Date(r.created_at);
+    const diff = Math.round((ahora - dt)/60000);
+    const ts   = diff < 1 ? 'ahora' : diff < 60 ? 'hace '+diff+'m' : diff < 1440 ? 'hace '+Math.round(diff/60)+'h' : dt.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'});
+    const icon = iconMap[r.accion] || '✏️';
+    const color = colorMap[r.accion] || 'var(--g500)';
+    const nombre = (r.usuario_nombre||'Sistema').split(' ')[0];
+    const ref    = r.registro_nombre ? ' · <span style="color:var(--b600);font-weight:600">'+r.registro_nombre+'</span>' : '';
+    const detalle = r.campo_modificado && r.valor_nuevo
+      ? ' → '+r.valor_nuevo.slice(0,30)+(r.valor_nuevo.length>30?'…':'') : '';
+
+    return '<div style="display:flex;align-items:baseline;gap:8px;padding:7px 12px;border-bottom:1px solid var(--g100);font-size:12px;transition:background .1s;cursor:default"'
+      +' onmouseenter="this.style.background=\'var(--g50)\'" onmouseleave="this.style.background=\'\'">'
+      +'<span style="font-size:14px;flex-shrink:0">'+icon+'</span>'
+      +'<span style="font-weight:600;color:var(--g700);flex-shrink:0">'+nombre+'</span>'
+      +'<span style="color:var(--g500);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+        +r.accion+ref+detalle
+      +'</span>'
+      +'<span style="color:var(--g400);flex-shrink:0;font-size:10px">'+ts+'</span>'
+      +'</div>';
+  }).join('');
+}
+
+
 async function initDashFilters(){
   if(_dashInited)return; _dashInited=true;
   const [{data:emps},{data:buques}]=await Promise.all([
@@ -5663,6 +5721,7 @@ async function loadDash(){
   // ── Próximos embarques ───────────────────────────────────────────
   detectarAnomalias(allBuques, EALL||[]);
   _restaurarColapsados();
+  loadDashFeed();
   _restaurarColapsados();
 
   // Secciones operativas — SIEMPRE muestran la realidad sin filtros
@@ -10483,37 +10542,65 @@ async function cargarMorningBriefing(){
     const en7dias = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
     const en48h   = new Date(Date.now()+48*3600000).toISOString();
 
-    const [{data:buquesProx},{data:expFmax},{data:expSinUbicar}] = await Promise.all([
-      sb.from('buques')
-        .select('nombre,eta_buque')
+    const rol = CU?.rol || 'operativa';
+
+    // Queries según rol
+    const [
+      {data:buquesProx},
+      {data:expFmax},
+      {data:expSinUbicar},
+      {data:expSinMrn},
+      {data:expAutorizadas},
+      {data:incAbiertas}
+    ] = await Promise.all([
+      // Buques próximos 48h — todos los roles
+      sb.from('buques').select('nombre,eta_buque')
         .neq('estado_operacion','Finalizado')
-        .lte('eta_buque', en48h)
-        .gte('eta_buque', hoy)
-        .order('eta_buque'),
-      sb.from('expediciones')
-        .select('nº_expedicion,fecha_max_despacho,buques(nombre)')
-        .neq('tramite_aduanero','Despachado')
-        .neq('ubicacion','Pendiente recibir')
-        .lte('fecha_max_despacho', en7dias)
-        .gte('fecha_max_despacho', hoy)
+        .lte('eta_buque', en48h).gte('eta_buque', hoy).order('eta_buque'),
+      // F. máx. despacho — operativa y aduanas
+      sb.from('expediciones').select('nº_expedicion,fecha_max_despacho')
+        .neq('tramite_aduanero','Despachado').neq('ubicacion','Pendiente recibir')
+        .lte('fecha_max_despacho', en7dias).gte('fecha_max_despacho', hoy)
         .not('fecha_max_despacho','is',null),
-      sb.from('expediciones')
-        .select('id')
-        .eq('ubicacion','Almacén-Sin Ubicar')
-        .neq('estado_semaforo','🚢 EMBARCADO')
+      // Sin ubicar — almacén
+      sb.from('expediciones').select('id').eq('ubicacion','Almacén-Sin Ubicar')
+        .neq('estado_semaforo','🚢 EMBARCADO'),
+      // Sin MRN en almacén — aduanas
+      sb.from('expediciones').select('id,nº_expedicion')
+        .is('nº_mrn',null).neq('tramite_aduanero','Despachado')
+        .neq('ubicacion','Pendiente recibir').neq('estado_semaforo','🚢 EMBARCADO'),
+      // Autorizadas esperando carga — almacén
+      sb.from('expediciones').select('id,nº_expedicion,buques(nombre)')
+        .eq('estado_carga','✅ AUTORIZADO'),
+      // Incidencias abiertas — todos
+      sb.from('incidencias').select('id').eq('estado','Abierta')
     ]);
 
-    const nBuques  = (buquesProx||[]).length;
-    const nFmax    = (expFmax||[]).length;
-    const nSinUbic = (expSinUbicar||[]).length;
+    const nBuques    = (buquesProx||[]).length;
+    const nFmax      = (expFmax||[]).length;
+    const nSinUbic   = (expSinUbicar||[]).length;
+    const nSinMrn    = (expSinMrn||[]).length;
+    const nAuth      = (expAutorizadas||[]).length;
+    const nInc       = (incAbiertas||[]).length;
     const nombresBuques = (buquesProx||[]).map(b=>b.nombre).join(', ');
 
-    // Construir prompt para IA
-    const contexto = [
-      nBuques  ? `${nBuques} buque${nBuques>1?'s':''} con ETA en las próximas 48h: ${nombresBuques}` : null,
-      nFmax    ? `${nFmax} expedición${nFmax>1?'es':''} con fecha máxima de despacho esta semana` : null,
-      nSinUbic ? `${nSinUbic} expedición${nSinUbic>1?'es':''} sin ubicar en almacén` : null,
-    ].filter(Boolean);
+    // Construir contexto según rol
+    let contexto = [];
+    if(rol === 'almacen'){
+      if(nAuth)     contexto.push(`${nAuth} expedición${nAuth>1?'es':''} autorizadas pendientes de carga en camión`);
+      if(nSinUbic)  contexto.push(`${nSinUbic} expedición${nSinUbic>1?'es':''} en almacén sin ubicar`);
+      if(nBuques)   contexto.push(`${nBuques} buque${nBuques>1?'s':''} con ETA en 48h: ${nombresBuques}`);
+    } else if(rol === 'aduanas'){
+      if(nSinMrn)   contexto.push(`${nSinMrn} expedición${nSinMrn>1?'es':''} sin MRN pendientes de despacho`);
+      if(nFmax)     contexto.push(`${nFmax} expedición${nFmax>1?'es':''} con fecha máxima de despacho esta semana`);
+      if(nBuques)   contexto.push(`${nBuques} buque${nBuques>1?'s':''} con ETA en 48h: ${nombresBuques}`);
+    } else {
+      // operativa / admin
+      if(nBuques)   contexto.push(`${nBuques} buque${nBuques>1?'s':''} con ETA en 48h: ${nombresBuques}`);
+      if(nSinMrn)   contexto.push(`${nSinMrn} expedición${nSinMrn>1?'es':''} sin MRN`);
+      if(nFmax)     contexto.push(`${nFmax} con fecha máxima de despacho esta semana`);
+      if(nInc)      contexto.push(`${nInc} incidencia${nInc>1?'s':''} abierta${nInc>1?'s':''}`);
+    }
 
     if(!contexto.length){
       body.innerHTML = `<p style="font-size:14px;color:var(--g700);line-height:1.7">
@@ -10525,15 +10612,15 @@ async function cargarMorningBriefing(){
     // Llamada a IA
     const orKey = await getOrKey();
     if(!orKey){
-      // Sin IA — mostrar datos en texto simple
       body.innerHTML = `<p style="font-size:14px;color:var(--g700);line-height:1.7">${contexto.join('. ')}.</p>`;
       return;
     }
 
-    const prompt = `Eres el asistente operativo de ALS Algeciras (agencia de aduanas y logística portuaria). 
-Redacta un resumen diario conciso y profesional en español para ${nombre}, en 2-3 frases como máximo, en tono directo y operativo.
+    const rolDesc = rol==='almacen' ? 'operario de almacén' : rol==='aduanas' ? 'agente de aduanas' : 'coordinador de operaciones';
+    const prompt = `Eres el asistente operativo de ALS Algeciras (agencia de aduanas y logística portuaria).
+Redacta un resumen diario conciso y profesional en español para ${nombre}, ${rolDesc}, en 2-3 frases máximo, en tono directo y operativo.
 Datos del día: ${contexto.join('; ')}.
-No uses listas, solo texto fluido. No empieces con "Buenos días" ni saludos.`;
+No uses listas, solo texto fluido. No empieces con saludos.`;
 
     const resp = await fetch('https://openrouter.ai/api/v1/chat/completions',{
       method:'POST',
