@@ -10190,7 +10190,7 @@ async function openExpD(id, forceOpen=false){
   } else {
     titleEl.textContent='📦 '+e.nº_expedicion;
   }
-  const btnRevertirCarga = (e.hora_de_carga && ['admin','operativa','aduanas'].includes(CU?.rol))
+  const btnRevertirCarga = (e.hora_de_carga && e.estado_carga==='🚛 CARGADO CAMIÓN' && ['admin','operativa','aduanas'].includes(CU?.rol))
     ? ' <button class="btn btn-w btn-sm" style="color:var(--am600);border-color:var(--am500);font-size:11px;padding:3px 9px" onclick="revertirCarga(\''+ e.id +'\',\''+ (e.nº_expedicion||'').replace(/'/g,"\\\\'") +'\')">↩ Revertir carga</button>'
     : '';
   document.getElementById('m-body').innerHTML=`
@@ -10321,8 +10321,8 @@ async function revertirCarga(expId, expRef){
   await sb.from('expediciones').update({
     estado_semaforo: '✅ AUTORIZADO',
     estado_carga: '✅ AUTORIZADO',
-    ubicacion: ubicAnt,
-    hora_de_carga: null  // limpiar fecha de carga fallida
+    ubicacion: ubicAnt
+    // hora_de_carga se mantiene — sirve como registro de intento fallido (se muestra en ámbar)
   }).eq('id', expId);
 
   await logAct('expediciones', expId, expRef, 'editar', 'hora_de_carga',
