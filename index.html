@@ -2166,6 +2166,13 @@ function iniciarRealtime(){
           }
         }
       )
+      // ── Airport Cargo ────────────────────────────────────────────
+      .on('postgres_changes',
+        { event:'*', schema:'public', table:'airport_cargo' },
+        () => {
+          if(MOD==='operativa' && CV==='dashboard') loadDashAir();
+        }
+      )
       // ── Incidencias ──────────────────────────────────────────────
       .on('postgres_changes',
         { event:'*', schema:'public', table:'incidencias' },
@@ -2337,6 +2344,16 @@ function _rtFlush(){
   const vistasAlm = ['alm-llegadas','alm-auth','alm-fotos','almacen','alm-dashboard'];
   if(MOD==='operativa' && vistasExp.includes(CV)) loadView(CV);
   if(MOD==='almacen'   && vistasAlm.includes(CV)) loadView(CV);
+
+  // Refrescar secciones del dashboard en tiempo real aunque no se esté viendo
+  // (para que al volver el dashboard esté actualizado)
+  if(MOD==='operativa' && CV==='dashboard'){
+    // Ya se recarga con loadView arriba
+  } else if(MOD==='operativa'){
+    // Refrescar solo las secciones del dashboard que tienen datos volátiles
+    loadDashAir();
+    // El feed y próximos embarques se recargan al navegar
+  }
 }
 
 function _rtUpdateDot(){
@@ -5187,8 +5204,10 @@ function detectarAnomalias(buques, expediciones){
   const proximos = buques.filter(b => {
     if(!b.eta_buque) return false;
     const eta = new Date(b.eta_buque);
-    const diff = (eta - hoy) / (1000*3600*24);
-    return diff >= -1 && diff <= 1; // desde ayer hasta 24h vista
+    // Comparar contra ahora mismo (no día natural) — 24h exactas hacia el futuro
+    const ahora = new Date();
+    const diffH = (eta - ahora) / (1000*3600);
+    return diffH >= -24 && diffH <= 24; // 24h pasadas + 24h futuras
   }).sort((a,b) => new Date(a.eta_buque) - new Date(b.eta_buque));
 
   if(!proximos.length){
