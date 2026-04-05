@@ -10304,17 +10304,25 @@ async function revertirCarga(expId, expRef){
     'Expedición: ' + expRef + '\n\n' +
     'Esto revertirá:\n' +
     '• Estado → ✅ AUTORIZADO (lista para nueva carga)\n' +
-    '• Ubicación → Almacén-Sin Ubicar\n' +
+    '• Ubicación → se restaura ubicación previa\n' +
     '• Fecha de intento fallido → se conserva en ámbar\n\n' +
     'La expedición quedará disponible para volver a ser escaneada y cargada.\n\n' +
     '¿Confirmar?'
   );
   if(!conf) return;
 
+  // Al revertir: mantener AUTORIZADO pero ubicación sin camión
+  // No usar Almacén-Sin Ubicar porque cambia el semáforo a REVISAR
+  // Recuperar la ubicación anterior antes de la carga
+  const {data:eAnt} = await sb.from('expediciones').select('ubicacion').eq('id',expId).single();
+  const ubicAnt = (eAnt?.ubicacion && eAnt.ubicacion !== 'Camión cargado')
+    ? eAnt.ubicacion : 'Almacén-1ª Planta';
+
   await sb.from('expediciones').update({
     estado_semaforo: '✅ AUTORIZADO',
     estado_carga: '✅ AUTORIZADO',
-    ubicacion: 'Almacén-Sin Ubicar'
+    ubicacion: ubicAnt,
+    hora_de_carga: null  // limpiar fecha de carga fallida
   }).eq('id', expId);
 
   await logAct('expediciones', expId, expRef, 'editar', 'hora_de_carga',
@@ -10324,17 +10332,24 @@ async function revertirCarga(expId, expRef){
 
   showToast('↩ Carga revertida — expedición disponible para nueva carga');
 
-  // Actualizar badges visualmente de inmediato sin esperar recarga
+  // Verificar que el UPDATE llegó a BD antes de recargar
+  const {data:check} = await sb.from('expediciones')
+    .select('estado_carga,estado_semaforo,ubicacion')
+    .eq('id', expId).single();
+
+  // Actualizar badges visualmente
   const badgeWrap = document.querySelector('[data-exp-badges]');
   if(badgeWrap){
-    badgeWrap.innerHTML = '<span class="badge bg">✅ AUTORIZADO</span><span class="badge bg">✅ AUTORIZADO</span>';
+    const semVal = check?.estado_semaforo || '✅ AUTORIZADO';
+    const cargaVal = check?.estado_carga || '✅ AUTORIZADO';
+    badgeWrap.innerHTML = '<span class="badge bg">'+semVal+'</span><span class="badge bg">'+cargaVal+'</span>';
   }
-  // Ocultar el botón revertir y el aviso de intento fallido
+  // Ocultar el botón revertir
   const btnRevertir = document.querySelector('[onclick*="revertirCarga"]');
-  if(btnRevertir) btnRevertir.style.display = 'none';
+  if(btnRevertir) btnRevertir.closest('.btn-w')?.remove() || (btnRevertir.style.display='none');
 
-  // Recargar la ficha completa
-  setTimeout(() => openExpD(expId, true), 300);
+  // Recargar la ficha completa — ahora BD ya tiene el valor actualizado
+  await openExpD(expId, true);
 }
 
 
