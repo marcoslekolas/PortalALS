@@ -8095,27 +8095,21 @@ async function loadFacturacion(){
   // Obtener buques embarcados o finalizados
   // Buscar buques embarcados: los que tienen estado_facturacion definido
   // o cuyo estado_operacion sea Finalizado (el estado final en el enum)
-  // Cargar buques embarcados o finalizados (con o sin estado_facturacion)
-  let query = sb.from('buques')
+  // Cargar todos los buques y filtrar en JS (el enum no permite .eq() directo)
+  const {data:buquesAll, error} = await sb.from('buques')
     .select('*,ec:cliente_id(nombre,email_confronta),en:consignatario_id(nombre)')
-    .eq('estado_operacion','Embarcado')
     .order('updated_at',{ascending:false});
 
-  const {data:buquesAll, error} = await query;
-  console.log('[Facturación] buquesAll:', buquesAll?.length, '| error:', error?.message);
-  if(error){ console.error('[Facturación]', error); showToast('❌ Error: '+error.message); return; }
+  if(error){ console.error('[Facturación]', error); showToast('❌ Error cargando buques: '+error.message); return; }
 
-  // Asegurarse de que todos tienen estado_facturacion inicializado
-  let buques = (buquesAll||[]).map(b=>({
-    ...b,
-    estado_facturacion: b.estado_facturacion || 'pendiente'
-  }));
+  // Filtrar embarcados/finalizados en JS — evita problemas con el enum
+  const ESTADOS_FACTURABLES = ['Embarcado','Finalizado','embarcado','finalizado'];
+  let buques = (buquesAll||[])
+    .filter(b => ESTADOS_FACTURABLES.some(s => (b.estado_operacion||'').toLowerCase() === s.toLowerCase()))
+    .map(b=>({...b, estado_facturacion: b.estado_facturacion || 'pendiente'}));
 
-  console.log('[Facturación] buques tras map:', buques.length, '| estadoFil:', estadoFil);
   if(estadoFil) buques = buques.filter(b => b.estado_facturacion === estadoFil);
-
-  let lista = buques||[];
-  console.log('[Facturación] lista final:', lista.length);
+  let lista = buques;
 
   // Filtrar por mes si aplica
   if(mesFil){
