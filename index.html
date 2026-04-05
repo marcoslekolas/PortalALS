@@ -2051,7 +2051,7 @@ async function checkAlertas(){
     }
   }catch(e){}
 }
-setInterval(checkAlertas,30000);setInterval(checkAlertas,30000);
+setInterval(checkAlertas,30000);
 
 // ── Supabase Realtime — actualizaciones en tiempo real ───────────────
 let _realtimeChannel = null;
@@ -2247,10 +2247,21 @@ function _onRealtimeExpedicion(payload){
 
   // FIX: actualizar modal si está abierto con esta expedición
   if(expId && window._modalExpId === expId){
-    // Solo recargar si algo relevante cambió (ignorar cambios solo de updated_at)
-    const camposRelevantes = ['estado_carga','estado_semaforo','ubicacion','nº_mrn','tramite_aduanero','status_aduanero','cliente_override_id'];
-    const hayCambio = !payload.old || camposRelevantes.some(k => payload.new?.[k] !== payload.old?.[k]);
-    if(!hayCambio) return; // Solo metadata cambió — ignorar para evitar scroll en bucle
+    // Solo recargar si algo relevante cambió
+    // Comparar contra el estado guardado al abrir la ficha (payload.old puede ser null sin REPLICA IDENTITY FULL)
+    const camposRelevantes = ['estado_carga','estado_semaforo','ubicacion','nº_mrn','tramite_aduanero','status_aduanero'];
+    const estadoGuardado = window._modalExpState || {};
+    const fuente = payload.old || estadoGuardado;
+    const hayCambio = camposRelevantes.some(k => {
+      const vNuevo = payload.new?.[k];
+      const vAnterior = fuente[k];
+      return vNuevo !== undefined && vNuevo !== vAnterior;
+    });
+    if(!hayCambio){
+      // Actualizar estado guardado con el nuevo aunque no haya cambio relevante
+      if(payload.new) window._modalExpState = {...(window._modalExpState||{}), ...payload.new};
+      return;
+    }
     clearTimeout(window._modalRefreshTimer);
     window._modalRefreshTimer = setTimeout(() => {
       if(document.getElementById('mo')?.classList.contains('open') && window._modalExpId === expId){
@@ -10287,6 +10298,15 @@ async function openExpD(id, forceOpen=false){
   }
   window._modalExpId = e.id; // para refresh Realtime
   window._modalExpUpdatedAt = e.updated_at || null;
+  // Guardar estado actual para comparar cambios en Realtime (evita bucles)
+  window._modalExpState = {
+    estado_carga: e.estado_carga,
+    estado_semaforo: e.estado_semaforo,
+    ubicacion: e.ubicacion,
+    nº_mrn: e.nº_mrn,
+    tramite_aduanero: e.tramite_aduanero,
+    status_aduanero: e.status_aduanero
+  };
   _addReciente('exp', e.id, e.nº_expedicion||'—', (e.buques?.nombre||'—')+' · '+(e.empresas?.nombre||'—')); // para bloqueo optimista
   _presenciaAnunciar(e.id); // indicar que este usuario está editando
   _presenciaRenderizar(e.id); // mostrar si hay otros editando
