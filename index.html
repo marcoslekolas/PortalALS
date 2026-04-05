@@ -8095,15 +8095,22 @@ async function loadFacturacion(){
   // Obtener buques embarcados o finalizados
   // Buscar buques embarcados: los que tienen estado_facturacion definido
   // o cuyo estado_operacion sea Finalizado (el estado final en el enum)
+  // Cargar buques embarcados o finalizados (con o sin estado_facturacion)
   let query = sb.from('buques')
     .select('*,ec:cliente_id(nombre,email_confronta),en:consignatario_id(nombre)')
-    .not('estado_facturacion','is',null)
+    .in('estado_operacion',['Embarcado','Finalizado'])
     .order('updated_at',{ascending:false});
 
-  if(estadoFil) query = query.eq('estado_facturacion', estadoFil);
+  const {data:buquesAll, error} = await query;
+  if(error){ console.error('[Facturación]', error); return; }
 
-  const {data:buques,error} = await query;
-  if(error){ console.error(error); return; }
+  // Asegurarse de que todos tienen estado_facturacion inicializado
+  let buques = (buquesAll||[]).map(b=>({
+    ...b,
+    estado_facturacion: b.estado_facturacion || 'pendiente'
+  }));
+
+  if(estadoFil) buques = buques.filter(b => b.estado_facturacion === estadoFil);
 
   let lista = buques||[];
 
@@ -8132,7 +8139,7 @@ async function loadFacturacion(){
   set('fact-k-total', (buques||[]).length);
 
   // Badge en sidebar
-  if(badge){ badge.textContent=pendientes; badge.style.display=pendientes>0?'':'none'; }
+  // badge de sidebar eliminado — ya no existe
 
   // Tabla
   if(!lista.length){
