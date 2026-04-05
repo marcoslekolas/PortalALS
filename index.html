@@ -8259,16 +8259,18 @@ async function enviarEmailFacturacion(buqueId){
 
   // Registrar en BD que el email fue enviado
   const ahora = new Date().toISOString();
-  await sb.from('buques').update({
+  const {error:eUpd} = await sb.from('buques').update({
     email_facturacion_sent: true,
     email_facturacion_fecha: ahora,
-    estado_facturacion: 'notificado' // cambia a Notificado al enviar el email
+    estado_facturacion: 'notificado'
   }).eq('id',buqueId);
+
+  if(eUpd) console.warn('[Facturación] Error update:', eUpd.message);
 
   await logAct('buques',buqueId,b.nombre,'editar','email_facturacion_sent','false',
     'Email facturación enviado a '+emailDest+' por '+CU?.nombre);
 
-  showToast('📧 Email de facturación abierto — '+b.nombre);
+  showToast('📧 Email de facturación abierto — '+b.nombre+(eUpd?' (⚠️ estado no actualizado)':''));
 
   // Actualizar vista
   setTimeout(()=>loadFacturacion(), 1000);
