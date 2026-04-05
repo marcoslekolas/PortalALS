@@ -865,6 +865,11 @@ textarea.fi{resize:vertical;min-height:72px}
 .notif-dot{width:8px;height:8px;border-radius:50%;background:#ef4444;flex-shrink:0;margin-top:5px}
 .notif-dot.read{background:transparent}
 @media(max-width:600px){#notif-panel{width:100%;border-left:none}}
+
+.tbl tbody tr:hover .exp-quick-actions { display:flex !important; }
+.tbl tbody tr .exp-quick-actions { display:none; }
+.exp-actions-col { opacity:0; transition:opacity .15s; }
+.tbl tbody tr:hover .exp-actions-col { opacity:1; }
 </style>
 <script>
 // Aplicar modo oscuro inmediatamente para evitar flash
@@ -1093,6 +1098,7 @@ textarea.fi{resize:vertical;min-height:72px}
         <span class="hdr-bc-mod" id="bc-mod" onclick="volverHome()" style="cursor:pointer">Inicio</span>
         <span class="hdr-bc-sep">›</span>
         <span class="hdr-bc-cur" id="bc-page">—</span>
+        <span id="bc-filtro" style="font-size:11px;color:var(--b600);font-weight:500;margin-left:4px"></span>
       </div>
 
       <div class="h-right">
@@ -1107,6 +1113,8 @@ textarea.fi{resize:vertical;min-height:72px}
 
         <!-- Indicador Realtime -->
         <div id="rt-indicator" title="Realtime: desconectado" style="width:8px;height:8px;border-radius:50%;background:var(--g300);flex-shrink:0;cursor:pointer;transition:background .4s;display:none" onclick="mostrarEstadoRealtime()"></div>
+        <span id="rt-last-update" style="font-size:10px;color:var(--g400);display:none;white-space:nowrap"></span>
+        <button id="btn-recientes" onclick="mostrarRecientes()" title="Vistos recientemente" style="background:none;border:none;cursor:pointer;font-size:16px;padding:4px;color:var(--g400);display:none">🕐</button>
 
         <!-- Modo compacto/espacioso -->
         <button id="density-toggle" onclick="toggleDensity()" title="Modo compacto" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--g400);padding:2px 6px;font-family:var(--mono);font-weight:600;letter-spacing:-.5px">≡</button>
@@ -1376,6 +1384,7 @@ textarea.fi{resize:vertical;min-height:72px}
           </div>
           <button class="btn btn-s btn-sm" onclick="exportarExpedicionesCSV()" style="margin-left:auto" title="Exportar a CSV">⬇️ CSV</button>
           <button class="btn btn-s btn-sm" onclick="exportarExpPDF()" title="Exportar listado a PDF imprimible">📄 PDF</button>
+          <button class="btn btn-s btn-sm" onclick="abrirColumnas()" title="Configurar columnas visibles">⚙️ Columnas</button>
         </div>
         <div class="tc"><table class="tbl"><thead><tr>
           <th style="width:38px;padding:0"></th>
@@ -2179,6 +2188,7 @@ function iniciarRealtime(){
         const dot = document.getElementById('rt-indicator');
         if(status === 'SUBSCRIBED'){
           if(dot){ dot.style.background='#22c55e'; dot.style.display=''; dot.title='Realtime: conectado'; }
+          const rtU=document.getElementById('rt-last-update'); if(rtU) rtU.style.display='';
         } else if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
           if(dot){ dot.style.background='#ef4444'; dot.style.display=''; dot.title='Realtime: error'; }
         } else {
@@ -2264,6 +2274,16 @@ function _rtFlush(){
   _rtUpdateDot();
   if(count === 0) return;
 
+  // Actualizar indicador última actualización
+  const rtUpd = document.getElementById('rt-last-update');
+  if(rtUpd){
+    const ahora = new Date();
+    rtUpd.style.display = '';
+    rtUpd.textContent = 'Act. '+ahora.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    // Limpiar tras 5min
+    clearTimeout(window._rtUpdTimer);
+    window._rtUpdTimer = setTimeout(()=>{ rtUpd.textContent=''; }, 300000);
+  }
   // Toast discreto
   const ts = Date.now();
   if(!window._lastRealtimeToast || ts - window._lastRealtimeToast > 4000){
@@ -4125,6 +4145,7 @@ function nav(view,el){
   const ve=document.getElementById('view-'+view);if(ve)ve.classList.add('active');
   if(el)el.classList.add('active');
   document.getElementById('bc-page').textContent=PG[view]||view;
+  document.getElementById('bc-filtro').textContent='';
   CV=view;
   if(window.innerWidth<=768){document.getElementById('sidebar').classList.remove('open');document.getElementById('mob-ov').classList.remove('show');}
   loadView(view);
@@ -5197,6 +5218,52 @@ function _restaurarColapsados(){
 }
 
 
+// ── Historial de navegación reciente ─────────────────────────────────
+const _recientes = []; // [{tipo, id, titulo, sub, ts}]
+const _MAX_REC = 5;
+
+function _addReciente(tipo, id, titulo, sub){
+  // Quitar si ya existe
+  const idx = _recientes.findIndex(r=>r.tipo===tipo && r.id===id);
+  if(idx>=0) _recientes.splice(idx,1);
+  _recientes.unshift({tipo, id, titulo, sub, ts: Date.now()});
+  if(_recientes.length > _MAX_REC) _recientes.pop();
+  const btn = document.getElementById('btn-recientes');
+  if(btn) btn.style.display = _recientes.length ? '' : 'none';
+}
+
+function mostrarRecientes(){
+  if(!_recientes.length) return;
+  document.getElementById('m-title').textContent = '🕐 Vistos recientemente';
+  document.getElementById('m-body').innerHTML = _recientes.map(r=>{
+    const dt = new Date(r.ts);
+    const diff = Math.round((Date.now()-r.ts)/60000);
+    const ts = diff < 1 ? 'ahora' : diff < 60 ? 'hace '+diff+'m' : 'hace '+Math.round(diff/60)+'h';
+    const icon = r.tipo==='exp' ? '📦' : r.tipo==='buque' ? '🚢' : '🏢';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:12px;border-bottom:1px solid var(--g100);cursor:pointer;transition:background .1s" '
+      +'onmouseenter="this.style.background=\'var(--g50)\'" onmouseleave="this.style.background=\'\'" '
+      +'onclick="_abrirReciente(\''+r.tipo+'\',\''+r.id+'\')">'
+      +'<span style="font-size:22px">'+icon+'</span>'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="font-weight:600;font-size:13px;color:var(--g900)">'+r.titulo+'</div>'
+      +'<div style="font-size:11px;color:var(--g500)">'+r.sub+'</div>'
+      +'</div>'
+      +'<span style="font-size:10px;color:var(--g400)">'+ts+'</span>'
+      +'</div>';
+  }).join('');
+  document.getElementById('m-foot').innerHTML = '<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>';
+  document.getElementById('mo').classList.add('open');
+}
+
+function _abrirReciente(tipo, id){
+  closeModal();
+  setTimeout(()=>{
+    if(tipo==='exp') openExpD(id);
+    else if(tipo==='buque') openBuque(id);
+  }, 100);
+}
+
+
 async function initDashFilters(){
   if(_dashInited)return; _dashInited=true;
   const [{data:emps},{data:buques}]=await Promise.all([
@@ -5659,7 +5726,10 @@ function renderE(list){
     const hasFoto=e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url||(e.ubicacion==='Landed');
     // Corregir semáforo visualmente si es Landed/UBICADA (pending DB fix)
     const semDisplay=e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo;
-    return`<tr onclick="openExpD('${e.id}')">
+    const rowBg = e.estado_carga==='✅ AUTORIZADO' ? 'background:rgba(34,197,94,.06)' :
+      (fmaxAlerta) ? 'background:rgba(239,68,68,.06)' :
+      (!e.nº_mrn && e.ubicacion && e.ubicacion!=='Pendiente recibir' && e.tramite_aduanero!=='Despachado') ? 'background:rgba(234,179,8,.05)' : '';
+    return`<tr onclick="openExpD('${e.id}')" style="${rowBg}" data-expid="${e.id}">
       <td onclick="event.stopPropagation()" style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="toggleExpLote('${e.id}',this)"></label></td>
       <td><div class="fw">${e.nº_expedicion}${(e.ubicacion||'').toLowerCase().includes('aeropuerto')?'<span class="als-awb-track" data-awb="'+e.nº_expedicion+'" style="cursor:pointer;font-size:10px;color:var(--b500);margin-left:3px" title="Rastrear en portal del carrier">✈️</span>':''}</div></td>
       <td class="sm">${e.buques?.nombre||'—'}</td>
@@ -5670,8 +5740,16 @@ function renderE(list){
       <td class="sm">${e.tramite_aduanero||'—'}</td>
       <td class="sm">${e.ubicacion||'—'}</td>
       <td class="sm" style="${fmaxAlerta?'color:var(--rd600);font-weight:700':''}">${fmaxAlerta?'⚠️ ':''} ${fmaxStr}</td>
+      <td class="exp-actions-col" style="padding:0;width:80px" onclick="event.stopPropagation()">
+        <div class="exp-quick-actions" style="display:none;gap:2px;padding:0 4px">
+          <button title="Cambiar ubicación" onclick="abrirCambioUbicLote('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:3px;border-radius:4px" onmouseenter="this.style.background='var(--g100)'" onmouseleave="this.style.background='none'">📍</button>
+          ${e.estado_carga!=='✅ AUTORIZADO'?`<button title="Autorizar" onclick="autorizarRapido('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:3px;border-radius:4px" onmouseenter="this.style.background='var(--g100)'" onmouseleave="this.style.background='none'">✅</button>`:''}
+          <button title="Notificar" onclick="loteNotifOne('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:3px;border-radius:4px" onmouseenter="this.style.background='var(--g100)'" onmouseleave="this.style.background='none'">📧</button>
+        </div>
+      </td>
     </tr>`;
   }).join('')||'<tr><td colspan="9"><div class="empty"><div class="empty-txt">Sin expediciones</div></div></td></tr>';
+  _aplicarColumnas();
 }
 // ── Filtrado unificado de expediciones ───────────────────────────
 let _expFiltradas = []; // lista actualmente visible
@@ -5698,6 +5776,17 @@ function filtrarExp(){
   renderE(_expFiltradas);
   _selExpLote.clear();
   _actualizarToolbarLote();
+  // Actualizar breadcrumb con filtro activo
+  const bcFil = document.getElementById('bc-filtro');
+  if(bcFil){
+    const buqsA = getBuquesFiltro();
+    const partes = [];
+    if(buqsA.length===1) partes.push(buqsA[0]);
+    const empV = document.getElementById('fil-empresa')?.value;
+    if(empV) partes.push(empV);
+    if(_expFiltradas.length !== allE.length) partes.push(_expFiltradas.length+' exp.');
+    bcFil.textContent = partes.length ? '· '+partes.join(' · ') : '';
+  }
 }
 
 function resetFiltrosExp(){
@@ -9678,6 +9767,7 @@ async function openBuque(id){
   const totalBultos=(exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
   const totalKilos=(exps||[]).reduce((a,e)=>a+(e.kilos||0),0);
   const totalAuth=(exps||[]).filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
+  _addReciente('buque', b.id, b.nombre, (b.ec?.nombre||'—')+' · ETA '+fd(b.eta_buque));
   document.getElementById('m-title').textContent='🚢 '+b.nombre;
   document.getElementById('m-body').innerHTML=`
     <div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:12px 16px;margin-bottom:16px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
@@ -9988,6 +10078,9 @@ async function openExpD(id, forceOpen=false){
       <div style="display:flex;gap:6px">
         <input id="nota-input" class="fi" placeholder="Escribe una nota… (@nombre para mencionar)" style="flex:1;font-size:12px"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();enviarNota('${e.id}','${e.nº_expedicion}');}">
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">
+          ${['📋 Pendiente documentación','✅ MRN recibido','📦 Mercancía lista','🚛 Pendiente autorización','⚠️ Incidencia detectada','📧 Notificado al cliente'].map(t=>`<button class="btn btn-s" style="font-size:10px;padding:2px 6px" onclick="document.getElementById('nota-input').value='${t}';document.getElementById('nota-input').focus()">${t}</button>`).join('')}
+        </div>
         <button class="btn btn-p btn-sm" onclick="enviarNota('${e.id}','${e.nº_expedicion}')">Enviar</button>
       </div>
     </div>
@@ -10030,7 +10123,8 @@ async function openExpD(id, forceOpen=false){
     document.getElementById('m-foot').appendChild(btnInstr);
   }
   window._modalExpId = e.id; // para refresh Realtime
-  window._modalExpUpdatedAt = e.updated_at || null; // para bloqueo optimista
+  window._modalExpUpdatedAt = e.updated_at || null;
+  _addReciente('exp', e.id, e.nº_expedicion||'—', (e.buques?.nombre||'—')+' · '+(e.empresas?.nombre||'—')); // para bloqueo optimista
   _presenciaAnunciar(e.id); // indicar que este usuario está editando
   _presenciaRenderizar(e.id); // mostrar si hay otros editando
   document.getElementById('mo').classList.add('open');
