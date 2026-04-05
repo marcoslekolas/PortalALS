@@ -1270,19 +1270,31 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="kpi-grid" id="kpi-grid"></div>
         <!-- Próximos embarques -->
         <div id="dash-anomalias-sec" style="margin-bottom:20px;display:none">
-          <div class="ph">
+          <div class="ph" style="cursor:pointer;user-select:none" onclick="_toggleDashSec('dash-anomalias-list','ic-prox')">
             <div class="pt">🚢 Próximos embarques</div>
-            <span id="dash-anom-count" class="badge bb"></span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span id="dash-anom-count" class="badge bb"></span>
+              <span id="ic-prox" style="font-size:11px;color:var(--g400);transition:transform .2s">▾</span>
+            </div>
           </div>
           <div id="dash-anomalias-list" style="display:flex;flex-direction:column;gap:8px;padding:4px 0"></div>
         </div>
         <!-- Secciones operativas -->
         <div id="dash-listos-sec">
-          <div class="ph"><div class="pt">✅ Listos para embarcar</div></div>
+          <div class="ph" style="cursor:pointer;user-select:none" onclick="_toggleDashSec('listos-dash','ic-listos')">
+            <div class="pt">✅ Listos para embarcar</div>
+            <span id="ic-listos" style="font-size:11px;color:var(--g400);transition:transform .2s">▾</span>
+          </div>
           <div id="listos-dash" class="buque-list"></div>
         </div>
         <div id="dash-proceso-sec" style="margin-top:20px">
-          <div class="ph"><div class="pt">🚢 Buques en operación</div><span id="dash-proceso-count" class="badge bb"></span></div>
+          <div class="ph" style="cursor:pointer;user-select:none" onclick="_toggleDashSec('buques-dash','ic-proceso')">
+            <div class="pt">🚢 Buques en operación</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span id="dash-proceso-count" class="badge bb"></span>
+              <span id="ic-proceso" style="font-size:11px;color:var(--g400);transition:transform .2s">▾</span>
+            </div>
+          </div>
           <div id="buques-dash" class="buque-list"></div>
         </div>
         <!-- Gráficas resumen -->
@@ -5387,8 +5399,10 @@ async function loadDash(){
     <div class="kpi rd"><div class="kpi-lbl">Incidencias abiertas</div><div class="kpi-val">${I.length}</div></div>
     <div class="kpi am"><div class="kpi-lbl">Sin MRN en almacén</div><div class="kpi-val">${alc}</div>${alc>0?'<div class="kpi-sub ks-a">⚠️ requieren acción</div>':''}</div>`;
 
-  // ── Detector de anomalías ────────────────────────────────────────
+  // ── Próximos embarques ───────────────────────────────────────────
   detectarAnomalias(allBuques, EALL||[]);
+  _restaurarColapsados();
+  _restaurarColapsados();
 
   // Secciones operativas — SIEMPRE muestran la realidad sin filtros
   const cntEl=document.getElementById('dash-proceso-count');
