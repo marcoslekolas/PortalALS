@@ -8179,6 +8179,7 @@ async function loadFacturacion(){
         <select class="fi fs" style="font-size:12px;padding:4px 8px;width:auto"
           onchange="marcarFacturado('${b.id}',this.value)">
           <option value="pendiente" ${estado==='pendiente'?'selected':''}>⏳ Pendiente</option>
+          <option value="notificado" ${estado==='notificado'?'selected':''}>📧 Notificado</option>
           <option value="facturado" ${estado==='facturado'?'selected':''}>✅ Facturado</option>
         </select>
       </td>
@@ -8192,6 +8193,7 @@ async function loadFacturacion(){
 }
 
 async function enviarEmailFacturacion(buqueId){
+  console.log('[Facturación] enviarEmailFacturacion llamada, buqueId:', buqueId);
   const emailDest = document.getElementById('fact-email-dest')?.value?.trim()
     || localStorage.getItem('als_fact_email')||'';
 
@@ -8280,7 +8282,7 @@ async function marcarFacturado(buqueId, estado){
   await sb.from('buques').update({estado_facturacion: estado}).eq('id',buqueId);
   const {data:b} = await sb.from('buques').select('nombre').eq('id',buqueId).single();
   await logAct('buques',buqueId,b?.nombre||'','editar','estado_facturacion','—',estado+' por '+CU?.nombre);
-  showToast(estado==='facturado' ? '✅ Marcado como facturado' : '⏳ Marcado como pendiente');
+  showToast(estado==='facturado' ? '✅ Marcado como facturado' : estado==='notificado' ? '📧 Marcado como notificado' : '⏳ Marcado como pendiente');
   // Recargar KPIs y badge sin recargar la tabla completa
   loadFacturacion();
 }
