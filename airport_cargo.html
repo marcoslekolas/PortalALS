@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <title>ALS · Airport Cargo</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -15,7 +15,7 @@
   --am50:#fffbeb;--am500:#f59e0b;--am600:#d97706;
   --rd50:#fef2f2;--rd500:#ef4444;--rd600:#dc2626;
   --pu50:#f5f3ff;--pu500:#8b5cf6;
-  --f:'Inter',sans-serif;--mono:'DM Mono',monospace;
+  --f:'Inter',sans-serif;--mono:'Roboto Mono',monospace;
   --r:8px;--rl:12px;--sh0:0 1px 3px rgba(0,0,0,.08);--shl:0 8px 24px rgba(0,0,0,.12);
 }
 html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
@@ -761,7 +761,7 @@ function miniTable(list){
   if(!list.length)return'<div class="empty">Sin entradas</div>';
   var rows=list.map(function(e){
     return'<tr class="tbl-row" data-id="'+e.id+'" style="cursor:pointer"><td style="font-family:var(--mono)">'+
-      (e.awb||'—')+' </td><td>'+(e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
+      formatAwb(e.awb||'—')+' </td><td>'+(e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
       '<td><span class="badge bb">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+fd(e.fecha_llegada)+'</td><td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
       '<td style="font-weight:700;color:var(--b700)">'+fc(calcTotal(e))+'</td></tr>';
@@ -1311,10 +1311,10 @@ function openDetalle(id){
   }else{
     costsHtml='<div class="warn-box">Handler sin tarifa automática — coste manual: '+fc(e.coste_manual)+'</div>';
   }
-  document.getElementById('m-title').textContent='✈️ '+e.awb;
+  document.getElementById('m-title').textContent='✈️ '+formatAwb(e.awb||'—');
   document.getElementById('m-body').innerHTML=
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;font-size:13px">'+
-    '<div><div class="sm">AWB</div><div style="font-family:var(--mono)">'+e.awb+'</div></div>'+
+    '<div><div class="sm">AWB</div><div style="font-family:var(--mono)">'+formatAwb(e.awb||'—')+'</div></div>'+
     '<div><div class="sm">Consignatario</div><div class="fw">'+( e.consignatario||'—')+'</div></div>'+
     '<div><div class="sm">Buque</div><div class="fw">'+( e.buque||'—')+'</div></div>'+
     '<div><div class="sm">Handler</div><span class="badge bb">'+( e.handling||'—')+'</span></div>'+
@@ -1345,7 +1345,7 @@ async function showForm(e){
   var empresas=[];
   try{var er=await sb.from('empresas').select('id,nombre,email_confronta').order('nombre');empresas=er.data||[];}catch(ex){}
   var isEdit=!!e,h=e?e.handling||'':'',isAuto=hasH(h);
-  document.getElementById('m-title').textContent=isEdit?'Editar — '+e.awb:'Nueva entrada Airport Cargo';
+  document.getElementById('m-title').textContent=isEdit?'Editar — '+formatAwb(e.awb||'—'):'Nueva entrada Airport Cargo';
   var handlerOpts=['<option value="" '+((!h)?'selected':'')+'>— Seleccionar —</option>',
     '<option '+(h==='Swissport'?'selected':'')+'>Swissport</option>',
     '<option '+(h==='Groundforce'?'selected':'')+'>Groundforce</option>',
@@ -1503,7 +1503,7 @@ function buildEmailCuerpo(sel,clienteNombre,apts,totalBlt,totalKg,hoy,firmaKey){
       var consStr=diffCons?' | Consignatario: '+(e.consignatario||'—'):'';
       var obsStr=e.observaciones?NL+'    Obs: '+e.observaciones:'';
       var trackStr=e.id?NL+'    Seguimiento: '+TB+encodeURIComponent(e.id):'';
-      bloque+='  · AWB: '+(e.awb||'—')+consStr+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+
+      bloque+='  · AWB: '+formatAwb(e.awb||'—')+consStr+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+
         ' | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+
         ' | Llegada: '+fd(e.fecha_llegada)+obsStr+trackStr+NL;
     });
@@ -1635,7 +1635,7 @@ function buildInstrBodyAirport(transpNombre, byH, TB){
     lines.push('LUGAR DE RECOGIDA: '+h.toUpperCase(), NL);
     lines.push('----------------------------------------------', NL, NL);
     exps.forEach(function(e, i){
-      lines.push('  '+(i+1)+'. AWB: '+(e.awb||'—'), NL);
+      lines.push('  '+(i+1)+'. AWB: '+formatAwb(e.awb||'—'), NL);
       lines.push('     Consignatario: '+(e.consignatario||e.cliente||'—'), NL);
       lines.push('     Bultos: '+(e.bultos||'—')+' | Kilos: '+(e.kilos_tasables||e.kilos||'—')+' kg', NL);
       if(e.id) lines.push('     Seguimiento: '+TB+encodeURIComponent(e.id), NL);
