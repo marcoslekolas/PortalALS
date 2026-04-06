@@ -829,7 +829,7 @@ function renderRows(list){
     // Use data-id on tr — onclick delegated via JS, no inline quote nesting
     return'<tr'+bg+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="updateSel()"></label></td>'+
-      '<td class="fw" style="font-family:var(--mono);font-size:11px;white-space:nowrap">'+formatAwb(e.awb||'—')+(e.awb?('<button class="awb-track-btn" data-awb="'+e.awb+'" style="background:var(--b100);border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:var(--b700);margin-left:4px" title="Rastrear AWB externo">✈️</button>'):'')+(e.id?('<button class="als-track-btn" data-id="'+e.id+'" style="background:#e0f2fe;border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:#0369a1;margin-left:3px" title="Tracking ALS">🔍</button>'):'')+'</td>'+
+      '<td class="fw" style="font-family:var(--mono);white-space:nowrap">'+formatAwb(e.awb||'—')+(e.awb?('<button class="awb-track-btn" data-awb="'+e.awb+'" style="background:var(--b100);border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:var(--b700);margin-left:4px" title="Rastrear AWB externo">✈️</button>'):'')+(e.id?('<button class="als-track-btn" data-id="'+e.id+'" style="background:#e0f2fe;border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:#0369a1;margin-left:3px" title="Tracking ALS">🔍</button>'):'')+'</td>'+
       '<td style="cursor:pointer">'+( e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td>'+
       '<td class="sm" style="cursor:pointer">'+( e.buque||'—')+'</td>'+
       '<td><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
@@ -1608,6 +1608,29 @@ async function abrirEmail(){
 }
 
 // ── Instrucciones para transportista ─────────────────────────────
+function buildInstrBody(h, exps, TB){
+  var NL = String.fromCharCode(10);
+  var hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  var lines = [
+    'Estimados Sres.,',NL,
+    'Les comunicamos las instrucciones de recogida para las siguientes expediciones a su cargo:',NL,NL,
+    '── HANDLER: '+h+' ─────────────────────────────────',NL,NL
+  ];
+  exps.forEach(function(e){
+    lines.push('  AWB: '+(e.awb||'—')+' | '+(e.consignatario||e.cliente||'—')+' | '+(e.bultos||'—')+' btos | '+(e.kilos_tasables||e.kilos||'—')+' kg');
+    if(e.id) lines.push('  Seguimiento: '+TB+encodeURIComponent(e.id));
+    lines.push('');
+  });
+  lines.push(NL+'Para cualquier consulta:');
+  lines.push('Tel: +34 956 58 13 16');
+  lines.push('Email: als@alsalgeciras.com');
+  lines.push(NL+'Atentamente,');
+  lines.push('Dpto. de Operaciones — ALGECIRAS LOGISTIC SOLUTIONS (ALS)');
+  lines.push('──────────────────────────────────────────────────────');
+  lines.push(hoy);
+  return lines.join(NL);
+}
+
 function abrirInstrTransp(){
   var ids=getSelected();
   var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL.filter(function(e){return !e.fecha_retirada;});
@@ -1615,72 +1638,62 @@ function abrirInstrTransp(){
 
   var byH={};
   sel.forEach(function(e){var h=e.handling||'(Sin handler)';if(!byH[h])byH[h]=[];byH[h].push(e);});
-
   var TB='https://marcoslekolas.github.io/PortalALS/tracking.html?awb=';
-  var grupos=Object.keys(byH).map(function(h){
-    var exps=byH[h];
-    var rows=exps.map(function(e){
-      var turl=e.id?TB+encodeURIComponent(e.id):'';
-      return '<tr style="border-bottom:1px solid #1e293b">'
-        +'<td style="padding:7px 6px;font-family:monospace;font-size:12px;color:#e2e8f0;white-space:nowrap">'+(e.awb||'—')+'</td>'
-        +'<td style="padding:7px 6px;font-size:12px;color:#94a3b8">'+(e.consignatario||e.cliente||'—')+'</td>'
-        +'<td style="padding:7px 6px;font-size:12px;color:#94a3b8;text-align:center">'+(e.bultos||'—')+'</td>'
-        +'<td style="padding:7px 6px;font-size:12px;color:#94a3b8;text-align:center">'+(e.kilos_tasables||e.kilos||'—')+'</td>'
-        +'<td style="padding:7px 6px;font-size:11px">'+(turl?'<a href="'+turl+'" target="_blank" style="color:#60a5fa;text-decoration:none">Seguimiento</a>':'—')+'</td>'
-        +'</tr>';
-    }).join('');
-    return '<div style="margin-bottom:18px">'
-      +'<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Handler: <span style="color:#fbbf24">'+h+'</span> &nbsp;·&nbsp; '+exps.length+' exp.</div>'
-      +'<div style="background:#0f172a;border:1px solid #334155;border-radius:8px;overflow:hidden">'
-      +'<table style="width:100%;border-collapse:collapse">'
-      +'<thead><tr style="background:#0f172a">'
-      +'<th style="padding:6px;font-size:10px;font-weight:700;color:#475569;text-align:left">AWB</th>'
-      +'<th style="padding:6px;font-size:10px;font-weight:700;color:#475569;text-align:left">Consignatario</th>'
-      +'<th style="padding:6px;font-size:10px;font-weight:700;color:#475569;text-align:center">Btos</th>'
-      +'<th style="padding:6px;font-size:10px;font-weight:700;color:#475569;text-align:center">Kg</th>'
-      +'<th style="padding:6px;font-size:10px;font-weight:700;color:#475569">Link</th>'
-      +'</tr></thead>'
-      +'<tbody>'+rows+'</tbody></table></div></div>';
-  }).join('');
+  var handlers=Object.keys(byH);
 
+  // Si hay un solo handler, abrir email directamente
+  if(handlers.length===1){
+    var h=handlers[0];
+    var cuerpo=buildInstrBody(h,byH[h],TB);
+    var asunto=encodeURIComponent('Instrucciones recogida — '+h+' · '+new Date().toLocaleDateString('es-ES'));
+    var a=document.createElement('a');
+    a.href='mailto:?subject='+asunto+'&body='+encodeURIComponent(cuerpo);
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    toast('Abriendo correo para '+h+'...');
+    return;
+  }
+
+  // Varios handlers: mostrar modal para elegir a cuál enviar
   var prev=document.getElementById('instr-transp-modal');
   if(prev) prev.remove();
   var modal=document.createElement('div');
   modal.id='instr-transp-modal';
-  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:20px 12px;overflow-y:auto';
-  modal.innerHTML='<div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:24px;width:100%;max-width:700px;position:relative">'
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+
+  var btns=handlers.map(function(h){
+    return '<button class="it-handler-btn" data-h="'+h+'" style="display:block;width:100%;text-align:left;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px;margin-bottom:10px;cursor:pointer;color:#e2e8f0;font-size:13px;font-weight:600">'
+      +'<span style="font-size:16px;margin-right:8px">🏢</span>'+h
+      +' <span style="font-size:11px;color:#64748b;font-weight:400">('+byH[h].length+' exp.)</span>'
+      +'</button>';
+  }).join('');
+
+  modal.innerHTML='<div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:24px;width:100%;max-width:400px;position:relative">'
     +'<button id="it-close-x" style="position:absolute;top:12px;right:12px;background:#334155;border:none;border-radius:6px;color:#94a3b8;padding:4px 9px;font-size:12px;cursor:pointer">&#10005;</button>'
-    +'<div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:3px">🚛 Instrucciones para transportista</div>'
-    +'<div style="font-size:12px;color:#64748b;margin-bottom:18px">'+sel.length+' expedici'+(sel.length===1?'ón':'ones')+' · agrupadas por compañía handling</div>'
-    +grupos
-    +'<div style="margin-top:8px;padding-top:14px;border-top:1px solid #334155;display:flex;gap:10px;justify-content:flex-end">'
-    +'<button id="it-copy-btn" style="background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer">Copiar texto</button>'
-    +'<button id="it-close-btn" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer">Cerrar</button>'
+    +'<div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:4px">Instrucciones transportista</div>'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:16px">Elige el handler al que enviar el email:</div>'
+    +btns
+    +'<div style="margin-top:4px;padding-top:12px;border-top:1px solid #334155;display:flex;justify-content:flex-end">'
+    +'<button id="it-close-btn" style="background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer">Cancelar</button>'
     +'</div></div>';
+
   document.body.appendChild(modal);
   document.getElementById('it-close-x').onclick=function(){modal.remove();};
   document.getElementById('it-close-btn').onclick=function(){modal.remove();};
-  document.getElementById('it-copy-btn').onclick=function(){copiarInstrTransp();};
-  modal.addEventListener('click',function(ev){if(ev.target===modal)modal.remove();});
-}
 
-function copiarInstrTransp(){
-  var ids=getSelected();
-  var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL.filter(function(e){return !e.fecha_retirada;});
-  if(!sel.length) return;
-  var byH={};
-  sel.forEach(function(e){var h=e.handling||'(Sin handler)';if(!byH[h])byH[h]=[];byH[h].push(e);});
-  var TB='https://marcoslekolas.github.io/PortalALS/tracking.html?awb=';
-  var lines=['INSTRUCCIONES TRANSPORTISTA - AIRPORT CARGO','ALS - '+new Date().toLocaleDateString('es-ES'),''];
-  Object.keys(byH).forEach(function(h){
-    lines.push('Handler: '+h+' -------------------------');
-    byH[h].forEach(function(e){
-      lines.push('  AWB: '+(e.awb||'-')+' | '+(e.consignatario||e.cliente||'-')+' | '+(e.bultos||'-')+' btos | '+(e.kilos_tasables||'-')+' kg');
-      if(e.id) lines.push('  Link: '+TB+encodeURIComponent(e.id));
-    });
-    lines.push('');
+  modal.querySelectorAll('.it-handler-btn').forEach(function(btn){
+    btn.onclick=function(){
+      var h=btn.dataset.h;
+      var cuerpo=buildInstrBody(h,byH[h],TB);
+      var asunto=encodeURIComponent('Instrucciones recogida — '+h+' · '+new Date().toLocaleDateString('es-ES'));
+      var a=document.createElement('a');
+      a.href='mailto:?subject='+asunto+'&body='+encodeURIComponent(cuerpo);
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      modal.remove();
+      toast('Abriendo correo para '+h+'...');
+    };
   });
-  navigator.clipboard.writeText(lines.join(String.fromCharCode(10))).then(function(){toast('Copiado al portapapeles');}).catch(function(){toast('Error al copiar');});
+
+  modal.addEventListener('click',function(ev){if(ev.target===modal)modal.remove();});
 }
 
 // ── OCR AWB — prellenado formulario Airport Cargo ─────────────────
