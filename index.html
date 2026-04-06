@@ -845,6 +845,7 @@ textarea.fi{resize:vertical;min-height:72px}
 /* Card hover */
 .buque-card{transition:box-shadow .15s,transform .15s;}
 .buque-card:hover{box-shadow:0 4px 18px rgba(37,99,235,.12);transform:translateY(-1px);}
+.buque-tooltip{position:fixed;z-index:9999;background:var(--g900);color:#fff;border-radius:10px;padding:10px 14px;font-size:12px;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:260px;line-height:1.6;opacity:0;transition:opacity .15s}
 .kpi{transition:box-shadow .15s;}
 .kpi:hover{box-shadow:0 4px 14px rgba(0,0,0,.08);}
 .ll-row{transition:background .1s;}
@@ -5171,7 +5172,7 @@ async function loadView(view){
 function buqueCard(b,listo){
   const ec=b.ec?.nombre||b.en?.nombre||'—';
   const stCls=estOpCls(b.estado_operacion||b.estado||'');
-  return`<div class="buque-card" draggable="true" data-bid="${b.id}" style="border-left:3px solid var(--st-${stCls.replace('st-','')}-bar,var(--g300));cursor:grab" ondragstart="calDragId='${b.id}';event.dataTransfer.effectAllowed='move'" onclick="openBuque('${b.id}')">
+  return`<div class="buque-card" draggable="true" data-bid="${b.id}" style="border-left:3px solid var(--st-${stCls.replace('st-','')}-bar,var(--g300));cursor:grab" ondragstart="calDragId='${b.id}';event.dataTransfer.effectAllowed='move'" onclick="openBuque('${b.id}')" onmouseenter="_showBuqueTip(event,${JSON.stringify({nombre:b.nombre,eta:b.eta_buque,cliente:ec,total:b.total_expediciones,auth:b.total_autorizadas,estado:b.estado_operacion||'—'})})" onmouseleave="_hideBuqueTip()">
     <div class="buque-icon" style="background:var(--st-${stCls.replace('st-','')}-bg,var(--b50))">🚢</div>
     <div class="buque-info">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
@@ -5561,6 +5562,48 @@ async function loadDashAir(){
       <span style="font-size:11px;font-weight:600;color:${statusColor(st)};background:${statusBg(st)};border-radius:20px;padding:2px 8px;flex-shrink:0">${st}</span>
     </div>`;
   }).join('');
+}
+
+
+// ── Tooltip resumen buque ─────────────────────────────────────────────
+let _buqueTipEl = null;
+function _showBuqueTip(ev, data){
+  if(!_buqueTipEl){
+    _buqueTipEl = document.createElement('div');
+    _buqueTipEl.className = 'buque-tooltip';
+    document.body.appendChild(_buqueTipEl);
+  }
+  const pct  = data.total > 0 ? Math.round(data.auth/data.total*100) : 0;
+  const eta  = data.eta ? new Date(data.eta).toLocaleString('es-ES',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+  const barColor = pct===100?'#22c55e':pct>50?'#eab308':'#ef4444';
+  _buqueTipEl.innerHTML =
+    '<div style="font-weight:700;margin-bottom:4px">'+data.nombre+'</div>'+
+    '<div style="color:#9ca3af;font-size:11px">'+data.estado+'</div>'+
+    '<div style="margin:6px 0;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">'+
+    '<div style="margin-bottom:3px">📅 ETA: '+eta+'</div>'+
+    '<div>🏢 '+data.cliente+'</div>'+
+    '</div>'+
+    '<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">'+
+    '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">'+
+    '<span>'+data.auth+'/'+data.total+' autorizadas</span><span style="color:'+barColor+'">'+pct+'%</span></div>'+
+    '<div style="height:4px;background:rgba(255,255,255,.2);border-radius:2px">'+
+    '<div style="height:100%;width:'+pct+'%;background:'+barColor+';border-radius:2px"></div></div>'+
+    '</div>';
+  _buqueTipEl.style.opacity = '1';
+  _moveBuqueTip(ev);
+  document.addEventListener('mousemove', _moveBuqueTip, {passive:true});
+}
+function _moveBuqueTip(ev){
+  if(!_buqueTipEl) return;
+  const x = ev.clientX + 16;
+  const y = ev.clientY - 10;
+  const w = _buqueTipEl.offsetWidth || 260;
+  _buqueTipEl.style.left = (x + w > window.innerWidth ? x - w - 32 : x) + 'px';
+  _buqueTipEl.style.top  = Math.min(y, window.innerHeight - 160) + 'px';
+}
+function _hideBuqueTip(){
+  if(_buqueTipEl) _buqueTipEl.style.opacity = '0';
+  document.removeEventListener('mousemove', _moveBuqueTip);
 }
 
 
@@ -9925,6 +9968,20 @@ const MODALS={
     const buqueId=buqueHidden?buqueHidden.value:gv('ne-bq');
     const obj={nº_expedicion:gv('ne-ref'),buque_id:buqueId||null,empresa_id:gv('ne-emp')||null,status_aduanero:gv('ne-sta'),tramite_aduanero:gv('ne-tra'),bultos:parseInt(gv('ne-bul'))||0,kilos:parseFloat(gv('ne-kg'))||0,nº_mrn:gv('ne-mrn')||null,fecha_max_despacho:gv('ne-fmax')||null,ubicacion:gv('ne-ubic'),tarifa_calculada:parseFloat(gv('ne-tar'))||null,notif_aduanas_sent:gc('ne-na'),notif_cliente_sent:gc('ne-nc'),fecha_aviso_aduanas:gc('ne-na')?new Date().toISOString():null,fecha_aviso_cliente:gc('ne-nc')?new Date().toISOString():null,created_by:CU?.id,created_by_nombre:CU?.nombre};
     if(!obj.nº_expedicion){alert('La referencia es obligatoria');return;}
+    // Detección de duplicados — comprobar si ya existe la referencia
+    const {data:dup} = await sb.from('expediciones')
+      .select('id,nº_expedicion,buques(nombre),estado_semaforo')
+      .eq('nº_expedicion', obj.nº_expedicion)
+      .limit(1);
+    if(dup?.length){
+      const d = dup[0];
+      const conf = confirm('⚠️ Ya existe una expedición con esta referencia:\n\n'+
+        '· Ref: '+d.nº_expedicion+'\n'+
+        '· Buque: '+(d.buques?.nombre||'—')+'\n'+
+        '· Estado: '+(d.estado_semaforo||'—')+'\n\n'+
+        '¿Crear de todas formas?');
+      if(!conf) return;
+    }
     const {data,error}=await sb.from('expediciones').insert(obj).select().single();
     if(error){alert('Error: '+error.message);return;}
     await logAct('expediciones',data?.id,obj.nº_expedicion,'crear',null,null,obj.nº_expedicion);
@@ -10379,6 +10436,7 @@ async function openExpD(id, forceOpen=false){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       ${['admin','operativa','aduanas'].includes(CU?.rol)?`<button class="btn btn-w btn-sm" onclick="cambiarClienteFacturacion('${e.id}')">💼 Cliente facturación</button>`:''}
       <button class="btn btn-w btn-sm" onclick="notifAduana('${e.id}','${e.nº_expedicion}')">🏢 Notif. Aduanas${e.notif_aduanas_sent?' ✓':''}</button>
+      <button class="btn btn-s btn-sm" onclick="window.open('https://www.alsalgeciras.com/tracking?exp=${e.id}','_blank')" title="Ver tracking público de esta expedición">🔍 Tracking</button>
       ${emailCli?`<button class="btn btn-s btn-sm" onclick="notifCliente('${e.id}','${emailCli}','${e.nº_expedicion}')">📧 Notif. Cliente${e.notif_cliente_sent?' ✓':''}</button>`:''}
       <button class="btn btn-s btn-sm" onclick="openModal('nueva-incidencia','${e.id}')">⚠️ Incidencia</button>
     </div>
