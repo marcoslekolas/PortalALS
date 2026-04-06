@@ -314,6 +314,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div class="sb-sec">Acciones</div>
         <div class="nav-item" onclick="openNueva()"><span class="ni">➕</span><span class="nav-item-txt">Nueva entrada</span></div>
         <div class="nav-item" onclick="abrirEmail()"><span class="ni">📧</span><span class="nav-item-txt">Notificar consignatario</span></div>
+        <div class="nav-item" onclick="abrirInstrTransp()"><span class="ni">🚛</span><span class="nav-item-txt">Instruc. transportista</span></div>
       </div>
       <!-- Footer -->
       <div class="sb-bot">
@@ -341,6 +342,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
           <div style="display:flex;gap:8px">
             <button class="btn btn-s btn-sm" onclick="exportarAirportCSV()">⬇️ CSV</button>
             <button class="btn btn-s btn-sm" onclick="abrirEmail()">📧 Notificar</button>
+            <button class="btn btn-s btn-sm" onclick="abrirInstrTransp()">🚛 Instruc. transp.</button>
             <button class="btn btn-p" onclick="openNueva()">+ Nueva entrada</button>
           </div>
         </div>
@@ -691,7 +693,14 @@ async function init(){
     var chk = ev.target.closest('input[type=checkbox]');
     if(chk) return;
     // Botón de tracking AWB
-    var trackBtn = ev.target.closest('button.awb-track-btn');
+    var alsTrackBtn = ev.target.closest('button.als-track-btn');
+  if(alsTrackBtn){
+    var tid=alsTrackBtn.dataset.id;
+    var turl='https://marcoslekolas.github.io/PortalALS/tracking.html?awb='+encodeURIComponent(tid);
+    window.open(turl,'_blank');
+    return;
+  }
+  var trackBtn = ev.target.closest('button.awb-track-btn');
     if(trackBtn){
       ev.stopPropagation();
       trackAwb(ev, trackBtn.getAttribute('data-awb'));
@@ -821,7 +830,7 @@ function renderRows(list){
     // Use data-id on tr — onclick delegated via JS, no inline quote nesting
     return'<tr'+bg+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="updateSel()"></label></td>'+
-      '<td class="fw" style="font-family:var(--mono);font-size:11px;white-space:nowrap">'+formatAwb(e.awb||'—')+(e.awb?('<button class="awb-track-btn" data-awb="'+e.awb+'" style="background:var(--b100);border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:var(--b700);margin-left:4px" title="Rastrear AWB">✈️</button>'):'')+'</td>'+
+      '<td class="fw" style="font-family:var(--mono);font-size:11px;white-space:nowrap">'+formatAwb(e.awb||'—')+(e.awb?('<button class="awb-track-btn" data-awb="'+e.awb+'" style="background:var(--b100);border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:var(--b700);margin-left:4px" title="Rastrear AWB externo">✈️</button>'):'')+(e.id?('<button class="als-track-btn" data-id="'+e.id+'" style="background:#e0f2fe;border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:#0369a1;margin-left:3px" title="Ver tracking ALS">🔍</button>'):'')+'</td>'+
       '<td style="cursor:pointer">'+( e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td>'+
       '<td class="sm" style="cursor:pointer">'+( e.buque||'—')+'</td>'+
       '<td><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
@@ -1482,99 +1491,279 @@ async function abrirEmail(){
   var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL;
   if(!sel.length){toast('Sin entradas. Selecciona una o varias en la tabla.');return;}
 
-  // Agrupar por cliente — un email por cliente
-  var porCliente={};
-  sel.forEach(function(e){
-    var ckey=(e.cliente||e.consignatario||'__sin_cliente__').trim();
-    if(!porCliente[ckey]) porCliente[ckey]=[];
-    porCliente[ckey].push(e);
-  });
-  var grupos=Object.keys(porCliente);
-  if(grupos.length>1) toast('📧 Abriendo '+grupos.length+' emails — uno por cliente…');
+  // Validar mismo cliente
+  var clientes=Array.from(new Set(sel.map(function(e){
+    return (e.cliente||e.consignatario||'').trim().toLowerCase();
+  }).filter(Boolean)));
+  if(clientes.length>1){
+    toast('⚠️ Selección incompatible: las entradas pertenecen a '+clientes.length+' clientes distintos.');
+    return;
+  }
 
-  // Cargar emails de empresas
-  var empresasDB=[];
+  var clienteNombre=sel.map(function(e){return e.cliente||e.consignatario||'';}).filter(Boolean)[0]||'';
+
+  // Buscar email del cliente en la BD
+  var emailDest='';
   try{
     var er=await sb.from('empresas').select('nombre,email_confronta').order('nombre');
-    empresasDB=er.data||[];
-  }catch(ex){}
-
-  // Abrir un email por cada grupo de cliente
-  grupos.forEach(function(clienteNombre, gIdx){
-    var gSel=porCliente[clienteNombre];
-    // Buscar email
-    var emailDest='';
-    if(clienteNombre!=='__sin_cliente__'&&empresasDB.length){
+    var empresas=er.data||[];
+    if(clienteNombre&&empresas.length){
       var q=clienteNombre.toLowerCase();
-      var match=empresasDB.filter(function(emp){
+      var match=empresas.filter(function(emp){
         return(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase().substring(0,5));
       })[0]||null;
       if(match) emailDest=match.email_confronta||'';
     }
-    if(!emailDest){
-      toast('⚠️ Sin email para "'+clienteNombre+'". Configúralo en la ficha de empresa.');
-      return;
-    }
+  }catch(e){}
 
-    setTimeout(function(){
-      var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
-      var apts=Array.from(new Set(gSel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
-      var totalKg=gSel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
-      var totalBlt=gSel.reduce(function(a,e){return a+(e.bultos||0);},0);
+  if(!emailDest){
+    toast('⚠️ No se encontró email para "'+clienteNombre+'". Configúralo en la ficha de empresa.');
+    return;
+  }
 
-      // Construir cuerpo agrupado por buque
-      var byBuque={};
-      gSel.forEach(function(e){
-        var bkey=e.buque||'(Sin buque asignado)';
-        if(!byBuque[bkey]) byBuque[bkey]=[];
-        byBuque[bkey].push(e);
-      });
+  var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
+  var totalKg=sel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
+  var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
 
-      var detalle=Object.keys(byBuque).map(function(buque){
-        var exps=byBuque[buque];
-        var bloque='  Buque: '+buque+'\n';
-        exps.forEach(function(e){
-          var diffCons=(e.consignatario||'').toLowerCase()!==(clienteNombre||'').toLowerCase();
-          var consStr=diffCons?' | Consignatario: '+(e.consignatario||'—'):'';
-          var obsStr=e.observaciones?'\n    Obs: '+e.observaciones:'';
-          bloque+='  · AWB: '+(e.awb||'—')+consStr+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+
-            ' | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+
-            ' | Llegada: '+fd(e.fecha_llegada)+obsStr+'\n';
-        });
-        return bloque;
-      }).join('\n');
+  // Construir cuerpo agrupado por buque
+  var byBuque={};
+  sel.forEach(function(e){
+    var bkey=e.buque||'(Sin buque asignado)';
+    if(!byBuque[bkey]) byBuque[bkey]=[];
+    byBuque[bkey].push(e);
+  });
 
-      var NL='\n';
-      var cuerpo=[
+  var firmaConfig=document.getElementById('em-firma-sel')?document.getElementById('em-firma-sel').value:'als';
+  var firmaData={
+    als:{nombre:'Dpto. de Operaciones — ALGECIRAS LOGISTIC SOLUTIONS (ALS)',tel:'+34 956 58 13 16',email:'als@alsalgeciras.com',dir:'Pol. La Menacha, Avda. La Bahía 14, Algeciras'},
+    cw:{nombre:'Dpto. de Operaciones — CUSTOMS WAY',tel:'(pendiente)',email:'(pendiente)',dir:'(pendiente)'}
+  };
+  var firma=firmaData[firmaConfig]||firmaData.als;
+
+  var trackBase='https://marcoslekolas.github.io/PortalALS/tracking.html?awb=';
+
+  var detalle=Object.keys(byBuque).map(function(buque){
+    var exps=byBuque[buque];
+    var bloque='  Buque: '+buque+'\n';
+    exps.forEach(function(e){
+      var diffCons=(e.consignatario||'').toLowerCase()!==(clienteNombre||'').toLowerCase();
+      var consStr=diffCons?' | Consignatario: '+(e.consignatario||'—'):'';
+      var obsStr=e.observaciones?'\n    Obs: '+e.observaciones:'';
+      var trackStr=e.id?'\n    🔍 Seguimiento: '+trackBase+encodeURIComponent(e.id):'';
+      bloque+='  · AWB: '+(e.awb||'—')+consStr+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+
+        ' | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+
+        ' | Llegada: '+fd(e.fecha_llegada)+obsStr+trackStr+'\n';
+    });
+    return bloque;
+  }).join('\n');
+
+  var NL='\n';
+  var cuerpo=[
     'Estimados Sres. / Dear Sirs,',NL,NL,
     'Nos dirigimos a ustedes para informarles de la situación actual de sus expediciones aéreas en tránsito hacia '+apts+'.',NL,NL,
     '── RESUMEN ──────────────────────────────────────────────',NL,NL,
     'Cliente: '+clienteNombre,NL,
-    'Expediciones: '+gSel.length,NL,
+    'Expediciones: '+sel.length,NL,
     'Total bultos: '+totalBlt,NL,
     'Total kilos: '+totalKg.toLocaleString('es-ES')+' kg',NL,NL,
     '── DETALLE POR BUQUE ────────────────────────────────────',NL,NL,
-    detalle,
+    detalle,NL,
+    '──────────────────────────────────────────────────────',NL,NL,
     '── PRÓXIMOS PASOS ───────────────────────────────────────',NL,NL,
     'Las mercancías se encuentran en proceso de gestión aduanera. Una vez concluido, coordinaremos la entrega conforme a sus instrucciones.',NL,NL,
+    'Puede consultar el estado actualizado de cada expedición en los enlaces de seguimiento indicados arriba.',NL,NL,
     'Para cualquier consulta:',NL,
-    '📞 +34 956 58 13 16',NL,
-    '✉️ als@alsalgeciras.com',NL,
-    '📍 Pol. La Menacha, Avda. La Bahía 14',NL,NL,
+    '📞 '+firma.tel,NL,
+    '✉️ '+firma.email,NL,
+    '📍 '+firma.dir,NL,NL,
     'Atentamente / Kind regards,',NL,
-    'Dpto. de Operaciones — ALGECIRAS LOGISTIC SOLUTIONS (ALS)',NL,
+    firma.nombre,NL,
     '──────────────────────────────────────────────────────',NL,
     hoy
   ].join('');
 
-      var cc='als@alsalgeciras.com';
-      var asunto=encodeURIComponent('Situación expediciones aeropuerto — '+(clienteNombre||'ALS')+' · '+new Date().toLocaleDateString('es-ES'));
-      var mailtoUrl='mailto:'+emailDest+'?cc='+encodeURIComponent(cc)+'&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
-      var a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';
-      document.body.appendChild(a);a.click();document.body.removeChild(a);
-      toast('📧 Email abierto para '+clienteNombre+'…');
-    }, gIdx * 900);
-  }); // fin forEach grupos
+  var cc='als@alsalgeciras.com';
+  var asunto=encodeURIComponent('Situación expediciones aeropuerto — '+(clienteNombre||'ALS')+' · '+new Date().toLocaleDateString('es-ES'));
+
+  // Modal previo para seleccionar firma
+  var prev=document.getElementById('email-firma-modal');
+  if(prev) prev.remove();
+  var modal=document.createElement('div');
+  modal.id='email-firma-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML='<div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:28px 32px;min-width:320px;max-width:90vw">'
+    +'<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:6px">📧 Confirmar envío</div>'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:16px">Para: <b style="color:#94a3b8">'+emailDest+'</b> &nbsp;·&nbsp; '+sel.length+' expedici'+(sel.length===1?'ón':'ones')+'</div>'
+    +'<label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:6px">Firma / Remitente:</label>'
+    +'<select id="em-firma-sel" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;margin-bottom:20px">'
+    +'<option value="als">ALS — Algeciras Logistic Solutions</option>'
+    +'<option value="cw">Customs Way (pendiente configurar)</option>'
+    +'</select>'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end">'
+    +'<button id="em-cancel-btn" style="background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer">Cancelar</button>'
+    +'<button id="em-send-btn" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">Enviar correo</button>'
+    +'</div>'
+    +'</div>';
+  document.body.appendChild(modal);
+  document.getElementById('em-cancel-btn').onclick=function(){modal.remove();};
+
+  document.getElementById('em-send-btn').onclick=function(){
+    // Recalcular cuerpo con firma elegida
+    var firmaConfig2=document.getElementById('em-firma-sel').value;
+    var firmaData2={
+      als:{nombre:'Dpto. de Operaciones — ALGECIRAS LOGISTIC SOLUTIONS (ALS)',tel:'+34 956 58 13 16',email:'als@alsalgeciras.com',dir:'Pol. La Menacha, Avda. La Bahía 14, Algeciras'},
+      cw:{nombre:'Dpto. de Operaciones — CUSTOMS WAY',tel:'(pendiente)',email:'(pendiente)',dir:'(pendiente)'}
+    };
+    var firma2=firmaData2[firmaConfig2]||firmaData2.als;
+
+    // Reconstruir cuerpo con firma correcta
+    var trackBase2='https://marcoslekolas.github.io/PortalALS/tracking.html?awb=';
+    var detalle2=Object.keys(byBuque).map(function(buque){
+      var exps=byBuque[buque];
+      var bloque='  Buque: '+buque+'
+';
+      exps.forEach(function(e){
+        var diffCons=(e.consignatario||'').toLowerCase()!==(clienteNombre||'').toLowerCase();
+        var consStr=diffCons?' | Consignatario: '+(e.consignatario||'—'):'';
+        var obsStr=e.observaciones?'
+    Obs: '+e.observaciones:'';
+        var trackStr=e.id?'
+    🔍 Seguimiento: '+trackBase2+encodeURIComponent(e.id):'';
+        bloque+='  · AWB: '+(e.awb||'—')+consStr+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+
+          ' | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+
+          ' | Llegada: '+fd(e.fecha_llegada)+obsStr+trackStr+'
+';
+      });
+      return bloque;
+    }).join('
+');
+
+    var NL2='
+';
+    var cuerpo2=[
+      'Estimados Sres. / Dear Sirs,',NL2,NL2,
+      'Nos dirigimos a ustedes para informarles de la situación actual de sus expediciones aéreas en tránsito hacia '+apts+'.',NL2,NL2,
+      '── RESUMEN ──────────────────────────────────────────────',NL2,NL2,
+      'Cliente: '+clienteNombre,NL2,
+      'Expediciones: '+sel.length,NL2,
+      'Total bultos: '+totalBlt,NL2,
+      'Total kilos: '+totalKg.toLocaleString('es-ES')+' kg',NL2,NL2,
+      '── DETALLE POR BUQUE ────────────────────────────────────',NL2,NL2,
+      detalle2,NL2,
+      '──────────────────────────────────────────────────────',NL2,NL2,
+      '── PRÓXIMOS PASOS ───────────────────────────────────────',NL2,NL2,
+      'Las mercancías se encuentran en proceso de gestión aduanera. Una vez concluido, coordinaremos la entrega conforme a sus instrucciones.',NL2,NL2,
+      'Puede consultar el estado actualizado de cada expedición en los enlaces de seguimiento indicados arriba.',NL2,NL2,
+      'Para cualquier consulta:',NL2,
+      '📞 '+firma2.tel,NL2,
+      '✉️ '+firma2.email,NL2,
+      '📍 '+firma2.dir,NL2,NL2,
+      'Atentamente / Kind regards,',NL2,
+      firma2.nombre,NL2,
+      '──────────────────────────────────────────────────────',NL2,
+      hoy
+    ].join('');
+
+    var mailtoUrl2='mailto:'+emailDest+'?cc='+encodeURIComponent(cc)+'&subject='+asunto+'&body='+encodeURIComponent(cuerpo2);
+    var a2=document.createElement('a');a2.href=mailtoUrl2;a2.target='_blank';
+    document.body.appendChild(a2);a2.click();document.body.removeChild(a2);
+    modal.remove();
+    toast('📧 Abriendo cliente de correo…');
+  };
+}
+
+// ── Instrucciones para transportista (agrupado por handling) ──────
+function abrirInstrTransp(){
+  var ids=getSelected();
+  var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL.filter(function(e){
+    // Solo entradas sin fecha_retirada (pendientes)
+    return !e.fecha_retirada;
+  });
+  if(!sel.length){toast('Sin entradas pendientes. Selecciona una o varias.');return;}
+
+  // Agrupar por handling
+  var byH={};
+  sel.forEach(function(e){
+    var h=e.handling||'(Sin handler)';
+    if(!byH[h]) byH[h]=[];
+    byH[h].push(e);
+  });
+
+  var prev=document.getElementById('instr-transp-modal');
+  if(prev) prev.remove();
+
+  // Construir HTML del modal
+  var grupos=Object.keys(byH).map(function(h){
+    var exps=byH[h];
+    var rows=exps.map(function(e){
+      var trackUrl='https://marcoslekolas.github.io/PortalALS/tracking.html?awb='+encodeURIComponent(e.id||'');
+      return '<tr style="border-bottom:1px solid #334155">'
+        +'<td style="padding:8px 6px;font-family:monospace;font-size:12px;color:#e2e8f0;white-space:nowrap">'+(e.awb||'—')+'</td>'
+        +'<td style="padding:8px 6px;font-size:12px;color:#94a3b8">'+(e.consignatario||e.cliente||'—')+'</td>'
+        +'<td style="padding:8px 6px;font-size:12px;color:#94a3b8;text-align:center">'+(e.bultos||'—')+'</td>'
+        +'<td style="padding:8px 6px;font-size:12px;color:#94a3b8;text-align:center">'+(e.kilos_tasables||e.kilos||'—')+' kg</td>'
+        +'<td style="padding:8px 6px;font-size:12px">'
+          +(e.id?'<a href="'+trackUrl+'" target="_blank" style="color:#60a5fa;font-size:11px;text-decoration:none">🔍 Tracking</a>':'—')
+        +'</td>'
+        +'</tr>';
+    }).join('');
+    return '<div style="margin-bottom:18px">'
+      +'<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">🏢 Handler: <span style="color:#fbbf24">'+h+'</span> &nbsp;·&nbsp; '+exps.length+' expedici'+(exps.length===1?'ón':'ones')+'</div>'
+      +'<div style="background:#0f172a;border:1px solid #334155;border-radius:8px;overflow:hidden">'
+      +'<table style="width:100%;border-collapse:collapse">'
+      +'<thead><tr style="background:#1e293b">'
+        +'<th style="padding:7px 6px;font-size:10px;font-weight:700;color:#64748b;text-align:left;text-transform:uppercase">AWB</th>'
+        +'<th style="padding:7px 6px;font-size:10px;font-weight:700;color:#64748b;text-align:left;text-transform:uppercase">Consignatario</th>'
+        +'<th style="padding:7px 6px;font-size:10px;font-weight:700;color:#64748b;text-align:center;text-transform:uppercase">Btos</th>'
+        +'<th style="padding:7px 6px;font-size:10px;font-weight:700;color:#64748b;text-align:center;text-transform:uppercase">Kg</th>'
+        +'<th style="padding:7px 6px;font-size:10px;font-weight:700;color:#64748b;text-align:left;text-transform:uppercase">Seguimiento</th>'
+      +'</tr></thead>'
+      +'<tbody>'+rows+'</tbody>'
+      +'</table>'
+      +'</div>'
+      +'</div>';
+  }).join('');
+
+  var modal=document.createElement('div');
+  modal.id='instr-transp-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow-y:auto';
+  modal.innerHTML='<div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:28px;width:100%;max-width:720px;position:relative">'
+    +'<button onclick="document.getElementById('instr-transp-modal').remove()" style="position:absolute;top:14px;right:14px;background:#334155;border:none;border-radius:6px;color:#94a3b8;padding:4px 9px;font-size:13px;cursor:pointer">✕</button>'
+    +'<div style="font-size:16px;font-weight:800;color:#fff;margin-bottom:4px">🚛 Instrucciones para transportista</div>'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:20px">'+sel.length+' expedici'+(sel.length===1?'ón':'ones')+' agrupadas por compañía handling</div>'
+    +grupos
+    +'<div style="margin-top:8px;padding-top:16px;border-top:1px solid #334155;display:flex;gap:10px;justify-content:flex-end">'
+    +'<button onclick="copiarInstrTransp()" style="background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:9px 16px;font-size:12px;font-weight:600;cursor:pointer">📋 Copiar texto</button>'
+    +'<button onclick="document.getElementById('instr-transp-modal').remove()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">Cerrar</button>'
+    +'</div>'
+    +'</div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function(ev){ if(ev.target===modal) modal.remove(); });
+}
+
+function copiarInstrTransp(){
+  var ids=getSelected();
+  var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL.filter(function(e){return !e.fecha_retirada;});
+  if(!sel.length) return;
+
+  var byH={};
+  sel.forEach(function(e){
+    var h=e.handling||'(Sin handler)'; if(!byH[h]) byH[h]=[]; byH[h].push(e);
+  });
+
+  var trackBase='https://marcoslekolas.github.io/PortalALS/tracking.html?awb=';
+  var lines=['INSTRUCCIONES PARA TRANSPORTISTA — AIRPORT CARGO','ALS · '+new Date().toLocaleDateString('es-ES'),''];
+  Object.keys(byH).forEach(function(h){
+    lines.push('── Handler: '+h+' ──────────────────────────────');
+    byH[h].forEach(function(e){
+      lines.push('  AWB: '+(e.awb||'—')+' | '+(e.consignatario||e.cliente||'—')+' | '+(e.bultos||'—')+' btos | '+(e.kilos_tasables||'—')+' kg');
+      if(e.id) lines.push('  Seguimiento: '+trackBase+encodeURIComponent(e.id));
+    });
+    lines.push('');
+  });
+  navigator.clipboard.writeText(lines.join('
+')).then(function(){toast('📋 Copiado al portapapeles');}).catch(function(){toast('Error al copiar');});
 }
 
 // ── OCR AWB — prellenado formulario Airport Cargo ─────────────────
