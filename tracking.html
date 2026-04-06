@@ -171,7 +171,7 @@ body::after{
     </div>
     <div class="footer-contact">
       📞 <a href="tel:+34956581316">+34 956 58 13 16</a> · 
-      ✉️ <a href="mailto:als@alsalgeciras.com">als@alsalgeciras.com</a><br>
+      ✉️ <a href="/cdn-cgi/l/email-protection#0968657a4968657a68656e6c6a607b687a276a6664"><span class="__cf_email__" data-cfemail="aecfc2ddeecfc2ddcfc2c9cbcdc7dccfdd80cdc1c3">[email&#160;protected]</span></a><br>
       Operations 24/7 · Boardings <a href="tel:+34664074940">+34 664 07 49 40</a>
     </div>
   </div>
@@ -479,9 +479,10 @@ async function main(){
 
   // ── Modo Expedición portuaria ──
   try {
+    console.log('[Tracking] expId:', expId);
     const [{data:exp, error}, {data:incs}] = await Promise.all([
       sb.from('expediciones')
-        .select('*,buques(nombre,eta_buque),empresas(nombre)')
+        .select('*,buques(nombre,eta_buque),empresas!empresa_id(nombre)')
         .eq('id', expId)
         .single(),
       sb.from('incidencias')
@@ -489,8 +490,9 @@ async function main(){
         .eq('expedicion_id', expId)
     ]);
 
+    console.log('[Tracking] exp:', exp, '| error:', error?.message, '| code:', error?.code);
     if(error || !exp){
-      renderError('No se encontró la expedición solicitada.');
+      renderError('Expedición no encontrada. ID: '+expId+' — '+( error?.message||'sin datos'));
       return;
     }
 
@@ -501,17 +503,4 @@ async function main(){
         .select('*,buques(nombre,eta_buque),empresas(nombre)')
         .eq('id', expId).single();
       const {data:freshIncs} = await sb.from('incidencias')
-        .select('nombre,descripcion,estado').eq('expedicion_id', expId);
-      if(fresh) render(fresh, freshIncs);
-    }, 120000);
-
-  } catch(e) {
-    renderError('Error al cargar los datos. Inténtelo de nuevo.');
-    console.error(e);
-  }
-}
-
-main();
-</script>
-</body>
-</html>
+        .select('nombre,descripci
