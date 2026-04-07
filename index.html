@@ -93,7 +93,7 @@ if('serviceWorker' in navigator){
 html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
 /* PWA safe-area para iPhone notch y barra de gestos */
 body{
-  padding-top: var(--safe-top);
+  /* padding-top lo absorbe #app y .hm-hdr individualmente para no duplicar */
   padding-bottom: var(--safe-bot);
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
@@ -643,19 +643,21 @@ textarea.fi{resize:vertical;min-height:72px}
 }
 /* PWA safe area support (iPhone notch/home bar) */
 @supports(padding:max(0px)){
-  /* El header absorbe el notch — padding-top = safe-area-inset-top */
-  #app-hdr{
+  /* #app absorbe el notch una sola vez — ni body ni header lo duplican */
+  #app{
     padding-top: env(safe-area-inset-top, 0px);
   }
-  .hdr-top{
-    /* La altura de la fila interior sigue siendo --hh, el padding-top del header añade el notch */
-    height: var(--hh);
+  .hm-hdr{
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
   }
-  .hm-hdr{padding-top: env(safe-area-inset-top, 0px);}
-  #app-hdr,
-  .hm-hdr{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));}
+  #app-hdr{
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
   .hm-body{padding-bottom:max(48px,calc(env(safe-area-inset-bottom)+24px));}
-  #sidebar{padding-bottom:env(safe-area-inset-bottom); padding-top:env(safe-area-inset-top,0px);}
+  #sidebar{padding-bottom:env(safe-area-inset-bottom);}
   .mf{padding-bottom:max(14px,env(safe-area-inset-bottom));}
 }
 
@@ -13545,7 +13547,7 @@ if(typeof sb!=="undefined"&&sb){loadEmailPlantillas();}else{setTimeout(()=>{if(s
   panel.id = 'notif-panel';
   panel.style.cssText = 'display:none;position:fixed;top:0;right:0;width:360px;max-width:100vw;height:100%;background:var(--w);border-left:1px solid var(--g200);z-index:25000;flex-direction:column;box-shadow:-4px 0 24px rgba(0,0,0,.12);transform:translateX(100%);transition:transform .25s ease';
   panel.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--g200);flex-shrink:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:max(16px,calc(env(safe-area-inset-top,0px) + 10px)) 20px 14px;border-bottom:1px solid var(--g200);flex-shrink:0">
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:18px">🔔</span>
         <span style="font-size:15px;font-weight:700;color:var(--g900)">Notificaciones</span>
