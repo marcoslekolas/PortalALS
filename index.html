@@ -643,10 +643,54 @@ textarea.fi{resize:vertical;min-height:72px}
 }
 /* PWA safe area support (iPhone notch/home bar) */
 @supports(padding:max(0px)){
-  .hm-hdr,#app-hdr{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));}
+  /* El header absorbe el notch — padding-top = safe-area-inset-top */
+  #app-hdr{
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .hdr-top{
+    /* La altura de la fila interior sigue siendo --hh, el padding-top del header añade el notch */
+    height: var(--hh);
+  }
+  .hm-hdr{padding-top: env(safe-area-inset-top, 0px);}
+  #app-hdr,
+  .hm-hdr{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));}
   .hm-body{padding-bottom:max(48px,calc(env(safe-area-inset-bottom)+24px));}
-  #sidebar{padding-bottom:env(safe-area-inset-bottom);}
+  #sidebar{padding-bottom:env(safe-area-inset-bottom); padding-top:env(safe-area-inset-top,0px);}
   .mf{padding-bottom:max(14px,env(safe-area-inset-bottom));}
+}
+
+@media(max-width:768px){
+  /* Header compacto en móvil: ocultar elementos no esenciales */
+  .hdr-top{gap:5px;padding:0 8px;}
+
+  /* Ocultar: búsqueda global, indicador RT, presencia, recientes, density, dark-auto, user-info, kbd */
+  #global-search-wrap,
+  #rt-indicator,
+  #rt-last-update,
+  #hdr-presencia-global,
+  #btn-recientes,
+  #density-toggle,
+  #dark-auto-btn,
+  .hdr-user-info,
+  kbd{ display:none !important; }
+
+  /* Avatar más pequeño y sin borde */
+  .hdr-user{padding:4px;border:none;background:none;gap:0;}
+  .hdr-av{width:28px;height:28px;font-size:11px;border-radius:8px;}
+
+  /* Botones de acción sin texto */
+  #btn-nb,#btn-ne{font-size:0 !important;padding:7px 10px;}
+  #btn-nb::before{content:'🚢';font-size:14px;}
+  #btn-ne::before{content:'📦';font-size:14px;}
+
+  /* Breadcrumb compacto */
+  .hdr-bc-mod{font-size:11px;}
+  .hdr-bc-sep{font-size:12px;}
+  .hdr-bc-cur{font-size:12px;max-width:120px;}
+  #bc-filtro{display:none;}
+
+  /* Icono logout más pequeño */
+  .hdr-icon-btn{width:30px;height:30px;font-size:15px;}
 }
 
 
