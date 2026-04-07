@@ -1910,6 +1910,7 @@ textarea.fi{resize:vertical;min-height:72px}
   <div class="swipe-dot" data-tab="carga"></div>
   <div class="swipe-dot" data-tab="embarque"></div>
   <div class="swipe-dot" data-tab="landed"></div>
+  <div class="swipe-dot swipe-dot-scanner" data-tab="scanner" title="Escáner" style="background:rgba(255,255,255,.25);font-size:0;position:relative"></div>
 </div>
 
 <!-- Barra rápida móvil — módulo Almacén -->
@@ -12985,8 +12986,6 @@ function imprimirQR(ref, qrData, dataUrl){
 
   let _swX = null, _swY = null, _swT = null, _swLocked = null;
   let _cont = null;
-
-  // ── Pull-to-refresh ────────────────────────────────────────
   let _ptrActive = false;
   let _ptrScrollEl = null;
   const PTR_THRESHOLD = 72;
@@ -12994,7 +12993,6 @@ function imprimirQR(ref, qrData, dataUrl){
   function _ptrIndicator(){ return document.getElementById('ptr-indicator'); }
 
   function _getPtrScroll(e){
-    // Solo activa ptr cuando el scroll está al tope (scrollTop === 0)
     var el = e.target.closest('#content') || document.getElementById('content');
     return el && el.scrollTop === 0 ? el : null;
   }
@@ -13015,18 +13013,14 @@ function imprimirQR(ref, qrData, dataUrl){
 
   document.addEventListener('touchstart', function(e){
     if(e.touches.length !== 1) return;
-    // No iniciar swipe si el toque empieza en la barra inferior o en un botón/input interactivo
     var target = e.target;
+    // No capturar si el toque es sobre la barra inferior o controles interactivos
     if(target.closest('#mob-alm-bar') ||
-       target.closest('button') ||
        target.closest('input') ||
        target.closest('textarea') ||
        target.closest('select') ||
        target.closest('.foto-area') ||
-       target.closest('#scanner-overlay')){
-      _swX = null; _swY = null; _swT = null; _swLocked = null; _cont = null;
-      return;
-    }
+       target.closest('#scanner-overlay')){ _reset(); return; }
     _swX = e.touches[0].clientX;
     _swY = e.touches[0].clientY;
     _swT = Date.now();
@@ -13040,12 +13034,19 @@ function imprimirQR(ref, qrData, dataUrl){
     if(_swX === null) return;
     const dx = e.touches[0].clientX - _swX;
     const dy = e.touches[0].clientY - _swY;
+    const absDx = Math.abs(dx), absDy = Math.abs(dy);
 
-    if(!_swLocked && (Math.abs(dx) > 8 || Math.abs(dy) > 8)){
-      _swLocked = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
+    // Esperar 14px de movimiento antes de decidir eje — reduce falsos positivos
+    if(!_swLocked && (absDx > 14 || absDy > 14)){
+      // Exigir ratio 2.5:1 para declarar horizontal; si no, es scroll vertical
+      if(absDx > absDy * 2.5){
+        _swLocked = 'horizontal';
+      } else {
+        _swLocked = 'vertical';
+      }
     }
 
-    // ── Pull-to-refresh: gesto vertical hacia abajo desde el tope ──
+    // Pull-to-refresh
     if(_swLocked === 'vertical' && dy > 0 && window.innerWidth <= 768){
       if(!_ptrScrollEl) _ptrScrollEl = _getPtrScroll(e);
       if(_ptrScrollEl){
@@ -13055,48 +13056,57 @@ function imprimirQR(ref, qrData, dataUrl){
           ind.style.transform = 'translateX(-50%) translateY('+Math.min(dy * 0.45, 44)+'px)';
           ind.querySelector('.ptr-arrow').style.transform = 'rotate('+(ratio*180)+'deg)';
           _ptrActive = dy >= PTR_THRESHOLD;
-          if(_ptrActive) ind.querySelector('.ptr-arrow').textContent = '↺';
-          else ind.querySelector('.ptr-arrow').textContent = '↓';
+          ind.querySelector('.ptr-arrow').textContent = _ptrActive ? '↺' : '↓';
         }
         return;
       }
     }
 
-    if(_swLocked === 'vertical') return;
+    if(_swLocked !== 'horizontal') return;
 
-    // ── Swipe horizontal entre tabs ──
-    if(_swLocked === 'horizontal' && _cont &&
+    // Rubber-band visual solo en view-alm-fotos
+    if(_cont &&
        window.innerWidth <= 768 &&
-       document.getElementById('view-alm-fotos') &&
-       document.getElementById('view-alm-fotos').classList.contains('active')){
+       document.getElementById('view-alm-fotos')?.classList.contains('active')){
       const dir = dx < 0 ? 1 : -1;
+      // Resistencia si no hay tab siguiente (o si sería el escáner)
       const hasNext = _adjTab(dir) !== null;
-      const resist = hasNext ? 1 : 0.22;
+      const resist = hasNext ? 0.85 : 0.18;
       _cont.style.transform = 'translateX(' + (dx * resist) + 'px)';
       _cont.style.transition = 'none';
-      _cont.style.opacity = 1 - Math.min(Math.abs(dx) / 380, 0.28);
+      _cont.style.opacity = String(1 - Math.min(absDx / 350, 0.3));
     }
   }, {passive:true});
 
   document.addEventListener('touchend', function(e){
     if(_swX === null){ _reset(); return; }
 
-    const dx = e.changedTouches[0].clientX - _swX;
-    const dy = e.changedTouches[0].clientY - _swY;
-    const dt = Date.now() - _swT;
-    const vel = Math.abs(dx) / dt;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const dx = endX - _swX;
+    const dy = endY - _swY;
+    const dt = Math.max(Date.now() - _swT, 1);
+    const vel = Math.abs(dx) / dt; // px/ms
     const absDx = Math.abs(dx);
-    const isHoriz = Math.abs(dy) < 55 && (_swLocked === 'horizontal' || absDx > Math.abs(dy) * 1.5);
 
-    // ── Pull-to-refresh: soltar ──
+    // Restaurar contenido siempre
+    if(_cont){
+      _cont.style.transition = 'transform .22s cubic-bezier(.4,0,.2,1), opacity .22s';
+      _cont.style.transform = 'translateX(0)';
+      _cont.style.opacity = '1';
+    }
+
+    // Pull-to-refresh
     const ind = _ptrIndicator();
-    if(ind) {
+    if(ind){
       ind.style.transform = 'translateX(-50%) translateY(-60px)';
-      ind.querySelector('.ptr-arrow').style.transform = '';
-      ind.querySelector('.ptr-arrow').textContent = '↓';
+      if(ind.querySelector('.ptr-arrow')){
+        ind.querySelector('.ptr-arrow').style.transform = '';
+        ind.querySelector('.ptr-arrow').textContent = '↓';
+      }
     }
     if(_ptrActive && _ptrScrollEl){
-      if(ind){ ind.classList.add('spinning'); ind.querySelector('.ptr-arrow').textContent = '↺'; ind.style.transform='translateX(-50%) translateY(12px)'; }
+      if(ind){ ind.classList.add('spinning'); ind.querySelector('.ptr-arrow').textContent='↺'; ind.style.transform='translateX(-50%) translateY(12px)'; }
       setTimeout(function(){
         loadAlmFotos(currentFotosTab);
         if(ind){ ind.classList.remove('spinning'); ind.style.transform='translateX(-50%) translateY(-60px)'; }
@@ -13104,44 +13114,46 @@ function imprimirQR(ref, qrData, dataUrl){
       _reset(); return;
     }
 
-    // ── Restaurar contenido ──
-    if(_cont){
-      _cont.style.transition = 'transform .22s cubic-bezier(.4,0,.2,1), opacity .22s';
-      _cont.style.transform = 'translateX(0)';
-      _cont.style.opacity = '1';
-    }
+    // Solo procesar como swipe si el eje fue claramente horizontal
+    if(_swLocked !== 'horizontal'){ _reset(); return; }
 
-    // ── 1. Swipe entre tabs ──
-    if(isHoriz && window.innerWidth <= 768 &&
-       document.getElementById('view-alm-fotos') &&
-       document.getElementById('view-alm-fotos').classList.contains('active') &&
-       !document.getElementById('mo').classList.contains('open')){
-      const threshold = vel > 0.3 ? 30 : 70;
-      if(absDx >= threshold){
-        const dir = dx < 0 ? 1 : -1;
-        const next = _adjTab(dir);
-        if(next){ _goTab(next); _reset(); return; }
+    // Umbral adaptativo: flick rápido (>0.4px/ms) → 25px, normal → 65px
+    const threshold = vel > 0.4 ? 25 : 65;
+    if(absDx < threshold){ _reset(); return; }
+
+    const dir = dx < 0 ? 1 : -1; // -1=izquierda→siguiente, 1=derecha→anterior
+    const mo = document.getElementById('mo');
+    const inFotos = document.getElementById('view-alm-fotos')?.classList.contains('active');
+
+    // ── 1. Swipe entre tabs de almacén ──────────────────────────
+    if(window.innerWidth <= 768 && inFotos && !(mo?.classList.contains('open'))){
+      const next = _adjTab(dir);
+      if(next){ _goTab(next); _reset(); return; }
+      // Swipe izquierda desde Landed (último tab) → abrir escáner
+      if(dir === 1 && currentFotosTab === 'landed'){
+        if(navigator.vibrate) navigator.vibrate(12);
+        abrirScannerQR();
+        _reset(); return;
       }
     }
 
-    // ── 2. Cerrar modal ──
-    const mo = document.getElementById('mo');
-    if(dx > 70 && isHoriz && mo && mo.classList.contains('open')){
+    // ── 2. Cerrar modal con swipe derecha ───────────────────────
+    if(dir === -1 && mo?.classList.contains('open')){
       closeModal(); _reset(); return;
     }
 
-    // ── 3. Cerrar panel notificaciones ──
+    // ── 3. Cerrar panel notificaciones con swipe izquierda ──────
     const panel = document.getElementById('notif-panel');
-    if(dx < -70 && isHoriz && panel && panel.classList.contains('open')){
+    if(dir === 1 && panel?.classList.contains('open')){
       if(typeof cerrarCentroNotificaciones==='function') cerrarCentroNotificaciones();
       _reset(); return;
     }
 
-    // ── 4. Abrir sidebar desde borde izquierdo ──
-    if(dx > 60 && isHoriz && _swX < 30 && window.innerWidth <= 768){
+    // ── 4. Abrir sidebar desde borde izquierdo (<30px) ──────────
+    if(dir === -1 && _swX < 30 && window.innerWidth <= 768){
       var sb = document.getElementById('sidebar');
       if(sb && !sb.classList.contains('open')){
-        document.getElementById('sidebar').classList.add('open');
+        sb.classList.add('open');
         document.getElementById('mob-ov').classList.add('show');
       }
       _reset(); return;
@@ -13150,7 +13162,10 @@ function imprimirQR(ref, qrData, dataUrl){
     _reset();
   }, {passive:true});
 
-  function _reset(){ _swX=null;_swY=null;_swT=null;_swLocked=null;_cont=null;_ptrActive=false;_ptrScrollEl=null; }
+  function _reset(){
+    _swX=null; _swY=null; _swT=null; _swLocked=null; _cont=null;
+    _ptrActive=false; _ptrScrollEl=null;
+  }
 })();
 
 // ── Escáner QR de autorización de carga ──────────────────────────
