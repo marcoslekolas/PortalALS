@@ -1030,6 +1030,45 @@ textarea.fi{resize:vertical;min-height:72px}
 .tbl tbody tr .exp-quick-actions { display:none; }
 .exp-actions-col { opacity:0; transition:opacity .15s; }
 .tbl tbody tr:hover .exp-actions-col { opacity:1; }
+
+/* ── Tarjetas colapsables por buque ── */
+.buq-card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:12px;overflow:hidden;box-shadow:var(--sh0)}
+.buq-hdr{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;transition:background .12s;gap:10px}
+.buq-hdr:active{background:var(--g50)}
+.buq-hdr-left{display:flex;flex-direction:column;gap:3px;min-width:0}
+.buq-hdr-title{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.buq-hdr-sub{font-size:11px;display:flex;gap:8px;flex-wrap:wrap}
+.buq-hdr-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.buq-chevron{font-size:12px;color:var(--g400);transition:transform .22s cubic-bezier(.4,0,.2,1);flex-shrink:0}
+.buq-body{overflow:hidden;transition:max-height .28s cubic-bezier(.4,0,.2,1)}
+.buq-body.collapsed{max-height:0!important}
+/* Badge de conteo en barra inferior */
+.mob-tab-badge{position:absolute;top:2px;right:6px;background:var(--rd500);color:#fff;font-size:9px;font-weight:700;border-radius:99px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;pointer-events:none}
+/* Slide-to-confirm */
+.slide-confirm-wrap{position:relative;background:var(--gr50);border:2px solid #bbf7d0;border-radius:14px;height:56px;overflow:hidden;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.slide-confirm-track{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--gr600);pointer-events:none;transition:opacity .15s}
+.slide-confirm-thumb{position:absolute;left:4px;top:4px;bottom:4px;width:48px;background:var(--gr600);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,.15);transition:left .2s cubic-bezier(.4,0,.2,1)}
+.slide-confirm-thumb:active{cursor:grabbing}
+.slide-confirm-wrap.done .slide-confirm-thumb{left:calc(100% - 52px);background:var(--gr700)}
+.slide-confirm-wrap.done .slide-confirm-track{opacity:0}
+/* Lightbox de fotos */
+#lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:50000;align-items:center;justify-content:center;flex-direction:column}
+#lightbox.open{display:flex}
+#lightbox img{max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;border-radius:8px}
+#lightbox-close{position:absolute;top:max(16px,calc(env(safe-area-inset-top,0px)+8px));right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:24px;width:44px;height:44px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+/* Miniaturas ampliables */
+.foto-thumb img{cursor:zoom-in}
+/* Escáner landscape */
+@media(orientation:landscape){
+  #scanner-overlay{flex-direction:row!important}
+  #sc-camara-wrap{width:55%!important;max-width:none!important;height:100%}
+  #qr-reader{width:100%!important;max-width:none!important;height:100%}
+  #scanner-overlay>div:nth-child(2){flex-direction:row!important}
+  #scanner-overlay>div:last-child{flex-direction:column!important;width:auto;min-width:160px;border-top:none!important;border-left:1px solid #1f2937!important}
+}
+:root.dark .buq-card{background:#1a1a2e!important;border-color:#1e1e3f!important}
+:root.dark .buq-hdr:active{background:#1e1e3f!important}
+:root.dark .slide-confirm-wrap{background:#0d2a12!important;border-color:#166534!important}
 </style>
 <script>
 // Aplicar modo oscuro inmediatamente para evitar flash
@@ -1946,6 +1985,12 @@ textarea.fi{resize:vertical;min-height:72px}
 </div>
 
 <div class="mob-ov" id="mob-ov" onclick="toggleSB()"></div>
+
+<!-- Lightbox de fotos -->
+<div id="lightbox">
+  <button id="lightbox-close" onclick="cerrarLightbox()">✕</button>
+  <img id="lightbox-img" src="" alt="foto">
+</div>
 
 <!-- Indicador pull-to-refresh -->
 <div id="ptr-indicator"><span class="ptr-arrow">↓</span></div>
@@ -4188,11 +4233,11 @@ function showMobAlmBar(){
   if(bar) bar.classList.add('visible');
   if(content) content.classList.add('has-mob-bar');
   if(dots && window.innerWidth<=768) dots.classList.add('visible');
-  // Asegurar que la vista alm-fotos está activa
   if(document.getElementById('view-alm-fotos') &&
      !document.getElementById('view-alm-fotos').classList.contains('active')){
     nav('alm-fotos', null);
   }
+  if(typeof _actualizarBadges==='function') _actualizarBadges();
 }
 function hideMobAlmBar(){
   var bar=document.getElementById('mob-alm-bar');
@@ -7823,140 +7868,149 @@ async function loadAlmFotos(tab){
       if(!a.eta)return 1;if(!b.eta)return -1;
       return new Date(a.eta)-new Date(b.eta);
     });
-    cont.innerHTML=sorted.map(([bid,d])=>`
-      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
-        <div style="background:var(--b50);border-bottom:1px solid var(--b100);padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
-          <div style="font-weight:700;color:var(--b700)">🚢 ${d.nombre}</div>
-          <div style="font-size:12px;color:var(--b600)">ETA: ${d.eta?fd(d.eta):'—'} · ${d.items.length} exp.</div>
-        </div>
-        ${d.items.map(e=>`
-        <div style="border-bottom:1px solid var(--g100);padding:16px">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-            <span style="font-size:22px">${(e.ubicacion||'').includes('Aeropuerto')?'✈️':'📦'}</span>
-            <div style="flex:1">
-              <div style="font-weight:700;font-size:14px;color:#111;letter-spacing:-.01em">${e.nº_expedicion}</div>
+    cont.innerHTML=sorted.map(([bid,d], idx)=>{
+      const bodyHtml = d.items.map(e=>`
+        <div style="border-bottom:1px solid var(--g100);padding:14px 16px" id="llegada-${e.id}">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <span style="font-size:20px">${(e.ubicacion||'').includes('Aeropuerto')?'✈️':'📦'}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:14px;color:var(--g900);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.nº_expedicion}</div>
               <div class="ll-sub">${e.bultos} btos · ${e.kilos} kg · <span style="color:var(--am600);font-weight:600">${e.ubicacion||'—'}</span></div>
             </div>
             ${bdg(e.estado_semaforo)}
           </div>
-
-          <!-- Estado visual del envío -->
           <div style="margin-bottom:10px">
-            <label class="fl2">Estado del envío recibido</label>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px" id="est-${e.id}">
-              <button class="est-btn active" data-val="ok" onclick="selEstado('${e.id}','ok',this)" style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--gr300);border-radius:8px;background:var(--gr50);color:var(--gr700);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">✅ Correcto</button>
-              <button class="est-btn" data-val="leve" onclick="selEstado('${e.id}','leve',this)" style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">⚠️ Daño leve</button>
-              <button class="est-btn" data-val="grave" onclick="selEstado('${e.id}','grave',this)" style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">🔴 Daño grave</button>
-              <button class="est-btn" data-val="humedad" onclick="selEstado('${e.id}','humedad',this)" style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">💧 Humedad</button>
-              <button class="est-btn" data-val="precinto" onclick="selEstado('${e.id}','precinto',this)" style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">🔓 Precinto roto</button>
+            <div style="display:flex;gap:5px;flex-wrap:wrap" id="est-${e.id}">
+              <button class="est-btn active" data-val="ok" onclick="selEstado('${e.id}','ok',this)" style="flex:1;min-width:70px;min-height:44px;padding:6px 2px;border:2px solid var(--gr300);border-radius:8px;background:var(--gr50);color:var(--gr700);font-size:11px;font-weight:700;cursor:pointer">✅ OK</button>
+              <button class="est-btn" data-val="leve" onclick="selEstado('${e.id}','leve',this)" style="flex:1;min-width:70px;min-height:44px;padding:6px 2px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer">⚠️ Daño</button>
+              <button class="est-btn" data-val="grave" onclick="selEstado('${e.id}','grave',this)" style="flex:1;min-width:70px;min-height:44px;padding:6px 2px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer">🔴 Grave</button>
+              <button class="est-btn" data-val="humedad" onclick="selEstado('${e.id}','humedad',this)" style="flex:1;min-width:70px;min-height:44px;padding:6px 2px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer">💧 Húmedo</button>
+              <button class="est-btn" data-val="precinto" onclick="selEstado('${e.id}','precinto',this)" style="flex:1;min-width:70px;min-height:44px;padding:6px 2px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer">🔓 Precinto</button>
             </div>
-            <div id="aviso-estado-${e.id}" style="display:none;margin-top:6px;padding:6px 10px;background:var(--am50);border:1px solid var(--am200,#fde68a);border-radius:6px;font-size:11px;color:var(--am700,#92400e)">⚠️ Se creará una incidencia automáticamente al confirmar la llegada</div>
+            <div id="aviso-estado-${e.id}" style="display:none;margin-top:6px;padding:6px 10px;background:var(--am50);border:1px solid #fde68a;border-radius:6px;font-size:11px;color:var(--am700)">⚠️ Se creará una incidencia al confirmar</div>
           </div>
-
-          <!-- Zona de fotos -->
           <div class="fg2" style="margin-bottom:8px">
-            <label class="fl2">📸 Fotos de los bultos recibidos
-              <span style="color:var(--b600);font-size:10px;font-weight:400"> — recomendado: una general + detalle de cada daño</span>
-            </label>
-            <div class="foto-area" onclick="document.getElementById('fl-fi-${e.id}').click()" style="padding:16px">
-              <input type="file" id="fl-fi-${e.id}" accept="image/*" multiple capture="environment"
-                onchange="onFotoLlegadaCambiada('${e.id}',this)">
-              <div style="font-size:26px;margin-bottom:4px">📷</div>
-              <div style="font-size:13px;font-weight:600;color:var(--g700)">Fotografiar bultos recibidos</div>
-              <div style="font-size:11px;color:var(--g400);margin-top:3px">Varias fotos • Cámara trasera del móvil</div>
+            <div class="foto-area" onclick="document.getElementById('fl-fi-${e.id}').click()" style="padding:12px 16px">
+              <input type="file" id="fl-fi-${e.id}" accept="image/*" capture="environment" multiple onchange="onFotoLlegadaCambiada('${e.id}',this)">
+              <div style="font-size:22px;margin-bottom:2px">📷</div>
+              <div style="font-size:12px;font-weight:600;color:var(--g700)">Fotografiar bultos</div>
             </div>
             <div class="foto-prev" id="fl-pv-${e.id}"></div>
           </div>
-
-          <!-- Notas de llegada -->
-          <div class="fg2" style="margin-bottom:10px">
-            <textarea id="fl-nota-${e.id}" class="fi" placeholder="Notas de llegada: marcas visibles, condición del embalaje, observaciones…" style="min-height:52px;font-size:12px;resize:vertical"></textarea>
+          <textarea id="fl-nota-${e.id}" class="fi" placeholder="Notas opcionales…" style="min-height:40px;font-size:12px;resize:vertical;margin-bottom:8px"></textarea>
+          <div id="slide-ll-${e.id}"></div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button id="qr-ll-btn-${e.id}" class="btn btn-s btn-sm" style="display:none" onclick="imprimirQRLlegada('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">📱 QR</button>
+            <button class="btn btn-s btn-sm" onclick="leerAlbaranOCR('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}',${e.bultos},${e.kilos})">📄 Albarán</button>
           </div>
-
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-g" style="flex:1;min-height:52px;font-size:15px" onclick="confirmarLlegadaFotos('${e.id}')">✅ Confirmar llegada</button>
-            <button id="qr-ll-btn-${e.id}" class="btn btn-s" style="display:none;min-height:48px;font-size:15px;padding:10px 16px" onclick="imprimirQRLlegada('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">📱 QR</button>
-            <button class="btn btn-s" style="min-height:48px;font-size:15px;padding:10px 16px" onclick="leerAlbaranOCR('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}',${e.bultos},${e.kilos})" title="Fotografiar albarán y verificar con IA">📄 Albarán</button>
-          </div>
-        </div>`).join('')}
-      </div>`).join('');
+        </div>`).join('');
+      const totalBtos = d.items.reduce((a,e)=>a+(e.bultos||0),0);
+      const subHtml = `ETA: ${d.eta?fd(d.eta):'—'} · <strong>${d.items.length}</strong> exp. · ${totalBtos} btos`;
+      return buqCard('ll-'+bid, 'var(--b50)', 'var(--b100)', 'var(--b700)', 'var(--b600)',
+        '🚢 '+d.nombre, subHtml, bodyHtml, sorted.length===1 || idx===0);
+    }).join('');
     (exps||[]).forEach(e=>{
       setupFotos('fl-fi-'+e.id,'fl-pv-'+e.id,null);
-      // Marcar estado inicial como "ok"
       window['_estLlegada'] = window['_estLlegada'] || {};
       window['_estLlegada'][e.id] = 'ok';
+      // Slide-to-confirm
+      const slideWrap = document.getElementById('slide-ll-'+e.id);
+      if(slideWrap){
+        const sl = crearSlideConfirm('Confirmar llegada', ()=>confirmarLlegadaFotos(e.id), 'green');
+        slideWrap.appendChild(sl);
+      }
+      // Lightbox en miniaturas
+      setTimeout(()=>_makeThumbsZoomable(document.getElementById('fl-pv-'+e.id)), 500);
     });
+    _actualizarBadges();
   } else if(currentFotosTab==='carga'){
     const {data:buques}=await sb.from('buques').select('id,nombre,eta_buque').or('estado_operacion.is.null,estado_operacion.neq.Finalizado').order('eta_buque',{ascending:true,nullsFirst:false});
     const {data:exps}=await sb.from('expediciones').select('*,buques(id,nombre,eta_buque)').eq('estado_carga','✅ AUTORIZADO');
     if(!exps||!exps.length){cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">🚛</div><div class="empty-txt">No hay expediciones autorizadas pendientes de carga</div></div>';return;}
     const byBuque={};(exps||[]).forEach(e=>{const bn=e.buques?.nombre||'Sin buque';const bid=e.buques?.id||'x';if(!byBuque[bid])byBuque[bid]={nombre:bn,eta:e.buques?.eta_buque,items:[]};byBuque[bid].items.push(e);});
-    cont.innerHTML=Object.entries(byBuque).map(([bid,d])=>{
+    const entries = Object.entries(byBuque);
+    cont.innerHTML=entries.map(([bid,d],idx)=>{
       const totalBultos=d.items.reduce((a,e)=>a+(e.bultos||0),0);
-      return`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
-        <div style="background:var(--gr50);border-bottom:1px solid #bbf7d0;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-          <div>
-            <div style="font-weight:700;color:var(--gr700)">🚢 ${d.nombre}</div>
-            <div style="font-size:11px;color:var(--gr600)">ETA: ${d.eta?fd(d.eta):'—'} · ${d.items.length} exp. · ${totalBultos} bultos totales</div>
-          </div>
-          <button onclick="abrirScannerCarga('${bid}','${(d.nombre||'').replace(/'/g,"\\'")}',${totalBultos})"
-            style="background:var(--b600);color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;min-height:52px">
-            📷 Escanear bultos
-          </button>
-        </div>
-        <div style="padding:16px">
-          <!-- Progreso de escaneo -->
+      const bodyHtml=`
+        <div style="padding:14px 16px">
           <div id="scan-prog-${bid}" style="margin-bottom:12px;display:none">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-              <span style="font-size:12px;font-weight:600;color:var(--g700)">Bultos escaneados</span>
-              <span id="scan-count-${bid}" style="font-size:13px;font-weight:800;color:var(--b600)">0 / ${totalBultos}</span>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <span style="font-size:13px;font-weight:600;color:var(--g700)">Bultos escaneados</span>
+              <span id="scan-count-${bid}" style="font-size:22px;font-weight:800;color:var(--b600);font-family:var(--mono)">0 / ${totalBultos}</span>
             </div>
-            <div style="background:var(--g100);border-radius:4px;height:8px;overflow:hidden">
-              <div id="scan-bar-${bid}" style="height:100%;background:var(--b500);width:0%;transition:width .3s"></div>
+            <div style="background:var(--g100);border-radius:6px;height:10px;overflow:hidden">
+              <div id="scan-bar-${bid}" style="height:100%;background:var(--b500);width:0%;transition:width .3s;border-radius:6px"></div>
             </div>
-            <div id="scan-detail-${bid}" style="margin-top:8px;font-size:11px;color:var(--g500)"></div>
+            <div id="scan-detail-${bid}" style="margin-top:6px;font-size:11px;color:var(--g500)"></div>
           </div>
-          <div class="fg2"><label class="fl2">Foto camión cargado <span style="color:var(--rd600);font-size:10px">requerida</span></label>
-            <div class="foto-area" onclick="document.getElementById('cg-fi-${bid}').click()">
-              <input type="file" id="cg-fi-${bid}" accept="image/*" multiple capture="environment" onchange="onCargaFoto('${bid}')">
-              <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del camión cargado</div>
+          <div class="fg2">
+            <label class="fl2">Foto camión cargado <span style="color:var(--rd600);font-size:10px">requerida</span></label>
+            <div class="foto-area" onclick="document.getElementById('cg-fi-${bid}').click()" style="padding:12px 16px">
+              <input type="file" id="cg-fi-${bid}" accept="image/*" capture="environment" multiple onchange="onCargaFoto('${bid}')">
+              <div style="font-size:22px;margin-bottom:2px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del camión cargado</div>
             </div>
             <div class="foto-prev" id="cg-pv-${bid}"></div>
           </div>
-          <button id="cg-btn-${bid}" class="btn btn-g btn-full" style="display:none" onclick="confirmarCargaBuque('${bid}')">✅ Confirmar carga — ${d.items.length} expediciones</button>
-          <div style="margin-top:12px;font-size:12px;color:var(--g500)">Expediciones: ${d.items.map(e=>`<span class="badge bb" style="margin:2px">${e.nº_expedicion} (${e.bultos||0}b)</span>`).join('')}</div>
-        </div>
-      </div>`;
+          <div id="slide-cg-${bid}" style="margin-top:10px;display:none"></div>
+          <button id="cg-btn-${bid}" class="btn btn-g btn-full" style="display:none;margin-top:10px" onclick="confirmarCargaBuque('${bid}')">✅ Confirmar carga — ${d.items.length} exp.</button>
+          <div style="margin-top:10px;font-size:12px;color:var(--g500)">${d.items.map(e=>`<span class="badge bb" style="margin:2px">${e.nº_expedicion} (${e.bultos||0}b)</span>`).join('')}</div>
+        </div>`;
+      const subHtml=`ETA: ${d.eta?fd(d.eta):'—'} · <strong>${d.items.length}</strong> exp. · ${totalBultos} btos`;
+      return buqCard('cg-'+bid,'var(--gr50)','#bbf7d0','var(--gr700)','var(--gr600)',
+        '🚢 '+d.nombre, subHtml,
+        `<div style="background:var(--gr50);border-bottom:1px solid #bbf7d0;padding:10px 16px;display:flex;justify-content:flex-end">
+          <button onclick="abrirScannerCarga('${bid}','${(d.nombre||'').replace(/'/g,"\\'")}',${totalBultos})"
+            style="background:var(--b600);color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:700;cursor:pointer;min-height:48px">
+            📷 Escanear bultos
+          </button>
+        </div>`+bodyHtml,
+        entries.length===1||idx===0);
     }).join('');
-    Object.keys(byBuque).forEach(bid=>setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null));
-    // Restaurar progreso de escaneo si había sesión activa
     Object.keys(byBuque).forEach(bid=>{
-      const prog = window._scanCargaProg?.[bid];
-      if(prog && prog.escaneados > 0) _actualizarProgresoCarga(bid, prog.escaneados, prog.total, prog.detalle||[]);
+      setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);
+      setTimeout(()=>_makeThumbsZoomable(document.getElementById('cg-pv-'+bid)),500);
+      // Slide-to-confirm oculto — se muestra cuando onCargaFoto activa el botón
+      const slideWrap=document.getElementById('slide-cg-'+bid);
+      if(slideWrap){
+        const sl=crearSlideConfirm('Confirmar carga',()=>confirmarCargaBuque(bid),'green');
+        slideWrap.appendChild(sl);
+      }
+      const prog=window._scanCargaProg?.[bid];
+      if(prog&&prog.escaneados>0)_actualizarProgresoCarga(bid,prog.escaneados,prog.total,prog.detalle||[]);
     });
+    _actualizarBadges();
   } else if(currentFotosTab==='embarque'){
     // Buques en proceso activos
     const {data:BALL}=await sb.from('buques').select('id,nombre,eta_buque,estado_operacion').order('eta_buque',{ascending:true,nullsFirst:false});
     const buques=(BALL||[]).filter(b=>b.estado_operacion!=='Finalizado');
     if(!buques.length){cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">🚢</div><div class="empty-txt">No hay buques activos</div></div>';return;}
-    cont.innerHTML=buques.map(b=>`
-      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
-        <div style="background:var(--b50);border-bottom:1px solid var(--b100);padding:12px 16px">
-          <div style="font-weight:700;color:var(--b700)">🚢 ${b.nombre}</div>
-          <div style="font-size:12px;color:var(--b600)">ETA: ${fd(b.eta_buque)||'—'}</div>
-        </div>
-        <div style="padding:16px">
-          <div class="fg2"><label class="fl2">Foto embarque <span style="color:var(--rd600);font-size:10px">requerida antes de confirmar</span></label>
-            <div class="foto-area" onclick="document.getElementById('embt-fi-${b.id}').click()">
-              <input type="file" id="embt-fi-${b.id}" accept="image/*" multiple capture="environment" onchange="onEmbTabFoto('${b.id}')">
-              <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del buque embarcado</div>
+    cont.innerHTML=buques.map((b,idx)=>{
+      const bodyHtml=`
+        <div style="padding:14px 16px">
+          <div class="fg2">
+            <label class="fl2">Foto embarque <span style="color:var(--rd600);font-size:10px">requerida antes de confirmar</span></label>
+            <div class="foto-area" onclick="document.getElementById('embt-fi-${b.id}').click()" style="padding:12px 16px">
+              <input type="file" id="embt-fi-${b.id}" accept="image/*" capture="environment" multiple onchange="onEmbTabFoto('${b.id}')">
+              <div style="font-size:22px;margin-bottom:2px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del buque embarcado</div>
             </div>
             <div class="foto-prev" id="embt-pv-${b.id}"></div>
           </div>
-          <button id="embt-btn-${b.id}" class="btn btn-g btn-full" style="display:none" onclick="confirmarEmbarqueTab('${b.id}')">✅ Confirmar embarque — cambiar estado a EMBARCADO</button>
-        </div>
-      </div>`).join('');
-    buques.forEach(b=>setupFotos('embt-fi-'+b.id,'embt-pv-'+b.id,null));
+          <div id="slide-emb-${b.id}" style="margin-top:10px;display:none"></div>
+          <button id="embt-btn-${b.id}" class="btn btn-g btn-full" style="display:none;margin-top:8px" onclick="confirmarEmbarqueTab('${b.id}')">✅ Confirmar embarque</button>
+        </div>`;
+      return buqCard('emb-'+b.id,'var(--b50)','var(--b100)','var(--b700)','var(--b600)',
+        '🚢 '+b.nombre,'ETA: '+(fd(b.eta_buque)||'—'),bodyHtml,buques.length===1||idx===0);
+    }).join('');
+    buques.forEach(b=>{
+      setupFotos('embt-fi-'+b.id,'embt-pv-'+b.id,null);
+      setTimeout(()=>_makeThumbsZoomable(document.getElementById('embt-pv-'+b.id)),500);
+      const slideWrap=document.getElementById('slide-emb-'+b.id);
+      if(slideWrap){
+        const sl=crearSlideConfirm('Confirmar embarque',()=>confirmarEmbarqueTab(b.id),'blue');
+        slideWrap.appendChild(sl);
+      }
+    });
+    _actualizarBadges();
   } else if(currentFotosTab==='landed'){
     // Landed: buques en proceso — foto + confirmar → marca expediciones del buque como Landed
     const {data:BALL}=await sb.from('buques').select('id,nombre,eta_buque,estado_operacion').order('eta_buque',{ascending:true,nullsFirst:false});
@@ -7989,30 +8043,41 @@ async function loadAlmFotos(tab){
       cont.innerHTML = headerHtml + '<div class="empty" style="padding:40px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay expediciones Landed previstas pendientes de recoger</div></div>';
       return;
     }
-    cont.innerHTML = headerHtml + buquesConLanded.map(b=>{
+    cont.innerHTML = headerHtml + buquesConLanded.map((b,idx)=>{
       const bLanded=landedByBuque[b.id]||[];
-      return`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
-        <div style="background:var(--am50);border-bottom:1px solid #fde68a;padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
-          <div style="font-weight:700;color:var(--g900)">🚢 ${b.nombre}</div>
-          <div style="font-size:12px;color:var(--am600)">⚓ ${bLanded.length} exp. Landed</div>
-        </div>
-        <div style="padding:16px">
-          <div style="margin-bottom:12px">
+      const bodyHtml=`
+        <div style="padding:14px 16px">
+          <div style="margin-bottom:10px">
             <div style="font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Mercancía a recoger del barco:</div>
-            ${bLanded.map(e=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--g100);font-size:12px"><span style="font-weight:700;font-family:var(--mono)">${e.nº_expedicion}</span><span style="color:var(--g500)">${e.bultos||'—'} btos · ${e.kilos||'—'} kg</span>${e.foto_llegada_url?'<span title="Tiene foto" style="font-size:11px">📸</span>':''}</div>`).join('')}
+            ${bLanded.map(e=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--g100);font-size:12px">
+              <span style="font-weight:700;font-family:var(--mono)">${e.nº_expedicion}</span>
+              <span style="color:var(--g500)">${e.bultos||'—'} btos · ${e.kilos||'—'} kg</span>
+              ${e.foto_llegada_url?'<span style="font-size:11px">📸</span>':''}
+            </div>`).join('')}
           </div>
-          <div class="fg2"><label class="fl2">Foto de recogida en muelle</label>
-            <div class="foto-area" onclick="document.getElementById('lnd-fi-${b.id}').click()">
-              <input type="file" id="lnd-fi-${b.id}" accept="image/*" multiple capture="environment" onchange="onLandedBuqueFoto('${b.id}')">
-              <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto opcional de la mercancía en muelle</div>
+          <div class="fg2">
+            <label class="fl2">Foto de recogida en muelle</label>
+            <div class="foto-area" onclick="document.getElementById('lnd-fi-${b.id}').click()" style="padding:12px 16px">
+              <input type="file" id="lnd-fi-${b.id}" accept="image/*" capture="environment" multiple onchange="onLandedBuqueFoto('${b.id}')">
+              <div style="font-size:22px;margin-bottom:2px">📸</div><div style="font-size:12px;color:var(--g600)">Foto opcional en muelle</div>
             </div>
             <div class="foto-prev" id="lnd-pv-${b.id}"></div>
           </div>
-          <button id="lnd-btn-${b.id}" class="btn btn-g btn-full" style="margin-top:8px" onclick="confirmarLandedBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">⚓ Confirmar recogida Landed — ${b.nombre}</button>
-        </div>
-      </div>`;
+          <div id="slide-lnd-${b.id}" style="margin-top:10px"></div>
+        </div>`;
+      return buqCard('lnd-'+b.id,'var(--am50)','#fde68a','var(--g900)','var(--am600)',
+        '🚢 '+b.nombre,'⚓ '+bLanded.length+' exp. Landed',bodyHtml,buquesConLanded.length===1||idx===0);
     }).join('');
-    buquesConLanded.forEach(b=>setupFotos('lnd-fi-'+b.id,'lnd-pv-'+b.id,null));
+    buquesConLanded.forEach(b=>{
+      setupFotos('lnd-fi-'+b.id,'lnd-pv-'+b.id,null);
+      setTimeout(()=>_makeThumbsZoomable(document.getElementById('lnd-pv-'+b.id)),500);
+      const slideWrap=document.getElementById('slide-lnd-'+b.id);
+      if(slideWrap){
+        const sl=crearSlideConfirm('Confirmar recogida Landed',()=>confirmarLandedBuque(b.id,(b.nombre||'').replace(/'/g,"\\'")), 'amber');
+        slideWrap.appendChild(sl);
+      }
+    });
+    _actualizarBadges();
   }
 }
 
@@ -8457,7 +8522,7 @@ async function guardarIncidenciaLlegada(){
   showToast('⚠️ Incidencia creada');
   closeModal();
 }
-function onCargaFoto(bid){const f=document.getElementById('cg-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='';setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);}}
+function onCargaFoto(bid){const f=document.getElementById('cg-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='';const slide=document.getElementById('slide-cg-'+bid);if(slide)slide.style.display='';setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);setTimeout(()=>_makeThumbsZoomable(document.getElementById('cg-pv-'+bid)),500);}}
 async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
   if(!await confirmarAccion('¿Confirmar carga en camión para TODAS las expediciones autorizadas de este buque?'))return;
   const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO');
@@ -8481,7 +8546,7 @@ async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin
   showToast('✅ Carga confirmada — '+data.length+' expediciones'+( fotoUrl?' 📸':''));
   await loadAlmFotos('carga');
 }
-function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);}}
+function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';const slide=document.getElementById('slide-emb-'+bid);if(slide)slide.style.display='';setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);setTimeout(()=>_makeThumbsZoomable(document.getElementById('embt-pv-'+bid)),500);}}
 
 async function loadFactBadge(){
   try {
@@ -8821,7 +8886,7 @@ async function enviarEmailEmbarqueCliente(buqueId, fotoUrl){
   }
 }
 function onLandedFoto(){const f=document.getElementById('lnd-fi')?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn');if(btn)btn.style.display='';setupFotos('lnd-fi','lnd-pv',null);}}
-function onLandedBuqueFoto(bid){const f=document.getElementById('lnd-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn-'+bid);if(btn)btn.style.display='';setupFotos('lnd-fi-'+bid,'lnd-pv-'+bid,null);}}
+function onLandedBuqueFoto(bid){const f=document.getElementById('lnd-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn-'+bid);if(btn)btn.style.display='';setupFotos('lnd-fi-'+bid,'lnd-pv-'+bid,null);setTimeout(()=>_makeThumbsZoomable(document.getElementById('lnd-pv-'+bid)),500);}}
 async function confirmarLanded(){
   const id=document.getElementById('lnd-exp')?.value;if(!id){alert('Selecciona una expedición');return;}
   await sb.from('expediciones').update({ubicacion:'Landed'}).eq('id',id);
@@ -12174,13 +12239,12 @@ async function impExpAlb(expId){
 
 // ── QR en llegadas — aparece al añadir foto ───────────────────────
 function onFotoLlegadaCambiada(expId, input){
-  // Delegar al setupFotos normal (que ya está configurado)
-  // y además mostrar/ocultar el botón QR según haya foto
   const prev = document.getElementById('fl-pv-'+expId);
   const files = Array.from(input.files||[]);
   if(prev) { prev._files = [...files]; renderFotoPreview(prev, files); }
   const qrBtn = document.getElementById('qr-ll-btn-'+expId);
   if(qrBtn) qrBtn.style.display = files.length ? '' : 'none';
+  setTimeout(()=>_makeThumbsZoomable(document.getElementById('fl-pv-'+expId)), 400);
 }
 
 async function imprimirQRLlegada(expId, ref){
@@ -13532,6 +13596,156 @@ async function confirmarCargaManual(expId, ref){
 
 // ── Exponer todas las funciones al ámbito global (window) ──
 // Esto es necesario porque los onclick del HTML las buscan en window
+
+// ══════════════════════════════════════════════════════════════
+// MEJORAS MÓVIL — bloque de funciones
+// ══════════════════════════════════════════════════════════════
+
+// ── 1. Colapso de tarjetas por buque ─────────────────────────
+// Genera la cabecera colapsable y el contenedor del cuerpo
+function buqCard(id, bgHdr, borderHdr, titleColor, subColor, titleHtml, subHtml, bodyHtml, startOpen){
+  const open = startOpen !== false; // por defecto abierto si solo hay 1, cerrado si hay varios
+  const maxH = open ? '9999px' : '0';
+  const rot   = open ? 'rotate(180deg)' : '';
+  return `
+    <div class="buq-card" id="buqcard-${id}">
+      <div class="buq-hdr" style="background:${bgHdr};border-bottom:1px solid ${borderHdr}" onclick="_toggleBuqCard('${id}')">
+        <div class="buq-hdr-left">
+          <div class="buq-hdr-title" style="color:${titleColor}">${titleHtml}</div>
+          <div class="buq-hdr-sub" style="color:${subColor}">${subHtml}</div>
+        </div>
+        <div class="buq-hdr-right">
+          <div class="buq-chevron" id="buqchev-${id}" style="transform:${rot}">▼</div>
+        </div>
+      </div>
+      <div class="buq-body ${open?'':'collapsed'}" id="buqbody-${id}" style="max-height:${maxH}">
+        ${bodyHtml}
+      </div>
+    </div>`;
+}
+
+function _toggleBuqCard(id){
+  const body = document.getElementById('buqbody-'+id);
+  const chev = document.getElementById('buqchev-'+id);
+  if(!body) return;
+  const isOpen = !body.classList.contains('collapsed');
+  if(isOpen){
+    body.style.maxHeight = body.scrollHeight+'px';
+    requestAnimationFrame(()=>{ body.style.maxHeight='0'; body.classList.add('collapsed'); });
+    if(chev) chev.style.transform='';
+  } else {
+    body.classList.remove('collapsed');
+    body.style.maxHeight = '9999px';
+    if(chev) chev.style.transform='rotate(180deg)';
+  }
+  if(navigator.vibrate) navigator.vibrate(6);
+}
+
+// ── 2. Badges de conteo en barra inferior ────────────────────
+function _setBadge(btnId, count){
+  const btn = document.getElementById(btnId);
+  if(!btn) return;
+  btn.style.position = 'relative';
+  let badge = btn.querySelector('.mob-tab-badge');
+  if(count > 0){
+    if(!badge){ badge = document.createElement('div'); badge.className='mob-tab-badge'; btn.appendChild(badge); }
+    badge.textContent = count > 99 ? '99+' : count;
+  } else {
+    if(badge) badge.remove();
+  }
+}
+
+async function _actualizarBadges(){
+  try{
+    const [{data:llegadas},{data:carga},{data:landed}] = await Promise.all([
+      sb.from('expediciones').select('id',{count:'exact',head:true}).in('ubicacion',['Pendiente recibir']),
+      sb.from('expediciones').select('id',{count:'exact',head:true}).eq('estado_carga','✅ AUTORIZADO'),
+      sb.from('expediciones').select('id',{count:'exact',head:true}).eq('ubicacion','Landed').eq('estado_semaforo','⏳ EN TRÁNSITO')
+    ]);
+    _setBadge('mab-llegadas', llegadas?.length||0);
+    _setBadge('mab-carga',    carga?.length||0);
+    _setBadge('mab-landed',   landed?.length||0);
+  }catch(e){}
+}
+
+// ── 3. Lightbox de fotos ──────────────────────────────────────
+function abrirLightbox(src){
+  const lb = document.getElementById('lightbox');
+  const img = document.getElementById('lightbox-img');
+  if(!lb||!img) return;
+  img.src = src;
+  lb.classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function cerrarLightbox(){
+  const lb = document.getElementById('lightbox');
+  if(lb) lb.classList.remove('open');
+  document.body.style.overflow='';
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarLightbox(); });
+// Cerrar lightbox al tocar fuera de la imagen
+document.getElementById('lightbox')?.addEventListener('click', function(e){
+  if(e.target === this) cerrarLightbox();
+});
+
+// Hacer miniaturas ampliables — se llama después de renderizar fotos
+function _makeThumbsZoomable(container){
+  if(!container) return;
+  container.querySelectorAll('.foto-thumb img, .foto-prev img').forEach(img=>{
+    if(img.dataset.lightboxOk) return;
+    img.dataset.lightboxOk='1';
+    img.style.cursor='zoom-in';
+    img.addEventListener('click', e=>{ e.stopPropagation(); abrirLightbox(img.src); });
+  });
+}
+
+// ── 4. Slide-to-confirm ───────────────────────────────────────
+function crearSlideConfirm(texto, onConfirm, color){
+  const bgColor  = color==='green' ? 'var(--gr50)'  : color==='blue' ? 'var(--b50)'  : 'var(--am50)';
+  const bdColor  = color==='green' ? '#bbf7d0'       : color==='blue' ? 'var(--b100)' : '#fde68a';
+  const txtColor = color==='green' ? 'var(--gr600)'  : color==='blue' ? 'var(--b600)' : 'var(--am600)';
+  const tmbColor = color==='green' ? 'var(--gr600)'  : color==='blue' ? 'var(--b600)' : 'var(--am600)';
+  const wrap = document.createElement('div');
+  wrap.className = 'slide-confirm-wrap';
+  wrap.style.cssText = `background:${bgColor};border-color:${bdColor}`;
+  wrap.innerHTML = `
+    <div class="slide-confirm-track" style="color:${txtColor}">⟵ desliza para confirmar ⟶</div>
+    <div class="slide-confirm-thumb" style="background:${tmbColor}">✅</div>`;
+  const thumb = wrap.querySelector('.slide-confirm-thumb');
+  let startX=0, curX=0, dragging=false, maxX=0;
+  const getMax = ()=> wrap.offsetWidth - thumb.offsetWidth - 8;
+  thumb.addEventListener('touchstart', e=>{
+    dragging=true; startX=e.touches[0].clientX; curX=parseFloat(thumb.style.left)||4; maxX=getMax();
+    thumb.style.transition='none'; e.preventDefault();
+  },{passive:false});
+  thumb.addEventListener('touchmove', e=>{
+    if(!dragging) return;
+    const dx = e.touches[0].clientX - startX;
+    const nx = Math.max(4, Math.min(curX+dx, maxX));
+    thumb.style.left = nx+'px';
+    wrap.querySelector('.slide-confirm-track').style.opacity = 1-(nx-4)/(maxX-4)*0.6;
+    e.preventDefault();
+  },{passive:false});
+  thumb.addEventListener('touchend', ()=>{
+    dragging=false;
+    thumb.style.transition='left .2s cubic-bezier(.4,0,.2,1)';
+    const nx = parseFloat(thumb.style.left)||4;
+    if(nx >= maxX*0.75){
+      wrap.classList.add('done');
+      thumb.style.left = maxX+'px';
+      if(navigator.vibrate) navigator.vibrate([80,40,160]);
+      setTimeout(onConfirm, 300);
+    } else {
+      thumb.style.left='4px';
+      wrap.querySelector('.slide-confirm-track').style.opacity='1';
+    }
+  });
+  return wrap;
+}
+
+// ── Hook: actualizar badges al cargar cada tab ────────────────
+const _origLoadAlmFotos = loadAlmFotos;
+// Se sobreescribe abajo tras definir loadAlmFotos — ver patch en loadAlmFotos
 
 // Restaurar sesión si venimos de otro módulo (airport_cargo, etc.)
 checkSession();
