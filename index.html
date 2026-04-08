@@ -4437,12 +4437,13 @@ async function getORKey(){
 }
 
 // Obtiene la API key de Anthropic desde als_config
+// Busca en: anthropic_api_key → gemini_api_key (renombrado históricamente)
 async function getAnthropicKey(){
   let k = localStorage.getItem('als_anthropic_key');
   if(k) return k;
   try {
     const r = await fetch(
-      'https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=eq.anthropic_api_key&select=valor',
+      'https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=in.(anthropic_api_key,gemini_api_key)&select=clave,valor',
       { headers:{
           apikey:'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1',
           Authorization:'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'
@@ -4450,10 +4451,14 @@ async function getAnthropicKey(){
       }
     );
     const d = await r.json();
-    if(d?.[0]?.valor){
-      k = d[0].valor;
-      try{ localStorage.setItem('als_anthropic_key', k); }catch(e){}
-      return k;
+    if(d && d.length){
+      // Preferir anthropic_api_key si existe, si no usar gemini_api_key
+      const row = d.find(x=>x.clave==='anthropic_api_key') || d.find(x=>x.clave==='gemini_api_key');
+      k = row?.valor;
+      if(k){
+        try{ localStorage.setItem('als_anthropic_key', k); }catch(e){}
+        return k;
+      }
     }
   } catch(e){ console.warn('getAnthropicKey error:', e.message); }
   return null;
