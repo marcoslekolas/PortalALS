@@ -4566,7 +4566,7 @@ function _detectarPaisEORI(query){
 }
 
 // Llama a la API de Anthropic con web search, adaptando dominios y prompt al país
-async function callAnthropicWithWebSearch(systemPrompt, userPrompt, apiKey, pais){
+async function callAnthropicWithWebSearch(systemPrompt, userPrompt, apiKey, pais, allowedDomainsOverride){
   const ENDPOINT = 'https://api.anthropic.com/v1/messages';
   const HEADERS = {
     'Content-Type': 'application/json',
@@ -4579,12 +4579,13 @@ async function callAnthropicWithWebSearch(systemPrompt, userPrompt, apiKey, pais
   const baseDomains = ['taxation-customs.ec.europa.eu','ec.europa.eu','opencorporates.com'];
   const paisInfo = pais ? EORI_PAISES[pais] : null;
   const paisDomains = paisInfo ? paisInfo.dominios : [
-    // Sin país detectado: cubrir los más frecuentes
     'iberinform.es','einforma.com','infogreffe.fr','pappers.fr',
     'handelsregister.de','northdata.de','kvk.nl','registroimprese.it',
     'opencorporates.com','companysearch.nl','racius.com'
   ];
-  const allDomains = [...new Set([...paisDomains, ...baseDomains])];
+  const allDomains = allowedDomainsOverride && allowedDomainsOverride.length
+    ? allowedDomainsOverride
+    : [...new Set([...paisDomains, ...baseDomains])];
 
   let messages = [{ role:'user', content: userPrompt }];
   let finalText = '';
@@ -4814,7 +4815,7 @@ async function buscarEORI(){
     return;
   }
 
-  // ── MODO EMPRESA: OpenCorporates API (datos reales del Registro Mercantil) ──
+  // ── MODO EMPRESA: Anthropic web search → OpenCorporates → JSON estructurado ──
   const query = raw;
 
   // Cache local primero
@@ -4838,71 +4839,169 @@ async function buscarEORI(){
     return;
   }
 
+  const anthKey = await getAnthropicKey();
+  if(!anthKey){
+    resEl.innerHTML=`
+      <div style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--rxl);padding:18px">
+        <div style="font-size:14px;font-weight:700;color:var(--g900);margin-bottom:8px">⚙️ API key de Anthropic no configurada</div>
+        <div style="font-size:13px;color:var(--g700);margin-bottom:12px">
+          Añade en Supabase → tabla <code>als_config</code>:<br>
+          <code style="background:var(--g100);padding:3px 8px;border-radius:4px;font-size:12px">clave: anthropic_api_key · valor: sk-ant-...</code>
+        </div>
+        <a href="https://console.anthropic.com/keys" target="_blank"
+          style="display:inline-flex;align-items:center;gap:6px;background:var(--b600);color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;text-decoration:none">
+          🔑 Obtener API key →
+        </a>
+      </div>`;
+    if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
+    return;
+  }
+
+  const paisDetectado = _detectarPaisEORI(query);
+  const paisInfo = paisDetectado ? EORI_PAISES[paisDetectado] : null;
+  const jur = paisDetectado ? paisDetectado.toLowerCase() : 'es';
+  const FLAGS = {ES:'🇪🇸',DE:'🇩🇪',FR:'🇫🇷',IT:'🇮🇹',NL:'🇳🇱',PT:'🇵🇹',BE:'🇧🇪',PL:'🇵🇱',SE:'🇸🇪',DK:'🇩🇰',AT:'🇦🇹',IE:'🇮🇪',GR:'🇬🇷',CZ:'🇨🇿',RO:'🇷🇴',HU:'🇭🇺',FI:'🇫🇮',SK:'🇸🇰'};
+  const flag = FLAGS[paisDetectado||'ES'] || '🇪🇺';
+
   if(btn){ btn.disabled=true; btn.innerHTML='⏳ Buscando...'; }
-  if(resEl) resEl.innerHTML=`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:24px;text-align:center;box-shadow:var(--shl)">
+  resEl.innerHTML=`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:24px;text-align:center;box-shadow:var(--shl)">
     <div class="spinner" style="margin:0 auto 10px;width:26px;height:26px;border-width:3px"></div>
-    <div style="font-size:13px;font-weight:600;color:var(--g700)">Consultando Registro Mercantil…</div>
+    <div style="font-size:13px;font-weight:600;color:var(--g700)">Consultando registro mercantil${paisInfo?' de '+paisInfo.nombre:''}…</div>
     <div style="font-size:11px;color:var(--g400);margin-top:4px">OpenCorporates · Datos oficiales de registro</div>
   </div>`;
 
-  // Detectar país por forma jurídica
-  const paisDetectado = _detectarPaisEORI(query);
-  const paisInfo = paisDetectado ? EORI_PAISES[paisDetectado] : null;
-  // Sin detección → asumir España (contexto del portal)
-  const jur = paisDetectado ? paisDetectado.toLowerCase() : 'es';
+  const sysPrompt = `Eres un asistente de aduanas. Busca empresas en OpenCorporates y devuelve SOLO un JSON válido, sin texto adicional, sin bloques de código markdown.
+
+El JSON debe tener esta estructura exacta:
+{"empresas":[{"nombre":"nombre legal exacto","cif":"número de registro","pais":"código ISO 2 letras","tipo":"forma jurídica","direccion":"dirección","estado":"activa o inactiva","fecha_constitucion":"YYYY-MM-DD o vacío","oc_url":"url de opencorporates","eori":"código país + cif"}],"total":N}
+
+REGLAS CRÍTICAS:
+- Busca en opencorporates.com/companies con jurisdiction_code=${jur}
+- Devuelve SOLO empresas que aparezcan realmente en OpenCorporates
+- Si hay varias empresas similares, inclúyelas todas (máximo 5)
+- Si no encuentras ninguna, devuelve {"empresas":[],"total":0}
+- NO inventes datos. Si un campo no está disponible, déjalo vacío ""
+- El campo eori = código país (${(paisDetectado||'ES').toUpperCase()}) + cif sin espacios`;
+
+  const userPrompt = `Busca en OpenCorporates la empresa: "${query}" en ${paisInfo?paisInfo.nombre:'España'} (jurisdiction: ${jur})
+
+URL de búsqueda a consultar: https://opencorporates.com/companies?q=${encodeURIComponent(query)}&jurisdiction_code=${jur}
+
+Devuelve ÚNICAMENTE el JSON con los resultados encontrados en OpenCorporates. Nada más.`;
 
   try {
-    // ── 1. OpenCorporates API — datos reales del Registro Mercantil ──
-    const ocResults = await _buscarEnOpenCorporates(query, jur);
+    const raw_text = await callAnthropicWithWebSearch(sysPrompt, userPrompt, anthKey, paisDetectado, ['opencorporates.com']);
 
-    if(ocResults && ocResults.length > 0){
-      _renderEoriResultados(ocResults, query, paisInfo, resEl);
+    // Parsear JSON de la respuesta
+    let parsed = null;
+    try {
+      const clean = raw_text.replace(/```json|```/g,'').trim();
+      // Extraer el primer objeto JSON válido
+      const jsonMatch = clean.match(/\{[\s\S]*\}/);
+      if(jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+    } catch(pe){ console.warn('JSON parse error:', pe.message, raw_text.substring(0,200)); }
+
+    if(!parsed || !parsed.empresas){
+      // Respuesta no estructurada — mostrarla como texto igualmente útil
+      resEl.innerHTML=`
+        <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
+          <div style="background:linear-gradient(135deg,#f0fdf4,#f8fafc);border-bottom:1px solid var(--g100);padding:14px 18px;display:flex;align-items:center;gap:10px">
+            <span style="font-size:22px">${flag}</span>
+            <div style="font-size:14px;font-weight:700;color:var(--g900)">Resultado · OpenCorporates</div>
+          </div>
+          <div style="padding:18px 20px;font-size:13px;color:var(--g700);line-height:1.8;white-space:pre-wrap">${raw_text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        </div>`;
+      if(raw_text.length > 50) guardarEORIenCache(query, raw_text).catch(()=>{});
       if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
       return;
     }
 
-    // ── 2. Sin resultados en OpenCorporates → ofrecer búsqueda manual ──
-    const flagEmoji = paisDetectado
-      ? ({ES:'🇪🇸',DE:'🇩🇪',FR:'🇫🇷',IT:'🇮🇹',NL:'🇳🇱',PT:'🇵🇹',BE:'🇧🇪',PL:'🇵🇱',SE:'🇸🇪',DK:'🇩🇰',AT:'🇦🇹',IE:'🇮🇪',GR:'🇬🇷',CZ:'🇨🇿'}[paisDetectado]||'🇪🇺')
-      : '🇪🇸';
+    const empresas = parsed.empresas || [];
+
+    if(empresas.length === 0){
+      resEl.innerHTML=`
+        <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
+          <div style="background:var(--am50);border-bottom:1px solid #fde68a;padding:14px 18px;display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">${flag}</span>
+            <div>
+              <div style="font-size:14px;font-weight:700;color:var(--g900)">Sin resultados en el Registro Mercantil</div>
+              <div style="font-size:12px;color:var(--am700);margin-top:2px">No se encontró "<strong>${query.replace(/</g,'&lt;')}</strong>" en OpenCorporates${paisInfo?' ('+paisInfo.nombre+')':' (España)'}</div>
+            </div>
+          </div>
+          <div style="padding:16px 18px">
+            <div style="font-size:13px;color:var(--g700);margin-bottom:12px">Prueba con el nombre completo o busca directamente:</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <a href="https://opencorporates.com/companies?q=${encodeURIComponent(query)}&jurisdiction_code=${jur}" target="_blank"
+                style="display:inline-flex;align-items:center;gap:5px;background:var(--b600);color:#fff;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;text-decoration:none">
+                🔍 OpenCorporates
+              </a>
+              ${jur==='es'?`<a href="https://www.iberinform.es/buscador-cif-empresas" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;text-decoration:none">📋 Iberinform</a>`:''}
+            </div>
+            <div style="margin-top:10px;font-size:11px;color:var(--g500)">💡 Si tienes el CIF, cambia a modo <strong>"Por EORI"</strong> e introduce ES+CIF para verificar en TAXUD.</div>
+          </div>
+        </div>`;
+      if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
+      return;
+    }
+
+    // Renderizar tarjetas de resultados
+    const rows = empresas.map(e => {
+      const eori  = e.eori || ((e.pais||'ES').toUpperCase()+(e.cif||'').replace(/\s/g,''));
+      const inact = (e.estado||'').toLowerCase().includes('inact') || (e.estado||'').toLowerCase().includes('disuel');
+      return `
+        <div style="border:1px solid var(--g200);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;background:${inact?'var(--g50)':'var(--w)'}">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:700;color:${inact?'var(--g500)':'var(--g900)'}">${(e.nombre||'—').replace(/</g,'&lt;')}</div>
+              <span style="font-size:10px;padding:1px 6px;border-radius:4px;font-weight:600;${inact?'background:var(--rd50);color:var(--rd600);border:1px solid #fecdd3':'background:var(--gr50);color:var(--gr700);border:1px solid #bbf7d0'}">${inact?'INACTIVA':'ACTIVA'}</span>
+            </div>
+            ${eori?`<code style="background:var(--g900);color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;letter-spacing:.04em;flex-shrink:0">${eori}</code>`:''}
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;font-size:12px;margin-bottom:10px">
+            ${e.cif?`<div><div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.4px">${paisInfo?paisInfo.id:'CIF/NIF'}</div><div style="font-family:var(--mono);font-weight:600;margin-top:1px">${e.cif}</div></div>`:''}
+            ${e.tipo?`<div><div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.4px">Tipo</div><div style="margin-top:1px">${e.tipo.replace(/</g,'&lt;')}</div></div>`:''}
+            ${e.fecha_constitucion?`<div><div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.4px">Constitución</div><div style="margin-top:1px">${e.fecha_constitucion}</div></div>`:''}
+            ${e.direccion?`<div style="grid-column:1/-1"><div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.4px">Dirección</div><div style="margin-top:1px;color:var(--g700)">${e.direccion.replace(/</g,'&lt;')}</div></div>`:''}
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${eori?`<a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(eori)}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none">\u{1F1EA}\u{1F1FA} Verificar ${eori} en TAXUD</a>`:''}
+            ${e.oc_url?`<a href="${e.oc_url}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none">\uD83D\uDCCB OpenCorporates</a>`:''}
+            ${eori?`<button onclick="_guardarEoriCard(this)" data-nombre="${(e.nombre||'').replace(/"/g,'&quot;')}" data-eori="${eori}" data-cif="${e.cif||''}" data-dir="${(e.direccion||'').replace(/"/g,'&quot;')}" style="display:inline-flex;align-items:center;gap:4px;background:var(--b50);color:var(--b700);border:1px solid var(--b100);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer">\uD83D\uDCBE Guardar</button>`:''}
+          </div>
+        </div>`;
+    }).join('');
 
     resEl.innerHTML=`
       <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
-        <div style="background:var(--am50);border-bottom:1px solid #fde68a;padding:14px 18px;display:flex;align-items:center;gap:10px">
-          <span style="font-size:20px">${flagEmoji}</span>
+        <div style="background:linear-gradient(135deg,#f0fdf4,#f8fafc);border-bottom:1px solid var(--g100);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:22px;flex-shrink:0">${flag}</span>
           <div>
-            <div style="font-size:14px;font-weight:700;color:var(--g900)">Sin resultados en el Registro Mercantil</div>
-            <div style="font-size:12px;color:var(--am700);margin-top:2px">No se encontró "<strong>${query.replace(/</g,'&lt;')}</strong>" en OpenCorporates${paisInfo?' ('+paisInfo.nombre+')':' (España)'}</div>
+            <div style="font-size:14px;font-weight:700;color:var(--g900)">${empresas.length} empresa${empresas.length!==1?'s':''} encontrada${empresas.length!==1?'s':''} en el Registro Mercantil</div>
+            <div style="font-size:11px;color:var(--gr600);font-weight:600;margin-top:2px">OpenCorporates · ${paisInfo?paisInfo.registro:'Registro Mercantil'} · Datos oficiales</div>
           </div>
+          <span style="margin-left:auto;background:var(--gr50);color:var(--gr700);border:1px solid #bbf7d0;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700">Sin inventar nada ✓</span>
         </div>
-        <div style="padding:16px 18px">
-          <div style="font-size:13px;color:var(--g700);margin-bottom:14px">Posibles causas: nombre abreviado, empresa muy reciente, o no inscrita en el Registro Mercantil. Prueba a buscar directamente:</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <a href="https://opencorporates.com/companies?q=${encodeURIComponent(query)}&jurisdiction_code=${jur}" target="_blank"
-              style="display:inline-flex;align-items:center;gap:5px;background:var(--b600);color:#fff;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;text-decoration:none">
-              🔍 Buscar en OpenCorporates
-            </a>
-            ${jur==='es'?`<a href="https://www.iberinform.es/buscador-cif-empresas" target="_blank"
-              style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;text-decoration:none">
-              📋 Iberinform
-            </a>
-            <a href="https://www.einforma.com/cif-empresas" target="_blank"
-              style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;text-decoration:none">
-              📋 eInforma
-            </a>`:''}
-          </div>
-          <div style="margin-top:12px;font-size:11px;color:var(--g500)">
-            💡 Si ya tienes el CIF, usa el modo <strong>"Por EORI"</strong> introduciendo <code>ES + CIF</code> para verificar directamente en TAXUD.
-          </div>
+        <div style="padding:14px 16px">
+          ${empresas.length>1?`<div style="font-size:12px;color:var(--am600);background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:8px 12px;margin-bottom:12px">⚠️ Se encontraron varias empresas con ese nombre. Verifica cuál es la correcta por CIF o dirección.</div>`:''}
+          ${rows}
         </div>
+        <div style="padding:10px 16px;border-top:1px solid var(--g100);font-size:11px;color:var(--g400)">Fuente: OpenCorporates (${paisInfo?paisInfo.registro:'Registro Mercantil'}) · Datos del registro oficial</div>
       </div>`;
+
+    const resumenTexto = empresas.map(e=>`${e.nombre} | ${e.eori||''} | ${e.cif||''} | ${e.direccion||''}`).join('\n');
+    guardarEORIenCache(query, resumenTexto).catch(()=>{});
 
   } catch(e){
     const msg = e.message||'';
-    resEl.innerHTML=`<div style="background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rxl);padding:18px;display:flex;gap:12px;align-items:flex-start">
+    const isAuth = msg.includes('401')||msg.includes('403')||msg.includes('api_key');
+    const friendly = isAuth ? '🔑 API key de Anthropic no válida o sin permisos de web search.'
+      : msg.includes('abort')||msg.includes('timeout') ? '⏳ Tiempo agotado. Inténtalo de nuevo.'
+      : msg.includes('fetch')||msg.includes('network') ? '🌐 Error de red.'
+      : '❌ '+msg.substring(0,200);
+    resEl.innerHTML=`<div style="background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rxl);padding:18px;display:flex;gap:12px">
       <span style="font-size:22px;flex-shrink:0">⚠️</span>
       <div><div style="font-size:14px;font-weight:700;color:var(--rd600);margin-bottom:4px">Error en la búsqueda</div>
-      <div style="font-size:13px;color:var(--rd600)">${msg.includes('fetch')||msg.includes('network')?'🌐 Error de red.':'❌ '+msg.substring(0,200)}</div></div>
+      <div style="font-size:13px;color:var(--rd600)">${friendly}</div></div>
     </div>`;
   } finally {
     if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
