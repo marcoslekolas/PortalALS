@@ -612,6 +612,31 @@ textarea.fi{resize:vertical;min-height:72px}
   .nav-item{padding:11px 12px}
   .tbl td,.tbl th{padding:10px 10px}
   .modal{max-width:100%;margin:0;border-radius:var(--rl) var(--rl) 0 0;padding-bottom:var(--safe-bot)}
+  /* Modal full-screen en móvil */
+  .mo{align-items:flex-end;padding:0}
+  #mbox{
+    height:calc(100dvh - 48px);
+    max-height:calc(100dvh - 48px);
+    border-radius:20px 20px 0 0;
+    display:flex;
+    flex-direction:column;
+  }
+  #mbox .mh{
+    position:sticky;top:0;z-index:2;
+    border-radius:20px 20px 0 0;
+    flex-shrink:0;
+  }
+  #mbox .mb{
+    flex:1;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    padding:16px;
+  }
+  #mbox .mf{
+    position:sticky;bottom:0;z-index:2;
+    flex-shrink:0;
+    padding-bottom:max(14px,env(safe-area-inset-bottom));
+  }
   .mo{align-items:flex-end;padding:0}
   .mb{padding:18px 16px}
   .mh{padding:14px 16px}
@@ -13746,6 +13771,391 @@ function crearSlideConfirm(texto, onConfirm, color){
 // ── Hook: actualizar badges al cargar cada tab ────────────────
 const _origLoadAlmFotos = loadAlmFotos;
 // Se sobreescribe abajo tras definir loadAlmFotos — ver patch en loadAlmFotos
+
+// ══════════════════════════════════════════════════════════════
+// MEJORAS TANDA 2
+// ══════════════════════════════════════════════════════════════
+
+// ── A. MODO OFFLINE — confirmar llegada/carga/embarque sin red ────────
+// Extiende offlineSyncPendientes con los nuevos tipos
+const _origOfflineSync = offlineSyncPendientes;
+offlineSyncPendientes = async function(){
+  if(!navigator.onLine) return;
+  const pendientes = await offlineGetPendientes();
+  if(!pendientes.length) return;
+  let ok=0, err=0;
+  for(const item of pendientes){
+    try{
+      const p = item.payload;
+      if(item.tipo==='confirmar_llegada'){
+        const upd={ubicacion:p.ubicacion||'Almacén-Sin Ubicar',notif_llegada_sent:true};
+        if(p.estado_semaforo) upd.estado_semaforo=p.estado_semaforo;
+        if(p.estado_carga)    upd.estado_carga=p.estado_carga;
+        await sb.from('expediciones').update(upd).eq('id',p.expId);
+        await logAct('expediciones',p.expId,p.ref,'editar','ubicacion','Pendiente recibir',p.ubicacion||'Almacén-Sin Ubicar');
+      } else if(item.tipo==='confirmar_carga_buque'){
+        const ts=new Date().toISOString();
+        for(const e of (p.exps||[])){
+          await sb.from('expediciones').update({hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'}).eq('id',e.id);
+          await logAct('expediciones',e.id,e.ref,'editar','ubicacion','—','Camión cargado [sync offline]');
+        }
+      } else if(item.tipo==='confirmar_embarque'){
+        await sb.from('buques').update({estado_operacion:'Finalizado'}).eq('id',p.bid);
+        const {data:exps}=await sb.from('expediciones').select('id,ubicacion').eq('buque_id',p.bid);
+        for(const e of exps||[]){
+          if(e.ubicacion==='Landed') continue;
+          await sb.from('expediciones').update({estado_semaforo:'🚢 EMBARCADO',ubicacion:'A bordo'}).eq('id',e.id);
+        }
+        await logAct('buques',p.bid,'','editar','estado_operacion','En proceso','Embarcado [sync offline]');
+      } else if(item.tipo==='cambiar_ubicacion'){
+        await sb.from('expediciones').update({ubicacion:p.ubicacion}).eq('id',p.expId);
+        await logAct('expediciones',p.expId,p.ref,'editar','ubicacion',p.anterior,p.ubicacion);
+      }
+      await offlineDelete(item.id);
+      ok++;
+    }catch(e){ err++; console.warn('sync error:',item,e); }
+  }
+  if(ok>0) showToast('📶 '+ok+' acción'+(ok>1?'es':'')+' sincronizada'+(ok>1?'s':'')+' offline');
+  if(err>0) showToast('⚠️ '+err+' pendiente'+(err>1?'s':'')+' de sync');
+  _actualizarBadgeOffline?.();
+};
+
+// Parchear confirmarLlegadaFotos para modo offline + fotos en background
+const _origConfirmarLlegada = confirmarLlegadaFotos;
+confirmarLlegadaFotos = async function(id){
+  if(navigator.onLine){ return _origConfirmarLlegada(id); }
+  // Sin red: encolar el estado y notificar
+  const estado = (window['_estLlegada']||{})[id]||'ok';
+  const nota   = (document.getElementById('fl-nota-'+id)?.value||'').trim();
+  const payload = {expId:id, ref:'', ubicacion:'Almacén-Sin Ubicar',
+    estado_semaforo:'🚨 EN ALMACÉN - REVISAR', estado_carga:'🚨 EN ALMACÉN - REVISAR',
+    estado, nota, ts:Date.now()};
+  await offlineEnqueue('confirmar_llegada', payload);
+  if(window['_estLlegada']) delete window['_estLlegada'][id];
+  // Marcar visualmente la tarjeta como procesada
+  const card = document.getElementById('llegada-'+id);
+  if(card){ card.style.opacity='.5'; card.style.pointerEvents='none'; }
+  showToast('📵 Sin red — llegada guardada, se sincronizará al recuperar conexión');
+  _actualizarBadgeOffline?.();
+};
+
+// Parchear confirmarCargaBuque para modo offline
+const _origConfirmarCarga = confirmarCargaBuque;
+confirmarCargaBuque = async function(bid){
+  if(navigator.onLine){ return _origConfirmarCarga(bid); }
+  const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO').catch(()=>({data:[]}));
+  if(!data?.length){ showToast('⚠️ Sin conexión y no hay datos en caché'); return; }
+  await offlineEnqueue('confirmar_carga_buque', {bid, exps:data.map(e=>({id:e.id,ref:e.nº_expedicion}))});
+  showToast('📵 Sin red — carga encolada, se sincronizará al recuperar conexión');
+  _actualizarBadgeOffline?.();
+};
+
+// Parchear confirmarEmbarqueTab para modo offline
+const _origConfirmarEmbarque = confirmarEmbarqueTab;
+confirmarEmbarqueTab = async function(bid){
+  if(navigator.onLine){ return _origConfirmarEmbarque(bid); }
+  await offlineEnqueue('confirmar_embarque', {bid});
+  showToast('📵 Sin red — embarque encolado, se sincronizará al recuperar conexión');
+  _actualizarBadgeOffline?.();
+};
+
+// ── B. FOTOS EN BACKGROUND — no bloquear el flujo ────────────────────
+// Sobreescribir confirmarLlegadaFotos online para separar estado de foto
+const _origConfirmarLlegadaOnline = _origConfirmarLlegada;
+confirmarLlegadaFotos = async function(id){
+  if(!navigator.onLine){
+    // Ya lo maneja el parche offline de arriba — llamar directamente
+    const estado=(window['_estLlegada']||{})[id]||'ok';
+    const nota=(document.getElementById('fl-nota-'+id)?.value||'').trim();
+    await offlineEnqueue('confirmar_llegada',{expId:id,ref:'',ubicacion:'Almacén-Sin Ubicar',estado_semaforo:'🚨 EN ALMACÉN - REVISAR',estado_carga:'🚨 EN ALMACÉN - REVISAR',estado,nota,ts:Date.now()});
+    if(window['_estLlegada']) delete window['_estLlegada'][id];
+    const card=document.getElementById('llegada-'+id);
+    if(card){card.style.opacity='.5';card.style.pointerEvents='none';}
+    showToast('📵 Sin red — llegada guardada offline');
+    _actualizarBadgeOffline?.();
+    return;
+  }
+  const {data:e}=await sb.from('expediciones').select('nº_expedicion,bultos,buques(nombre)').eq('id',id).single();
+  const prevEl=document.getElementById('fl-pv-'+id)||document.getElementById('fl-p');
+  const files=prevEl?._files||[];
+  const estado=(window['_estLlegada']||{})[id]||'ok';
+  const nota=(document.getElementById('fl-nota-'+id)?.value||'').trim();
+
+  // 1. Guardar estado INMEDIATAMENTE — no esperar foto
+  const estadoTxt={ok:'Correcto',leve:'Daño leve',grave:'Daño grave',humedad:'Humedad',precinto:'Precinto roto'}[estado]||estado;
+  const upd={ubicacion:'Almacén-Sin Ubicar',notif_llegada_sent:true};
+  await sb.from('expediciones').update(upd).eq('id',id);
+  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir','Almacén-Sin Ubicar [estado: '+estadoTxt+']');
+  await alertarOperativa(id,e?.nº_expedicion||'',e?.buques?.nombre||'');
+
+  // Incidencia si hay daño
+  let incId=null;
+  if(estado!=='ok'){
+    const tipoInc={leve:'Embalaje',grave:'Roto',humedad:'Humedad',precinto:'Precinto'}[estado]||'Otro';
+    const descInc=['Estado al recibir: '+estadoTxt,nota?'Notas: '+nota:'','📷 Foto subiéndose...'].filter(Boolean).join(' · ');
+    const {data:incNueva}=await sb.from('incidencias').insert({expedicion_id:id,tipo:tipoInc,descripcion:descInc,nombre:tipoInc}).select('id').single();
+    incId=incNueva?.id;
+  }
+
+  showToast('✅ Llegada confirmada'+(files.length?' · 📤 Subiendo foto...':''));
+  if(window['_estLlegada']) delete window['_estLlegada'][id];
+
+  // 2. Subir foto en BACKGROUND — no bloquea el flujo
+  if(files.length){
+    (async()=>{
+      try{
+        const urls=await subirFotosYGuardar(files,'expediciones',id,'llegada');
+        if(urls.length){
+          await sb.from('expediciones').update({foto_llegada_url:urls[0]}).eq('id',id);
+          // Vincular a incidencia si hubo daño
+          if(incId){
+            const {data:fotoRec}=await sb.from('fotos_operativas').select('storage_path,subida_por,created_at').eq('entidad','expediciones').eq('entidad_id',id).eq('tipo','llegada').order('created_at',{ascending:false}).limit(1).maybeSingle();
+            if(fotoRec) await sb.from('fotos_operativas').insert({entidad:'incidencias',entidad_id:String(incId),tipo:'llegada',storage_url:urls[0],storage_path:fotoRec.storage_path,subida_por:fotoRec.subida_por,created_at:fotoRec.created_at});
+          }
+          showToast('📸 Foto de llegada guardada');
+        }
+      }catch(ex){ console.warn('Foto background error:',ex); showToast('⚠️ Foto no subida — reintentar desde la ficha'); }
+    })();
+  }
+
+  const numBultos=e?.bultos||0;
+  if(numBultos>0){ ofrecerEtiquetasBultos(id,e?.nº_expedicion||'',numBultos); }
+  else { await loadAlmFotos('llegadas'); }
+};
+
+// ── C. LÍNEA DE VIDA INTEGRADA EN EL MODAL ───────────────────────────
+// Sobreescribir _renderMiniFeed con una versión expandida tipo timeline
+async function _renderMiniFeed(expId){
+  const el=document.getElementById('exp-mini-feed');
+  if(!el) return;
+  el.innerHTML='<div style="font-size:11px;color:var(--g400);padding:6px 0">Cargando historial…</div>';
+  try{
+    const [{data:log},{data:fotos},{data:incs}]=await Promise.all([
+      sb.from('activity_log').select('created_at,usuario_nombre,campo_modificado,valor_nuevo,accion').eq('registro_id',expId).order('created_at',{ascending:false}).limit(12),
+      sb.from('fotos_operativas').select('tipo,storage_url,created_at,subida_por').eq('entidad','expediciones').eq('entidad_id',expId).order('created_at',{ascending:false}).limit(6),
+      sb.from('incidencias').select('tipo,estado,created_at').eq('expedicion_id',expId).order('created_at',{ascending:false}).limit(4)
+    ]);
+    const eventos=[];
+    const fdt2=d=>d?new Date(d).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+    (log||[]).forEach(l=>{
+      const ic=l.campo_modificado==='ubicacion'?'📍':l.campo_modificado==='hora_de_carga'?'🚛':l.campo_modificado==='nº_mrn'?'📋':l.campo_modificado==='estado_semaforo'?'🚦':l.accion==='alerta_llegada'?'📦':'✏️';
+      const tit=l.campo_modificado==='ubicacion'?'→ '+l.valor_nuevo:l.campo_modificado==='hora_de_carga'?'Cargado en camión':l.campo_modificado==='nº_mrn'?'MRN: '+l.valor_nuevo:l.campo_modificado==='estado_semaforo'?l.valor_nuevo:l.accion||l.campo_modificado||'Cambio';
+      eventos.push({ts:l.created_at,ic,tit,sub:l.usuario_nombre||'',foto:null,color:'var(--g500)'});
+    });
+    (fotos||[]).forEach(f=>{
+      const lbl={llegada:'Foto llegada',carga:'Foto carga',embarque:'Foto embarque'}[f.tipo]||'Foto';
+      eventos.push({ts:f.created_at,ic:'📸',tit:lbl,sub:f.subida_por||'',foto:f.storage_url,color:'var(--tl600)'});
+    });
+    (incs||[]).forEach(i=>{
+      eventos.push({ts:i.created_at,ic:'⚠️',tit:'Incidencia: '+i.tipo,sub:i.estado||'',foto:null,color:'var(--rd500)'});
+    });
+    eventos.sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+    if(!eventos.length){ el.innerHTML='<div style="font-size:11px;color:var(--g400);padding:4px 0;font-style:italic">Sin actividad registrada</div>'; return; }
+    el.innerHTML='<div style="position:relative;padding-left:20px;margin-top:4px">'+
+      '<div style="position:absolute;left:6px;top:4px;bottom:4px;width:1.5px;background:var(--g200);border-radius:2px"></div>'+
+      eventos.map((ev,i)=>'<div style="position:relative;margin-bottom:'+(i===eventos.length-1?'0':'10px')+'">'+
+        '<div style="position:absolute;left:-16px;top:3px;width:8px;height:8px;border-radius:50%;background:'+ev.color+';border:1.5px solid var(--w)"></div>'+
+        '<div style="display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap">'+
+          '<span style="font-size:13px;flex-shrink:0">'+ev.ic+'</span>'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-size:12px;font-weight:600;color:var(--g800);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ev.tit+'</div>'+
+            '<div style="font-size:10px;color:var(--g400)">'+fdt2(ev.ts)+(ev.sub?' · '+ev.sub:'')+'</div>'+
+            (ev.foto?'<img src="'+ev.foto+'" style="max-width:72px;max-height:48px;border-radius:4px;margin-top:4px;cursor:zoom-in;border:1px solid var(--g200)" onclick="abrirLightbox(\''+ev.foto+'\')">':'')
+          +'</div>'+
+        '</div>'+
+      '</div>').join('')+
+    '</div>';
+  }catch(ex){ el.innerHTML='<div style="font-size:11px;color:var(--rd500)">Error al cargar historial</div>'; }
+}
+
+// ── D. MODAL FULL-SCREEN EN MÓVIL ────────────────────────────────────
+// Añadir clase al abrir en móvil — el CSS lo convierte en sheet full-screen
+const _origOpenModal = typeof openModal === 'function' ? openModal : null;
+// Hook en closeModal para limpiar autoguardado
+const _origCloseModal = closeModal;
+closeModal = function(){
+  _stopAutoguardado();
+  if(typeof _origCloseModal === 'function') _origCloseModal();
+};
+
+// ── E. AUTOGUARDADO DE CAMPOS ────────────────────────────────────────
+let _autoguardadoTimer = null;
+let _autoguardadoExpId = null;
+let _autoguardadoCampos = {}; // campo → valor previo
+
+function _iniciarAutoguardado(expId){
+  _autoguardadoExpId = expId;
+  _autoguardadoCampos = {};
+  _stopAutoguardado();
+  // Escuchar cambios en todos los campos del modal
+  const campos = ['mrn-inp','ref-inp','sta-sel','fmax-inp','tra-sel','docs-sel','ubic-sel'];
+  campos.forEach(cid=>{
+    const el = document.getElementById(cid);
+    if(!el) return;
+    el.addEventListener('change', _onCampoChange);
+    el.addEventListener('input',  _onCampoChange);
+  });
+}
+
+function _stopAutoguardado(){
+  clearTimeout(_autoguardadoTimer);
+  _autoguardadoTimer = null;
+  const campos = ['mrn-inp','ref-inp','sta-sel','fmax-inp','tra-sel','docs-sel','ubic-sel'];
+  campos.forEach(cid=>{
+    const el = document.getElementById(cid);
+    if(el){ el.removeEventListener('change',_onCampoChange); el.removeEventListener('input',_onCampoChange); }
+  });
+}
+
+function _onCampoChange(){
+  clearTimeout(_autoguardadoTimer);
+  _autoguardadoTimer = setTimeout(async()=>{
+    if(!_autoguardadoExpId || !navigator.onLine) return;
+    const mrn   = (document.getElementById('mrn-inp')?.value||'').trim()||null;
+    const ref   = (document.getElementById('ref-inp')?.value||'').trim()||null;
+    const status= document.getElementById('sta-sel')?.value||null;
+    const fmax  = document.getElementById('fmax-inp')?.value||null;
+    const tra   = document.getElementById('tra-sel')?.value||null;
+    const docs  = document.getElementById('docs-sel')?.value||null;
+    const ubic  = document.getElementById('ubic-sel')?.value||null;
+    const obj={};
+    if(mrn!==undefined)  obj['nº_mrn']=mrn;
+    if(ref)              obj['nº_expedicion']=ref;
+    if(status)           obj.status_aduanero=status;
+    obj.fecha_max_despacho=fmax||null;
+    if(tra)              obj.tramite_aduanero=tra;
+    if(docs!==null)      obj.docs_puerto=docs==='No requiere'?null:[docs];
+    if(ubic){
+      obj.ubicacion=ubic;
+      const sem=semaforoDeUbicacion(ubic);
+      if(sem){obj.estado_semaforo=sem;obj.estado_carga=sem;}
+    }
+    if(mrn && tra==='Despachado'){
+      obj.estado_carga='✅ AUTORIZADO';obj.estado_semaforo='✅ AUTORIZADO';
+    }
+    try{
+      await sb.from('expediciones').update(obj).eq('id',_autoguardadoExpId);
+      // Indicador discreto junto al campo que cambió
+      _mostrarIndicadorGuardado();
+    }catch(ex){ console.warn('autoguardado error',ex); }
+  }, 900);
+}
+
+function _mostrarIndicadorGuardado(){
+  let ind = document.getElementById('_autosave-ind');
+  if(!ind){
+    ind = document.createElement('div');
+    ind.id='_autosave-ind';
+    ind.style.cssText='position:fixed;bottom:calc(max(72px,env(safe-area-inset-bottom,0px)+64px));left:50%;transform:translateX(-50%);background:var(--gr600);color:#fff;font-size:11px;font-weight:600;padding:4px 12px;border-radius:99px;z-index:30001;pointer-events:none;transition:opacity .3s';
+    document.body.appendChild(ind);
+  }
+  ind.textContent='✓ Guardado automático';
+  ind.style.opacity='1';
+  clearTimeout(ind._t);
+  ind._t=setTimeout(()=>{ind.style.opacity='0';},2000);
+}
+
+// Enganchar _iniciarAutoguardado en openExpD — parcheamos el pie del modal
+const _origMFoot = document.getElementById('m-foot');
+// Se activa desde openExpD al renderizar el pie — hacemos monkey-patch de guardarExpedicion
+const _origGuardarExp = guardarExpedicion;
+guardarExpedicion = async function(id){
+  _stopAutoguardado();
+  return _origGuardarExp(id);
+};
+
+// Hook para iniciar autoguardado cuando se abre el modal de expedición
+// Nos enganchamos en el MutationObserver del modal
+(function(){
+  const mo_el = document.getElementById('m-foot');
+  if(!mo_el) return;
+  const obs = new MutationObserver(()=>{
+    const foot = document.getElementById('m-foot');
+    if(!foot) return;
+    // Detectar si hay botón "Guardar cambios" → es modal de expedición
+    if(foot.innerHTML.includes('guardarExpedicion')){
+      const match = foot.innerHTML.match(/guardarExpedicion\('([^']+)'\)/);
+      if(match) { _iniciarAutoguardado(match[1]); _renderMiniFeed(match[1]); }
+    }
+  });
+  obs.observe(mo_el, {childList:true, subtree:false, characterData:true});
+})();
+
+// ── F. LONG-PRESS EN FILAS DE EXPEDICIÓN ─────────────────────────────
+let _lpTimer=null, _lpTarget=null;
+
+function _initLongPress(){
+  document.addEventListener('pointerdown', function(e){
+    const row = e.target.closest('tr.exp-row, tr[data-expid], .exp-card[data-expid]');
+    if(!row) return;
+    _lpTarget = row;
+    _lpTimer = setTimeout(()=>{ _mostrarMenuContextual(row, e); }, 420);
+  });
+  document.addEventListener('pointermove', ()=>{ clearTimeout(_lpTimer); _lpTimer=null; });
+  document.addEventListener('pointerup',   ()=>{ clearTimeout(_lpTimer); _lpTimer=null; });
+  document.addEventListener('pointercancel',()=>{ clearTimeout(_lpTimer); _lpTimer=null; });
+}
+_initLongPress();
+
+function _mostrarMenuContextual(row, e){
+  if(navigator.vibrate) navigator.vibrate(30);
+  const expId = row.dataset.expid || row.getAttribute('data-expid');
+  if(!expId) return;
+  // Cerrar menús anteriores
+  document.getElementById('_ctx-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.id = '_ctx-menu';
+  const x = Math.min(e.clientX||0, window.innerWidth-200);
+  const y = Math.min(e.clientY||0, window.innerHeight-180);
+  menu.style.cssText='position:fixed;left:'+x+'px;top:'+y+'px;background:var(--w);border:1px solid var(--g200);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:40000;min-width:190px;overflow:hidden;animation:fi .12s ease';
+  const acciones=[
+    {ic:'📋',lbl:'Ver expedición',  fn:()=>{ openExpD(expId); }},
+    {ic:'📍',lbl:'Cambiar ubicación',fn:()=>{ _menuCambiarUbicacion(expId); }},
+    {ic:'🏢',lbl:'Notif. Aduanas',  fn:async()=>{ const {data:ex}=await sb.from('expediciones').select('nº_expedicion').eq('id',expId).single(); notifAduana(expId,ex?.nº_expedicion||''); }},
+    {ic:'📧',lbl:'Notif. Cliente',  fn:async()=>{ const {data:ex}=await sb.from('expediciones').select('nº_expedicion,empresas!empresa_id(email_confronta)').eq('id',expId).single(); const em=ex?.empresas?.email_confronta; if(em) notifCliente(expId,em,ex?.nº_expedicion||''); else showToast('Sin email de cliente'); }},
+    {ic:'📋',lbl:'Línea de vida',   fn:()=>{ abrirLineaVida(expId,''); }},
+  ];
+  menu.innerHTML=acciones.map((a,i)=>'<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;font-size:13px;font-weight:500;color:var(--g900);'+(i<acciones.length-1?'border-bottom:0.5px solid var(--g100)':'')+'" data-ctx-i="'+i+'"><span style="font-size:16px">'+a.ic+'</span>'+a.lbl+'</div>').join('');
+  document.body.appendChild(menu);
+  // Bind acciones
+  menu.querySelectorAll('[data-ctx-i]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      menu.remove();
+      acciones[+el.dataset.ctxI].fn();
+    });
+    el.addEventListener('pointerenter',()=>el.style.background='var(--g50)');
+    el.addEventListener('pointerleave',()=>el.style.background='');
+  });
+  // Cerrar al tocar fuera
+  setTimeout(()=>{
+    const cerrar=e=>{ if(!menu.contains(e.target)){ menu.remove(); document.removeEventListener('pointerdown',cerrar); } };
+    document.addEventListener('pointerdown',cerrar);
+  },100);
+}
+
+function _menuCambiarUbicacion(expId){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40001;display:flex;align-items:flex-end;justify-content:center;padding-bottom:max(20px,env(safe-area-inset-bottom,20px))';
+  const sheet=document.createElement('div');
+  sheet.style.cssText='background:var(--w);border-radius:16px 16px 0 0;padding:20px 16px;width:100%;max-width:480px;max-height:70vh;overflow-y:auto';
+  sheet.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--g700);margin-bottom:12px">📍 Cambiar ubicación</div>'+
+    UBICACIONES.map(u=>'<button style="display:block;width:100%;text-align:left;padding:12px 14px;margin-bottom:6px;border:1px solid var(--g200);border-radius:10px;background:var(--g50);font-size:13px;cursor:pointer;font-family:var(--f)" data-ub="'+u+'">'+u+'</button>').join('')+
+    '<button style="display:block;width:100%;padding:12px;border:none;border-radius:10px;background:transparent;font-size:13px;color:var(--g400);cursor:pointer;margin-top:4px">Cancelar</button>';
+  ov.appendChild(sheet);
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{
+    const btn=e.target.closest('[data-ub]');
+    if(btn){
+      const ubic=btn.dataset.ub;
+      sb.from('expediciones').update({ubicacion:ubic}).eq('id',expId).then(async()=>{
+        await logAct('expediciones',expId,'','editar','ubicacion','—',ubic);
+        showToast('📍 Ubicación → '+ubic);
+        loadView(CV);
+      });
+      ov.remove();
+    } else if(e.target===ov||e.target.textContent==='Cancelar'){ ov.remove(); }
+  });
+}
 
 // Restaurar sesión si venimos de otro módulo (airport_cargo, etc.)
 checkSession();
