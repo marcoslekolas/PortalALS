@@ -1572,6 +1572,8 @@ textarea.fi{resize:vertical;min-height:72px}
         <div id="buques-list" class="buque-list"></div>
       </div>
       <div class="view" id="view-expediciones">
+        <!-- KPIs resumen -->
+        <div id="exp-kpis"></div>
         <!-- Filtros multi-campo -->
         <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <div class="sbar" style="flex:2;min-width:180px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" id="fil-q" placeholder="Referencia, MRN, ubicación…" oninput="filtrarExp()"></div>
@@ -4604,200 +4606,217 @@ async function buscarEORI(){
   const raw = (document.getElementById('eori-input')?.value||'').trim();
   const valEl = document.getElementById('eori-validation-msg');
   const resEl = document.getElementById('eori-result');
-  const btn = document.getElementById('eori-btn-buscar');
+  const btn   = document.getElementById('eori-btn-buscar');
 
-  // Validation
   if(!raw){
     if(valEl){ valEl.textContent='⚠️ El campo de búsqueda no puede estar vacío.'; valEl.style.display='block'; }
     return;
   }
   if(_eoriMode==='codigo'){
-    if(!/^[A-Za-z]{2}[A-Za-z0-9]{5,15}$/.test(raw.replace(/\s/g,''))){
-      if(valEl){ valEl.textContent='⚠️ Formato incorrecto. Debe iniciar con 2 letras de país (ej: ES, FR, DE) + caracteres alfanuméricos.'; valEl.style.display='block'; }
+    if(!/^[A-Za-z]{2}[A-Za-z0-9]{4,15}$/.test(raw.replace(/\s/g,''))){
+      if(valEl){ valEl.textContent='⚠️ Formato incorrecto. Ejemplo: ESB72049117, FR12345678901'; valEl.style.display='block'; }
       return;
     }
   }
   if(valEl){ valEl.style.display='none'; }
 
-  // Buscar en directorio local antes de llamar a la IA
-  const cached = await buscarEORIenCache(query);
-  if(cached && cached.length > 0){
-    const c = cached[0];
-    const fechaCache = c.updated_at ? new Date(c.updated_at).toLocaleDateString('es-ES') : '—';
-    resEl.innerHTML=`
-      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
-        <div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border-bottom:1px solid #fde68a;padding:14px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-size:20px">⚡</span>
-          <span style="font-size:14px;font-weight:700;color:var(--g900)">Resultado desde directorio local</span>
-          <span style="font-size:11px;color:var(--g500)">Última consulta: ${fechaCache}</span>
-          <button onclick="buscarEORIForzandoIA()" style="margin-left:auto;background:var(--b600);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">🤖 Actualizar con IA</button>
-        </div>
-        <div style="padding:18px 20px">
-          <div style="font-size:13px;color:var(--g700);line-height:1.8;white-space:pre-wrap">${(c.resultado_texto||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-        </div>
-      </div>`;
-    if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
-    return;
-  }
-
-  // Load key if needed
-  const key = await getORKey() || '';
-  if(!key){
-    if(resEl) resEl.innerHTML=`<div style="padding:14px;background:var(--am50);border:1px solid #fde68a;border-radius:var(--rl);color:#92400e">
-      ⚠️ Configura la API key de <strong>OpenRouter</strong> en el módulo <strong>Aduanas → Clasificador TARIC</strong> (⚙️ en el sidebar). Gratis en <a href="https://openrouter.ai/keys" target="_blank" style="color:#1d4ed8">openrouter.ai/keys ↗</a>
-    </div>`;
-    return;
-  }
-
-  // UI loading
-  if(btn){ btn.disabled=true; btn.innerHTML='⏳ Buscando...'; }
-  if(resEl) resEl.innerHTML=`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:24px;text-align:center;box-shadow:var(--shl)">
-    <div class="spinner" style="margin:0 auto 10px;width:26px;height:26px;border-width:3px"></div>
-    <div style="font-size:13px;font-weight:600;color:var(--g700)">Consultando IA + Google Search...</div>
-    <div style="font-size:11px;color:var(--g400);margin-top:4px">Verificando fuentes oficiales de la UE en tiempo real</div>
-  </div>`;
-
+  // query definida correctamente ANTES de usarla
   const query = _eoriMode==='codigo' ? raw.toUpperCase().replace(/\s/g,'') : raw;
 
-  const sysPrompt = `Eres un experto en aduanas de la UE especializado en números EORI. 
-REGLAS IMPORTANTES:
-- El EORI español = "ES" + CIF/NIF de la empresa (ej: empresa con CIF B72049117 → EORI: ESB72049117)
-- Para empresas españolas: busca el CIF en tu conocimiento y construye el EORI
-- Si conoces la empresa, indica su EORI, NIF, dirección y estado
-- Si no la conoces exactamente, indica cómo construir el EORI y dónde verificarlo
-- NUNCA digas "no se puede obtener públicamente" sin intentar razonarlo primero
-- Sé directo y concreto. Si tienes el dato, dalo.`;
+  // 1. Buscar en caché local primero
+  const cached = await buscarEORIenCache(query);
+  if(cached?.length){
+    const c = cached[0];
+    const fechaCache = c.updated_at ? new Date(c.updated_at).toLocaleDateString('es-ES') : '—';
+    resEl.innerHTML = _renderEoriResult(c.resultado_texto||'', query, true, fechaCache);
+    if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
+    return;
+  }
+
+  // 2. Obtener API key
+  const key = await getORKey() || '';
+  if(!key){
+    resEl.innerHTML=`<div style="padding:14px;background:var(--am50);border:1px solid #fde68a;border-radius:var(--rl);color:#92400e">
+      ⚠️ Configura la API key de <strong>OpenRouter</strong> en el módulo <strong>Aduanas → Clasificador TARIC</strong> (⚙️ sidebar).
+      Gratis en <a href="https://openrouter.ai/keys" target="_blank" style="color:#1d4ed8">openrouter.ai/keys ↗</a>
+    </div>`;
+    return;
+  }
+
+  // 3. UI loading
+  if(btn){ btn.disabled=true; btn.innerHTML='⏳ Buscando...'; }
+  resEl.innerHTML=`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:28px;text-align:center;box-shadow:var(--shl)">
+    <div class="spinner" style="margin:0 auto 12px;width:28px;height:28px;border-width:3px"></div>
+    <div style="font-size:14px;font-weight:600;color:var(--g700)">Consultando base de datos EORI…</div>
+    <div style="font-size:11px;color:var(--g400);margin-top:4px">Fuentes oficiales UE · AEAT · Registro Mercantil</div>
+  </div>`;
+
+  const sysPrompt = `Eres un experto en aduanas de la UE con acceso a toda la información pública sobre operadores económicos y números EORI.
+
+REGLAS:
+- EORI español = "ES" + CIF completo (ej: CIF B72049117 → EORI ESB72049117)
+- EORI de otros países: 2 letras ISO del país + identificador fiscal nacional
+- Para empresas españolas conocidas: busca su CIF y construye el EORI directamente
+- Distingue entre empresas homónimas por sector/ciudad si es relevante
+- Siempre incluye el enlace de verificación oficial de TAXUD
+- Responde SIEMPRE en el formato JSON que se indica, sin texto adicional fuera del JSON`;
 
   const prompt = _eoriMode==='empresa'
-    ? `Empresa a buscar: "${query}"
-Proporciona:
-1. EORI (si es española: ES + CIF de la empresa)
-2. CIF/NIF fiscal
-3. Dirección fiscal
-4. Estado activo/inactivo si lo sabes
-5. Si no tienes el dato exacto, indica cómo calcularlo o dónde verificarlo en TAXUD
+    ? `Busca la empresa: "${query}"
 
-Responde en español de forma directa y concisa. Si la empresa es española y conoces su CIF, calcula el EORI directamente.`
-    : `Número EORI a verificar: "${query}"
-Proporciona:
-1. Nombre legal de la empresa/operador
-2. País (primeras 2 letras del EORI)
-3. NIF/identificador nacional (resto del código)
-4. Tipo de operador probable
-5. Enlace directo de verificación en TAXUD
+Responde SOLO con este JSON (sin markdown, sin texto extra):
+{
+  "encontrado": true/false,
+  "nombre_legal": "nombre oficial",
+  "eori": "ESxxxxxxxxx o null",
+  "cif_nif": "Bxxxxxxxx o null",
+  "pais": "España",
+  "tipo": "Empresa/Autónomo/Entidad",
+  "sector": "sector aproximado si se conoce",
+  "estado": "Activo/Inactivo/Desconocido",
+  "direccion": "dirección fiscal si se conoce o null",
+  "como_calcular": "explicación de cómo construir el EORI si no se conoce directamente",
+  "fuente": "base de conocimiento / AEAT / Registro Mercantil",
+  "verificar_en": "https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=EORI_AQUI",
+  "notas": "información adicional relevante o null"
+}`
+    : `Verifica el código EORI: "${query}"
 
-Responde en español de forma directa.`;
+Responde SOLO con este JSON (sin markdown, sin texto extra):
+{
+  "encontrado": true/false,
+  "eori": "${query}",
+  "nombre_legal": "nombre del operador si se conoce",
+  "pais": "país según las 2 primeras letras",
+  "identificador_nacional": "el número sin el prefijo del país",
+  "tipo_operador": "Importador/Exportador/Agente/Otro",
+  "estado": "Activo/Inactivo/Desconocido",
+  "verificar_en": "https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(query)}",
+  "notas": "información adicional o null"
+}`;
 
-  const OR_ENDPOINT_EORI = 'https://openrouter.ai/api/v1/chat/completions';
-  // Modelos con timeout 20s y fallback — probados hoy 21-03-2026
-  const eoriModels = [
-    'mistralai/mistral-small-2603',            // con crédito — mejor calidad
-    localStorage.getItem('als_or_model') || 'google/gemma-3-12b-it:free',
-    'google/gemma-3-12b-it:free',
-    'google/gemma-3-27b-it:free',
-    'google/gemma-3-4b-it:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
-  ].filter((v,i,a) => a.indexOf(v)===i); // deduplicar
-
-  try {
-    let text = '';
-    let lastErr = null;
-    for(const eoriModel of eoriModels){
-      try {
+  try{
+    // Usar el modelo que funciona en el resto del sistema
+    const modelos = [
+      'mistralai/mistral-small-3.2-24b-instruct',
+      'mistralai/mistral-small-3.2-24b-instruct:free',
+      'google/gemma-3-27b-it:free',
+    ];
+    let parsed = null;
+    let rawText = '';
+    for(const modelo of modelos){
+      try{
         const ctrl = new AbortController();
-        const tid = setTimeout(() => ctrl.abort(), 20000);
-        let r, d;
-        try {
-          r = await fetch(OR_ENDPOINT_EORI, {
-            method:'POST',
-            signal: ctrl.signal,
-            headers:{
-              'Content-Type':'application/json',
-              'Authorization': `Bearer ${key}`,
-              'HTTP-Referer': 'https://marcoslekolas.github.io/PortalALS/',
-              'X-Title': 'Customs Way EORI'
-            },
-            body: JSON.stringify({
-              model: eoriModel,
-              messages:[
-                {role:'system', content: sysPrompt},
-                {role:'user', content: prompt}
-              ],
-              temperature:0.2,
-              max_tokens:1500
-            })
-          });
-          d = await r.json();
-        } catch(fe){
-          clearTimeout(tid);
-          lastErr = new Error('rate_limit'); continue;
-        }
+        const tid = setTimeout(()=>ctrl.abort(), 22000);
+        const r = await fetch('https://openrouter.ai/api/v1/chat/completions',{
+          method:'POST', signal:ctrl.signal,
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,
+            'HTTP-Referer':'https://marcoslekolas.github.io/PortalALS/','X-Title':'ALS EORI'},
+          body:JSON.stringify({model:modelo,messages:[{role:'system',content:sysPrompt},{role:'user',content:prompt}],temperature:0.1,max_tokens:800})
+        });
         clearTimeout(tid);
-        if(!r.ok || d.error){
-          const em = d?.error?.message||'';
-          if(r.status===429 || r.status===502 || r.status===503 ||
-             em.includes('rate') || em.includes('limit') || em.includes('Network')){
-            lastErr = new Error('rate_limit'); continue;
-          }
-          throw new Error(em || 'Error '+r.status);
-        }
-        text = d?.choices?.[0]?.message?.content || '';
-        if(text) break;
-      } catch(e2){
-        if(e2.message==='rate_limit'){ lastErr=e2; continue; }
-        throw e2;
-      }
+        const d = await r.json();
+        if(!r.ok||d.error){ const s=d?.error?.message||''; if(r.status===429||s.includes('rate')||s.includes('limit')){ continue; } throw new Error(s||'Error '+r.status); }
+        rawText = (d?.choices?.[0]?.message?.content||'').trim();
+        if(!rawText) continue;
+        // Intentar parsear JSON — puede venir con markdown
+        const clean = rawText.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
+        try{ parsed = JSON.parse(clean); break; }catch(je){ rawText=clean; break; }
+      }catch(e2){ if(e2.name==='AbortError'||e2.message?.includes('rate')){ continue; } throw e2; }
     }
-    if(!text && lastErr) throw new Error('⏳ Rate limit temporal en todos los modelos. Espera unos segundos.');
-    if(!text) throw new Error('La IA no devolvió respuesta. Inténtalo de nuevo.');
 
-    resEl.innerHTML=`
-      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
-        <div style="background:linear-gradient(135deg,#f0fdf4,#f8fafc);border-bottom:1px solid var(--g100);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-size:20px">✅</span>
-          <span style="font-size:14px;font-weight:700;color:var(--g900)">Resultados encontrados</span>
-          <span style="margin-left:auto;background:var(--b50);color:var(--b700);border:1px solid var(--b100);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700">
-            🤖 Qwen · OpenRouter
-          </span>
-        </div>
-        <div style="padding:18px 20px">
-          <div style="font-size:13px;color:var(--g700);line-height:1.8;white-space:pre-wrap">${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-        </div>
-        <div style="padding:10px 18px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
-          <a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(_eoriMode==='codigo'?query:'')}" target="_blank"
-            style="display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;text-decoration:none">
-            🇪🇺 Verificar en TAXUD oficial
-          </a>
-          <a href="https://www.agenciatributaria.es/AEAT.internet/Inicio/La_Agencia_Tributaria/Aduanas_e_Impuestos_Especiales/_Presentacion/El_numero_EORI/Consulta_EORI/Consulta_EORI.shtml" target="_blank"
-            style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;text-decoration:none">
-            🏛️ Consultar en AEAT
-          </a>
-          <button onclick="guardarEORIenCache('${query.replace(/'/g,"\\'")}', this.closest('.eori-result-card')?.querySelector('.eori-text')?.textContent || document.querySelector('#eori-result .eori-text-wrap')?.textContent || '')" 
-            style="display:inline-flex;align-items:center;gap:5px;background:var(--b600);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">
-            💾 Guardar en directorio
-          </button>
-        </div>
-      </div>`;
-    // Guardar automáticamente en cache si el resultado parece válido
-    if(text && text.length > 50) guardarEORIenCache(query, text).catch(()=>{});
+    if(!parsed && !rawText) throw new Error('Sin respuesta de los modelos. Inténtalo de nuevo en unos segundos.');
 
-  } catch(e){
+    // Renderizar resultado estructurado o texto plano
+    const resultText = parsed ? _formatEoriParsed(parsed, query) : rawText;
+    resEl.innerHTML = _renderEoriResult(resultText, query, false, null, parsed);
+
+    // Guardar en caché automáticamente
+    if(resultText && resultText.length > 30){
+      guardarEORIenCache(query, resultText).catch(()=>{});
+    }
+
+  }catch(e){
     const msg = e.message||'';
     const friendly = msg.includes('rate')||msg.includes('quota')||msg.includes('⏳')
-      ? msg.startsWith('⏳') ? msg : '⏳ Rate limit temporal. Espera unos segundos e inténtalo de nuevo.'
+      ? '⏳ Rate limit temporal. Espera unos segundos e inténtalo de nuevo.'
       : msg.includes('key')||msg.includes('auth')||msg.includes('401')
-      ? '🔑 API key de OpenRouter no válida. Configúrala en Aduanas → Clasificador TARIC (⚙️ sidebar).'
-      : msg.includes('Load failed')||msg.includes('Failed to fetch')
-      ? '🌐 Error de red. Comprueba tu conexión a internet.'
-      : '❌ ' + msg.substring(0,150);
-    resEl.innerHTML=`<div style="background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rxl);padding:18px;display:flex;gap:12px;align-items:flex-start">
+      ? '🔑 API key de OpenRouter no válida. Configúrala en Aduanas → Clasificador TARIC.'
+      : msg.includes('fetch')||msg.includes('network')||msg.includes('Load failed')
+      ? '🌐 Error de red. Comprueba tu conexión.'
+      : '❌ '+msg.substring(0,200);
+    resEl.innerHTML=`<div style="background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rxl);padding:18px;display:flex;gap:12px">
       <span style="font-size:22px;flex-shrink:0">⚠️</span>
       <div><div style="font-size:14px;font-weight:700;color:var(--rd600);margin-bottom:4px">Error en la búsqueda</div>
-      <div style="font-size:13px;color:var(--rd600)">${friendly}</div></div>
+      <div style="font-size:13px;color:var(--rd600)">${friendly}</div>
+      <button onclick="buscarEORI()" style="margin-top:10px;background:var(--rd600);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">↩ Reintentar</button></div>
     </div>`;
-  } finally {
+  }finally{
     if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
   }
+}
+
+// Formatea la respuesta JSON parseada en texto legible
+function _formatEoriParsed(p, query){
+  const lines = [];
+  if(p.nombre_legal) lines.push('🏢 Empresa: '+p.nombre_legal);
+  if(p.eori)         lines.push('🔢 EORI: '+p.eori);
+  if(p.cif_nif)      lines.push('📋 CIF/NIF: '+p.cif_nif);
+  if(p.pais)         lines.push('🌍 País: '+p.pais);
+  if(p.identificador_nacional) lines.push('🔑 ID Nacional: '+p.identificador_nacional);
+  if(p.tipo)         lines.push('📂 Tipo: '+p.tipo);
+  if(p.tipo_operador) lines.push('📂 Tipo operador: '+p.tipo_operador);
+  if(p.sector)       lines.push('🏭 Sector: '+p.sector);
+  if(p.estado)       lines.push('✅ Estado: '+p.estado);
+  if(p.direccion)    lines.push('📍 Dirección: '+p.direccion);
+  if(p.fuente)       lines.push('📌 Fuente: '+p.fuente);
+  if(p.como_calcular) lines.push('\nℹ️ Cómo calcular: '+p.como_calcular);
+  if(p.notas)        lines.push('\n💡 '+p.notas);
+  return lines.join('\n');
+}
+
+// Renderiza el bloque de resultado con diseño estructurado
+function _renderEoriResult(text, query, fromCache, fechaCache, parsed){
+  const taxudUrl = parsed?.verificar_en || parsed?.eori
+    ? 'https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori='+(parsed.eori||'')
+    : 'https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es';
+  const aeatUrl  = 'https://www.agenciatributaria.es/AEAT.internet/Inicio/La_Agencia_Tributaria/Aduanas_e_Impuestos_Especiales/_Presentacion/El_numero_EORI/Consulta_EORI/Consulta_EORI.shtml';
+  const eoriCode = parsed?.eori || (text.match(/ES[A-Z0-9]{7,13}/)?.[0]) || '';
+
+  const headerBg   = fromCache ? 'background:var(--am50);border-bottom:1px solid #fde68a' : 'background:var(--gr50);border-bottom:1px solid #bbf7d0';
+  const headerIcon = fromCache ? '⚡' : '✅';
+  const headerTxt  = fromCache ? 'Resultado desde directorio local · '+fechaCache : 'Resultado encontrado';
+
+  // Convertir texto plano a filas visuales
+  const rows = text.split('\n').filter(l=>l.trim()).map(l=>{
+    const [icon,...rest] = l.trim().split(' ');
+    const content = rest.join(' ');
+    const isSection = l.startsWith('\n') || l.includes('Cómo calcular') || l.includes('💡');
+    return isSection
+      ? `<div style="padding:10px 0;border-top:1px solid var(--g100);margin-top:4px;font-size:12px;color:var(--g600);line-height:1.6">${l.trim()}</div>`
+      : `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:0.5px solid var(--g100)">
+           <span style="font-size:14px;flex-shrink:0;width:22px">${icon}</span>
+           <span style="font-size:13px;color:var(--g900);flex:1">${content}</span>
+         </div>`;
+  }).join('');
+
+  return `<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
+    <div style="${headerBg};padding:12px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:18px">${headerIcon}</span>
+      <span style="font-size:14px;font-weight:700;color:var(--g900)">${headerTxt}</span>
+      ${fromCache?`<button onclick="buscarEORIForzandoIA()" style="margin-left:auto;background:var(--b600);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">🤖 Actualizar con IA</button>`:''}
+    </div>
+    <div style="padding:14px 18px">${rows||'<div style="color:var(--g500);font-size:13px;padding:8px 0">'+text+'</div>'}</div>
+    ${eoriCode?`<div style="padding:8px 18px;background:var(--b50);border-top:1px solid var(--b100)">
+      <div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--b700);letter-spacing:.05em">${eoriCode}</div>
+      <div style="font-size:10px;color:var(--b500);margin-top:1px">Código EORI detectado — clic para copiar</div>
+    </div>`:''}
+    <div style="padding:10px 18px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
+      <a href="${taxudUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;text-decoration:none">🇪🇺 Verificar en TAXUD</a>
+      <a href="${aeatUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;text-decoration:none">🏛️ Consultar AEAT</a>
+      ${eoriCode?`<button onclick="navigator.clipboard?.writeText('${eoriCode}').then(()=>showToast('📋 EORI copiado'))" style="display:inline-flex;align-items:center;gap:5px;background:var(--w);color:var(--b600);border:1px solid var(--b200);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer">📋 Copiar EORI</button>`:''}
+    </div>
+  </div>`;
 }
 
 
@@ -6212,8 +6231,42 @@ async function loadExp(){
   const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas!empresa_id(nombre),cliente_override:cliente_override_id(nombre)').order('created_at',{ascending:false});
   allE=data||[];
   _poblarFiltrosExp();
+  _renderKpisExp(allE);
   renderE(allE);
   _expFiltradas=[...allE];
+}
+
+function _renderKpisExp(list){
+  const total   = list.length;
+  const sinMrn  = list.filter(e=>!e.nº_mrn && e.tramite_aduanero!=='Despachado' && e.ubicacion && e.ubicacion!=='Pendiente recibir').length;
+  const autori  = list.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
+  const pendRec = list.filter(e=>e.ubicacion==='Pendiente recibir').length;
+  const vencidas= list.filter(e=>{ const f=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null; return f&&f<new Date()&&e.tramite_aduanero!=='Despachado'; }).length;
+  const kpiWrap = document.getElementById('exp-kpis');
+  if(!kpiWrap) return;
+  kpiWrap.innerHTML=`
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="flex:1;min-width:100px;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:10px 14px;border-left:3px solid var(--b500);cursor:pointer" onclick="resetFiltrosExp()" title="Ver todas">
+        <div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Total</div>
+        <div style="font-size:22px;font-weight:700;color:var(--g900)">${total}</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:10px 14px;border-left:3px solid var(--b500);cursor:pointer" onclick="filtrarEst('✅ AUTORIZADO')" title="Filtrar autorizadas">
+        <div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Autorizadas</div>
+        <div style="font-size:22px;font-weight:700;color:var(--gr600)">${autori}</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:${pendRec>0?'var(--am50)':'var(--w)'};border:1px solid ${pendRec>0?'#fde68a':'var(--g200)'};border-radius:var(--rl);padding:10px 14px;border-left:3px solid var(--am500);cursor:pointer" onclick="filtrarExp_ubic('Pendiente recibir')" title="Pendientes de llegar">
+        <div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Pend. recibir</div>
+        <div style="font-size:22px;font-weight:700;color:var(--am600)">${pendRec}</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:${sinMrn>0?'var(--am50)':'var(--w)'};border:1px solid ${sinMrn>0?'#fde68a':'var(--g200)'};border-radius:var(--rl);padding:10px 14px;border-left:3px solid ${sinMrn>0?'var(--am500)':'var(--g300)'};cursor:pointer" onclick="filtrarSinMRN()" title="Sin MRN">
+        <div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Sin MRN</div>
+        <div style="font-size:22px;font-weight:700;color:${sinMrn>0?'var(--am700)':'var(--g400)'}">${sinMrn}</div>
+      </div>
+      ${vencidas>0?`<div style="flex:1;min-width:100px;background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rl);padding:10px 14px;border-left:3px solid var(--rd500);cursor:pointer" onclick="filtrarVencidas()" title="Fecha máx. despacho vencida">
+        <div style="font-size:10px;color:var(--rd500);font-weight:600;text-transform:uppercase;letter-spacing:.4px">⚠️ Vencidas</div>
+        <div style="font-size:22px;font-weight:700;color:var(--rd600)">${vencidas}</div>
+      </div>`:''}
+    </div>`;
 }
 
 function _poblarFiltrosExp(){
@@ -6276,8 +6329,16 @@ function selTodosBuques(sel){
   _actualizarLabelBuque();
   filtrarExp();
 }
+function filtrarVencidas(){ const hoy=new Date(); _expFiltradas=allE.filter(e=>{ const f=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null; return f&&f<hoy&&e.tramite_aduanero!=='Despachado'; }); renderE(_expFiltradas); }
+function filtrarExp_ubic(v){ document.getElementById('fil-ubic').value=v; filtrarExp(); }
+
 function renderE(list){
   const hoy=new Date();
+  // En móvil (<768px) renderizar tarjetas en lugar de tabla
+  if(window.innerWidth<=768){
+    _renderExpTarjetas(list, hoy);
+    return;
+  }
   document.getElementById('exp-tbody').innerHTML=list.map(e=>{
     const fmax=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null;
     const fmaxStr=fmax?fd(e.fecha_max_despacho):'—';
@@ -6311,6 +6372,46 @@ function renderE(list){
     bcPage.textContent = 'Expediciones ('+list.length+(sinMrn?' · '+sinMrn+' sin MRN':'')+(auth?' · '+auth+' ✅':'')+ ')';
   }
 }
+// ── Vista tarjetas para móvil ─────────────────────────────────
+function _renderExpTarjetas(list, hoy){
+  const tbody = document.getElementById('exp-tbody');
+  // En móvil usar el contenedor de la tabla como lista de tarjetas
+  const tc = tbody?.closest('.tc');
+  if(!tc) return;
+  if(!list.length){ tc.innerHTML='<div class="empty" style="padding:40px"><div class="empty-txt">Sin expediciones</div></div>'; return; }
+  tc.innerHTML=list.map(e=>{
+    const fmax=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null;
+    const fmaxAlerta=fmax&&fmax<hoy&&e.tramite_aduanero!=='Despachado';
+    const semDisplay=e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo;
+    const sinMrn=!e.nº_mrn&&e.tramite_aduanero!=='Despachado'&&e.ubicacion&&e.ubicacion!=='Pendiente recibir';
+    const hasFoto=e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url;
+    const cardBorder=e.estado_carga==='✅ AUTORIZADO'?'border-left:4px solid var(--gr500)':fmaxAlerta?'border-left:4px solid var(--rd500)':sinMrn?'border-left:4px solid var(--am500)':'border-left:4px solid var(--g200)';
+    return`<div style="padding:14px 16px;border-bottom:1px solid var(--g100);cursor:pointer;${cardBorder};background:var(--w);active:background:var(--g50)" onclick="openExpD('${e.id}')" data-expid="${e.id}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <div>
+          <div style="font-weight:700;font-size:14px;color:var(--g900)">${e.nº_expedicion}</div>
+          <div style="font-size:11px;color:var(--g500);margin-top:1px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+          ${bdg(semDisplay)}
+          ${hasFoto?'<span style="font-size:10px;color:var(--tl600)">📸 Con foto</span>':''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="badge bgr" style="font-size:10px">${e.status_aduanero||'—'}</span>
+        <span style="font-size:11px;color:var(--g500)">${e.bultos}b · ${e.kilos}kg</span>
+        <span style="font-size:11px;color:var(--g600)">📍 ${e.ubicacion||'—'}</span>
+        ${sinMrn?'<span style="font-size:10px;font-weight:700;color:var(--am700);background:var(--am50);padding:1px 6px;border-radius:4px">⚠️ Sin MRN</span>':''}
+        ${fmaxAlerta?`<span style="font-size:10px;font-weight:700;color:var(--rd600);background:var(--rd50);padding:1px 6px;border-radius:4px">⚠️ Vencida ${fd(e.fecha_max_despacho)}</span>`:''}
+        ${e.tramite_aduanero==='Despachado'?'<span style="font-size:10px;color:var(--gr600);font-weight:600">✓ Despachado</span>':''}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <button onclick="event.stopPropagation();openExpD('${e.id}')" style="flex:1;padding:8px;border:1px solid var(--g200);border-radius:8px;background:var(--g50);font-size:12px;font-weight:600;cursor:pointer;color:var(--g700)">Ver ficha</button>
+        <button onclick="event.stopPropagation();_menuCambiarUbicacion('${e.id}')" style="flex:1;padding:8px;border:1px solid var(--b200);border-radius:8px;background:var(--b50);font-size:12px;font-weight:600;cursor:pointer;color:var(--b700)">📍 Ubicación</button>
+      </div>
+    </div>`;
+  }).join('');
+}
 // ── Filtrado unificado de expediciones ───────────────────────────
 let _expFiltradas = []; // lista actualmente visible
 
@@ -6334,6 +6435,7 @@ function filtrarExp(){
     return true;
   });
   renderE(_expFiltradas);
+  _renderKpisExp(_expFiltradas);
   _selExpLote.clear();
   _actualizarToolbarLote();
   // Actualizar breadcrumb con filtro activo
