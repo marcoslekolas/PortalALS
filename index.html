@@ -4909,6 +4909,17 @@ async function buscarEORI(){
   }
 }
 
+// Helper: guarda EORI desde el botón sin template literals problemáticos
+function _guardarEoriCard(btn){
+  const nombre = btn.dataset.nombre || '';
+  const eori   = btn.dataset.eori   || '';
+  const cif    = btn.dataset.cif    || '';
+  const dir    = btn.dataset.dir    || '';
+  guardarEORIenCache(nombre, nombre+' | '+eori+' | '+cif+' | '+dir).catch(()=>{});
+  btn.textContent = '✅ Guardado';
+  btn.disabled = true;
+}
+
 // ── OpenCorporates: búsqueda real sin token (límite libre) ────────
 async function _buscarEnOpenCorporates(query, jurisdiccion){
   // Sin token: 50 req/día por IP. Suficiente para uso interno.
@@ -4960,15 +4971,15 @@ function _renderEoriResultados(companies, query, paisInfo, resEl){
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${eori!=='—'?`<a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(eori)}" target="_blank"
             style="display:inline-flex;align-items:center;gap:4px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none">
-            🇪🇺 Verificar ${eori} en TAXUD
+            \u{1F1EA}\u{1F1FA} Verificar ${eori} en TAXUD
           </a>`:''}
           ${ocUrl?`<a href="${ocUrl}" target="_blank"
             style="display:inline-flex;align-items:center;gap:4px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none">
-            📋 Ver en Registro
+            \uD83D\uDCCB Ver en Registro
           </a>`:''}
-          ${eori!=='—'?`<button onclick="guardarEORIenCache('${nombre.replace(/'/g,"\\'")}','${nombre.replace(/'/g,"\\'")} | ${eori} | ${cif} | ${dir}')"
-            style="display:inline-flex;align-items:center;gap:4px;background:var(--b50);color:var(--b700);border:1px solid var(--b100);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;border:none">
-            💾 Guardar
+          ${eori!=='—'?`<button onclick="_guardarEoriCard(this)" data-nombre="${nombre.replace(/"/g,'&quot;')}" data-eori="${eori}" data-cif="${cif}" data-dir="${dir.replace(/"/g,'&quot;')}"
+            style="display:inline-flex;align-items:center;gap:4px;background:var(--b50);color:var(--b700);border:1px solid var(--b100);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer">
+            \uD83D\uDCBE Guardar
           </button>`:''}
         </div>
       </div>`;
@@ -4994,7 +5005,7 @@ function _renderEoriResultados(companies, query, paisInfo, resEl){
         Fuente: OpenCorporates (${pInfo.registro}) · Los datos proceden del registro oficial, no de la IA
       </div>
     </div>`;
-
+}
 
 
 async function buscarEORIForzandoIA(){
