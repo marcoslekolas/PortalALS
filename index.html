@@ -4814,7 +4814,7 @@ async function buscarEORI(){
     return;
   }
 
-  // ── MODO EMPRESA: Anthropic con web search real, multi-país ─────────
+  // ── MODO EMPRESA: OpenCorporates API (datos reales del Registro Mercantil) ──
   const query = raw;
 
   // Cache local primero
@@ -4828,7 +4828,7 @@ async function buscarEORI(){
           <span style="font-size:20px">⚡</span>
           <span style="font-size:14px;font-weight:700;color:var(--g900)">Resultado desde directorio local</span>
           <span style="font-size:11px;color:var(--g500)">Guardado: ${fechaCache}</span>
-          <button onclick="buscarEORIForzandoIA()" style="margin-left:auto;background:var(--b600);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">🔍 Nueva búsqueda web</button>
+          <button onclick="buscarEORIForzandoIA()" style="margin-left:auto;background:var(--b600);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">🔄 Nueva búsqueda</button>
         </div>
         <div style="padding:18px 20px">
           <div style="font-size:13px;color:var(--g700);line-height:1.8;white-space:pre-wrap">${(c.resultado_texto||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
@@ -4838,139 +4838,162 @@ async function buscarEORI(){
     return;
   }
 
-  const anthKey = await getAnthropicKey();
-  if(!anthKey){
-    resEl.innerHTML=`
-      <div style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--rxl);padding:18px">
-        <div style="font-size:14px;font-weight:700;color:var(--g900);margin-bottom:8px">⚙️ Configura la API key de Anthropic</div>
-        <div style="font-size:13px;color:var(--g700);margin-bottom:12px">
-          Para búsquedas con verificación web en tiempo real, añade en Supabase:<br><br>
-          <code style="background:var(--g100);padding:4px 8px;border-radius:4px;font-size:12px">als_config → clave: anthropic_api_key → valor: sk-ant-...</code>
-        </div>
-        <a href="https://console.anthropic.com/keys" target="_blank"
-          style="display:inline-flex;align-items:center;gap:6px;background:var(--b600);color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;text-decoration:none">
-          🔑 Obtener API key →
-        </a>
-      </div>`;
-    if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
-    return;
-  }
-
-  // Detectar país por nombre/forma jurídica
-  const paisDetectado = _detectarPaisEORI(query);
-  const paisInfo = paisDetectado ? EORI_PAISES[paisDetectado] : null;
-
   if(btn){ btn.disabled=true; btn.innerHTML='⏳ Buscando...'; }
   if(resEl) resEl.innerHTML=`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:24px;text-align:center;box-shadow:var(--shl)">
     <div class="spinner" style="margin:0 auto 10px;width:26px;height:26px;border-width:3px"></div>
-    <div style="font-size:13px;font-weight:600;color:var(--g700)">Buscando en registros oficiales${paisInfo?' de '+paisInfo.nombre:''}…</div>
-    <div style="font-size:11px;color:var(--g400);margin-top:4px">${paisInfo ? paisInfo.registro : 'Registros mercantiles UE · TAXUD'}</div>
+    <div style="font-size:13px;font-weight:600;color:var(--g700)">Consultando Registro Mercantil…</div>
+    <div style="font-size:11px;color:var(--g400);margin-top:4px">OpenCorporates · Datos oficiales de registro</div>
   </div>`;
 
-  // System prompt adaptado al país
-  const sysPrompt = paisInfo
-    ? `Eres un asistente de aduanas especializado en la UE. Busca el número EORI de una empresa ${paisInfo.nombre}.
-
-FORMATO EORI EN ${paisInfo.nombre.toUpperCase()}: ${paisInfo.formato}
-Ejemplo: ${paisInfo.ejemplo}
-Identificador nacional: ${paisInfo.id}
-Registro oficial: ${paisInfo.registro}
-
-PROCESO:
-1. Busca el identificador fiscal real (${paisInfo.id}) de la empresa en ${paisInfo.registro}
-2. Construye el EORI = ${paisDetectado} + ${paisInfo.id}
-3. Proporciona el nombre legal EXACTO tal como aparece en el registro oficial
-4. SOLO usa datos encontrados en la búsqueda web — nunca inventes ni uses memoria
-
-Responde en español con: nombre legal, ${paisInfo.id}, EORI calculado, dirección, fuente, enlace TAXUD.`
-
-    : `Eres un asistente de aduanas especializado en la UE. Busca el número EORI de una empresa europea.
-
-REGLAS CRÍTICAS:
-- Determina primero el país de establecimiento de la empresa
-- El EORI = código ISO del país (2 letras) + identificador nacional. Formatos principales:
-  • España (ES): ES + NIF/CIF (ej: ESB12345678)
-  • Alemania (DE): DE + Zollnummer/Steuernummer
-  • Francia (FR): FR + SIRET (14 dígitos)
-  • Italia (IT): IT + Codice Fiscale o P.IVA (11 dígitos)
-  • Países Bajos (NL): NL + 9 dígitos (KvK)
-  • Portugal (PT): PT + NIF (9 dígitos)
-  • Bélgica (BE): BE + 10 dígitos (BCE/KBO)
-  • Polonia (PL): PL + NIP (10 dígitos)
-  • Resto UE: código país + identificador fiscal nacional
-- NUNCA confundas formas jurídicas (SA/SL/GmbH/SRL/BV/etc.)
-- SOLO usa datos de la búsqueda web — nunca de memoria
-
-Responde en español con: país, nombre legal exacto, identificador fiscal, EORI calculado, fuente, enlace TAXUD.`;
-
-  const userPrompt = `Busca el número EORI de la empresa: "${query}"
-
-Necesito:
-1. País de establecimiento${paisInfo ? ' ('+paisInfo.nombre+')' : ''}
-2. Nombre legal EXACTO con forma jurídica correcta
-3. Identificador fiscal (${paisInfo ? paisInfo.id : 'NIF/CIF/SIRET/Steuernummer/etc.'})
-4. EORI calculado (${paisInfo ? paisInfo.formato : 'código país + identificador'})
-5. Dirección fiscal
-6. Fuente donde encontraste el dato
-7. Enlace para verificar en TAXUD: https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp
-
-${paisInfo ? 'Busca en: '+paisInfo.registro : 'Busca en el registro mercantil del país correspondiente y en fuentes oficiales.'}`;
+  // Detectar país por forma jurídica
+  const paisDetectado = _detectarPaisEORI(query);
+  const paisInfo = paisDetectado ? EORI_PAISES[paisDetectado] : null;
+  // Sin detección → asumir España (contexto del portal)
+  const jur = paisDetectado ? paisDetectado.toLowerCase() : 'es';
 
   try {
-    const text = await callAnthropicWithWebSearch(sysPrompt, userPrompt, anthKey, paisDetectado);
-    if(!text) throw new Error('Sin respuesta del servidor');
+    // ── 1. OpenCorporates API — datos reales del Registro Mercantil ──
+    const ocResults = await _buscarEnOpenCorporates(query, jur);
 
-    const eoriMatch = text.match(/\b[A-Z]{2}[A-Z0-9]{5,15}\b/);
-    const eoriCalc  = eoriMatch ? eoriMatch[0] : null;
-    const flagEmoji = paisDetectado ? ({ES:'🇪🇸',DE:'🇩🇪',FR:'🇫🇷',IT:'🇮🇹',NL:'🇳🇱',PT:'🇵🇹',BE:'🇧🇪',PL:'🇵🇱',SE:'🇸🇪',DK:'🇩🇰',AT:'🇦🇹',IE:'🇮🇪',GR:'🇬🇷',CZ:'🇨🇿',RO:'🇷🇴',HU:'🇭🇺',FI:'🇫🇮',SK:'🇸🇰',HR:'🇭🇷',BG:'🇧🇬',LU:'🇱🇺',SI:'🇸🇮',EE:'🇪🇪',LV:'🇱🇻',LT:'🇱🇹',CY:'🇨🇾',MT:'🇲🇹'}[paisDetectado]||'🇪🇺') : '🇪🇺';
+    if(ocResults && ocResults.length > 0){
+      _renderEoriResultados(ocResults, query, paisInfo, resEl);
+      if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
+      return;
+    }
+
+    // ── 2. Sin resultados en OpenCorporates → ofrecer búsqueda manual ──
+    const flagEmoji = paisDetectado
+      ? ({ES:'🇪🇸',DE:'🇩🇪',FR:'🇫🇷',IT:'🇮🇹',NL:'🇳🇱',PT:'🇵🇹',BE:'🇧🇪',PL:'🇵🇱',SE:'🇸🇪',DK:'🇩🇰',AT:'🇦🇹',IE:'🇮🇪',GR:'🇬🇷',CZ:'🇨🇿'}[paisDetectado]||'🇪🇺')
+      : '🇪🇸';
 
     resEl.innerHTML=`
       <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
-        <div style="background:linear-gradient(135deg,#f0fdf4,#f8fafc);border-bottom:1px solid var(--g100);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-size:22px;flex-shrink:0">${flagEmoji}</span>
+        <div style="background:var(--am50);border-bottom:1px solid #fde68a;padding:14px 18px;display:flex;align-items:center;gap:10px">
+          <span style="font-size:20px">${flagEmoji}</span>
           <div>
-            <div style="font-size:14px;font-weight:700;color:var(--g900)">Resultado · Búsqueda web en tiempo real</div>
-            <div style="font-size:11px;color:var(--gr600);font-weight:600;margin-top:2px">${paisInfo ? paisInfo.registro : 'Registros oficiales UE'} · TAXUD</div>
+            <div style="font-size:14px;font-weight:700;color:var(--g900)">Sin resultados en el Registro Mercantil</div>
+            <div style="font-size:12px;color:var(--am700);margin-top:2px">No se encontró "<strong>${query.replace(/</g,'&lt;')}</strong>" en OpenCorporates${paisInfo?' ('+paisInfo.nombre+')':' (España)'}</div>
           </div>
-          ${eoriCalc?`<code style="margin-left:auto;background:var(--g900);color:#fff;padding:4px 10px;border-radius:6px;font-size:13px;font-weight:700;letter-spacing:.05em">${eoriCalc}</code>`:''}
         </div>
-        <div style="padding:18px 20px">
-          <div style="font-size:13px;color:var(--g700);line-height:1.9;white-space:pre-wrap">${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-        </div>
-        <div style="padding:10px 18px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
-          <a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es${eoriCalc?'&Eori='+encodeURIComponent(eoriCalc):''}" target="_blank"
-            style="display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">
-            🇪🇺 Verificar${eoriCalc?' '+eoriCalc:''} en TAXUD
-          </a>
-          ${paisInfo?`<a href="https://${paisInfo.dominios[0]}" target="_blank"
-            style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">
-            📋 ${paisInfo.registro.split('/')[0].trim()}
-          </a>`:''}
-          <button onclick="guardarEORIenCache('${query.replace(/'/g,"\\'")}','${eoriCalc||''}|'+document.querySelector('#eori-result .eori-txt')?.textContent||document.querySelector('#eori-result pre')?.textContent||'')"
-            style="display:inline-flex;align-items:center;gap:5px;background:var(--b600);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">
-            💾 Guardar en directorio
-          </button>
+        <div style="padding:16px 18px">
+          <div style="font-size:13px;color:var(--g700);margin-bottom:14px">Posibles causas: nombre abreviado, empresa muy reciente, o no inscrita en el Registro Mercantil. Prueba a buscar directamente:</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a href="https://opencorporates.com/companies?q=${encodeURIComponent(query)}&jurisdiction_code=${jur}" target="_blank"
+              style="display:inline-flex;align-items:center;gap:5px;background:var(--b600);color:#fff;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;text-decoration:none">
+              🔍 Buscar en OpenCorporates
+            </a>
+            ${jur==='es'?`<a href="https://www.iberinform.es/buscador-cif-empresas" target="_blank"
+              style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;text-decoration:none">
+              📋 Iberinform
+            </a>
+            <a href="https://www.einforma.com/cif-empresas" target="_blank"
+              style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;text-decoration:none">
+              📋 eInforma
+            </a>`:''}
+          </div>
+          <div style="margin-top:12px;font-size:11px;color:var(--g500)">
+            💡 Si ya tienes el CIF, usa el modo <strong>"Por EORI"</strong> introduciendo <code>ES + CIF</code> para verificar directamente en TAXUD.
+          </div>
         </div>
       </div>`;
-    if(text.length > 50) guardarEORIenCache(query, text).catch(()=>{});
 
   } catch(e){
     const msg = e.message||'';
-    const isAuthErr = msg.includes('401')||msg.includes('403')||msg.includes('authentication')||msg.includes('api_key');
-    const friendly = isAuthErr
-      ? '🔑 API key de Anthropic no válida o sin permisos de web search. Verifica en console.anthropic.com que web search esté habilitado en tu organización.'
-      : msg.includes('fetch')||msg.includes('Load')||msg.includes('network') ? '🌐 Error de red.'
-      : msg.includes('abort')||msg.includes('timeout') ? '⏳ Tiempo de espera agotado. Inténtalo de nuevo.'
-      : '❌ '+msg.substring(0,200);
     resEl.innerHTML=`<div style="background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rxl);padding:18px;display:flex;gap:12px;align-items:flex-start">
       <span style="font-size:22px;flex-shrink:0">⚠️</span>
       <div><div style="font-size:14px;font-weight:700;color:var(--rd600);margin-bottom:4px">Error en la búsqueda</div>
-      <div style="font-size:13px;color:var(--rd600)">${friendly}</div></div>
+      <div style="font-size:13px;color:var(--rd600)">${msg.includes('fetch')||msg.includes('network')?'🌐 Error de red.':'❌ '+msg.substring(0,200)}</div></div>
     </div>`;
   } finally {
     if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
   }
 }
+
+// ── OpenCorporates: búsqueda real sin token (límite libre) ────────
+async function _buscarEnOpenCorporates(query, jurisdiccion){
+  // Sin token: 50 req/día por IP. Suficiente para uso interno.
+  const url = `https://api.opencorporates.com/v0.4/companies/search?q=${encodeURIComponent(query)}&jurisdiction_code=${jurisdiccion}&per_page=10&order=score`;
+  const ctrl = new AbortController();
+  const tid  = setTimeout(()=>ctrl.abort(), 12000);
+  let resp, data;
+  try {
+    resp = await fetch(url, { signal:ctrl.signal, headers:{'Accept':'application/json'} });
+    data = await resp.json();
+  } finally { clearTimeout(tid); }
+
+  if(!resp.ok) throw new Error('OpenCorporates '+resp.status);
+  return (data?.results?.companies||[]).map(c=>c.company).filter(Boolean);
+}
+
+// ── Renderiza la lista de empresas encontradas ────────────────────
+function _renderEoriResultados(companies, query, paisInfo, resEl){
+  const jur    = companies[0]?.jurisdiction_code || 'es';
+  const pCode  = jur.toUpperCase().substring(0,2);
+  const pInfo  = EORI_PAISES[pCode] || EORI_PAISES['ES'];
+  const FLAGS  = {ES:'🇪🇸',DE:'🇩🇪',FR:'🇫🇷',IT:'🇮🇹',NL:'🇳🇱',PT:'🇵🇹',BE:'🇧🇪',PL:'🇵🇱',SE:'🇸🇪',DK:'🇩🇰',AT:'🇦🇹',IE:'🇮🇪',GR:'🇬🇷',CZ:'🇨🇿',RO:'🇷🇴',HU:'🇭🇺',FI:'🇫🇮',SK:'🇸🇰',HR:'🇭🇷',BG:'🇧🇬',LU:'🇱🇺',SI:'🇸🇮',EE:'🇪🇪',LV:'🇱🇻',LT:'🇱🇹',CY:'🇨🇾',MT:'🇲🇹'};
+  const flag   = FLAGS[pCode] || '🇪🇺';
+
+  const rows = companies.map(c=>{
+    const cif    = c.company_number || '—';
+    const eori   = (cif !== '—') ? pCode + cif.replace(/\s/g,'') : '—';
+    const nombre = c.name || '—';
+    const estado = c.current_status || '—';
+    const dir    = c.registered_address_in_full || c.registered_address?.street_address || '—';
+    const fecha  = c.incorporation_date ? new Date(c.incorporation_date).toLocaleDateString('es-ES') : '—';
+    const inactiva = c.inactive || estado.toLowerCase().includes('dissolv') || estado.toLowerCase().includes('disuelto');
+    const ocUrl  = c.opencorporates_url || '';
+
+    return `
+      <div style="border:1px solid var(--g200);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;background:${inactiva?'var(--g50)':'var(--w)'};${inactiva?'opacity:.75':''}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:700;color:${inactiva?'var(--g500)':'var(--g900)'}">${nombre}</div>
+            ${inactiva?'<span style="font-size:10px;background:var(--rd50);color:var(--rd600);border:1px solid #fecdd3;border-radius:4px;padding:1px 6px;font-weight:600">INACTIVA/DISUELTA</span>':'<span style="font-size:10px;background:var(--gr50);color:var(--gr700);border:1px solid #bbf7d0;border-radius:4px;padding:1px 6px;font-weight:600">ACTIVA</span>'}
+          </div>
+          ${eori!=='—'?`<code style="background:var(--g900);color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;letter-spacing:.04em;flex-shrink:0">${eori}</code>`:''}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;font-size:12px;margin-bottom:10px">
+          <div><span style="color:var(--g400);font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.4px">${pInfo.id}</span><div style="font-family:var(--mono);font-weight:600;margin-top:1px">${cif}</div></div>
+          <div><span style="color:var(--g400);font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.4px">Constitución</span><div style="margin-top:1px">${fecha}</div></div>
+          ${dir!=='—'?`<div style="grid-column:1/-1"><span style="color:var(--g400);font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.4px">Dirección</span><div style="margin-top:1px;color:var(--g700)">${dir}</div></div>`:''}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${eori!=='—'?`<a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(eori)}" target="_blank"
+            style="display:inline-flex;align-items:center;gap:4px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none">
+            🇪🇺 Verificar ${eori} en TAXUD
+          </a>`:''}
+          ${ocUrl?`<a href="${ocUrl}" target="_blank"
+            style="display:inline-flex;align-items:center;gap:4px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none">
+            📋 Ver en Registro
+          </a>`:''}
+          ${eori!=='—'?`<button onclick="guardarEORIenCache('${nombre.replace(/'/g,"\\'")}','${nombre.replace(/'/g,"\\'")} | ${eori} | ${cif} | ${dir}')"
+            style="display:inline-flex;align-items:center;gap:4px;background:var(--b50);color:var(--b700);border:1px solid var(--b100);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;border:none">
+            💾 Guardar
+          </button>`:''}
+        </div>
+      </div>`;
+  }).join('');
+
+  resEl.innerHTML=`
+    <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
+      <div style="background:linear-gradient(135deg,#f0fdf4,#f8fafc);border-bottom:1px solid var(--g100);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:22px;flex-shrink:0">${flag}</span>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:var(--g900)">${companies.length} empresa${companies.length!==1?'s':''} encontrada${companies.length!==1?'s':''} en el Registro Mercantil</div>
+          <div style="font-size:11px;color:var(--gr600);font-weight:600;margin-top:2px">OpenCorporates · ${pInfo.registro} · Datos oficiales</div>
+        </div>
+        <span style="margin-left:auto;background:var(--gr50);color:var(--gr700);border:1px solid #bbf7d0;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700">Sin inventar nada ✓</span>
+      </div>
+      <div style="padding:14px 16px">
+        ${companies.length>1?`<div style="font-size:12px;color:var(--am600);background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:8px 12px;margin-bottom:12px">
+          ⚠️ Se encontraron varias empresas con ese nombre. Verifica cuál es la correcta por CIF o dirección.
+        </div>`:''}
+        ${rows}
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid var(--g100);font-size:11px;color:var(--g400)">
+        Fuente: OpenCorporates (${pInfo.registro}) · Los datos proceden del registro oficial, no de la IA
+      </div>
+    </div>`;
 
 
 
