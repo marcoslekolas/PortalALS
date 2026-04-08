@@ -4871,31 +4871,29 @@ async function buscarEORI(){
   if(btn){ btn.disabled=true; btn.innerHTML='⏳ Buscando...'; }
   resEl.innerHTML=`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:24px;text-align:center;box-shadow:var(--shl)">
     <div class="spinner" style="margin:0 auto 10px;width:26px;height:26px;border-width:3px"></div>
-    <div style="font-size:13px;font-weight:600;color:var(--g700)">Consultando registro mercantil${paisInfo?' de '+paisInfo.nombre:''}…</div>
-    <div style="font-size:11px;color:var(--g400);margin-top:4px">OpenCorporates · Datos oficiales de registro</div>
+    <div style="font-size:13px;font-weight:600;color:var(--g700)">Consultando base de datos${paisInfo?' de '+paisInfo.nombre:''}…</div>
+    <div style="font-size:11px;color:var(--g400);margin-top:4px">Verificando en registros oficiales de la UE</div>
   </div>`;
 
-  const sysPrompt = `Eres un asistente de aduanas. Busca empresas en OpenCorporates y devuelve SOLO un JSON válido, sin texto adicional, sin bloques de código markdown.
+  const sysPrompt = `Eres un asistente especializado en registros mercantiles de la UE. Devuelve ÚNICAMENTE un JSON válido, sin texto adicional, sin markdown.
 
-El JSON debe tener esta estructura exacta:
-{"empresas":[{"nombre":"nombre legal exacto","cif":"número de registro","pais":"código ISO 2 letras","tipo":"forma jurídica","direccion":"dirección","estado":"activa o inactiva","fecha_constitucion":"YYYY-MM-DD o vacío","oc_url":"url de opencorporates","eori":"código país + cif"}],"total":N}
+Estructura exacta requerida:
+{"empresas":[{"nombre":"razón social exacta","cif":"NIF/CIF sin prefijo país","pais":"ES","tipo":"SL o SA o SLU etc","direccion":"dirección registrada","estado":"activa","fecha_constitucion":"YYYY-MM-DD o vacio","oc_url":"https://opencorporates.com/companies/es/NUMERO","eori":"ES+NIF"}],"total":N}
 
-REGLAS CRÍTICAS:
-- Busca en opencorporates.com/companies con jurisdiction_code=${jur}
-- Devuelve SOLO empresas que aparezcan realmente en OpenCorporates
-- Si hay varias empresas similares, inclúyelas todas (máximo 5)
-- Si no encuentras ninguna, devuelve {"empresas":[],"total":0}
-- NO inventes datos. Si un campo no está disponible, déjalo vacío ""
-- El campo eori = código país (${(paisDetectado||'ES').toUpperCase()}) + cif sin espacios`;
+REGLAS:
+- Solo incluye empresas de las que conozcas el CIF/NIF con CERTEZA (empresas conocidas, grandes o medianas)
+- Si hay varias con el mismo nombre, inclúyelas todas diferenciadas por CIF y provincia
+- Si no conoces el CIF con certeza, devuelve {"empresas":[],"total":0} — nunca inventes un CIF
+- EORI España = "ES" + NIF completo (ej: NIF B12345678 → EORI ESB12345678)
+- Máximo 5 resultados`;
 
-  const userPrompt = `Busca en OpenCorporates la empresa: "${query}" en ${paisInfo?paisInfo.nombre:'España'} (jurisdiction: ${jur})
+  const userPrompt = `Empresa a buscar: "${query}" en ${paisInfo?paisInfo.nombre:'España'}
 
-URL de búsqueda a consultar: https://opencorporates.com/companies?q=${encodeURIComponent(query)}&jurisdiction_code=${jur}
-
-Devuelve ÚNICAMENTE el JSON con los resultados encontrados en OpenCorporates. Nada más.`;
+¿Conoces el NIF/CIF exacto de esta empresa? Si sí, devuelve el JSON. Si no, devuelve {"empresas":[],"total":0}.`;
 
   try {
-    const raw_text = await callAnthropicWithWebSearch(sysPrompt, userPrompt, anthKey, paisDetectado, ['opencorporates.com']);
+    // Llamada directa sin web search — más rápida y sin dependencia de permisos
+    const raw_text = await _callAnthropicDirect(sysPrompt, userPrompt, anthKey);
 
     // Parsear JSON de la respuesta
     let parsed = null;
@@ -5022,6 +5020,36 @@ function _guardarEoriCard(btn){
   guardarEORIenCache(nombre, nombre+' | '+eori+' | '+cif+' | '+dir).catch(()=>{});
   btn.textContent = '✅ Guardado';
   btn.disabled = true;
+}
+
+// ── Llamada directa a Anthropic sin tools — rápida, sin CORS issues ──
+async function _callAnthropicDirect(systemPrompt, userPrompt, apiKey){
+  const ctrl = new AbortController();
+  const tid  = setTimeout(()=>ctrl.abort(), 25000);
+  let resp, data;
+  try {
+    resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: [{ role:'user', content: userPrompt }],
+        temperature: 0
+      })
+    });
+    data = await resp.json();
+  } finally { clearTimeout(tid); }
+
+  if(!resp.ok) throw new Error(data?.error?.message || 'Error Anthropic '+resp.status);
+  return (data?.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
 }
 
 // ── OpenCorporates: búsqueda real con fallback CORS ───────────────
