@@ -93,7 +93,7 @@ if('serviceWorker' in navigator){
 html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
 /* PWA safe-area para iPhone notch y barra de gestos */
 body{
-  /* padding-top lo absorbe #app y .hm-hdr individualmente para no duplicar */
+  padding-top: var(--safe-top);
   padding-bottom: var(--safe-bot);
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
@@ -612,31 +612,6 @@ textarea.fi{resize:vertical;min-height:72px}
   .nav-item{padding:11px 12px}
   .tbl td,.tbl th{padding:10px 10px}
   .modal{max-width:100%;margin:0;border-radius:var(--rl) var(--rl) 0 0;padding-bottom:var(--safe-bot)}
-  /* Modal full-screen en móvil */
-  .mo{align-items:flex-end;padding:0}
-  #mbox{
-    height:calc(100dvh - 48px);
-    max-height:calc(100dvh - 48px);
-    border-radius:20px 20px 0 0;
-    display:flex;
-    flex-direction:column;
-  }
-  #mbox .mh{
-    position:sticky;top:0;z-index:2;
-    border-radius:20px 20px 0 0;
-    flex-shrink:0;
-  }
-  #mbox .mb{
-    flex:1;
-    overflow-y:auto;
-    -webkit-overflow-scrolling:touch;
-    padding:16px;
-  }
-  #mbox .mf{
-    position:sticky;bottom:0;z-index:2;
-    flex-shrink:0;
-    padding-bottom:max(14px,env(safe-area-inset-bottom));
-  }
   .mo{align-items:flex-end;padding:0}
   .mb{padding:18px 16px}
   .mh{padding:14px 16px}
@@ -668,56 +643,10 @@ textarea.fi{resize:vertical;min-height:72px}
 }
 /* PWA safe area support (iPhone notch/home bar) */
 @supports(padding:max(0px)){
-  /* #app absorbe el notch una sola vez — ni body ni header lo duplican */
-  #app{
-    padding-top: env(safe-area-inset-top, 0px);
-  }
-  .hm-hdr{
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-left: max(16px, env(safe-area-inset-left));
-    padding-right: max(16px, env(safe-area-inset-right));
-  }
-  #app-hdr{
-    padding-left: max(16px, env(safe-area-inset-left));
-    padding-right: max(16px, env(safe-area-inset-right));
-  }
+  .hm-hdr,#app-hdr{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));}
   .hm-body{padding-bottom:max(48px,calc(env(safe-area-inset-bottom)+24px));}
   #sidebar{padding-bottom:env(safe-area-inset-bottom);}
   .mf{padding-bottom:max(14px,env(safe-area-inset-bottom));}
-}
-
-@media(max-width:768px){
-  /* Header compacto en móvil: ocultar elementos no esenciales */
-  .hdr-top{gap:5px;padding:0 8px;}
-
-  /* Ocultar: búsqueda global, indicador RT, presencia, recientes, density, dark-auto, user-info, kbd */
-  #global-search-wrap,
-  #rt-indicator,
-  #rt-last-update,
-  #hdr-presencia-global,
-  #btn-recientes,
-  #density-toggle,
-  #dark-auto-btn,
-  .hdr-user-info,
-  kbd{ display:none !important; }
-
-  /* Avatar más pequeño y sin borde */
-  .hdr-user{padding:4px;border:none;background:none;gap:0;}
-  .hdr-av{width:28px;height:28px;font-size:11px;border-radius:8px;}
-
-  /* Botones de acción sin texto */
-  #btn-nb,#btn-ne{font-size:0 !important;padding:7px 10px;}
-  #btn-nb::before{content:'🚢';font-size:14px;}
-  #btn-ne::before{content:'📦';font-size:14px;}
-
-  /* Breadcrumb compacto */
-  .hdr-bc-mod{font-size:11px;}
-  .hdr-bc-sep{font-size:12px;}
-  .hdr-bc-cur{font-size:12px;max-width:120px;}
-  #bc-filtro{display:none;}
-
-  /* Icono logout más pequeño */
-  .hdr-icon-btn{width:30px;height:30px;font-size:15px;}
 }
 
 
@@ -1055,45 +984,6 @@ textarea.fi{resize:vertical;min-height:72px}
 .tbl tbody tr .exp-quick-actions { display:none; }
 .exp-actions-col { opacity:0; transition:opacity .15s; }
 .tbl tbody tr:hover .exp-actions-col { opacity:1; }
-
-/* ── Tarjetas colapsables por buque ── */
-.buq-card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:12px;overflow:hidden;box-shadow:var(--sh0)}
-.buq-hdr{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;transition:background .12s;gap:10px}
-.buq-hdr:active{background:var(--g50)}
-.buq-hdr-left{display:flex;flex-direction:column;gap:3px;min-width:0}
-.buq-hdr-title{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.buq-hdr-sub{font-size:11px;display:flex;gap:8px;flex-wrap:wrap}
-.buq-hdr-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
-.buq-chevron{font-size:12px;color:var(--g400);transition:transform .22s cubic-bezier(.4,0,.2,1);flex-shrink:0}
-.buq-body{overflow:hidden;transition:max-height .28s cubic-bezier(.4,0,.2,1)}
-.buq-body.collapsed{max-height:0!important}
-/* Badge de conteo en barra inferior */
-.mob-tab-badge{position:absolute;top:2px;right:6px;background:var(--rd500);color:#fff;font-size:9px;font-weight:700;border-radius:99px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;pointer-events:none}
-/* Slide-to-confirm */
-.slide-confirm-wrap{position:relative;background:var(--gr50);border:2px solid #bbf7d0;border-radius:14px;height:56px;overflow:hidden;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
-.slide-confirm-track{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--gr600);pointer-events:none;transition:opacity .15s}
-.slide-confirm-thumb{position:absolute;left:4px;top:4px;bottom:4px;width:48px;background:var(--gr600);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,.15);transition:left .2s cubic-bezier(.4,0,.2,1)}
-.slide-confirm-thumb:active{cursor:grabbing}
-.slide-confirm-wrap.done .slide-confirm-thumb{left:calc(100% - 52px);background:var(--gr700)}
-.slide-confirm-wrap.done .slide-confirm-track{opacity:0}
-/* Lightbox de fotos */
-#lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:50000;align-items:center;justify-content:center;flex-direction:column}
-#lightbox.open{display:flex}
-#lightbox img{max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;border-radius:8px}
-#lightbox-close{position:absolute;top:max(16px,calc(env(safe-area-inset-top,0px)+8px));right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:24px;width:44px;height:44px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
-/* Miniaturas ampliables */
-.foto-thumb img{cursor:zoom-in}
-/* Escáner landscape */
-@media(orientation:landscape){
-  #scanner-overlay{flex-direction:row!important}
-  #sc-camara-wrap{width:55%!important;max-width:none!important;height:100%}
-  #qr-reader{width:100%!important;max-width:none!important;height:100%}
-  #scanner-overlay>div:nth-child(2){flex-direction:row!important}
-  #scanner-overlay>div:last-child{flex-direction:column!important;width:auto;min-width:160px;border-top:none!important;border-left:1px solid #1f2937!important}
-}
-:root.dark .buq-card{background:#1a1a2e!important;border-color:#1e1e3f!important}
-:root.dark .buq-hdr:active{background:#1e1e3f!important}
-:root.dark .slide-confirm-wrap{background:#0d2a12!important;border-color:#166534!important}
 </style>
 <script>
 // Aplicar modo oscuro inmediatamente para evitar flash
@@ -1286,7 +1176,7 @@ textarea.fi{resize:vertical;min-height:72px}
       </div>
       <div id="eori-validation-msg" style="display:none;color:var(--rd600);font-size:12px;font-weight:600;margin-top:6px"></div>
       <div id="eori-hint" style="font-size:11px;color:var(--g400);margin-top:8px">
-        Búsqueda con IA + Google Search · Fuentes oficiales UE en tiempo real
+        Búsqueda por nombre de empresa · Estimación IA — verifica siempre en TAXUD oficial
       </div>
     </div>
 
@@ -1572,8 +1462,6 @@ textarea.fi{resize:vertical;min-height:72px}
         <div id="buques-list" class="buque-list"></div>
       </div>
       <div class="view" id="view-expediciones">
-        <!-- KPIs resumen -->
-        <div id="exp-kpis"></div>
         <!-- Filtros multi-campo -->
         <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <div class="sbar" style="flex:2;min-width:180px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" id="fil-q" placeholder="Referencia, MRN, ubicación…" oninput="filtrarExp()"></div>
@@ -2013,12 +1901,6 @@ textarea.fi{resize:vertical;min-height:72px}
 
 <div class="mob-ov" id="mob-ov" onclick="toggleSB()"></div>
 
-<!-- Lightbox de fotos -->
-<div id="lightbox">
-  <button id="lightbox-close" onclick="cerrarLightbox()">✕</button>
-  <img id="lightbox-img" src="" alt="foto">
-</div>
-
 <!-- Indicador pull-to-refresh -->
 <div id="ptr-indicator"><span class="ptr-arrow">↓</span></div>
 
@@ -2028,7 +1910,6 @@ textarea.fi{resize:vertical;min-height:72px}
   <div class="swipe-dot" data-tab="carga"></div>
   <div class="swipe-dot" data-tab="embarque"></div>
   <div class="swipe-dot" data-tab="landed"></div>
-  <div class="swipe-dot swipe-dot-scanner" data-tab="scanner" title="Escáner" style="background:rgba(255,255,255,.25);font-size:0;position:relative"></div>
 </div>
 
 <!-- Barra rápida móvil — módulo Almacén -->
@@ -4260,11 +4141,11 @@ function showMobAlmBar(){
   if(bar) bar.classList.add('visible');
   if(content) content.classList.add('has-mob-bar');
   if(dots && window.innerWidth<=768) dots.classList.add('visible');
+  // Asegurar que la vista alm-fotos está activa
   if(document.getElementById('view-alm-fotos') &&
      !document.getElementById('view-alm-fotos').classList.contains('active')){
     nav('alm-fotos', null);
   }
-  if(typeof _actualizarBadges==='function') _actualizarBadges();
 }
 function hideMobAlmBar(){
   var bar=document.getElementById('mob-alm-bar');
@@ -4519,20 +4400,18 @@ function abrirBuscadorEORI(){
   document.getElementById('screen-aduanas').style.display='none';
   document.getElementById('screen-eori').style.display='flex';
   document.getElementById('eori-input').focus();
+  // Precargar key en background
+  _loadEoriKey().catch(()=>{});
 }
 
 // ── Estado del buscador EORI ─────────────────────────────────────
 let _eoriMode = 'empresa';
 let _eoriKeyLoaded = false;
 
-// Función centralizada para obtener la API key de OpenRouter
-// Siempre funciona: localStorage → Supabase → error claro
-// Sin flag bloqueante — si falló antes, lo intenta de nuevo
+// Obtiene la API key de OpenRouter (para modo código fallback)
 async function getORKey(){
-  // 1. Memoria rápida
   let k = localStorage.getItem('als_openrouter_key');
   if(k) return k;
-  // 2. Supabase — con timeout de 8s para móviles lentos
   try {
     const ctrl = new AbortController();
     const tid = setTimeout(()=>ctrl.abort(), 8000);
@@ -4557,19 +4436,198 @@ async function getORKey(){
   return null;
 }
 
-async function _loadEoriKey(){
-  if(_eoriKeyLoaded) return;
-  if(localStorage.getItem('als_openrouter_key')){ _eoriKeyLoaded=true; return; }
-  const k = await getORKey();
-  if(k) _eoriKeyLoaded = true;
-  // Also load model
+// Obtiene la API key de Anthropic desde als_config
+async function getAnthropicKey(){
+  let k = localStorage.getItem('als_anthropic_key');
+  if(k) return k;
   try {
-    const r2 = await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=eq.gemini_model&select=valor',{
-      headers:{apikey:'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1',Authorization:'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'}
-    });
-    const d2 = await r2.json();
-    if(d2?.[0]?.valor) try{ localStorage.setItem('als_or_model', d2[0].valor); }catch(e){}
-  } catch(e){}
+    const r = await fetch(
+      'https://bccqfqaehbmmqbisfbyv.supabase.co/rest/v1/als_config?clave=eq.anthropic_api_key&select=valor',
+      { headers:{
+          apikey:'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1',
+          Authorization:'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'
+        }
+      }
+    );
+    const d = await r.json();
+    if(d?.[0]?.valor){
+      k = d[0].valor;
+      try{ localStorage.setItem('als_anthropic_key', k); }catch(e){}
+      return k;
+    }
+  } catch(e){ console.warn('getAnthropicKey error:', e.message); }
+  return null;
+}
+
+// ── Tabla de referencia EORI por país UE ─────────────────────────────
+const EORI_PAISES = {
+  ES:{nombre:'España',        formato:'ES + NIF/CIF (9 chars)',      ejemplo:'ESB12345678',   id:'NIF/CIF',
+      dominios:['iberinform.es','einforma.com','axesor.es','borme.registradores.org','infocif.es','informa.es','agenciatributaria.es'],
+      registro:'Registro Mercantil España / BORME'},
+  DE:{nombre:'Alemania',      formato:'DE + hasta 15 dígitos',       ejemplo:'DE1234567890123', id:'Steuernummer/Zollnummer',
+      dominios:['handelsregister.de','unternehmensregister.de','bundesanzeiger.de','zoll.de','northdata.de'],
+      registro:'Handelsregister / Bundesanzeiger'},
+  FR:{nombre:'Francia',       formato:'FR + SIRET (14 dígitos)',      ejemplo:'FR12345678901234', id:'SIRET',
+      dominios:['infogreffe.fr','societe.com','bodacc.fr','pappers.fr','sirene.fr'],
+      registro:'Infogreffe / Pappers'},
+  IT:{nombre:'Italia',        formato:'IT + Codice Fiscale (11-16)', ejemplo:'IT12345678901',  id:'Codice Fiscale/P.IVA',
+      dominios:['registroimprese.it','atoka.io','aida.bvdinfo.com','paginebianche.it'],
+      registro:'Registro Imprese'},
+  NL:{nombre:'Países Bajos',  formato:'NL + 9 dígitos',              ejemplo:'NL123456789',   id:'KvK-nummer / RSIN',
+      dominios:['kvk.nl','opencorporates.com','companysearch.nl'],
+      registro:'Kamer van Koophandel (KvK)'},
+  PT:{nombre:'Portugal',      formato:'PT + NIF (9 dígitos)',         ejemplo:'PT123456789',   id:'NIF',
+      dominios:['racius.com','einforma.pt','portal.justica.gov.pt','dnoticias.pt'],
+      registro:'Registo Comercial Portugal'},
+  BE:{nombre:'Bélgica',       formato:'BE + 10 dígitos',             ejemplo:'BE0123456789',  id:'Numéro BCE/KBO',
+      dominios:['kbopub.economie.fgov.be','companyweb.be','opencorporates.com'],
+      registro:'Banque-Carrefour des Entreprises (BCE)'},
+  PL:{nombre:'Polonia',       formato:'PL + NIP (10 dígitos)',        ejemplo:'PL1234567890',  id:'NIP/KRS',
+      dominios:['krs.ms.gov.pl','rejestr.io','aleo.com','biznes.gov.pl'],
+      registro:'Krajowy Rejestr Sądowy (KRS)'},
+  SE:{nombre:'Suecia',        formato:'SE + Organisationsnummer + 01',ejemplo:'SE556000000001', id:'Organisationsnummer',
+      dominios:['allabolag.se','bolagsverket.se','proff.se'],
+      registro:'Bolagsverket'},
+  DK:{nombre:'Dinamarca',     formato:'DK + CVR (8 dígitos)',         ejemplo:'DK12345678',    id:'CVR-nummer',
+      dominios:['cvr.dk','virk.dk','proff.dk'],
+      registro:'Erhvervsstyrelsen (CVR)'},
+  AT:{nombre:'Austria',       formato:'AT + EOS + número',           ejemplo:'ATEOS1234567890', id:'Firmenbuchnummer',
+      dominios:['firmenbuch.at','justizonline.gv.at','compass.at'],
+      registro:'Firmenbuch Austria'},
+  IE:{nombre:'Irlanda',       formato:'IE + VAT number',             ejemplo:'IE1234567T',    id:'Tax/VAT number',
+      dominios:['cro.ie','revenue.ie','thegazette.ie'],
+      registro:'Companies Registration Office (CRO)'},
+  GR:{nombre:'Grecia',        formato:'GR + AFM (9 dígitos)',        ejemplo:'GR123456789',   id:'AFM (ΑΦΜ)',
+      dominios:['gemi.gr','businessportal.gr'],
+      registro:'ΓΕΜΗ (GEMI)'},
+  CZ:{nombre:'Rep. Checa',    formato:'CZ + IČO (8 dígitos)',        ejemplo:'CZ12345678',    id:'IČO',
+      dominios:['or.justice.cz','ares.gov.cz','kurzy.cz'],
+      registro:'Obchodní rejstřík'},
+  RO:{nombre:'Rumanía',       formato:'RO + CUI (2-10 dígitos)',     ejemplo:'RO1234567',     id:'CUI/CIF',
+      dominios:['listafirme.ro','onrc.ro','termene.ro'],
+      registro:'ONRC Romania'},
+  HU:{nombre:'Hungría',       formato:'HU + adószám (11 dígitos)',   ejemplo:'HU12345678901', id:'Adószám',
+      dominios:['e-cegjegyzek.hu','ceginfo.hu'],
+      registro:'Cégbíróság'},
+  FI:{nombre:'Finlandia',     formato:'FI + Y-tunnus (8 dígitos)',   ejemplo:'FI12345678',    id:'Y-tunnus',
+      dominios:['prh.fi','ytj.fi','tietopalvelu.ytj.fi'],
+      registro:'PRH / YTJ'},
+  SK:{nombre:'Eslovaquia',    formato:'SK + IČO (8 dígitos)',        ejemplo:'SK12345678',    id:'IČO',
+      dominios:['orsr.sk','finstat.sk','cribis.sk'],
+      registro:'Obchodný register SR'},
+  HR:{nombre:'Croacia',       formato:'HR + OIB (11 dígitos)',       ejemplo:'HR12345678901', id:'OIB',
+      dominios:['sudski-registar.pravosudje.hr','rgfi.fina.hr'],
+      registro:'Sudski registar'},
+  BG:{nombre:'Bulgaria',      formato:'BG + EIK (9-13 dígitos)',     ejemplo:'BG123456789',   id:'ЕИК (EIK)',
+      dominios:['papagal.bg','brra.bg'],
+      registro:'Агенция по вписванията (BRRA)'},
+  LU:{nombre:'Luxemburgo',    formato:'LU + número TVA',             ejemplo:'LU12345678',    id:'Numéro TVA',
+      dominios:['rcsl.lu','editus.lu'],
+      registro:'Registre de Commerce et des Sociétés (RCS)'},
+  SI:{nombre:'Eslovenia',     formato:'SI + DDV (8 dígitos)',        ejemplo:'SI12345678',    id:'Matična/DDV',
+      dominios:['ajpes.si','bizi.si'],
+      registro:'AJPES'},
+  EE:{nombre:'Estonia',       formato:'EE + registro (9 dígitos)',   ejemplo:'EE123456789',   id:'Registrikood',
+      dominios:['ariregister.rik.ee','teatmik.ee'],
+      registro:'Äriregister'},
+  LV:{nombre:'Letonia',       formato:'LV + registro (11 dígitos)',  ejemplo:'LV12345678901', id:'Reģistrācijas nr.',
+      dominios:['lursoft.lv','latvija.lv'],
+      registro:'Uzņēmumu reģistrs'},
+  LT:{nombre:'Lituania',      formato:'LT + código (9-12 dígitos)', ejemplo:'LT123456789',   id:'Juridinio asmens kodas',
+      dominios:['rekvizitai.lt','registrucentras.lt'],
+      registro:'Registrų centras'},
+  CY:{nombre:'Chipre',        formato:'CY + TIC (9 chars)',          ejemplo:'CY12345678L',   id:'TIC',
+      dominios:['efiling.drcor.mcit.gov.cy','companies.gov.cy'],
+      registro:'Department of Registrar of Companies'},
+  MT:{nombre:'Malta',         formato:'MT + VAT (8 dígitos)',        ejemplo:'MT12345678',    id:'VAT number',
+      dominios:['mfsa.mt','mbr.org.mt'],
+      registro:'Malta Business Registry'}
+};
+
+// Detecta el país probable a partir del nombre de empresa o contexto
+function _detectarPaisEORI(query){
+  const q = query.toLowerCase();
+  // Indicadores explícitos
+  if(q.includes(' ag ') || q.includes(' gmbh') || q.includes(' kg ') || q.endsWith(' ag') || q.endsWith(' gmbh')) return 'DE';
+  if(q.includes(' sarl') || q.includes(' sas ') || q.includes(' sa ') && q.includes('france') || q.includes(' sas') || q.endsWith(' sa') && false) return 'FR'; // evitar falso positivo con ES
+  if(q.includes(' srl') || q.includes(' spa ') || q.includes(' snc') || q.includes(' sas') && q.includes('ital')) return 'IT';
+  if(q.includes(' bv ') || q.includes(' nv ') || q.includes(' vof') || q.endsWith(' bv') || q.endsWith(' nv')) return 'NL';
+  if(q.includes(' lda') || q.includes(' sa ') && q.includes('portug') || q.includes(' unipessoal')) return 'PT';
+  if(q.includes(' nv/sa') || q.includes(' bvba') || q.includes(' sprl') || q.includes(' asbl')) return 'BE';
+  if(q.includes(' sp. z o.o') || q.includes(' s.a. ') && q.includes('poland') || q.includes(' spółka')) return 'PL';
+  if(q.includes(' ab ') || q.endsWith(' ab') || q.includes('sverige') || q.includes('sweden')) return 'SE';
+  if(q.includes(' a/s') || q.includes(' aps') || q.includes('denmark') || q.includes('dansk')) return 'DK';
+  if(q.includes(' gmbh') || q.includes(' ag') || q.includes('austria') || q.includes('österreich')) return 'AT';
+  if(q.includes(' ltd') && (q.includes('ireland') || q.includes('dublin'))) return 'IE';
+  if(q.includes(' oy ') || q.endsWith(' oy') || q.includes('finland') || q.includes('suomi')) return 'FI';
+  if(q.includes(' s.r.o') || q.includes(' a.s.') && (q.includes('czech') || q.includes('checa'))) return 'CZ';
+  // Por defecto, sin detección → null (se usará multi-país)
+  return null;
+}
+
+// Llama a la API de Anthropic con web search, adaptando dominios y prompt al país
+async function callAnthropicWithWebSearch(systemPrompt, userPrompt, apiKey, pais){
+  const ENDPOINT = 'https://api.anthropic.com/v1/messages';
+  const HEADERS = {
+    'Content-Type': 'application/json',
+    'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true'
+  };
+
+  // Dominios según país detectado, más TAXUD siempre
+  const baseDomains = ['taxation-customs.ec.europa.eu','ec.europa.eu','opencorporates.com'];
+  const paisInfo = pais ? EORI_PAISES[pais] : null;
+  const paisDomains = paisInfo ? paisInfo.dominios : [
+    // Sin país detectado: cubrir los más frecuentes
+    'iberinform.es','einforma.com','infogreffe.fr','pappers.fr',
+    'handelsregister.de','northdata.de','kvk.nl','registroimprese.it',
+    'opencorporates.com','companysearch.nl','racius.com'
+  ];
+  const allDomains = [...new Set([...paisDomains, ...baseDomains])];
+
+  let messages = [{ role:'user', content: userPrompt }];
+  let finalText = '';
+  const MAX_TURNS = 6;
+
+  for(let turn = 0; turn < MAX_TURNS; turn++){
+    const body = {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1800,
+      system: systemPrompt,
+      messages,
+      tools: [{
+        type: 'web_search_20250305',
+        name: 'web_search',
+        max_uses: 5,
+        allowed_domains: allDomains
+      }]
+    };
+
+    const ctrl = new AbortController();
+    const tid = setTimeout(()=>ctrl.abort(), 35000);
+    let resp, data;
+    try {
+      resp = await fetch(ENDPOINT, { method:'POST', signal:ctrl.signal, headers:HEADERS, body:JSON.stringify(body) });
+      data = await resp.json();
+    } finally { clearTimeout(tid); }
+
+    if(!resp.ok) throw new Error(data?.error?.message || 'Error Anthropic '+resp.status);
+
+    const textBlocks = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    if(textBlocks) finalText = textBlocks;
+
+    if(data.stop_reason === 'end_turn') break;
+    if(data.stop_reason === 'tool_use'){
+      messages.push({ role:'assistant', content: data.content });
+      const toolResults = (data.content||[])
+        .filter(b=>b.type==='tool_use')
+        .map(b=>({ type:'tool_result', tool_use_id:b.id, content:'[búsqueda ejecutada]' }));
+      messages.push({ role:'user', content: toolResults });
+    } else { break; }
+  }
+
+  return finalText;
 }
 
 function setEoriMode(mode){
@@ -4583,23 +4641,21 @@ function setEoriMode(mode){
     if(btnEmp){ btnEmp.style.background=activeStyle; btnEmp.style.color='#fff'; btnEmp.style.boxShadow='0 2px 6px rgba(6,95,70,.35)'; }
     if(btnCod){ btnCod.style.background='transparent'; btnCod.style.color='var(--g600)'; btnCod.style.boxShadow='none'; }
     if(inp) inp.placeholder='Ej: Inditex S.A., IPROSUR, Siemens AG...';
-    if(hint) hint.textContent='Búsqueda con IA + Google Search · Fuentes oficiales UE en tiempo real';
+    if(hint) hint.textContent='Estimación IA — la IA puede cometer errores · Verifica siempre en TAXUD';
   } else {
     if(btnCod){ btnCod.style.background=activeStyle; btnCod.style.color='#fff'; btnCod.style.boxShadow='0 2px 6px rgba(6,95,70,.35)'; }
     if(btnEmp){ btnEmp.style.background='transparent'; btnEmp.style.color='var(--g600)'; btnEmp.style.boxShadow='none'; }
     if(inp) inp.placeholder='Ej: ESB72049117, FR12345678901, DE987654321...';
-    if(hint) hint.textContent='Introduce el código EORI (2 letras de país + identificador)';
+    if(hint) hint.textContent='Verificación en tiempo real · Base de datos oficial TAXUD (Comisión Europea)';
   }
   const res = document.getElementById('eori-result'); if(res) res.innerHTML='';
   const val = document.getElementById('eori-validation-msg'); if(val){ val.style.display='none'; val.textContent=''; }
 }
 
-async function abrirBuscadorEORI(){
-  document.getElementById('screen-aduanas').style.display='none';
-  document.getElementById('screen-eori').style.display='flex';
-  const inp = document.getElementById('eori-input'); if(inp) inp.focus();
-  // Preload the key silently
-  await _loadEoriKey();
+async function _loadEoriKey(){
+  if(_eoriKeyLoaded) return;
+  const k = await getAnthropicKey() || await getORKey();
+  if(k) _eoriKeyLoaded = true;
 }
 
 async function buscarEORI(){
@@ -4612,211 +4668,308 @@ async function buscarEORI(){
     if(valEl){ valEl.textContent='⚠️ El campo de búsqueda no puede estar vacío.'; valEl.style.display='block'; }
     return;
   }
-  if(_eoriMode==='codigo'){
-    if(!/^[A-Za-z]{2}[A-Za-z0-9]{4,15}$/.test(raw.replace(/\s/g,''))){
-      if(valEl){ valEl.textContent='⚠️ Formato incorrecto. Ejemplo: ESB72049117, FR12345678901'; valEl.style.display='block'; }
-      return;
-    }
-  }
   if(valEl){ valEl.style.display='none'; }
 
-  // query definida correctamente ANTES de usarla
-  const query = _eoriMode==='codigo' ? raw.toUpperCase().replace(/\s/g,'') : raw;
+  // ── MODO CÓDIGO: consultar API oficial TAXUD ─────────────────────
+  if(_eoriMode==='codigo'){
+    const eori = raw.toUpperCase().replace(/\s/g,'');
+    if(!/^[A-Z]{2}[A-Z0-9]{5,17}$/.test(eori)){
+      if(valEl){ valEl.textContent='⚠️ Formato incorrecto. Debe empezar con 2 letras de país (ej: ES, FR, DE) seguidas de caracteres alfanuméricos.'; valEl.style.display='block'; }
+      return;
+    }
 
-  // 1. Buscar en caché local primero
-  const cached = await buscarEORIenCache(query);
-  if(cached?.length){
-    const c = cached[0];
-    const fechaCache = c.updated_at ? new Date(c.updated_at).toLocaleDateString('es-ES') : '—';
-    resEl.innerHTML = _renderEoriResult(c.resultado_texto||'', query, true, fechaCache);
-    if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
-    return;
-  }
-
-  // 2. Obtener API key
-  const key = await getORKey() || '';
-  if(!key){
-    resEl.innerHTML=`<div style="padding:14px;background:var(--am50);border:1px solid #fde68a;border-radius:var(--rl);color:#92400e">
-      ⚠️ Configura la API key de <strong>OpenRouter</strong> en el módulo <strong>Aduanas → Clasificador TARIC</strong> (⚙️ sidebar).
-      Gratis en <a href="https://openrouter.ai/keys" target="_blank" style="color:#1d4ed8">openrouter.ai/keys ↗</a>
+    if(btn){ btn.disabled=true; btn.innerHTML='⏳ Verificando...'; }
+    if(resEl) resEl.innerHTML=`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:24px;text-align:center;box-shadow:var(--shl)">
+      <div class="spinner" style="margin:0 auto 10px;width:26px;height:26px;border-width:3px"></div>
+      <div style="font-size:13px;font-weight:600;color:var(--g700)">Consultando base de datos oficial TAXUD…</div>
+      <div style="font-size:11px;color:var(--g400);margin-top:4px">Registro europeo de operadores económicos</div>
     </div>`;
-    return;
-  }
 
-  // 3. UI loading
-  if(btn){ btn.disabled=true; btn.innerHTML='⏳ Buscando...'; }
-  resEl.innerHTML=`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:28px;text-align:center;box-shadow:var(--shl)">
-    <div class="spinner" style="margin:0 auto 12px;width:28px;height:28px;border-width:3px"></div>
-    <div style="font-size:14px;font-weight:600;color:var(--g700)">Consultando base de datos EORI…</div>
-    <div style="font-size:11px;color:var(--g400);margin-top:4px">Fuentes oficiales UE · AEAT · Registro Mercantil</div>
-  </div>`;
-
-  const sysPrompt = `Eres un experto en aduanas de la UE con acceso a toda la información pública sobre operadores económicos y números EORI.
-
-REGLAS:
-- EORI español = "ES" + CIF completo (ej: CIF B72049117 → EORI ESB72049117)
-- EORI de otros países: 2 letras ISO del país + identificador fiscal nacional
-- Para empresas españolas conocidas: busca su CIF y construye el EORI directamente
-- Distingue entre empresas homónimas por sector/ciudad si es relevante
-- Siempre incluye el enlace de verificación oficial de TAXUD
-- Responde SIEMPRE en el formato JSON que se indica, sin texto adicional fuera del JSON`;
-
-  const prompt = _eoriMode==='empresa'
-    ? `Busca la empresa: "${query}"
-
-Responde SOLO con este JSON (sin markdown, sin texto extra):
-{
-  "encontrado": true/false,
-  "nombre_legal": "nombre oficial",
-  "eori": "ESxxxxxxxxx o null",
-  "cif_nif": "Bxxxxxxxx o null",
-  "pais": "España",
-  "tipo": "Empresa/Autónomo/Entidad",
-  "sector": "sector aproximado si se conoce",
-  "estado": "Activo/Inactivo/Desconocido",
-  "direccion": "dirección fiscal si se conoce o null",
-  "como_calcular": "explicación de cómo construir el EORI si no se conoce directamente",
-  "fuente": "base de conocimiento / AEAT / Registro Mercantil",
-  "verificar_en": "https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=EORI_AQUI",
-  "notas": "información adicional relevante o null"
-}`
-    : `Verifica el código EORI: "${query}"
-
-Responde SOLO con este JSON (sin markdown, sin texto extra):
-{
-  "encontrado": true/false,
-  "eori": "${query}",
-  "nombre_legal": "nombre del operador si se conoce",
-  "pais": "país según las 2 primeras letras",
-  "identificador_nacional": "el número sin el prefijo del país",
-  "tipo_operador": "Importador/Exportador/Agente/Otro",
-  "estado": "Activo/Inactivo/Desconocido",
-  "verificar_en": "https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(query)}",
-  "notas": "información adicional o null"
-}`;
-
-  try{
-    // Usar el modelo que funciona en el resto del sistema
-    const modelos = [
-      'mistralai/mistral-small-3.2-24b-instruct',
-      'mistralai/mistral-small-3.2-24b-instruct:free',
-      'google/gemma-3-27b-it:free',
+    // Probar tres proxies CORS en cadena para esquivar bloqueos de navegador
+    const TAXUD_PROXIES = [
+      `https://corsproxy.io/?${encodeURIComponent('https://ec.europa.eu/taxation_customs/dds2/eos/eori_details.jsp?Lang=es&Eori='+eori)}`,
+      `https://api.allorigins.win/get?url=${encodeURIComponent('https://ec.europa.eu/taxation_customs/dds2/eos/eori_details.jsp?Lang=es&Eori='+eori)}`,
+      null // fallback — mostrar enlace directo
     ];
-    let parsed = null;
-    let rawText = '';
-    for(const modelo of modelos){
+
+    let taxudHtml = null;
+    let taxudText = null;
+
+    for(const proxyUrl of TAXUD_PROXIES){
+      if(!proxyUrl) break;
       try{
         const ctrl = new AbortController();
-        const tid = setTimeout(()=>ctrl.abort(), 22000);
-        const r = await fetch('https://openrouter.ai/api/v1/chat/completions',{
-          method:'POST', signal:ctrl.signal,
-          headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,
-            'HTTP-Referer':'https://marcoslekolas.github.io/PortalALS/','X-Title':'ALS EORI'},
-          body:JSON.stringify({model:modelo,messages:[{role:'system',content:sysPrompt},{role:'user',content:prompt}],temperature:0.1,max_tokens:800})
-        });
+        const tid  = setTimeout(()=>ctrl.abort(), 10000);
+        const resp = await fetch(proxyUrl, {signal:ctrl.signal});
         clearTimeout(tid);
-        const d = await r.json();
-        if(!r.ok||d.error){ const s=d?.error?.message||''; if(r.status===429||s.includes('rate')||s.includes('limit')){ continue; } throw new Error(s||'Error '+r.status); }
-        rawText = (d?.choices?.[0]?.message?.content||'').trim();
-        if(!rawText) continue;
-        // Intentar parsear JSON — puede venir con markdown
-        const clean = rawText.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
-        try{ parsed = JSON.parse(clean); break; }catch(je){ rawText=clean; break; }
-      }catch(e2){ if(e2.name==='AbortError'||e2.message?.includes('rate')){ continue; } throw e2; }
+        if(!resp.ok) continue;
+        const raw = await resp.text();
+        // allorigins devuelve JSON con campo "contents"
+        const html = raw.includes('"contents"') ? JSON.parse(raw).contents : raw;
+        if(!html || html.length < 100) continue;
+        taxudHtml = html;
+        break;
+      } catch(e){ continue; }
     }
 
-    if(!parsed && !rawText) throw new Error('Sin respuesta de los modelos. Inténtalo de nuevo en unos segundos.');
+    if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
 
-    // Renderizar resultado estructurado o texto plano
-    const resultText = parsed ? _formatEoriParsed(parsed, query) : rawText;
-    resEl.innerHTML = _renderEoriResult(resultText, query, false, null, parsed);
+    if(taxudHtml){
+      // Parsear respuesta TAXUD
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(taxudHtml, 'text/html');
 
-    // Guardar en caché automáticamente
-    if(resultText && resultText.length > 30){
-      guardarEORIenCache(query, resultText).catch(()=>{});
+      // TAXUD devuelve una tabla con los datos cuando el EORI es válido
+      // o un mensaje de error cuando no existe
+      const body = doc.body?.innerText || taxudHtml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+      const notFound = /no encontrado|not found|invalid|no v[aá]lido|does not exist/i.test(body);
+      const valid    = /nombre|name|empresa|company|operador|operator/i.test(body) && !notFound;
+
+      // Extraer campos de la tabla si los hay
+      let nombre='', pais='', direccion='', estado='', nif='';
+      doc.querySelectorAll('table tr').forEach(tr=>{
+        const cells = [...tr.querySelectorAll('td,th')];
+        if(cells.length >= 2){
+          const lbl = cells[0].textContent.trim().toLowerCase();
+          const val = cells[1].textContent.trim();
+          if(!val) return;
+          if(lbl.includes('name') || lbl.includes('nombre')) nombre=val;
+          else if(lbl.includes('country') || lbl.includes('pa')) pais=val;
+          else if(lbl.includes('address') || lbl.includes('direcc')) direccion=val;
+          else if(lbl.includes('status') || lbl.includes('estado')) estado=val;
+          else if(lbl.includes('tin') || lbl.includes('nif') || lbl.includes('vat')) nif=val;
+        }
+      });
+
+      // Si no sacamos campos de tabla, mostrar el texto limpio
+      const hayDatos = nombre||pais||direccion;
+
+      if(notFound || (!valid && !hayDatos)){
+        resEl.innerHTML=`
+          <div style="background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
+            <div style="background:#fef2f2;border-bottom:1px solid #fecdd3;padding:14px 18px;display:flex;align-items:center;gap:10px">
+              <span style="font-size:22px">❌</span>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:var(--rd600)">EORI no encontrado</div>
+                <div style="font-size:12px;color:var(--rd500);margin-top:2px">El código <strong>${eori}</strong> no existe en el registro oficial TAXUD o no está activo</div>
+              </div>
+            </div>
+            <div style="padding:14px 18px;display:flex;gap:8px;flex-wrap:wrap">
+              <a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(eori)}" target="_blank"
+                style="display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">
+                🇪🇺 Verificar manualmente en TAXUD
+              </a>
+            </div>
+          </div>`;
+      } else {
+        const paisCode = eori.substring(0,2);
+        resEl.innerHTML=`
+          <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
+            <div style="background:linear-gradient(135deg,#f0fdf4,#f8fafc);border-bottom:1px solid var(--g100);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span style="font-size:20px">✅</span>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:var(--g900)">EORI válido · Registro TAXUD oficial</div>
+                <div style="font-size:11px;color:var(--gr600);font-weight:600;margin-top:2px">Datos verificados en tiempo real · Base de datos europea</div>
+              </div>
+              <code style="margin-left:auto;background:var(--g900);color:#fff;padding:4px 10px;border-radius:6px;font-size:13px;font-weight:700;letter-spacing:.05em">${eori}</code>
+            </div>
+            <div style="padding:18px 20px">
+              ${hayDatos ? `
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+                ${nombre?`<div><div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Nombre / Razón social</div><div style="font-size:15px;font-weight:700;color:var(--g900)">${nombre}</div></div>`:''}
+                ${nif?`<div><div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">NIF / TIN</div><div style="font-size:14px;font-weight:600;font-family:var(--mono)">${nif}</div></div>`:''}
+                ${pais?`<div><div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">País</div><div style="font-size:14px;font-weight:600">${pais}</div></div>`:''}
+                ${estado?`<div><div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Estado</div><div style="font-size:14px;font-weight:600;color:var(--gr600)">${estado}</div></div>`:''}
+                ${direccion?`<div style="grid-column:1/-1"><div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Dirección</div><div style="font-size:13px;color:var(--g700)">${direccion}</div></div>`:''}
+              </div>` : `<div style="font-size:13px;color:var(--g700);line-height:1.7;white-space:pre-wrap">${body.substring(0,800)}</div>`}
+            </div>
+            <div style="padding:10px 18px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
+              <a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(eori)}" target="_blank"
+                style="display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">
+                🇪🇺 Abrir en TAXUD oficial
+              </a>
+              ${nombre?`<button onclick="guardarEORIenCache('${eori}','${nombre.replace(/'/g,"\\'")} | ${eori} | ${pais}')" style="display:inline-flex;align-items:center;gap:5px;background:var(--b600);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">💾 Guardar en directorio</button>`:''}
+            </div>
+          </div>`;
+        if(nombre) guardarEORIenCache(eori, `${nombre} | ${eori} | ${pais} | ${nif} | ${direccion}`).catch(()=>{});
+      }
+      return;
     }
 
-  }catch(e){
+    // Proxy falló — mostrar fallback con enlace directo
+    resEl.innerHTML=`
+      <div style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
+        <div style="padding:16px 20px">
+          <div style="font-size:14px;font-weight:700;color:var(--g900);margin-bottom:6px">🌐 Consulta directa en TAXUD</div>
+          <div style="font-size:13px;color:var(--g700);margin-bottom:14px">
+            No se pudo conectar al proxy CORS. Verifica el EORI directamente en la fuente oficial:
+          </div>
+          <a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori=${encodeURIComponent(eori)}" target="_blank"
+            style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:700;text-decoration:none">
+            🇪🇺 Verificar <strong>${eori}</strong> en TAXUD →
+          </a>
+          <div style="margin-top:12px;font-size:11px;color:var(--g500)">Se abrirá la base de datos oficial de la Comisión Europea</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // ── MODO EMPRESA: Anthropic con web search real, multi-país ─────────
+  const query = raw;
+
+  // Cache local primero
+  const cached = await buscarEORIenCache(query);
+  if(cached && cached.length > 0){
+    const c = cached[0];
+    const fechaCache = c.updated_at ? new Date(c.updated_at).toLocaleDateString('es-ES') : '—';
+    resEl.innerHTML=`
+      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
+        <div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border-bottom:1px solid #fde68a;padding:14px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:20px">⚡</span>
+          <span style="font-size:14px;font-weight:700;color:var(--g900)">Resultado desde directorio local</span>
+          <span style="font-size:11px;color:var(--g500)">Guardado: ${fechaCache}</span>
+          <button onclick="buscarEORIForzandoIA()" style="margin-left:auto;background:var(--b600);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">🔍 Nueva búsqueda web</button>
+        </div>
+        <div style="padding:18px 20px">
+          <div style="font-size:13px;color:var(--g700);line-height:1.8;white-space:pre-wrap">${(c.resultado_texto||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        </div>
+      </div>`;
+    if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
+    return;
+  }
+
+  const anthKey = await getAnthropicKey();
+  if(!anthKey){
+    resEl.innerHTML=`
+      <div style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--rxl);padding:18px">
+        <div style="font-size:14px;font-weight:700;color:var(--g900);margin-bottom:8px">⚙️ Configura la API key de Anthropic</div>
+        <div style="font-size:13px;color:var(--g700);margin-bottom:12px">
+          Para búsquedas con verificación web en tiempo real, añade en Supabase:<br><br>
+          <code style="background:var(--g100);padding:4px 8px;border-radius:4px;font-size:12px">als_config → clave: anthropic_api_key → valor: sk-ant-...</code>
+        </div>
+        <a href="https://console.anthropic.com/keys" target="_blank"
+          style="display:inline-flex;align-items:center;gap:6px;background:var(--b600);color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;text-decoration:none">
+          🔑 Obtener API key →
+        </a>
+      </div>`;
+    if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
+    return;
+  }
+
+  // Detectar país por nombre/forma jurídica
+  const paisDetectado = _detectarPaisEORI(query);
+  const paisInfo = paisDetectado ? EORI_PAISES[paisDetectado] : null;
+
+  if(btn){ btn.disabled=true; btn.innerHTML='⏳ Buscando...'; }
+  if(resEl) resEl.innerHTML=`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);padding:24px;text-align:center;box-shadow:var(--shl)">
+    <div class="spinner" style="margin:0 auto 10px;width:26px;height:26px;border-width:3px"></div>
+    <div style="font-size:13px;font-weight:600;color:var(--g700)">Buscando en registros oficiales${paisInfo?' de '+paisInfo.nombre:''}…</div>
+    <div style="font-size:11px;color:var(--g400);margin-top:4px">${paisInfo ? paisInfo.registro : 'Registros mercantiles UE · TAXUD'}</div>
+  </div>`;
+
+  // System prompt adaptado al país
+  const sysPrompt = paisInfo
+    ? `Eres un asistente de aduanas especializado en la UE. Busca el número EORI de una empresa ${paisInfo.nombre}.
+
+FORMATO EORI EN ${paisInfo.nombre.toUpperCase()}: ${paisInfo.formato}
+Ejemplo: ${paisInfo.ejemplo}
+Identificador nacional: ${paisInfo.id}
+Registro oficial: ${paisInfo.registro}
+
+PROCESO:
+1. Busca el identificador fiscal real (${paisInfo.id}) de la empresa en ${paisInfo.registro}
+2. Construye el EORI = ${paisDetectado} + ${paisInfo.id}
+3. Proporciona el nombre legal EXACTO tal como aparece en el registro oficial
+4. SOLO usa datos encontrados en la búsqueda web — nunca inventes ni uses memoria
+
+Responde en español con: nombre legal, ${paisInfo.id}, EORI calculado, dirección, fuente, enlace TAXUD.`
+
+    : `Eres un asistente de aduanas especializado en la UE. Busca el número EORI de una empresa europea.
+
+REGLAS CRÍTICAS:
+- Determina primero el país de establecimiento de la empresa
+- El EORI = código ISO del país (2 letras) + identificador nacional. Formatos principales:
+  • España (ES): ES + NIF/CIF (ej: ESB12345678)
+  • Alemania (DE): DE + Zollnummer/Steuernummer
+  • Francia (FR): FR + SIRET (14 dígitos)
+  • Italia (IT): IT + Codice Fiscale o P.IVA (11 dígitos)
+  • Países Bajos (NL): NL + 9 dígitos (KvK)
+  • Portugal (PT): PT + NIF (9 dígitos)
+  • Bélgica (BE): BE + 10 dígitos (BCE/KBO)
+  • Polonia (PL): PL + NIP (10 dígitos)
+  • Resto UE: código país + identificador fiscal nacional
+- NUNCA confundas formas jurídicas (SA/SL/GmbH/SRL/BV/etc.)
+- SOLO usa datos de la búsqueda web — nunca de memoria
+
+Responde en español con: país, nombre legal exacto, identificador fiscal, EORI calculado, fuente, enlace TAXUD.`;
+
+  const userPrompt = `Busca el número EORI de la empresa: "${query}"
+
+Necesito:
+1. País de establecimiento${paisInfo ? ' ('+paisInfo.nombre+')' : ''}
+2. Nombre legal EXACTO con forma jurídica correcta
+3. Identificador fiscal (${paisInfo ? paisInfo.id : 'NIF/CIF/SIRET/Steuernummer/etc.'})
+4. EORI calculado (${paisInfo ? paisInfo.formato : 'código país + identificador'})
+5. Dirección fiscal
+6. Fuente donde encontraste el dato
+7. Enlace para verificar en TAXUD: https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp
+
+${paisInfo ? 'Busca en: '+paisInfo.registro : 'Busca en el registro mercantil del país correspondiente y en fuentes oficiales.'}`;
+
+  try {
+    const text = await callAnthropicWithWebSearch(sysPrompt, userPrompt, anthKey, paisDetectado);
+    if(!text) throw new Error('Sin respuesta del servidor');
+
+    const eoriMatch = text.match(/\b[A-Z]{2}[A-Z0-9]{5,15}\b/);
+    const eoriCalc  = eoriMatch ? eoriMatch[0] : null;
+    const flagEmoji = paisDetectado ? ({ES:'🇪🇸',DE:'🇩🇪',FR:'🇫🇷',IT:'🇮🇹',NL:'🇳🇱',PT:'🇵🇹',BE:'🇧🇪',PL:'🇵🇱',SE:'🇸🇪',DK:'🇩🇰',AT:'🇦🇹',IE:'🇮🇪',GR:'🇬🇷',CZ:'🇨🇿',RO:'🇷🇴',HU:'🇭🇺',FI:'🇫🇮',SK:'🇸🇰',HR:'🇭🇷',BG:'🇧🇬',LU:'🇱🇺',SI:'🇸🇮',EE:'🇪🇪',LV:'🇱🇻',LT:'🇱🇹',CY:'🇨🇾',MT:'🇲🇹'}[paisDetectado]||'🇪🇺') : '🇪🇺';
+
+    resEl.innerHTML=`
+      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
+        <div style="background:linear-gradient(135deg,#f0fdf4,#f8fafc);border-bottom:1px solid var(--g100);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:22px;flex-shrink:0">${flagEmoji}</span>
+          <div>
+            <div style="font-size:14px;font-weight:700;color:var(--g900)">Resultado · Búsqueda web en tiempo real</div>
+            <div style="font-size:11px;color:var(--gr600);font-weight:600;margin-top:2px">${paisInfo ? paisInfo.registro : 'Registros oficiales UE'} · TAXUD</div>
+          </div>
+          ${eoriCalc?`<code style="margin-left:auto;background:var(--g900);color:#fff;padding:4px 10px;border-radius:6px;font-size:13px;font-weight:700;letter-spacing:.05em">${eoriCalc}</code>`:''}
+        </div>
+        <div style="padding:18px 20px">
+          <div style="font-size:13px;color:var(--g700);line-height:1.9;white-space:pre-wrap">${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        </div>
+        <div style="padding:10px 18px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
+          <a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es${eoriCalc?'&Eori='+encodeURIComponent(eoriCalc):''}" target="_blank"
+            style="display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">
+            🇪🇺 Verificar${eoriCalc?' '+eoriCalc:''} en TAXUD
+          </a>
+          ${paisInfo?`<a href="https://${paisInfo.dominios[0]}" target="_blank"
+            style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">
+            📋 ${paisInfo.registro.split('/')[0].trim()}
+          </a>`:''}
+          <button onclick="guardarEORIenCache('${query.replace(/'/g,"\\'")}','${eoriCalc||''}|'+document.querySelector('#eori-result .eori-txt')?.textContent||document.querySelector('#eori-result pre')?.textContent||'')"
+            style="display:inline-flex;align-items:center;gap:5px;background:var(--b600);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">
+            💾 Guardar en directorio
+          </button>
+        </div>
+      </div>`;
+    if(text.length > 50) guardarEORIenCache(query, text).catch(()=>{});
+
+  } catch(e){
     const msg = e.message||'';
-    const friendly = msg.includes('rate')||msg.includes('quota')||msg.includes('⏳')
-      ? '⏳ Rate limit temporal. Espera unos segundos e inténtalo de nuevo.'
-      : msg.includes('key')||msg.includes('auth')||msg.includes('401')
-      ? '🔑 API key de OpenRouter no válida. Configúrala en Aduanas → Clasificador TARIC.'
-      : msg.includes('fetch')||msg.includes('network')||msg.includes('Load failed')
-      ? '🌐 Error de red. Comprueba tu conexión.'
+    const isAuthErr = msg.includes('401')||msg.includes('403')||msg.includes('authentication')||msg.includes('api_key');
+    const friendly = isAuthErr
+      ? '🔑 API key de Anthropic no válida o sin permisos de web search. Verifica en console.anthropic.com que web search esté habilitado en tu organización.'
+      : msg.includes('fetch')||msg.includes('Load')||msg.includes('network') ? '🌐 Error de red.'
+      : msg.includes('abort')||msg.includes('timeout') ? '⏳ Tiempo de espera agotado. Inténtalo de nuevo.'
       : '❌ '+msg.substring(0,200);
-    resEl.innerHTML=`<div style="background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rxl);padding:18px;display:flex;gap:12px">
+    resEl.innerHTML=`<div style="background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rxl);padding:18px;display:flex;gap:12px;align-items:flex-start">
       <span style="font-size:22px;flex-shrink:0">⚠️</span>
       <div><div style="font-size:14px;font-weight:700;color:var(--rd600);margin-bottom:4px">Error en la búsqueda</div>
-      <div style="font-size:13px;color:var(--rd600)">${friendly}</div>
-      <button onclick="buscarEORI()" style="margin-top:10px;background:var(--rd600);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">↩ Reintentar</button></div>
+      <div style="font-size:13px;color:var(--rd600)">${friendly}</div></div>
     </div>`;
-  }finally{
+  } finally {
     if(btn){ btn.disabled=false; btn.innerHTML='🔍 Buscar'; }
   }
-}
-
-// Formatea la respuesta JSON parseada en texto legible
-function _formatEoriParsed(p, query){
-  const lines = [];
-  if(p.nombre_legal) lines.push('🏢 Empresa: '+p.nombre_legal);
-  if(p.eori)         lines.push('🔢 EORI: '+p.eori);
-  if(p.cif_nif)      lines.push('📋 CIF/NIF: '+p.cif_nif);
-  if(p.pais)         lines.push('🌍 País: '+p.pais);
-  if(p.identificador_nacional) lines.push('🔑 ID Nacional: '+p.identificador_nacional);
-  if(p.tipo)         lines.push('📂 Tipo: '+p.tipo);
-  if(p.tipo_operador) lines.push('📂 Tipo operador: '+p.tipo_operador);
-  if(p.sector)       lines.push('🏭 Sector: '+p.sector);
-  if(p.estado)       lines.push('✅ Estado: '+p.estado);
-  if(p.direccion)    lines.push('📍 Dirección: '+p.direccion);
-  if(p.fuente)       lines.push('📌 Fuente: '+p.fuente);
-  if(p.como_calcular) lines.push('\nℹ️ Cómo calcular: '+p.como_calcular);
-  if(p.notas)        lines.push('\n💡 '+p.notas);
-  return lines.join('\n');
-}
-
-// Renderiza el bloque de resultado con diseño estructurado
-function _renderEoriResult(text, query, fromCache, fechaCache, parsed){
-  const taxudUrl = parsed?.verificar_en || parsed?.eori
-    ? 'https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&Eori='+(parsed.eori||'')
-    : 'https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es';
-  const aeatUrl  = 'https://www.agenciatributaria.es/AEAT.internet/Inicio/La_Agencia_Tributaria/Aduanas_e_Impuestos_Especiales/_Presentacion/El_numero_EORI/Consulta_EORI/Consulta_EORI.shtml';
-  const eoriCode = parsed?.eori || (text.match(/ES[A-Z0-9]{7,13}/)?.[0]) || '';
-
-  const headerBg   = fromCache ? 'background:var(--am50);border-bottom:1px solid #fde68a' : 'background:var(--gr50);border-bottom:1px solid #bbf7d0';
-  const headerIcon = fromCache ? '⚡' : '✅';
-  const headerTxt  = fromCache ? 'Resultado desde directorio local · '+fechaCache : 'Resultado encontrado';
-
-  // Convertir texto plano a filas visuales
-  const rows = text.split('\n').filter(l=>l.trim()).map(l=>{
-    const [icon,...rest] = l.trim().split(' ');
-    const content = rest.join(' ');
-    const isSection = l.startsWith('\n') || l.includes('Cómo calcular') || l.includes('💡');
-    return isSection
-      ? `<div style="padding:10px 0;border-top:1px solid var(--g100);margin-top:4px;font-size:12px;color:var(--g600);line-height:1.6">${l.trim()}</div>`
-      : `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:0.5px solid var(--g100)">
-           <span style="font-size:14px;flex-shrink:0;width:22px">${icon}</span>
-           <span style="font-size:13px;color:var(--g900);flex:1">${content}</span>
-         </div>`;
-  }).join('');
-
-  return `<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);overflow:hidden;box-shadow:var(--shl)">
-    <div style="${headerBg};padding:12px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:18px">${headerIcon}</span>
-      <span style="font-size:14px;font-weight:700;color:var(--g900)">${headerTxt}</span>
-      ${fromCache?`<button onclick="buscarEORIForzandoIA()" style="margin-left:auto;background:var(--b600);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">🤖 Actualizar con IA</button>`:''}
-    </div>
-    <div style="padding:14px 18px">${rows||'<div style="color:var(--g500);font-size:13px;padding:8px 0">'+text+'</div>'}</div>
-    ${eoriCode?`<div style="padding:8px 18px;background:var(--b50);border-top:1px solid var(--b100)">
-      <div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--b700);letter-spacing:.05em">${eoriCode}</div>
-      <div style="font-size:10px;color:var(--b500);margin-top:1px">Código EORI detectado — clic para copiar</div>
-    </div>`:''}
-    <div style="padding:10px 18px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
-      <a href="${taxudUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;text-decoration:none">🇪🇺 Verificar en TAXUD</a>
-      <a href="${aeatUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:var(--g100);color:var(--g700);border:1px solid var(--g200);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;text-decoration:none">🏛️ Consultar AEAT</a>
-      ${eoriCode?`<button onclick="navigator.clipboard?.writeText('${eoriCode}').then(()=>showToast('📋 EORI copiado'))" style="display:inline-flex;align-items:center;gap:5px;background:var(--w);color:var(--b600);border:1px solid var(--b200);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer">📋 Copiar EORI</button>`:''}
-    </div>
-  </div>`;
 }
 
 
@@ -6231,42 +6384,8 @@ async function loadExp(){
   const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas!empresa_id(nombre),cliente_override:cliente_override_id(nombre)').order('created_at',{ascending:false});
   allE=data||[];
   _poblarFiltrosExp();
-  _renderKpisExp(allE);
   renderE(allE);
   _expFiltradas=[...allE];
-}
-
-function _renderKpisExp(list){
-  const total   = list.length;
-  const sinMrn  = list.filter(e=>!e.nº_mrn && e.tramite_aduanero!=='Despachado' && e.ubicacion && e.ubicacion!=='Pendiente recibir').length;
-  const autori  = list.filter(e=>e.estado_carga==='✅ AUTORIZADO').length;
-  const pendRec = list.filter(e=>e.ubicacion==='Pendiente recibir').length;
-  const vencidas= list.filter(e=>{ const f=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null; return f&&f<new Date()&&e.tramite_aduanero!=='Despachado'; }).length;
-  const kpiWrap = document.getElementById('exp-kpis');
-  if(!kpiWrap) return;
-  kpiWrap.innerHTML=`
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-      <div style="flex:1;min-width:100px;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:10px 14px;border-left:3px solid var(--b500);cursor:pointer" onclick="resetFiltrosExp()" title="Ver todas">
-        <div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Total</div>
-        <div style="font-size:22px;font-weight:700;color:var(--g900)">${total}</div>
-      </div>
-      <div style="flex:1;min-width:100px;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:10px 14px;border-left:3px solid var(--b500);cursor:pointer" onclick="filtrarEst('✅ AUTORIZADO')" title="Filtrar autorizadas">
-        <div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Autorizadas</div>
-        <div style="font-size:22px;font-weight:700;color:var(--gr600)">${autori}</div>
-      </div>
-      <div style="flex:1;min-width:100px;background:${pendRec>0?'var(--am50)':'var(--w)'};border:1px solid ${pendRec>0?'#fde68a':'var(--g200)'};border-radius:var(--rl);padding:10px 14px;border-left:3px solid var(--am500);cursor:pointer" onclick="filtrarExp_ubic('Pendiente recibir')" title="Pendientes de llegar">
-        <div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Pend. recibir</div>
-        <div style="font-size:22px;font-weight:700;color:var(--am600)">${pendRec}</div>
-      </div>
-      <div style="flex:1;min-width:100px;background:${sinMrn>0?'var(--am50)':'var(--w)'};border:1px solid ${sinMrn>0?'#fde68a':'var(--g200)'};border-radius:var(--rl);padding:10px 14px;border-left:3px solid ${sinMrn>0?'var(--am500)':'var(--g300)'};cursor:pointer" onclick="filtrarSinMRN()" title="Sin MRN">
-        <div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Sin MRN</div>
-        <div style="font-size:22px;font-weight:700;color:${sinMrn>0?'var(--am700)':'var(--g400)'}">${sinMrn}</div>
-      </div>
-      ${vencidas>0?`<div style="flex:1;min-width:100px;background:var(--rd50);border:1px solid #fecdd3;border-radius:var(--rl);padding:10px 14px;border-left:3px solid var(--rd500);cursor:pointer" onclick="filtrarVencidas()" title="Fecha máx. despacho vencida">
-        <div style="font-size:10px;color:var(--rd500);font-weight:600;text-transform:uppercase;letter-spacing:.4px">⚠️ Vencidas</div>
-        <div style="font-size:22px;font-weight:700;color:var(--rd600)">${vencidas}</div>
-      </div>`:''}
-    </div>`;
 }
 
 function _poblarFiltrosExp(){
@@ -6329,16 +6448,8 @@ function selTodosBuques(sel){
   _actualizarLabelBuque();
   filtrarExp();
 }
-function filtrarVencidas(){ const hoy=new Date(); _expFiltradas=allE.filter(e=>{ const f=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null; return f&&f<hoy&&e.tramite_aduanero!=='Despachado'; }); renderE(_expFiltradas); }
-function filtrarExp_ubic(v){ document.getElementById('fil-ubic').value=v; filtrarExp(); }
-
 function renderE(list){
   const hoy=new Date();
-  // En móvil (<768px) renderizar tarjetas en lugar de tabla
-  if(window.innerWidth<=768){
-    _renderExpTarjetas(list, hoy);
-    return;
-  }
   document.getElementById('exp-tbody').innerHTML=list.map(e=>{
     const fmax=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null;
     const fmaxStr=fmax?fd(e.fecha_max_despacho):'—';
@@ -6372,46 +6483,6 @@ function renderE(list){
     bcPage.textContent = 'Expediciones ('+list.length+(sinMrn?' · '+sinMrn+' sin MRN':'')+(auth?' · '+auth+' ✅':'')+ ')';
   }
 }
-// ── Vista tarjetas para móvil ─────────────────────────────────
-function _renderExpTarjetas(list, hoy){
-  const tbody = document.getElementById('exp-tbody');
-  // En móvil usar el contenedor de la tabla como lista de tarjetas
-  const tc = tbody?.closest('.tc');
-  if(!tc) return;
-  if(!list.length){ tc.innerHTML='<div class="empty" style="padding:40px"><div class="empty-txt">Sin expediciones</div></div>'; return; }
-  tc.innerHTML=list.map(e=>{
-    const fmax=e.fecha_max_despacho?new Date(e.fecha_max_despacho):null;
-    const fmaxAlerta=fmax&&fmax<hoy&&e.tramite_aduanero!=='Despachado';
-    const semDisplay=e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo;
-    const sinMrn=!e.nº_mrn&&e.tramite_aduanero!=='Despachado'&&e.ubicacion&&e.ubicacion!=='Pendiente recibir';
-    const hasFoto=e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url;
-    const cardBorder=e.estado_carga==='✅ AUTORIZADO'?'border-left:4px solid var(--gr500)':fmaxAlerta?'border-left:4px solid var(--rd500)':sinMrn?'border-left:4px solid var(--am500)':'border-left:4px solid var(--g200)';
-    return`<div style="padding:14px 16px;border-bottom:1px solid var(--g100);cursor:pointer;${cardBorder};background:var(--w);active:background:var(--g50)" onclick="openExpD('${e.id}')" data-expid="${e.id}">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
-        <div>
-          <div style="font-weight:700;font-size:14px;color:var(--g900)">${e.nº_expedicion}</div>
-          <div style="font-size:11px;color:var(--g500);margin-top:1px">${e.buques?.nombre||'—'} · ${e.empresas?.nombre||'—'}</div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
-          ${bdg(semDisplay)}
-          ${hasFoto?'<span style="font-size:10px;color:var(--tl600)">📸 Con foto</span>':''}
-        </div>
-      </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        <span class="badge bgr" style="font-size:10px">${e.status_aduanero||'—'}</span>
-        <span style="font-size:11px;color:var(--g500)">${e.bultos}b · ${e.kilos}kg</span>
-        <span style="font-size:11px;color:var(--g600)">📍 ${e.ubicacion||'—'}</span>
-        ${sinMrn?'<span style="font-size:10px;font-weight:700;color:var(--am700);background:var(--am50);padding:1px 6px;border-radius:4px">⚠️ Sin MRN</span>':''}
-        ${fmaxAlerta?`<span style="font-size:10px;font-weight:700;color:var(--rd600);background:var(--rd50);padding:1px 6px;border-radius:4px">⚠️ Vencida ${fd(e.fecha_max_despacho)}</span>`:''}
-        ${e.tramite_aduanero==='Despachado'?'<span style="font-size:10px;color:var(--gr600);font-weight:600">✓ Despachado</span>':''}
-      </div>
-      <div style="display:flex;gap:6px;margin-top:10px">
-        <button onclick="event.stopPropagation();openExpD('${e.id}')" style="flex:1;padding:8px;border:1px solid var(--g200);border-radius:8px;background:var(--g50);font-size:12px;font-weight:600;cursor:pointer;color:var(--g700)">Ver ficha</button>
-        <button onclick="event.stopPropagation();_menuCambiarUbicacion('${e.id}')" style="flex:1;padding:8px;border:1px solid var(--b200);border-radius:8px;background:var(--b50);font-size:12px;font-weight:600;cursor:pointer;color:var(--b700)">📍 Ubicación</button>
-      </div>
-    </div>`;
-  }).join('');
-}
 // ── Filtrado unificado de expediciones ───────────────────────────
 let _expFiltradas = []; // lista actualmente visible
 
@@ -6435,7 +6506,6 @@ function filtrarExp(){
     return true;
   });
   renderE(_expFiltradas);
-  _renderKpisExp(_expFiltradas);
   _selExpLote.clear();
   _actualizarToolbarLote();
   // Actualizar breadcrumb con filtro activo
@@ -7995,149 +8065,140 @@ async function loadAlmFotos(tab){
       if(!a.eta)return 1;if(!b.eta)return -1;
       return new Date(a.eta)-new Date(b.eta);
     });
-    cont.innerHTML=sorted.map(([bid,d], idx)=>{
-      const bodyHtml = d.items.map(e=>`
-        <div style="border-bottom:1px solid var(--g100);padding:14px 16px" id="llegada-${e.id}">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-            <span style="font-size:20px">${(e.ubicacion||'').includes('Aeropuerto')?'✈️':'📦'}</span>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:700;font-size:14px;color:var(--g900);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.nº_expedicion}</div>
+    cont.innerHTML=sorted.map(([bid,d])=>`
+      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
+        <div style="background:var(--b50);border-bottom:1px solid var(--b100);padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-weight:700;color:var(--b700)">🚢 ${d.nombre}</div>
+          <div style="font-size:12px;color:var(--b600)">ETA: ${d.eta?fd(d.eta):'—'} · ${d.items.length} exp.</div>
+        </div>
+        ${d.items.map(e=>`
+        <div style="border-bottom:1px solid var(--g100);padding:16px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <span style="font-size:22px">${(e.ubicacion||'').includes('Aeropuerto')?'✈️':'📦'}</span>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:14px;color:#111;letter-spacing:-.01em">${e.nº_expedicion}</div>
               <div class="ll-sub">${e.bultos} btos · ${e.kilos} kg · <span style="color:var(--am600);font-weight:600">${e.ubicacion||'—'}</span></div>
             </div>
             ${bdg(e.estado_semaforo)}
           </div>
+
+          <!-- Estado visual del envío -->
           <div style="margin-bottom:10px">
-            <div style="display:flex;gap:5px;flex-wrap:wrap" id="est-${e.id}">
-              <button class="est-btn active" data-val="ok" onclick="selEstado('${e.id}','ok',this)" style="flex:1;min-width:70px;min-height:44px;padding:6px 2px;border:2px solid var(--gr300);border-radius:8px;background:var(--gr50);color:var(--gr700);font-size:11px;font-weight:700;cursor:pointer">✅ OK</button>
-              <button class="est-btn" data-val="leve" onclick="selEstado('${e.id}','leve',this)" style="flex:1;min-width:70px;min-height:44px;padding:6px 2px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer">⚠️ Daño</button>
-              <button class="est-btn" data-val="grave" onclick="selEstado('${e.id}','grave',this)" style="flex:1;min-width:70px;min-height:44px;padding:6px 2px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer">🔴 Grave</button>
-              <button class="est-btn" data-val="humedad" onclick="selEstado('${e.id}','humedad',this)" style="flex:1;min-width:70px;min-height:44px;padding:6px 2px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer">💧 Húmedo</button>
-              <button class="est-btn" data-val="precinto" onclick="selEstado('${e.id}','precinto',this)" style="flex:1;min-width:70px;min-height:44px;padding:6px 2px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer">🔓 Precinto</button>
+            <label class="fl2">Estado del envío recibido</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px" id="est-${e.id}">
+              <button class="est-btn active" data-val="ok" onclick="selEstado('${e.id}','ok',this)" style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--gr300);border-radius:8px;background:var(--gr50);color:var(--gr700);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">✅ Correcto</button>
+              <button class="est-btn" data-val="leve" onclick="selEstado('${e.id}','leve',this)" style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">⚠️ Daño leve</button>
+              <button class="est-btn" data-val="grave" onclick="selEstado('${e.id}','grave',this)" style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">🔴 Daño grave</button>
+              <button class="est-btn" data-val="humedad" onclick="selEstado('${e.id}','humedad',this)" style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">💧 Humedad</button>
+              <button class="est-btn" data-val="precinto" onclick="selEstado('${e.id}','precinto',this)" style="flex:1;min-width:80px;padding:7px 4px;border:2px solid var(--g200);border-radius:8px;background:var(--w);color:var(--g500);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s">🔓 Precinto roto</button>
             </div>
-            <div id="aviso-estado-${e.id}" style="display:none;margin-top:6px;padding:6px 10px;background:var(--am50);border:1px solid #fde68a;border-radius:6px;font-size:11px;color:var(--am700)">⚠️ Se creará una incidencia al confirmar</div>
+            <div id="aviso-estado-${e.id}" style="display:none;margin-top:6px;padding:6px 10px;background:var(--am50);border:1px solid var(--am200,#fde68a);border-radius:6px;font-size:11px;color:var(--am700,#92400e)">⚠️ Se creará una incidencia automáticamente al confirmar la llegada</div>
           </div>
+
+          <!-- Zona de fotos -->
           <div class="fg2" style="margin-bottom:8px">
-            <div class="foto-area" onclick="document.getElementById('fl-fi-${e.id}').click()" style="padding:12px 16px">
-              <input type="file" id="fl-fi-${e.id}" accept="image/*" capture="environment" multiple onchange="onFotoLlegadaCambiada('${e.id}',this)">
-              <div style="font-size:22px;margin-bottom:2px">📷</div>
-              <div style="font-size:12px;font-weight:600;color:var(--g700)">Fotografiar bultos</div>
+            <label class="fl2">📸 Fotos de los bultos recibidos
+              <span style="color:var(--b600);font-size:10px;font-weight:400"> — recomendado: una general + detalle de cada daño</span>
+            </label>
+            <div class="foto-area" onclick="document.getElementById('fl-fi-${e.id}').click()" style="padding:16px">
+              <input type="file" id="fl-fi-${e.id}" accept="image/*" multiple capture="environment"
+                onchange="onFotoLlegadaCambiada('${e.id}',this)">
+              <div style="font-size:26px;margin-bottom:4px">📷</div>
+              <div style="font-size:13px;font-weight:600;color:var(--g700)">Fotografiar bultos recibidos</div>
+              <div style="font-size:11px;color:var(--g400);margin-top:3px">Varias fotos • Cámara trasera del móvil</div>
             </div>
             <div class="foto-prev" id="fl-pv-${e.id}"></div>
           </div>
-          <textarea id="fl-nota-${e.id}" class="fi" placeholder="Notas opcionales…" style="min-height:40px;font-size:12px;resize:vertical;margin-bottom:8px"></textarea>
-          <div id="slide-ll-${e.id}"></div>
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <button id="qr-ll-btn-${e.id}" class="btn btn-s btn-sm" style="display:none" onclick="imprimirQRLlegada('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">📱 QR</button>
-            <button class="btn btn-s btn-sm" onclick="leerAlbaranOCR('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}',${e.bultos},${e.kilos})">📄 Albarán</button>
+
+          <!-- Notas de llegada -->
+          <div class="fg2" style="margin-bottom:10px">
+            <textarea id="fl-nota-${e.id}" class="fi" placeholder="Notas de llegada: marcas visibles, condición del embalaje, observaciones…" style="min-height:52px;font-size:12px;resize:vertical"></textarea>
           </div>
-        </div>`).join('');
-      const totalBtos = d.items.reduce((a,e)=>a+(e.bultos||0),0);
-      const subHtml = `ETA: ${d.eta?fd(d.eta):'—'} · <strong>${d.items.length}</strong> exp. · ${totalBtos} btos`;
-      return buqCard('ll-'+bid, 'var(--b50)', 'var(--b100)', 'var(--b700)', 'var(--b600)',
-        '🚢 '+d.nombre, subHtml, bodyHtml, sorted.length===1 || idx===0);
-    }).join('');
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-g" style="flex:1;min-height:52px;font-size:15px" onclick="confirmarLlegadaFotos('${e.id}')">✅ Confirmar llegada</button>
+            <button id="qr-ll-btn-${e.id}" class="btn btn-s" style="display:none;min-height:48px;font-size:15px;padding:10px 16px" onclick="imprimirQRLlegada('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">📱 QR</button>
+            <button class="btn btn-s" style="min-height:48px;font-size:15px;padding:10px 16px" onclick="leerAlbaranOCR('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}',${e.bultos},${e.kilos})" title="Fotografiar albarán y verificar con IA">📄 Albarán</button>
+          </div>
+        </div>`).join('')}
+      </div>`).join('');
     (exps||[]).forEach(e=>{
       setupFotos('fl-fi-'+e.id,'fl-pv-'+e.id,null);
+      // Marcar estado inicial como "ok"
       window['_estLlegada'] = window['_estLlegada'] || {};
       window['_estLlegada'][e.id] = 'ok';
-      // Slide-to-confirm
-      const slideWrap = document.getElementById('slide-ll-'+e.id);
-      if(slideWrap){
-        const sl = crearSlideConfirm('Confirmar llegada', ()=>confirmarLlegadaFotos(e.id), 'green');
-        slideWrap.appendChild(sl);
-      }
-      // Lightbox en miniaturas
-      setTimeout(()=>_makeThumbsZoomable(document.getElementById('fl-pv-'+e.id)), 500);
     });
-    _actualizarBadges();
   } else if(currentFotosTab==='carga'){
     const {data:buques}=await sb.from('buques').select('id,nombre,eta_buque').or('estado_operacion.is.null,estado_operacion.neq.Finalizado').order('eta_buque',{ascending:true,nullsFirst:false});
     const {data:exps}=await sb.from('expediciones').select('*,buques(id,nombre,eta_buque)').eq('estado_carga','✅ AUTORIZADO');
     if(!exps||!exps.length){cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">🚛</div><div class="empty-txt">No hay expediciones autorizadas pendientes de carga</div></div>';return;}
     const byBuque={};(exps||[]).forEach(e=>{const bn=e.buques?.nombre||'Sin buque';const bid=e.buques?.id||'x';if(!byBuque[bid])byBuque[bid]={nombre:bn,eta:e.buques?.eta_buque,items:[]};byBuque[bid].items.push(e);});
-    const entries = Object.entries(byBuque);
-    cont.innerHTML=entries.map(([bid,d],idx)=>{
+    cont.innerHTML=Object.entries(byBuque).map(([bid,d])=>{
       const totalBultos=d.items.reduce((a,e)=>a+(e.bultos||0),0);
-      const bodyHtml=`
-        <div style="padding:14px 16px">
-          <div id="scan-prog-${bid}" style="margin-bottom:12px;display:none">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-              <span style="font-size:13px;font-weight:600;color:var(--g700)">Bultos escaneados</span>
-              <span id="scan-count-${bid}" style="font-size:22px;font-weight:800;color:var(--b600);font-family:var(--mono)">0 / ${totalBultos}</span>
-            </div>
-            <div style="background:var(--g100);border-radius:6px;height:10px;overflow:hidden">
-              <div id="scan-bar-${bid}" style="height:100%;background:var(--b500);width:0%;transition:width .3s;border-radius:6px"></div>
-            </div>
-            <div id="scan-detail-${bid}" style="margin-top:6px;font-size:11px;color:var(--g500)"></div>
+      return`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
+        <div style="background:var(--gr50);border-bottom:1px solid #bbf7d0;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <div style="font-weight:700;color:var(--gr700)">🚢 ${d.nombre}</div>
+            <div style="font-size:11px;color:var(--gr600)">ETA: ${d.eta?fd(d.eta):'—'} · ${d.items.length} exp. · ${totalBultos} bultos totales</div>
           </div>
-          <div class="fg2">
-            <label class="fl2">Foto camión cargado <span style="color:var(--rd600);font-size:10px">requerida</span></label>
-            <div class="foto-area" onclick="document.getElementById('cg-fi-${bid}').click()" style="padding:12px 16px">
-              <input type="file" id="cg-fi-${bid}" accept="image/*" capture="environment" multiple onchange="onCargaFoto('${bid}')">
-              <div style="font-size:22px;margin-bottom:2px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del camión cargado</div>
+          <button onclick="abrirScannerCarga('${bid}','${(d.nombre||'').replace(/'/g,"\\'")}',${totalBultos})"
+            style="background:var(--b600);color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;min-height:52px">
+            📷 Escanear bultos
+          </button>
+        </div>
+        <div style="padding:16px">
+          <!-- Progreso de escaneo -->
+          <div id="scan-prog-${bid}" style="margin-bottom:12px;display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+              <span style="font-size:12px;font-weight:600;color:var(--g700)">Bultos escaneados</span>
+              <span id="scan-count-${bid}" style="font-size:13px;font-weight:800;color:var(--b600)">0 / ${totalBultos}</span>
+            </div>
+            <div style="background:var(--g100);border-radius:4px;height:8px;overflow:hidden">
+              <div id="scan-bar-${bid}" style="height:100%;background:var(--b500);width:0%;transition:width .3s"></div>
+            </div>
+            <div id="scan-detail-${bid}" style="margin-top:8px;font-size:11px;color:var(--g500)"></div>
+          </div>
+          <div class="fg2"><label class="fl2">Foto camión cargado <span style="color:var(--rd600);font-size:10px">requerida</span></label>
+            <div class="foto-area" onclick="document.getElementById('cg-fi-${bid}').click()">
+              <input type="file" id="cg-fi-${bid}" accept="image/*" multiple capture="environment" onchange="onCargaFoto('${bid}')">
+              <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del camión cargado</div>
             </div>
             <div class="foto-prev" id="cg-pv-${bid}"></div>
           </div>
-          <div id="slide-cg-${bid}" style="margin-top:10px;display:none"></div>
-          <button id="cg-btn-${bid}" class="btn btn-g btn-full" style="display:none;margin-top:10px" onclick="confirmarCargaBuque('${bid}')">✅ Confirmar carga — ${d.items.length} exp.</button>
-          <div style="margin-top:10px;font-size:12px;color:var(--g500)">${d.items.map(e=>`<span class="badge bb" style="margin:2px">${e.nº_expedicion} (${e.bultos||0}b)</span>`).join('')}</div>
-        </div>`;
-      const subHtml=`ETA: ${d.eta?fd(d.eta):'—'} · <strong>${d.items.length}</strong> exp. · ${totalBultos} btos`;
-      return buqCard('cg-'+bid,'var(--gr50)','#bbf7d0','var(--gr700)','var(--gr600)',
-        '🚢 '+d.nombre, subHtml,
-        `<div style="background:var(--gr50);border-bottom:1px solid #bbf7d0;padding:10px 16px;display:flex;justify-content:flex-end">
-          <button onclick="abrirScannerCarga('${bid}','${(d.nombre||'').replace(/'/g,"\\'")}',${totalBultos})"
-            style="background:var(--b600);color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:700;cursor:pointer;min-height:48px">
-            📷 Escanear bultos
-          </button>
-        </div>`+bodyHtml,
-        entries.length===1||idx===0);
+          <button id="cg-btn-${bid}" class="btn btn-g btn-full" style="display:none" onclick="confirmarCargaBuque('${bid}')">✅ Confirmar carga — ${d.items.length} expediciones</button>
+          <div style="margin-top:12px;font-size:12px;color:var(--g500)">Expediciones: ${d.items.map(e=>`<span class="badge bb" style="margin:2px">${e.nº_expedicion} (${e.bultos||0}b)</span>`).join('')}</div>
+        </div>
+      </div>`;
     }).join('');
+    Object.keys(byBuque).forEach(bid=>setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null));
+    // Restaurar progreso de escaneo si había sesión activa
     Object.keys(byBuque).forEach(bid=>{
-      setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);
-      setTimeout(()=>_makeThumbsZoomable(document.getElementById('cg-pv-'+bid)),500);
-      // Slide-to-confirm oculto — se muestra cuando onCargaFoto activa el botón
-      const slideWrap=document.getElementById('slide-cg-'+bid);
-      if(slideWrap){
-        const sl=crearSlideConfirm('Confirmar carga',()=>confirmarCargaBuque(bid),'green');
-        slideWrap.appendChild(sl);
-      }
-      const prog=window._scanCargaProg?.[bid];
-      if(prog&&prog.escaneados>0)_actualizarProgresoCarga(bid,prog.escaneados,prog.total,prog.detalle||[]);
+      const prog = window._scanCargaProg?.[bid];
+      if(prog && prog.escaneados > 0) _actualizarProgresoCarga(bid, prog.escaneados, prog.total, prog.detalle||[]);
     });
-    _actualizarBadges();
   } else if(currentFotosTab==='embarque'){
     // Buques en proceso activos
     const {data:BALL}=await sb.from('buques').select('id,nombre,eta_buque,estado_operacion').order('eta_buque',{ascending:true,nullsFirst:false});
     const buques=(BALL||[]).filter(b=>b.estado_operacion!=='Finalizado');
     if(!buques.length){cont.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">🚢</div><div class="empty-txt">No hay buques activos</div></div>';return;}
-    cont.innerHTML=buques.map((b,idx)=>{
-      const bodyHtml=`
-        <div style="padding:14px 16px">
-          <div class="fg2">
-            <label class="fl2">Foto embarque <span style="color:var(--rd600);font-size:10px">requerida antes de confirmar</span></label>
-            <div class="foto-area" onclick="document.getElementById('embt-fi-${b.id}').click()" style="padding:12px 16px">
-              <input type="file" id="embt-fi-${b.id}" accept="image/*" capture="environment" multiple onchange="onEmbTabFoto('${b.id}')">
-              <div style="font-size:22px;margin-bottom:2px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del buque embarcado</div>
+    cont.innerHTML=buques.map(b=>`
+      <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
+        <div style="background:var(--b50);border-bottom:1px solid var(--b100);padding:12px 16px">
+          <div style="font-weight:700;color:var(--b700)">🚢 ${b.nombre}</div>
+          <div style="font-size:12px;color:var(--b600)">ETA: ${fd(b.eta_buque)||'—'}</div>
+        </div>
+        <div style="padding:16px">
+          <div class="fg2"><label class="fl2">Foto embarque <span style="color:var(--rd600);font-size:10px">requerida antes de confirmar</span></label>
+            <div class="foto-area" onclick="document.getElementById('embt-fi-${b.id}').click()">
+              <input type="file" id="embt-fi-${b.id}" accept="image/*" multiple capture="environment" onchange="onEmbTabFoto('${b.id}')">
+              <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del buque embarcado</div>
             </div>
             <div class="foto-prev" id="embt-pv-${b.id}"></div>
           </div>
-          <div id="slide-emb-${b.id}" style="margin-top:10px;display:none"></div>
-          <button id="embt-btn-${b.id}" class="btn btn-g btn-full" style="display:none;margin-top:8px" onclick="confirmarEmbarqueTab('${b.id}')">✅ Confirmar embarque</button>
-        </div>`;
-      return buqCard('emb-'+b.id,'var(--b50)','var(--b100)','var(--b700)','var(--b600)',
-        '🚢 '+b.nombre,'ETA: '+(fd(b.eta_buque)||'—'),bodyHtml,buques.length===1||idx===0);
-    }).join('');
-    buques.forEach(b=>{
-      setupFotos('embt-fi-'+b.id,'embt-pv-'+b.id,null);
-      setTimeout(()=>_makeThumbsZoomable(document.getElementById('embt-pv-'+b.id)),500);
-      const slideWrap=document.getElementById('slide-emb-'+b.id);
-      if(slideWrap){
-        const sl=crearSlideConfirm('Confirmar embarque',()=>confirmarEmbarqueTab(b.id),'blue');
-        slideWrap.appendChild(sl);
-      }
-    });
-    _actualizarBadges();
+          <button id="embt-btn-${b.id}" class="btn btn-g btn-full" style="display:none" onclick="confirmarEmbarqueTab('${b.id}')">✅ Confirmar embarque — cambiar estado a EMBARCADO</button>
+        </div>
+      </div>`).join('');
+    buques.forEach(b=>setupFotos('embt-fi-'+b.id,'embt-pv-'+b.id,null));
   } else if(currentFotosTab==='landed'){
     // Landed: buques en proceso — foto + confirmar → marca expediciones del buque como Landed
     const {data:BALL}=await sb.from('buques').select('id,nombre,eta_buque,estado_operacion').order('eta_buque',{ascending:true,nullsFirst:false});
@@ -8170,41 +8231,30 @@ async function loadAlmFotos(tab){
       cont.innerHTML = headerHtml + '<div class="empty" style="padding:40px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay expediciones Landed previstas pendientes de recoger</div></div>';
       return;
     }
-    cont.innerHTML = headerHtml + buquesConLanded.map((b,idx)=>{
+    cont.innerHTML = headerHtml + buquesConLanded.map(b=>{
       const bLanded=landedByBuque[b.id]||[];
-      const bodyHtml=`
-        <div style="padding:14px 16px">
-          <div style="margin-bottom:10px">
+      return`<div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
+        <div style="background:var(--am50);border-bottom:1px solid #fde68a;padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-weight:700;color:var(--g900)">🚢 ${b.nombre}</div>
+          <div style="font-size:12px;color:var(--am600)">⚓ ${bLanded.length} exp. Landed</div>
+        </div>
+        <div style="padding:16px">
+          <div style="margin-bottom:12px">
             <div style="font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Mercancía a recoger del barco:</div>
-            ${bLanded.map(e=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--g100);font-size:12px">
-              <span style="font-weight:700;font-family:var(--mono)">${e.nº_expedicion}</span>
-              <span style="color:var(--g500)">${e.bultos||'—'} btos · ${e.kilos||'—'} kg</span>
-              ${e.foto_llegada_url?'<span style="font-size:11px">📸</span>':''}
-            </div>`).join('')}
+            ${bLanded.map(e=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--g100);font-size:12px"><span style="font-weight:700;font-family:var(--mono)">${e.nº_expedicion}</span><span style="color:var(--g500)">${e.bultos||'—'} btos · ${e.kilos||'—'} kg</span>${e.foto_llegada_url?'<span title="Tiene foto" style="font-size:11px">📸</span>':''}</div>`).join('')}
           </div>
-          <div class="fg2">
-            <label class="fl2">Foto de recogida en muelle</label>
-            <div class="foto-area" onclick="document.getElementById('lnd-fi-${b.id}').click()" style="padding:12px 16px">
-              <input type="file" id="lnd-fi-${b.id}" accept="image/*" capture="environment" multiple onchange="onLandedBuqueFoto('${b.id}')">
-              <div style="font-size:22px;margin-bottom:2px">📸</div><div style="font-size:12px;color:var(--g600)">Foto opcional en muelle</div>
+          <div class="fg2"><label class="fl2">Foto de recogida en muelle</label>
+            <div class="foto-area" onclick="document.getElementById('lnd-fi-${b.id}').click()">
+              <input type="file" id="lnd-fi-${b.id}" accept="image/*" multiple capture="environment" onchange="onLandedBuqueFoto('${b.id}')">
+              <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto opcional de la mercancía en muelle</div>
             </div>
             <div class="foto-prev" id="lnd-pv-${b.id}"></div>
           </div>
-          <div id="slide-lnd-${b.id}" style="margin-top:10px"></div>
-        </div>`;
-      return buqCard('lnd-'+b.id,'var(--am50)','#fde68a','var(--g900)','var(--am600)',
-        '🚢 '+b.nombre,'⚓ '+bLanded.length+' exp. Landed',bodyHtml,buquesConLanded.length===1||idx===0);
+          <button id="lnd-btn-${b.id}" class="btn btn-g btn-full" style="margin-top:8px" onclick="confirmarLandedBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">⚓ Confirmar recogida Landed — ${b.nombre}</button>
+        </div>
+      </div>`;
     }).join('');
-    buquesConLanded.forEach(b=>{
-      setupFotos('lnd-fi-'+b.id,'lnd-pv-'+b.id,null);
-      setTimeout(()=>_makeThumbsZoomable(document.getElementById('lnd-pv-'+b.id)),500);
-      const slideWrap=document.getElementById('slide-lnd-'+b.id);
-      if(slideWrap){
-        const sl=crearSlideConfirm('Confirmar recogida Landed',()=>confirmarLandedBuque(b.id,(b.nombre||'').replace(/'/g,"\\'")), 'amber');
-        slideWrap.appendChild(sl);
-      }
-    });
-    _actualizarBadges();
+    buquesConLanded.forEach(b=>setupFotos('lnd-fi-'+b.id,'lnd-pv-'+b.id,null));
   }
 }
 
@@ -8649,7 +8699,7 @@ async function guardarIncidenciaLlegada(){
   showToast('⚠️ Incidencia creada');
   closeModal();
 }
-function onCargaFoto(bid){const f=document.getElementById('cg-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='';const slide=document.getElementById('slide-cg-'+bid);if(slide)slide.style.display='';setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);setTimeout(()=>_makeThumbsZoomable(document.getElementById('cg-pv-'+bid)),500);}}
+function onCargaFoto(bid){const f=document.getElementById('cg-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='';setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);}}
 async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
   if(!await confirmarAccion('¿Confirmar carga en camión para TODAS las expediciones autorizadas de este buque?'))return;
   const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO');
@@ -8673,7 +8723,7 @@ async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin
   showToast('✅ Carga confirmada — '+data.length+' expediciones'+( fotoUrl?' 📸':''));
   await loadAlmFotos('carga');
 }
-function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';const slide=document.getElementById('slide-emb-'+bid);if(slide)slide.style.display='';setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);setTimeout(()=>_makeThumbsZoomable(document.getElementById('embt-pv-'+bid)),500);}}
+function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);}}
 
 async function loadFactBadge(){
   try {
@@ -9013,7 +9063,7 @@ async function enviarEmailEmbarqueCliente(buqueId, fotoUrl){
   }
 }
 function onLandedFoto(){const f=document.getElementById('lnd-fi')?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn');if(btn)btn.style.display='';setupFotos('lnd-fi','lnd-pv',null);}}
-function onLandedBuqueFoto(bid){const f=document.getElementById('lnd-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn-'+bid);if(btn)btn.style.display='';setupFotos('lnd-fi-'+bid,'lnd-pv-'+bid,null);setTimeout(()=>_makeThumbsZoomable(document.getElementById('lnd-pv-'+bid)),500);}}
+function onLandedBuqueFoto(bid){const f=document.getElementById('lnd-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn-'+bid);if(btn)btn.style.display='';setupFotos('lnd-fi-'+bid,'lnd-pv-'+bid,null);}}
 async function confirmarLanded(){
   const id=document.getElementById('lnd-exp')?.value;if(!id){alert('Selecciona una expedición');return;}
   await sb.from('expediciones').update({ubicacion:'Landed'}).eq('id',id);
@@ -12366,12 +12416,13 @@ async function impExpAlb(expId){
 
 // ── QR en llegadas — aparece al añadir foto ───────────────────────
 function onFotoLlegadaCambiada(expId, input){
+  // Delegar al setupFotos normal (que ya está configurado)
+  // y además mostrar/ocultar el botón QR según haya foto
   const prev = document.getElementById('fl-pv-'+expId);
   const files = Array.from(input.files||[]);
   if(prev) { prev._files = [...files]; renderFotoPreview(prev, files); }
   const qrBtn = document.getElementById('qr-ll-btn-'+expId);
   if(qrBtn) qrBtn.style.display = files.length ? '' : 'none';
-  setTimeout(()=>_makeThumbsZoomable(document.getElementById('fl-pv-'+expId)), 400);
 }
 
 async function imprimirQRLlegada(expId, ref){
@@ -13223,6 +13274,8 @@ function imprimirQR(ref, qrData, dataUrl){
 
   let _swX = null, _swY = null, _swT = null, _swLocked = null;
   let _cont = null;
+
+  // ── Pull-to-refresh ────────────────────────────────────────
   let _ptrActive = false;
   let _ptrScrollEl = null;
   const PTR_THRESHOLD = 72;
@@ -13230,6 +13283,7 @@ function imprimirQR(ref, qrData, dataUrl){
   function _ptrIndicator(){ return document.getElementById('ptr-indicator'); }
 
   function _getPtrScroll(e){
+    // Solo activa ptr cuando el scroll está al tope (scrollTop === 0)
     var el = e.target.closest('#content') || document.getElementById('content');
     return el && el.scrollTop === 0 ? el : null;
   }
@@ -13250,14 +13304,6 @@ function imprimirQR(ref, qrData, dataUrl){
 
   document.addEventListener('touchstart', function(e){
     if(e.touches.length !== 1) return;
-    var target = e.target;
-    // No capturar si el toque es sobre la barra inferior o controles interactivos
-    if(target.closest('#mob-alm-bar') ||
-       target.closest('input') ||
-       target.closest('textarea') ||
-       target.closest('select') ||
-       target.closest('.foto-area') ||
-       target.closest('#scanner-overlay')){ _reset(); return; }
     _swX = e.touches[0].clientX;
     _swY = e.touches[0].clientY;
     _swT = Date.now();
@@ -13271,19 +13317,12 @@ function imprimirQR(ref, qrData, dataUrl){
     if(_swX === null) return;
     const dx = e.touches[0].clientX - _swX;
     const dy = e.touches[0].clientY - _swY;
-    const absDx = Math.abs(dx), absDy = Math.abs(dy);
 
-    // Esperar 14px de movimiento antes de decidir eje — reduce falsos positivos
-    if(!_swLocked && (absDx > 14 || absDy > 14)){
-      // Exigir ratio 2.5:1 para declarar horizontal; si no, es scroll vertical
-      if(absDx > absDy * 2.5){
-        _swLocked = 'horizontal';
-      } else {
-        _swLocked = 'vertical';
-      }
+    if(!_swLocked && (Math.abs(dx) > 8 || Math.abs(dy) > 8)){
+      _swLocked = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
     }
 
-    // Pull-to-refresh
+    // ── Pull-to-refresh: gesto vertical hacia abajo desde el tope ──
     if(_swLocked === 'vertical' && dy > 0 && window.innerWidth <= 768){
       if(!_ptrScrollEl) _ptrScrollEl = _getPtrScroll(e);
       if(_ptrScrollEl){
@@ -13293,57 +13332,48 @@ function imprimirQR(ref, qrData, dataUrl){
           ind.style.transform = 'translateX(-50%) translateY('+Math.min(dy * 0.45, 44)+'px)';
           ind.querySelector('.ptr-arrow').style.transform = 'rotate('+(ratio*180)+'deg)';
           _ptrActive = dy >= PTR_THRESHOLD;
-          ind.querySelector('.ptr-arrow').textContent = _ptrActive ? '↺' : '↓';
+          if(_ptrActive) ind.querySelector('.ptr-arrow').textContent = '↺';
+          else ind.querySelector('.ptr-arrow').textContent = '↓';
         }
         return;
       }
     }
 
-    if(_swLocked !== 'horizontal') return;
+    if(_swLocked === 'vertical') return;
 
-    // Rubber-band visual solo en view-alm-fotos
-    if(_cont &&
+    // ── Swipe horizontal entre tabs ──
+    if(_swLocked === 'horizontal' && _cont &&
        window.innerWidth <= 768 &&
-       document.getElementById('view-alm-fotos')?.classList.contains('active')){
+       document.getElementById('view-alm-fotos') &&
+       document.getElementById('view-alm-fotos').classList.contains('active')){
       const dir = dx < 0 ? 1 : -1;
-      // Resistencia si no hay tab siguiente (o si sería el escáner)
       const hasNext = _adjTab(dir) !== null;
-      const resist = hasNext ? 0.85 : 0.18;
+      const resist = hasNext ? 1 : 0.22;
       _cont.style.transform = 'translateX(' + (dx * resist) + 'px)';
       _cont.style.transition = 'none';
-      _cont.style.opacity = String(1 - Math.min(absDx / 350, 0.3));
+      _cont.style.opacity = 1 - Math.min(Math.abs(dx) / 380, 0.28);
     }
   }, {passive:true});
 
   document.addEventListener('touchend', function(e){
     if(_swX === null){ _reset(); return; }
 
-    const endX = e.changedTouches[0].clientX;
-    const endY = e.changedTouches[0].clientY;
-    const dx = endX - _swX;
-    const dy = endY - _swY;
-    const dt = Math.max(Date.now() - _swT, 1);
-    const vel = Math.abs(dx) / dt; // px/ms
+    const dx = e.changedTouches[0].clientX - _swX;
+    const dy = e.changedTouches[0].clientY - _swY;
+    const dt = Date.now() - _swT;
+    const vel = Math.abs(dx) / dt;
     const absDx = Math.abs(dx);
+    const isHoriz = Math.abs(dy) < 55 && (_swLocked === 'horizontal' || absDx > Math.abs(dy) * 1.5);
 
-    // Restaurar contenido siempre
-    if(_cont){
-      _cont.style.transition = 'transform .22s cubic-bezier(.4,0,.2,1), opacity .22s';
-      _cont.style.transform = 'translateX(0)';
-      _cont.style.opacity = '1';
-    }
-
-    // Pull-to-refresh
+    // ── Pull-to-refresh: soltar ──
     const ind = _ptrIndicator();
-    if(ind){
+    if(ind) {
       ind.style.transform = 'translateX(-50%) translateY(-60px)';
-      if(ind.querySelector('.ptr-arrow')){
-        ind.querySelector('.ptr-arrow').style.transform = '';
-        ind.querySelector('.ptr-arrow').textContent = '↓';
-      }
+      ind.querySelector('.ptr-arrow').style.transform = '';
+      ind.querySelector('.ptr-arrow').textContent = '↓';
     }
     if(_ptrActive && _ptrScrollEl){
-      if(ind){ ind.classList.add('spinning'); ind.querySelector('.ptr-arrow').textContent='↺'; ind.style.transform='translateX(-50%) translateY(12px)'; }
+      if(ind){ ind.classList.add('spinning'); ind.querySelector('.ptr-arrow').textContent = '↺'; ind.style.transform='translateX(-50%) translateY(12px)'; }
       setTimeout(function(){
         loadAlmFotos(currentFotosTab);
         if(ind){ ind.classList.remove('spinning'); ind.style.transform='translateX(-50%) translateY(-60px)'; }
@@ -13351,46 +13381,44 @@ function imprimirQR(ref, qrData, dataUrl){
       _reset(); return;
     }
 
-    // Solo procesar como swipe si el eje fue claramente horizontal
-    if(_swLocked !== 'horizontal'){ _reset(); return; }
+    // ── Restaurar contenido ──
+    if(_cont){
+      _cont.style.transition = 'transform .22s cubic-bezier(.4,0,.2,1), opacity .22s';
+      _cont.style.transform = 'translateX(0)';
+      _cont.style.opacity = '1';
+    }
 
-    // Umbral adaptativo: flick rápido (>0.4px/ms) → 25px, normal → 65px
-    const threshold = vel > 0.4 ? 25 : 65;
-    if(absDx < threshold){ _reset(); return; }
-
-    const dir = dx < 0 ? 1 : -1; // -1=izquierda→siguiente, 1=derecha→anterior
-    const mo = document.getElementById('mo');
-    const inFotos = document.getElementById('view-alm-fotos')?.classList.contains('active');
-
-    // ── 1. Swipe entre tabs de almacén ──────────────────────────
-    if(window.innerWidth <= 768 && inFotos && !(mo?.classList.contains('open'))){
-      const next = _adjTab(dir);
-      if(next){ _goTab(next); _reset(); return; }
-      // Swipe izquierda desde Landed (último tab) → abrir escáner
-      if(dir === 1 && currentFotosTab === 'landed'){
-        if(navigator.vibrate) navigator.vibrate(12);
-        abrirScannerQR();
-        _reset(); return;
+    // ── 1. Swipe entre tabs ──
+    if(isHoriz && window.innerWidth <= 768 &&
+       document.getElementById('view-alm-fotos') &&
+       document.getElementById('view-alm-fotos').classList.contains('active') &&
+       !document.getElementById('mo').classList.contains('open')){
+      const threshold = vel > 0.3 ? 30 : 70;
+      if(absDx >= threshold){
+        const dir = dx < 0 ? 1 : -1;
+        const next = _adjTab(dir);
+        if(next){ _goTab(next); _reset(); return; }
       }
     }
 
-    // ── 2. Cerrar modal con swipe derecha ───────────────────────
-    if(dir === -1 && mo?.classList.contains('open')){
+    // ── 2. Cerrar modal ──
+    const mo = document.getElementById('mo');
+    if(dx > 70 && isHoriz && mo && mo.classList.contains('open')){
       closeModal(); _reset(); return;
     }
 
-    // ── 3. Cerrar panel notificaciones con swipe izquierda ──────
+    // ── 3. Cerrar panel notificaciones ──
     const panel = document.getElementById('notif-panel');
-    if(dir === 1 && panel?.classList.contains('open')){
+    if(dx < -70 && isHoriz && panel && panel.classList.contains('open')){
       if(typeof cerrarCentroNotificaciones==='function') cerrarCentroNotificaciones();
       _reset(); return;
     }
 
-    // ── 4. Abrir sidebar desde borde izquierdo (<30px) ──────────
-    if(dir === -1 && _swX < 30 && window.innerWidth <= 768){
+    // ── 4. Abrir sidebar desde borde izquierdo ──
+    if(dx > 60 && isHoriz && _swX < 30 && window.innerWidth <= 768){
       var sb = document.getElementById('sidebar');
       if(sb && !sb.classList.contains('open')){
-        sb.classList.add('open');
+        document.getElementById('sidebar').classList.add('open');
         document.getElementById('mob-ov').classList.add('show');
       }
       _reset(); return;
@@ -13399,10 +13427,7 @@ function imprimirQR(ref, qrData, dataUrl){
     _reset();
   }, {passive:true});
 
-  function _reset(){
-    _swX=null; _swY=null; _swT=null; _swLocked=null; _cont=null;
-    _ptrActive=false; _ptrScrollEl=null;
-  }
+  function _reset(){ _swX=null;_swY=null;_swT=null;_swLocked=null;_cont=null;_ptrActive=false;_ptrScrollEl=null; }
 })();
 
 // ── Escáner QR de autorización de carga ──────────────────────────
@@ -13519,7 +13544,7 @@ async function _verificarManualScanner(){
   const res = document.getElementById('scanner-result');
   res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Buscando…</div>';
   const {data:exps} = await sb.from('expediciones')
-    .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas!empresa_id(nombre)')
+    .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
     .ilike('nº_expedicion',`%${ref}%`).limit(3);
   if(!exps?.length){ res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ No encontrada: '+ref+'</div>'; return; }
   await _mostrarResultadoScan(exps[0], res);
@@ -13568,7 +13593,7 @@ async function _procesarQRLeido(texto){
     const expId=matchBlt[1], numBulto=matchBlt[2], totalBultos=matchBlt[3];
     res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Identificando bulto…</div>';
     const {data:e,error} = await sb.from('expediciones')
-      .select('id,nº_expedicion,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas!empresa_id(nombre)')
+      .select('id,nº_expedicion,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
       .eq('id',expId).single();
     if(error||!e){
       beepError();
@@ -13617,7 +13642,7 @@ async function _procesarQRLeido(texto){
   const uuid = match ? match[1] : bltAlt[1];
   res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Consultando…</div>';
   const {data:e,error} = await sb.from('expediciones')
-    .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas!empresa_id(nombre)')
+    .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
     .eq('id',uuid).single();
   if(error||!e){
     res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada</div>';
@@ -13724,541 +13749,6 @@ async function confirmarCargaManual(expId, ref){
 // ── Exponer todas las funciones al ámbito global (window) ──
 // Esto es necesario porque los onclick del HTML las buscan en window
 
-// ══════════════════════════════════════════════════════════════
-// MEJORAS MÓVIL — bloque de funciones
-// ══════════════════════════════════════════════════════════════
-
-// ── 1. Colapso de tarjetas por buque ─────────────────────────
-// Genera la cabecera colapsable y el contenedor del cuerpo
-function buqCard(id, bgHdr, borderHdr, titleColor, subColor, titleHtml, subHtml, bodyHtml, startOpen){
-  const open = startOpen !== false; // por defecto abierto si solo hay 1, cerrado si hay varios
-  const maxH = open ? '9999px' : '0';
-  const rot   = open ? 'rotate(180deg)' : '';
-  return `
-    <div class="buq-card" id="buqcard-${id}">
-      <div class="buq-hdr" style="background:${bgHdr};border-bottom:1px solid ${borderHdr}" onclick="_toggleBuqCard('${id}')">
-        <div class="buq-hdr-left">
-          <div class="buq-hdr-title" style="color:${titleColor}">${titleHtml}</div>
-          <div class="buq-hdr-sub" style="color:${subColor}">${subHtml}</div>
-        </div>
-        <div class="buq-hdr-right">
-          <div class="buq-chevron" id="buqchev-${id}" style="transform:${rot}">▼</div>
-        </div>
-      </div>
-      <div class="buq-body ${open?'':'collapsed'}" id="buqbody-${id}" style="max-height:${maxH}">
-        ${bodyHtml}
-      </div>
-    </div>`;
-}
-
-function _toggleBuqCard(id){
-  const body = document.getElementById('buqbody-'+id);
-  const chev = document.getElementById('buqchev-'+id);
-  if(!body) return;
-  const isOpen = !body.classList.contains('collapsed');
-  if(isOpen){
-    body.style.maxHeight = body.scrollHeight+'px';
-    requestAnimationFrame(()=>{ body.style.maxHeight='0'; body.classList.add('collapsed'); });
-    if(chev) chev.style.transform='';
-  } else {
-    body.classList.remove('collapsed');
-    body.style.maxHeight = '9999px';
-    if(chev) chev.style.transform='rotate(180deg)';
-  }
-  if(navigator.vibrate) navigator.vibrate(6);
-}
-
-// ── 2. Badges de conteo en barra inferior ────────────────────
-function _setBadge(btnId, count){
-  const btn = document.getElementById(btnId);
-  if(!btn) return;
-  btn.style.position = 'relative';
-  let badge = btn.querySelector('.mob-tab-badge');
-  if(count > 0){
-    if(!badge){ badge = document.createElement('div'); badge.className='mob-tab-badge'; btn.appendChild(badge); }
-    badge.textContent = count > 99 ? '99+' : count;
-  } else {
-    if(badge) badge.remove();
-  }
-}
-
-async function _actualizarBadges(){
-  try{
-    const [{data:llegadas},{data:carga},{data:landed}] = await Promise.all([
-      sb.from('expediciones').select('id',{count:'exact',head:true}).in('ubicacion',['Pendiente recibir']),
-      sb.from('expediciones').select('id',{count:'exact',head:true}).eq('estado_carga','✅ AUTORIZADO'),
-      sb.from('expediciones').select('id',{count:'exact',head:true}).eq('ubicacion','Landed').eq('estado_semaforo','⏳ EN TRÁNSITO')
-    ]);
-    _setBadge('mab-llegadas', llegadas?.length||0);
-    _setBadge('mab-carga',    carga?.length||0);
-    _setBadge('mab-landed',   landed?.length||0);
-  }catch(e){}
-}
-
-// ── 3. Lightbox de fotos ──────────────────────────────────────
-function abrirLightbox(src){
-  const lb = document.getElementById('lightbox');
-  const img = document.getElementById('lightbox-img');
-  if(!lb||!img) return;
-  img.src = src;
-  lb.classList.add('open');
-  document.body.style.overflow='hidden';
-}
-function cerrarLightbox(){
-  const lb = document.getElementById('lightbox');
-  if(lb) lb.classList.remove('open');
-  document.body.style.overflow='';
-}
-document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarLightbox(); });
-// Cerrar lightbox al tocar fuera de la imagen
-document.getElementById('lightbox')?.addEventListener('click', function(e){
-  if(e.target === this) cerrarLightbox();
-});
-
-// Hacer miniaturas ampliables — se llama después de renderizar fotos
-function _makeThumbsZoomable(container){
-  if(!container) return;
-  container.querySelectorAll('.foto-thumb img, .foto-prev img').forEach(img=>{
-    if(img.dataset.lightboxOk) return;
-    img.dataset.lightboxOk='1';
-    img.style.cursor='zoom-in';
-    img.addEventListener('click', e=>{ e.stopPropagation(); abrirLightbox(img.src); });
-  });
-}
-
-// ── 4. Slide-to-confirm ───────────────────────────────────────
-function crearSlideConfirm(texto, onConfirm, color){
-  const bgColor  = color==='green' ? 'var(--gr50)'  : color==='blue' ? 'var(--b50)'  : 'var(--am50)';
-  const bdColor  = color==='green' ? '#bbf7d0'       : color==='blue' ? 'var(--b100)' : '#fde68a';
-  const txtColor = color==='green' ? 'var(--gr600)'  : color==='blue' ? 'var(--b600)' : 'var(--am600)';
-  const tmbColor = color==='green' ? 'var(--gr600)'  : color==='blue' ? 'var(--b600)' : 'var(--am600)';
-  const wrap = document.createElement('div');
-  wrap.className = 'slide-confirm-wrap';
-  wrap.style.cssText = `background:${bgColor};border-color:${bdColor}`;
-  wrap.innerHTML = `
-    <div class="slide-confirm-track" style="color:${txtColor}">⟵ desliza para confirmar ⟶</div>
-    <div class="slide-confirm-thumb" style="background:${tmbColor}">✅</div>`;
-  const thumb = wrap.querySelector('.slide-confirm-thumb');
-  let startX=0, curX=0, dragging=false, maxX=0;
-  const getMax = ()=> wrap.offsetWidth - thumb.offsetWidth - 8;
-  thumb.addEventListener('touchstart', e=>{
-    dragging=true; startX=e.touches[0].clientX; curX=parseFloat(thumb.style.left)||4; maxX=getMax();
-    thumb.style.transition='none'; e.preventDefault();
-  },{passive:false});
-  thumb.addEventListener('touchmove', e=>{
-    if(!dragging) return;
-    const dx = e.touches[0].clientX - startX;
-    const nx = Math.max(4, Math.min(curX+dx, maxX));
-    thumb.style.left = nx+'px';
-    wrap.querySelector('.slide-confirm-track').style.opacity = 1-(nx-4)/(maxX-4)*0.6;
-    e.preventDefault();
-  },{passive:false});
-  thumb.addEventListener('touchend', ()=>{
-    dragging=false;
-    thumb.style.transition='left .2s cubic-bezier(.4,0,.2,1)';
-    const nx = parseFloat(thumb.style.left)||4;
-    if(nx >= maxX*0.75){
-      wrap.classList.add('done');
-      thumb.style.left = maxX+'px';
-      if(navigator.vibrate) navigator.vibrate([80,40,160]);
-      setTimeout(onConfirm, 300);
-    } else {
-      thumb.style.left='4px';
-      wrap.querySelector('.slide-confirm-track').style.opacity='1';
-    }
-  });
-  return wrap;
-}
-
-// ── Hook: actualizar badges al cargar cada tab ────────────────
-const _origLoadAlmFotos = loadAlmFotos;
-// Se sobreescribe abajo tras definir loadAlmFotos — ver patch en loadAlmFotos
-
-// ══════════════════════════════════════════════════════════════
-// MEJORAS TANDA 2
-// ══════════════════════════════════════════════════════════════
-
-// ── A. MODO OFFLINE — confirmar llegada/carga/embarque sin red ────────
-// Extiende offlineSyncPendientes con los nuevos tipos
-const _origOfflineSync = offlineSyncPendientes;
-offlineSyncPendientes = async function(){
-  if(!navigator.onLine) return;
-  const pendientes = await offlineGetPendientes();
-  if(!pendientes.length) return;
-  let ok=0, err=0;
-  for(const item of pendientes){
-    try{
-      const p = item.payload;
-      if(item.tipo==='confirmar_llegada'){
-        const upd={ubicacion:p.ubicacion||'Almacén-Sin Ubicar',notif_llegada_sent:true};
-        if(p.estado_semaforo) upd.estado_semaforo=p.estado_semaforo;
-        if(p.estado_carga)    upd.estado_carga=p.estado_carga;
-        await sb.from('expediciones').update(upd).eq('id',p.expId);
-        await logAct('expediciones',p.expId,p.ref,'editar','ubicacion','Pendiente recibir',p.ubicacion||'Almacén-Sin Ubicar');
-      } else if(item.tipo==='confirmar_carga_buque'){
-        const ts=new Date().toISOString();
-        for(const e of (p.exps||[])){
-          await sb.from('expediciones').update({hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'}).eq('id',e.id);
-          await logAct('expediciones',e.id,e.ref,'editar','ubicacion','—','Camión cargado [sync offline]');
-        }
-      } else if(item.tipo==='confirmar_embarque'){
-        await sb.from('buques').update({estado_operacion:'Finalizado'}).eq('id',p.bid);
-        const {data:exps}=await sb.from('expediciones').select('id,ubicacion').eq('buque_id',p.bid);
-        for(const e of exps||[]){
-          if(e.ubicacion==='Landed') continue;
-          await sb.from('expediciones').update({estado_semaforo:'🚢 EMBARCADO',ubicacion:'A bordo'}).eq('id',e.id);
-        }
-        await logAct('buques',p.bid,'','editar','estado_operacion','En proceso','Embarcado [sync offline]');
-      } else if(item.tipo==='cambiar_ubicacion'){
-        await sb.from('expediciones').update({ubicacion:p.ubicacion}).eq('id',p.expId);
-        await logAct('expediciones',p.expId,p.ref,'editar','ubicacion',p.anterior,p.ubicacion);
-      }
-      await offlineDelete(item.id);
-      ok++;
-    }catch(e){ err++; console.warn('sync error:',item,e); }
-  }
-  if(ok>0) showToast('📶 '+ok+' acción'+(ok>1?'es':'')+' sincronizada'+(ok>1?'s':'')+' offline');
-  if(err>0) showToast('⚠️ '+err+' pendiente'+(err>1?'s':'')+' de sync');
-  _actualizarBadgeOffline?.();
-};
-
-// Parchear confirmarLlegadaFotos para modo offline + fotos en background
-const _origConfirmarLlegada = confirmarLlegadaFotos;
-confirmarLlegadaFotos = async function(id){
-  if(navigator.onLine){ return _origConfirmarLlegada(id); }
-  // Sin red: encolar el estado y notificar
-  const estado = (window['_estLlegada']||{})[id]||'ok';
-  const nota   = (document.getElementById('fl-nota-'+id)?.value||'').trim();
-  const payload = {expId:id, ref:'', ubicacion:'Almacén-Sin Ubicar',
-    estado_semaforo:'🚨 EN ALMACÉN - REVISAR', estado_carga:'🚨 EN ALMACÉN - REVISAR',
-    estado, nota, ts:Date.now()};
-  await offlineEnqueue('confirmar_llegada', payload);
-  if(window['_estLlegada']) delete window['_estLlegada'][id];
-  // Marcar visualmente la tarjeta como procesada
-  const card = document.getElementById('llegada-'+id);
-  if(card){ card.style.opacity='.5'; card.style.pointerEvents='none'; }
-  showToast('📵 Sin red — llegada guardada, se sincronizará al recuperar conexión');
-  _actualizarBadgeOffline?.();
-};
-
-// Parchear confirmarCargaBuque para modo offline
-const _origConfirmarCarga = confirmarCargaBuque;
-confirmarCargaBuque = async function(bid){
-  if(navigator.onLine){ return _origConfirmarCarga(bid); }
-  const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO').catch(()=>({data:[]}));
-  if(!data?.length){ showToast('⚠️ Sin conexión y no hay datos en caché'); return; }
-  await offlineEnqueue('confirmar_carga_buque', {bid, exps:data.map(e=>({id:e.id,ref:e.nº_expedicion}))});
-  showToast('📵 Sin red — carga encolada, se sincronizará al recuperar conexión');
-  _actualizarBadgeOffline?.();
-};
-
-// Parchear confirmarEmbarqueTab para modo offline
-const _origConfirmarEmbarque = confirmarEmbarqueTab;
-confirmarEmbarqueTab = async function(bid){
-  if(navigator.onLine){ return _origConfirmarEmbarque(bid); }
-  await offlineEnqueue('confirmar_embarque', {bid});
-  showToast('📵 Sin red — embarque encolado, se sincronizará al recuperar conexión');
-  _actualizarBadgeOffline?.();
-};
-
-// ── B. FOTOS EN BACKGROUND — no bloquear el flujo ────────────────────
-// Sobreescribir confirmarLlegadaFotos online para separar estado de foto
-const _origConfirmarLlegadaOnline = _origConfirmarLlegada;
-confirmarLlegadaFotos = async function(id){
-  if(!navigator.onLine){
-    // Ya lo maneja el parche offline de arriba — llamar directamente
-    const estado=(window['_estLlegada']||{})[id]||'ok';
-    const nota=(document.getElementById('fl-nota-'+id)?.value||'').trim();
-    await offlineEnqueue('confirmar_llegada',{expId:id,ref:'',ubicacion:'Almacén-Sin Ubicar',estado_semaforo:'🚨 EN ALMACÉN - REVISAR',estado_carga:'🚨 EN ALMACÉN - REVISAR',estado,nota,ts:Date.now()});
-    if(window['_estLlegada']) delete window['_estLlegada'][id];
-    const card=document.getElementById('llegada-'+id);
-    if(card){card.style.opacity='.5';card.style.pointerEvents='none';}
-    showToast('📵 Sin red — llegada guardada offline');
-    _actualizarBadgeOffline?.();
-    return;
-  }
-  const {data:e}=await sb.from('expediciones').select('nº_expedicion,bultos,buques(nombre)').eq('id',id).single();
-  const prevEl=document.getElementById('fl-pv-'+id)||document.getElementById('fl-p');
-  const files=prevEl?._files||[];
-  const estado=(window['_estLlegada']||{})[id]||'ok';
-  const nota=(document.getElementById('fl-nota-'+id)?.value||'').trim();
-
-  // 1. Guardar estado INMEDIATAMENTE — no esperar foto
-  const estadoTxt={ok:'Correcto',leve:'Daño leve',grave:'Daño grave',humedad:'Humedad',precinto:'Precinto roto'}[estado]||estado;
-  const upd={ubicacion:'Almacén-Sin Ubicar',notif_llegada_sent:true};
-  await sb.from('expediciones').update(upd).eq('id',id);
-  await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir','Almacén-Sin Ubicar [estado: '+estadoTxt+']');
-  await alertarOperativa(id,e?.nº_expedicion||'',e?.buques?.nombre||'');
-
-  // Incidencia si hay daño
-  let incId=null;
-  if(estado!=='ok'){
-    const tipoInc={leve:'Embalaje',grave:'Roto',humedad:'Humedad',precinto:'Precinto'}[estado]||'Otro';
-    const descInc=['Estado al recibir: '+estadoTxt,nota?'Notas: '+nota:'','📷 Foto subiéndose...'].filter(Boolean).join(' · ');
-    const {data:incNueva}=await sb.from('incidencias').insert({expedicion_id:id,tipo:tipoInc,descripcion:descInc,nombre:tipoInc}).select('id').single();
-    incId=incNueva?.id;
-  }
-
-  showToast('✅ Llegada confirmada'+(files.length?' · 📤 Subiendo foto...':''));
-  if(window['_estLlegada']) delete window['_estLlegada'][id];
-
-  // 2. Subir foto en BACKGROUND — no bloquea el flujo
-  if(files.length){
-    (async()=>{
-      try{
-        const urls=await subirFotosYGuardar(files,'expediciones',id,'llegada');
-        if(urls.length){
-          await sb.from('expediciones').update({foto_llegada_url:urls[0]}).eq('id',id);
-          // Vincular a incidencia si hubo daño
-          if(incId){
-            const {data:fotoRec}=await sb.from('fotos_operativas').select('storage_path,subida_por,created_at').eq('entidad','expediciones').eq('entidad_id',id).eq('tipo','llegada').order('created_at',{ascending:false}).limit(1).maybeSingle();
-            if(fotoRec) await sb.from('fotos_operativas').insert({entidad:'incidencias',entidad_id:String(incId),tipo:'llegada',storage_url:urls[0],storage_path:fotoRec.storage_path,subida_por:fotoRec.subida_por,created_at:fotoRec.created_at});
-          }
-          showToast('📸 Foto de llegada guardada');
-        }
-      }catch(ex){ console.warn('Foto background error:',ex); showToast('⚠️ Foto no subida — reintentar desde la ficha'); }
-    })();
-  }
-
-  const numBultos=e?.bultos||0;
-  if(numBultos>0){ ofrecerEtiquetasBultos(id,e?.nº_expedicion||'',numBultos); }
-  else { await loadAlmFotos('llegadas'); }
-};
-
-// ── C. LÍNEA DE VIDA INTEGRADA EN EL MODAL ───────────────────────────
-// Sobreescribir _renderMiniFeed con una versión expandida tipo timeline
-async function _renderMiniFeed(expId){
-  const el=document.getElementById('exp-mini-feed');
-  if(!el) return;
-  el.innerHTML='<div style="font-size:11px;color:var(--g400);padding:6px 0">Cargando historial…</div>';
-  try{
-    const [{data:log},{data:fotos},{data:incs}]=await Promise.all([
-      sb.from('activity_log').select('created_at,usuario_nombre,campo_modificado,valor_nuevo,accion').eq('registro_id',expId).order('created_at',{ascending:false}).limit(12),
-      sb.from('fotos_operativas').select('tipo,storage_url,created_at,subida_por').eq('entidad','expediciones').eq('entidad_id',expId).order('created_at',{ascending:false}).limit(6),
-      sb.from('incidencias').select('tipo,estado,created_at').eq('expedicion_id',expId).order('created_at',{ascending:false}).limit(4)
-    ]);
-    const eventos=[];
-    const fdt2=d=>d?new Date(d).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
-    (log||[]).forEach(l=>{
-      const ic=l.campo_modificado==='ubicacion'?'📍':l.campo_modificado==='hora_de_carga'?'🚛':l.campo_modificado==='nº_mrn'?'📋':l.campo_modificado==='estado_semaforo'?'🚦':l.accion==='alerta_llegada'?'📦':'✏️';
-      const tit=l.campo_modificado==='ubicacion'?'→ '+l.valor_nuevo:l.campo_modificado==='hora_de_carga'?'Cargado en camión':l.campo_modificado==='nº_mrn'?'MRN: '+l.valor_nuevo:l.campo_modificado==='estado_semaforo'?l.valor_nuevo:l.accion||l.campo_modificado||'Cambio';
-      eventos.push({ts:l.created_at,ic,tit,sub:l.usuario_nombre||'',foto:null,color:'var(--g500)'});
-    });
-    (fotos||[]).forEach(f=>{
-      const lbl={llegada:'Foto llegada',carga:'Foto carga',embarque:'Foto embarque'}[f.tipo]||'Foto';
-      eventos.push({ts:f.created_at,ic:'📸',tit:lbl,sub:f.subida_por||'',foto:f.storage_url,color:'var(--tl600)'});
-    });
-    (incs||[]).forEach(i=>{
-      eventos.push({ts:i.created_at,ic:'⚠️',tit:'Incidencia: '+i.tipo,sub:i.estado||'',foto:null,color:'var(--rd500)'});
-    });
-    eventos.sort((a,b)=>new Date(b.ts)-new Date(a.ts));
-    if(!eventos.length){ el.innerHTML='<div style="font-size:11px;color:var(--g400);padding:4px 0;font-style:italic">Sin actividad registrada</div>'; return; }
-    el.innerHTML='<div style="position:relative;padding-left:20px;margin-top:4px">'+
-      '<div style="position:absolute;left:6px;top:4px;bottom:4px;width:1.5px;background:var(--g200);border-radius:2px"></div>'+
-      eventos.map((ev,i)=>'<div style="position:relative;margin-bottom:'+(i===eventos.length-1?'0':'10px')+'">'+
-        '<div style="position:absolute;left:-16px;top:3px;width:8px;height:8px;border-radius:50%;background:'+ev.color+';border:1.5px solid var(--w)"></div>'+
-        '<div style="display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap">'+
-          '<span style="font-size:13px;flex-shrink:0">'+ev.ic+'</span>'+
-          '<div style="flex:1;min-width:0">'+
-            '<div style="font-size:12px;font-weight:600;color:var(--g800);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ev.tit+'</div>'+
-            '<div style="font-size:10px;color:var(--g400)">'+fdt2(ev.ts)+(ev.sub?' · '+ev.sub:'')+'</div>'+
-            (ev.foto?'<img src="'+ev.foto+'" style="max-width:72px;max-height:48px;border-radius:4px;margin-top:4px;cursor:zoom-in;border:1px solid var(--g200)" onclick="abrirLightbox(\''+ev.foto+'\')">':'')
-          +'</div>'+
-        '</div>'+
-      '</div>').join('')+
-    '</div>';
-  }catch(ex){ el.innerHTML='<div style="font-size:11px;color:var(--rd500)">Error al cargar historial</div>'; }
-}
-
-// ── D. MODAL FULL-SCREEN EN MÓVIL ────────────────────────────────────
-// Añadir clase al abrir en móvil — el CSS lo convierte en sheet full-screen
-const _origOpenModal = typeof openModal === 'function' ? openModal : null;
-// Hook en closeModal para limpiar autoguardado
-const _origCloseModal = closeModal;
-closeModal = function(){
-  _stopAutoguardado();
-  if(typeof _origCloseModal === 'function') _origCloseModal();
-};
-
-// ── E. AUTOGUARDADO DE CAMPOS ────────────────────────────────────────
-let _autoguardadoTimer = null;
-let _autoguardadoExpId = null;
-let _autoguardadoCampos = {}; // campo → valor previo
-
-function _iniciarAutoguardado(expId){
-  _autoguardadoExpId = expId;
-  _autoguardadoCampos = {};
-  _stopAutoguardado();
-  // Escuchar cambios en todos los campos del modal
-  const campos = ['mrn-inp','ref-inp','sta-sel','fmax-inp','tra-sel','docs-sel','ubic-sel'];
-  campos.forEach(cid=>{
-    const el = document.getElementById(cid);
-    if(!el) return;
-    el.addEventListener('change', _onCampoChange);
-    el.addEventListener('input',  _onCampoChange);
-  });
-}
-
-function _stopAutoguardado(){
-  clearTimeout(_autoguardadoTimer);
-  _autoguardadoTimer = null;
-  const campos = ['mrn-inp','ref-inp','sta-sel','fmax-inp','tra-sel','docs-sel','ubic-sel'];
-  campos.forEach(cid=>{
-    const el = document.getElementById(cid);
-    if(el){ el.removeEventListener('change',_onCampoChange); el.removeEventListener('input',_onCampoChange); }
-  });
-}
-
-function _onCampoChange(){
-  clearTimeout(_autoguardadoTimer);
-  _autoguardadoTimer = setTimeout(async()=>{
-    if(!_autoguardadoExpId || !navigator.onLine) return;
-    const mrn   = (document.getElementById('mrn-inp')?.value||'').trim()||null;
-    const ref   = (document.getElementById('ref-inp')?.value||'').trim()||null;
-    const status= document.getElementById('sta-sel')?.value||null;
-    const fmax  = document.getElementById('fmax-inp')?.value||null;
-    const tra   = document.getElementById('tra-sel')?.value||null;
-    const docs  = document.getElementById('docs-sel')?.value||null;
-    const ubic  = document.getElementById('ubic-sel')?.value||null;
-    const obj={};
-    if(mrn!==undefined)  obj['nº_mrn']=mrn;
-    if(ref)              obj['nº_expedicion']=ref;
-    if(status)           obj.status_aduanero=status;
-    obj.fecha_max_despacho=fmax||null;
-    if(tra)              obj.tramite_aduanero=tra;
-    if(docs!==null)      obj.docs_puerto=docs==='No requiere'?null:[docs];
-    if(ubic){
-      obj.ubicacion=ubic;
-      const sem=semaforoDeUbicacion(ubic);
-      if(sem){obj.estado_semaforo=sem;obj.estado_carga=sem;}
-    }
-    if(mrn && tra==='Despachado'){
-      obj.estado_carga='✅ AUTORIZADO';obj.estado_semaforo='✅ AUTORIZADO';
-    }
-    try{
-      await sb.from('expediciones').update(obj).eq('id',_autoguardadoExpId);
-      // Indicador discreto junto al campo que cambió
-      _mostrarIndicadorGuardado();
-    }catch(ex){ console.warn('autoguardado error',ex); }
-  }, 900);
-}
-
-function _mostrarIndicadorGuardado(){
-  let ind = document.getElementById('_autosave-ind');
-  if(!ind){
-    ind = document.createElement('div');
-    ind.id='_autosave-ind';
-    ind.style.cssText='position:fixed;bottom:calc(max(72px,env(safe-area-inset-bottom,0px)+64px));left:50%;transform:translateX(-50%);background:var(--gr600);color:#fff;font-size:11px;font-weight:600;padding:4px 12px;border-radius:99px;z-index:30001;pointer-events:none;transition:opacity .3s';
-    document.body.appendChild(ind);
-  }
-  ind.textContent='✓ Guardado automático';
-  ind.style.opacity='1';
-  clearTimeout(ind._t);
-  ind._t=setTimeout(()=>{ind.style.opacity='0';},2000);
-}
-
-// Enganchar _iniciarAutoguardado en openExpD — parcheamos el pie del modal
-const _origMFoot = document.getElementById('m-foot');
-// Se activa desde openExpD al renderizar el pie — hacemos monkey-patch de guardarExpedicion
-const _origGuardarExp = guardarExpedicion;
-guardarExpedicion = async function(id){
-  _stopAutoguardado();
-  return _origGuardarExp(id);
-};
-
-// Hook para iniciar autoguardado cuando se abre el modal de expedición
-// Nos enganchamos en el MutationObserver del modal
-(function(){
-  const mo_el = document.getElementById('m-foot');
-  if(!mo_el) return;
-  const obs = new MutationObserver(()=>{
-    const foot = document.getElementById('m-foot');
-    if(!foot) return;
-    // Detectar si hay botón "Guardar cambios" → es modal de expedición
-    if(foot.innerHTML.includes('guardarExpedicion')){
-      const match = foot.innerHTML.match(/guardarExpedicion\('([^']+)'\)/);
-      if(match) { _iniciarAutoguardado(match[1]); _renderMiniFeed(match[1]); }
-    }
-  });
-  obs.observe(mo_el, {childList:true, subtree:false, characterData:true});
-})();
-
-// ── F. LONG-PRESS EN FILAS DE EXPEDICIÓN ─────────────────────────────
-let _lpTimer=null, _lpTarget=null;
-
-function _initLongPress(){
-  document.addEventListener('pointerdown', function(e){
-    const row = e.target.closest('tr.exp-row, tr[data-expid], .exp-card[data-expid]');
-    if(!row) return;
-    _lpTarget = row;
-    _lpTimer = setTimeout(()=>{ _mostrarMenuContextual(row, e); }, 420);
-  });
-  document.addEventListener('pointermove', ()=>{ clearTimeout(_lpTimer); _lpTimer=null; });
-  document.addEventListener('pointerup',   ()=>{ clearTimeout(_lpTimer); _lpTimer=null; });
-  document.addEventListener('pointercancel',()=>{ clearTimeout(_lpTimer); _lpTimer=null; });
-}
-_initLongPress();
-
-function _mostrarMenuContextual(row, e){
-  if(navigator.vibrate) navigator.vibrate(30);
-  const expId = row.dataset.expid || row.getAttribute('data-expid');
-  if(!expId) return;
-  // Cerrar menús anteriores
-  document.getElementById('_ctx-menu')?.remove();
-  const menu = document.createElement('div');
-  menu.id = '_ctx-menu';
-  const x = Math.min(e.clientX||0, window.innerWidth-200);
-  const y = Math.min(e.clientY||0, window.innerHeight-180);
-  menu.style.cssText='position:fixed;left:'+x+'px;top:'+y+'px;background:var(--w);border:1px solid var(--g200);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:40000;min-width:190px;overflow:hidden;animation:fi .12s ease';
-  const acciones=[
-    {ic:'📋',lbl:'Ver expedición',  fn:()=>{ openExpD(expId); }},
-    {ic:'📍',lbl:'Cambiar ubicación',fn:()=>{ _menuCambiarUbicacion(expId); }},
-    {ic:'🏢',lbl:'Notif. Aduanas',  fn:async()=>{ const {data:ex}=await sb.from('expediciones').select('nº_expedicion').eq('id',expId).single(); notifAduana(expId,ex?.nº_expedicion||''); }},
-    {ic:'📧',lbl:'Notif. Cliente',  fn:async()=>{ const {data:ex}=await sb.from('expediciones').select('nº_expedicion,empresas!empresa_id(email_confronta)').eq('id',expId).single(); const em=ex?.empresas?.email_confronta; if(em) notifCliente(expId,em,ex?.nº_expedicion||''); else showToast('Sin email de cliente'); }},
-    {ic:'📋',lbl:'Línea de vida',   fn:()=>{ abrirLineaVida(expId,''); }},
-  ];
-  menu.innerHTML=acciones.map((a,i)=>'<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;font-size:13px;font-weight:500;color:var(--g900);'+(i<acciones.length-1?'border-bottom:0.5px solid var(--g100)':'')+'" data-ctx-i="'+i+'"><span style="font-size:16px">'+a.ic+'</span>'+a.lbl+'</div>').join('');
-  document.body.appendChild(menu);
-  // Bind acciones
-  menu.querySelectorAll('[data-ctx-i]').forEach(el=>{
-    el.addEventListener('click',()=>{
-      menu.remove();
-      acciones[+el.dataset.ctxI].fn();
-    });
-    el.addEventListener('pointerenter',()=>el.style.background='var(--g50)');
-    el.addEventListener('pointerleave',()=>el.style.background='');
-  });
-  // Cerrar al tocar fuera
-  setTimeout(()=>{
-    const cerrar=e=>{ if(!menu.contains(e.target)){ menu.remove(); document.removeEventListener('pointerdown',cerrar); } };
-    document.addEventListener('pointerdown',cerrar);
-  },100);
-}
-
-function _menuCambiarUbicacion(expId){
-  const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40001;display:flex;align-items:flex-end;justify-content:center;padding-bottom:max(20px,env(safe-area-inset-bottom,20px))';
-  const sheet=document.createElement('div');
-  sheet.style.cssText='background:var(--w);border-radius:16px 16px 0 0;padding:20px 16px;width:100%;max-width:480px;max-height:70vh;overflow-y:auto';
-  sheet.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--g700);margin-bottom:12px">📍 Cambiar ubicación</div>'+
-    UBICACIONES.map(u=>'<button style="display:block;width:100%;text-align:left;padding:12px 14px;margin-bottom:6px;border:1px solid var(--g200);border-radius:10px;background:var(--g50);font-size:13px;cursor:pointer;font-family:var(--f)" data-ub="'+u+'">'+u+'</button>').join('')+
-    '<button style="display:block;width:100%;padding:12px;border:none;border-radius:10px;background:transparent;font-size:13px;color:var(--g400);cursor:pointer;margin-top:4px">Cancelar</button>';
-  ov.appendChild(sheet);
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{
-    const btn=e.target.closest('[data-ub]');
-    if(btn){
-      const ubic=btn.dataset.ub;
-      sb.from('expediciones').update({ubicacion:ubic}).eq('id',expId).then(async()=>{
-        await logAct('expediciones',expId,'','editar','ubicacion','—',ubic);
-        showToast('📍 Ubicación → '+ubic);
-        loadView(CV);
-      });
-      ov.remove();
-    } else if(e.target===ov||e.target.textContent==='Cancelar'){ ov.remove(); }
-  });
-}
-
 // Restaurar sesión si venimos de otro módulo (airport_cargo, etc.)
 checkSession();
 // Pre-cargar plantillas email
@@ -14273,7 +13763,7 @@ if(typeof sb!=="undefined"&&sb){loadEmailPlantillas();}else{setTimeout(()=>{if(s
   panel.id = 'notif-panel';
   panel.style.cssText = 'display:none;position:fixed;top:0;right:0;width:360px;max-width:100vw;height:100%;background:var(--w);border-left:1px solid var(--g200);z-index:25000;flex-direction:column;box-shadow:-4px 0 24px rgba(0,0,0,.12);transform:translateX(100%);transition:transform .25s ease';
   panel.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:max(16px,calc(env(safe-area-inset-top,0px) + 10px)) 20px 14px;border-bottom:1px solid var(--g200);flex-shrink:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--g200);flex-shrink:0">
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:18px">🔔</span>
         <span style="font-size:15px;font-weight:700;color:var(--g900)">Notificaciones</span>
