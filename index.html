@@ -4920,20 +4920,36 @@ function _guardarEoriCard(btn){
   btn.disabled = true;
 }
 
-// ── OpenCorporates: búsqueda real sin token (límite libre) ────────
+// ── OpenCorporates: búsqueda real con fallback CORS ───────────────
 async function _buscarEnOpenCorporates(query, jurisdiccion){
-  // Sin token: 50 req/día por IP. Suficiente para uso interno.
-  const url = `https://api.opencorporates.com/v0.4/companies/search?q=${encodeURIComponent(query)}&jurisdiction_code=${jurisdiccion}&per_page=10&order=score`;
-  const ctrl = new AbortController();
-  const tid  = setTimeout(()=>ctrl.abort(), 12000);
-  let resp, data;
-  try {
-    resp = await fetch(url, { signal:ctrl.signal, headers:{'Accept':'application/json'} });
-    data = await resp.json();
-  } finally { clearTimeout(tid); }
+  const OC_URL = `https://api.opencorporates.com/v0.4/companies/search?q=${encodeURIComponent(query)}&jurisdiction_code=${jurisdiccion}&per_page=10&order=score`;
 
-  if(!resp.ok) throw new Error('OpenCorporates '+resp.status);
-  return (data?.results?.companies||[]).map(c=>c.company).filter(Boolean);
+  // Intentar en orden: directo → corsproxy.io → allorigins
+  const intentos = [
+    { url: OC_URL, transform: r => r.json() },
+    { url: `https://corsproxy.io/?${encodeURIComponent(OC_URL)}`, transform: r => r.json() },
+    { url: `https://api.allorigins.win/get?url=${encodeURIComponent(OC_URL)}`, transform: async r => { const d=await r.json(); return JSON.parse(d.contents); } }
+  ];
+
+  for(const intento of intentos){
+    try{
+      const ctrl = new AbortController();
+      const tid  = setTimeout(()=>ctrl.abort(), 14000);
+      let resp, data;
+      try{
+        resp = await fetch(intento.url, { signal:ctrl.signal, headers:{'Accept':'application/json'} });
+        if(!resp.ok){ clearTimeout(tid); continue; }
+        data = await intento.transform(resp);
+      } finally { clearTimeout(tid); }
+
+      const companies = (data?.results?.companies||[]).map(c=>c.company).filter(Boolean);
+      if(companies.length >= 0) return companies; // 0 resultados es válido (no error)
+    } catch(e){
+      console.warn('OpenCorporates intento fallido:', intento.url, e.message);
+      continue;
+    }
+  }
+  throw new Error('No se pudo conectar con OpenCorporates. Comprueba tu conexión.');
 }
 
 // ── Renderiza la lista de empresas encontradas ────────────────────
