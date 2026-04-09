@@ -1023,7 +1023,10 @@ textarea.fi{resize:vertical;min-height:72px}
       <div class="fg2" style="margin-bottom:8px"><label class="fl2">Contraseña</label><input id="li-pass" class="fi" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
       <div class="li-err" id="li-err"></div>
       <button class="btn btn-p btn-full" style="margin-top:16px" onclick="doLogin()">Entrar al sistema →</button>
-      <div style="text-align:center;margin-top:12px;display:flex;align-items:center;justify-content:center;gap:16px">
+      <div style="text-align:center;margin-top:14px">
+        <span style="font-size:12px;color:var(--b600);cursor:pointer;text-decoration:underline;font-weight:500" onclick="showRecuperarPass()">¿Olvidaste tu contraseña?</span>
+      </div>
+      <div style="text-align:center;margin-top:8px;display:flex;align-items:center;justify-content:center;gap:16px">
         <button onclick="toggleDarkMode()" style="background:none;border:none;cursor:pointer;color:var(--g400);font-size:12px">🌙 Modo oscuro</button>
         <span style="font-size:11px;color:var(--g400);cursor:pointer;text-decoration:underline" onclick="testConexion()">Probar conexión</span>
       </div>
@@ -2788,7 +2791,7 @@ async function doLogin(){
     const now=Date.now();
     if(rl.blocked && now < rl.blocked){
       const mins=Math.ceil((rl.blocked-now)/60000);
-      if(errEl) errEl.textContent='Demasiados intentos. Espera '+mins+' min.';
+      if(errEl) errEl.innerHTML='⛔ Demasiados intentos. Espera '+mins+' min.<br><button onclick="showRecuperarPass()" style="margin-top:8px;background:var(--b600);color:#fff;border:none;border-radius:var(--r);padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;width:100%;font-family:var(--f)">🔑 Restablecer contraseña</button>';
       return;
     }
     if(rl.blocked && now >= rl.blocked){
@@ -2844,11 +2847,12 @@ async function doLogin(){
         if(rl.attempts>=5){
           rl.blocked=Date.now()+15*60*1000;
           rl.attempts=0;
-          logAuth('blocked', null, email, 'Cuenta bloqueada 15 min por '+rl.attempts+' intentos fallidos');
-          if(errEl){ errEl.textContent='Cuenta bloqueada 15 min por exceso de intentos.'; }
+          logAuth('blocked', null, email, 'Cuenta bloqueada 15 min por exceso de intentos fallidos');
+          if(errEl){ errEl.innerHTML='⛔ Cuenta bloqueada 15 min por exceso de intentos.<br><button onclick="showRecuperarPass()" style="margin-top:8px;background:var(--b600);color:#fff;border:none;border-radius:var(--r);padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;width:100%;font-family:var(--f)">🔑 Restablecer contraseña</button>'; }
         } else {
           const left=5-rl.attempts;
-          if(errEl) errEl.textContent='Usuario o contraseña incorrectos. '+(left>1?left+' intentos restantes.':'Último intento antes de bloqueo.');
+          const showReset = left<=1;
+          if(errEl) errEl.innerHTML='Usuario o contraseña incorrectos. '+(left>1?left+' intentos restantes.':'<strong>Último intento antes de bloqueo.</strong>')+(showReset?'<br><span onclick="showRecuperarPass()" style="display:inline-block;margin-top:6px;color:var(--b600);cursor:pointer;font-size:12px;text-decoration:underline">¿Olvidaste la contraseña? Restablécela aquí</span>':'');
         }
         localStorage.setItem('als_login_rl',JSON.stringify(rl));
       } catch(e){ if(errEl) errEl.textContent='Usuario o contraseña incorrectos'; }
@@ -2957,6 +2961,150 @@ async function doChangePwd(){
   document.getElementById('screen-changepwd').style.display='none';
   showToast('✅ Contraseña actualizada correctamente');
   showHome();
+}
+
+// ── RECUPERAR CONTRASEÑA ─────────────────────────────────────────
+function showRecuperarPass(){
+  // Limpiar bloqueo de rate limit antes de mostrar la pantalla
+  try{ localStorage.removeItem('als_login_rl'); }catch(e){}
+
+  let scr = document.getElementById('screen-recovery');
+  if(!scr){
+    scr = document.createElement('div');
+    scr.id = 'screen-recovery';
+    scr.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000;padding:20px;backdrop-filter:blur(4px)';
+    document.body.appendChild(scr);
+  }
+  scr.innerHTML = `
+    <div style="background:#fff;border-radius:16px;width:100%;max-width:400px;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="font-size:20px;font-weight:800;color:var(--g900);margin-bottom:4px">🔑 Recuperar acceso</div>
+      <div style="font-size:13px;color:var(--g500);margin-bottom:20px">Introduce tu nombre de usuario y el email con el que te registraste. Si coinciden, podrás establecer una nueva contraseña.</div>
+
+      <div id="rec-step1">
+        <div class="fg2"><label class="fl2">Nombre de usuario</label>
+          <input id="rec-nombre" class="fi" type="text" placeholder="Tu nombre en el sistema" autocomplete="username">
+        </div>
+        <div class="fg2"><label class="fl2">Email registrado</label>
+          <input id="rec-email" class="fi" type="email" placeholder="tu@email.com" onkeydown="if(event.key==='Enter')verificarIdentidad()">
+        </div>
+        <div id="rec-err" style="color:var(--rd600);font-size:12px;min-height:16px;margin-bottom:8px"></div>
+        <button class="btn btn-p btn-full" onclick="verificarIdentidad()">Verificar identidad →</button>
+      </div>
+
+      <div id="rec-step2" style="display:none">
+        <div style="background:var(--gr50);border:1px solid #bbf7d0;border-radius:var(--r);padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--gr700)">
+          ✅ Identidad verificada. Establece tu nueva contraseña.
+        </div>
+        <div class="fg2"><label class="fl2">Nueva contraseña</label>
+          <input id="rec-p1" class="fi" type="password" placeholder="Mínimo 6 caracteres">
+        </div>
+        <div class="fg2"><label class="fl2">Confirmar contraseña</label>
+          <input id="rec-p2" class="fi" type="password" placeholder="Repite la contraseña" onkeydown="if(event.key==='Enter')doResetPass()">
+        </div>
+        <div id="rec-err2" style="color:var(--rd600);font-size:12px;min-height:16px;margin-bottom:8px"></div>
+        <button class="btn btn-p btn-full" onclick="doResetPass()">Guardar nueva contraseña →</button>
+      </div>
+
+      <button onclick="cerrarRecuperar()" style="width:100%;background:none;border:none;margin-top:12px;color:var(--g400);font-size:12px;cursor:pointer;font-family:var(--f)">Cancelar — volver al login</button>
+    </div>`;
+  scr.style.display = 'flex';
+}
+
+function cerrarRecuperar(){
+  const scr = document.getElementById('screen-recovery');
+  if(scr) scr.style.display = 'none';
+  window._recUserId = null;
+}
+
+async function verificarIdentidad(){
+  const nombre = (document.getElementById('rec-nombre')?.value||'').trim();
+  const email  = (document.getElementById('rec-email')?.value||'').trim().toLowerCase();
+  const errEl  = document.getElementById('rec-err');
+  if(!nombre || !email){ errEl.textContent='Introduce nombre y email'; return; }
+
+  errEl.textContent = 'Verificando…';
+  try{
+    // Buscar usuario que coincida en nombre Y email (doble validación)
+    const r = await fetch(
+      SB_URL+'/rest/v1/usuarios?nombre=ilike.'+encodeURIComponent(nombre)+'&select=id,nombre,email,activo',
+      { headers:{ apikey:SB_KEY, Authorization:'Bearer '+SB_KEY } }
+    );
+    const rows = await r.json();
+
+    // Verificar que el email también coincide (case-insensitive)
+    const match = (rows||[]).find(u =>
+      u.email && u.email.toLowerCase() === email && u.activo !== false
+    );
+
+    if(!match){
+      errEl.textContent = '❌ No se encontró ningún usuario con esa combinación de nombre y email. Comprueba los datos o contacta con el administrador.';
+      return;
+    }
+
+    // Identidad verificada — guardar ID temporalmente y mostrar paso 2
+    window._recUserId = match.id;
+    errEl.textContent = '';
+    document.getElementById('rec-step1').style.display = 'none';
+    document.getElementById('rec-step2').style.display = 'block';
+    setTimeout(()=>document.getElementById('rec-p1')?.focus(), 100);
+
+  } catch(e){
+    errEl.textContent = '❌ Error de conexión: '+e.message;
+  }
+}
+
+async function doResetPass(){
+  const p1    = document.getElementById('rec-p1')?.value||'';
+  const p2    = document.getElementById('rec-p2')?.value||'';
+  const errEl = document.getElementById('rec-err2');
+  const uid   = window._recUserId;
+
+  if(!uid){ errEl.textContent='Error: sesión de recuperación expirada. Vuelve a empezar.'; return; }
+  if(!p1 || p1.length < 6){ errEl.textContent='Mínimo 6 caracteres'; return; }
+  if(p1 !== p2){ errEl.textContent='Las contraseñas no coinciden'; return; }
+
+  errEl.textContent = 'Guardando…';
+  try{
+    // Intentar via RPC bcrypt (igual que showChangePwd)
+    let ok = false;
+    if(sb){
+      try{
+        await sb.rpc('cambiar_password', { p_usuario_id: uid, p_nueva: p1 });
+        ok = true;
+      } catch(e2){
+        // Fallback: update directo
+        const {error} = await sb.from('usuarios').update({
+          password_hash: p1,
+          must_change_password: false
+        }).eq('id', uid);
+        if(!error) ok = true;
+        else{ errEl.textContent='Error al guardar: '+error.message; return; }
+      }
+    } else {
+      const r = await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(uid),{
+        method:'PATCH',
+        headers:{ apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json', Prefer:'return=minimal' },
+        body: JSON.stringify({ password_hash: p1, must_change_password: false })
+      });
+      ok = r.ok;
+    }
+
+    if(ok){
+      window._recUserId = null;
+      cerrarRecuperar();
+      // Limpiar bloqueo y mostrar mensaje en login
+      try{ localStorage.removeItem('als_login_rl'); }catch(e){}
+      const errLogin = document.getElementById('li-err');
+      if(errLogin){
+        errLogin.style.color='var(--gr600)';
+        errLogin.textContent='✅ Contraseña actualizada. Ya puedes entrar con tu nueva contraseña.';
+      }
+    } else {
+      errEl.textContent='Error desconocido al guardar. Contacta con el administrador.';
+    }
+  } catch(e){
+    errEl.textContent='Error: '+e.message;
+  }
 }
 
 function showHome(){
