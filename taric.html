@@ -1060,7 +1060,7 @@ const _orKeyPromise = new Promise(res => { _orKeyResolve = res; });
 // Si ya hay key en localStorage, resolver inmediatamente
 if(localStorage.getItem('als_openrouter_key')) _orKeyResolve && _orKeyResolve();
 // Safety timeout: resolver aunque no haya key para no bloquear indefinidamente
-setTimeout(() => _orKeyResolve && _orKeyResolve(), 3000);
+setTimeout(() => _orKeyResolve && _orKeyResolve(), 6000);
 
 async function loadOpenRouterKeyFromSupabase(){
   if(!sb) return;
@@ -1544,8 +1544,13 @@ async function forzarClasificarIA(){
 }
 
 async function llamarGeminiAPI(prompt, modelOverride){
-  const key = getOpenRouterKey();
-  if(!key) throw new Error('❌ Error de conexión con el servicio de IA. Inténtalo de nuevo.');
+  let key = getOpenRouterKey();
+  // Si no hay key, intentar cargarla desde Supabase antes de rendirse
+  if(!key){
+    await loadOpenRouterKeyFromSupabase();
+    key = getOpenRouterKey();
+  }
+  if(!key) throw new Error('⚙️ API key no configurada. Introdúcela en el panel lateral (⚙️).');
 
   const messages = [{ role: 'user', content: prompt }];
   try {
