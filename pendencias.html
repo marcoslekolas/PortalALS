@@ -102,8 +102,8 @@ td{padding:8px 9px;vertical-align:middle}.clip{overflow:hidden;text-overflow:ell
 .desc-input{width:100%;margin-top:5px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 9px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none}
 .desc-input:focus{border-color:var(--cw)}
 /* Modal */
-#ov{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);z-index:300;display:none;align-items:center;justify-content:center;padding:16px}
-#ov.open{display:flex}
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);z-index:600;display:none;align-items:center;justify-content:center;padding:16px;overflow-y:auto}
+#ov.open{display:flex !important}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;padding:22px}
 .modal h2{font-size:17px;font-weight:700;margin-bottom:18px}
 .mg{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mf{display:flex;flex-direction:column;gap:4px}.full{grid-column:1/-1}
@@ -112,8 +112,8 @@ td{padding:8px 9px;vertical-align:middle}.clip{overflow:hidden;text-overflow:ell
 .mf input:focus,.mf select:focus,.mf textarea:focus{border-color:var(--cw)}
 .mfoot{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
 /* Elix modal */
-#ov-el{position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(6px);z-index:400;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto}
-#ov-el.open{display:flex}
+#ov-el{position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(6px);z-index:700;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto}
+#ov-el.open{display:flex !important}
 .elmod{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);width:100%;max-width:720px;margin:auto}
 .elh{padding:16px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
 .elh h2{font-size:15px;font-weight:700;flex:1}.elh button{background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer}
@@ -141,8 +141,8 @@ td{padding:8px 9px;vertical-align:middle}.clip{overflow:hidden;text-overflow:ell
   <div class="sep"></div>
   <div class="hdr-mod">Control RPA &middot; R&eacute;gimen 51</div>
   <div class="hdr-r">
-    <a href="taric.html" class="hdr-a">&#9889; Clasificador TARIC</a>
-    <a href="index_work.html" class="hdr-a">&#127981; Portal Alm&eacute;n</a>
+    <a href="taric.html" class="hdr-a">&#9889; TARIC</a>
+    <a href="index.html" class="hdr-a" style="background:rgba(14,165,233,.12);color:var(--cw);border-color:rgba(14,165,233,.3);font-weight:700">&#127968; Men&uacute; principal</a>
     <span class="hdr-date" id="hdr-date"></span>
   </div>
 </div>
@@ -564,13 +564,19 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){cerrarM();cerrarP()
 document.getElementById('ov').addEventListener('click',e=>{if(e.target===document.getElementById('ov'))cerrarM();});
 document.getElementById('ov-el').addEventListener('click',e=>{if(e.target===document.getElementById('ov-el'))cerrarEl();});
 
-// Enlace Despacho solo visible para admin
+// Personalización header según usuario logueado
 (function(){
   try{
     var cu=JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null');
-    if(cu&&cu.rol==='admin'){
+    if(!cu) return;
+    // Nombre en header
+    var d=document.getElementById('hdr-date');
+    if(d && cu.nombre) d.textContent=(cu.nombre.split(' ').slice(0,2).join(' '))+' · '+new Date().toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
+    // Enlace Despacho solo para admin
+    if(cu.rol==='admin'){
       var a=document.createElement('a');
-      a.href='despacho.html';a.className='hdr-a';a.textContent='\uD83D\uDCC5 Despacho';
+      a.href='despacho.html';a.className='hdr-a';
+      a.textContent='\uD83D\uDCC5 Despacho';
       var hr=document.querySelector('.hdr-r');
       if(hr) hr.insertBefore(a,hr.firstChild);
     }
