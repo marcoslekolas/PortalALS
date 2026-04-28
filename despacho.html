@@ -3,394 +3,260 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
-<title>Customs Way · Despacho</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<title>Customs Way · Despacho Personal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#07111f;--s1:#0f1e33;--s2:#162540;--s3:#1e3050;--border:#1e3255;
-  --t1:#e8edf5;--t2:#8fa3bf;--t3:#4a637d;
-  --cw:#0ea5e9;--cw2:#0284c7;--acc:#6366f1;
-  --gr:#22c55e;--am:#f59e0b;--rd:#ef4444;--pu:#a855f7;--te:#14b8a6;
-  --mono:"IBM Plex Mono",monospace;--sans:"Syne",sans-serif;
-  --r:6px;--rl:12px;
+  --w:#fff;--g50:#f8f9fa;--g100:#f1f3f5;--g200:#e9ecef;--g300:#dee2e6;
+  --g400:#ced4da;--g500:#adb5bd;--g600:#6c757d;--g700:#495057;--g800:#343a40;--g900:#212529;
+  --b50:#e7f1ff;--b100:#c5dbff;--b500:#3b82f6;--b600:#2563eb;--b700:#1d4ed8;
+  --gr50:#f0fdf4;--gr600:#16a34a;--gr700:#15803d;
+  --rd50:#fff1f2;--rd600:#dc2626;
+  --am50:#fffbeb;--am600:#d97706;
+  --pu50:#f5f3ff;--pu600:#7c3aed;
+  --te50:#f0fdfa;--te600:#0d9488;
+  --f:"Inter",sans-serif;
+  --r:8px;--rl:12px;--rxl:16px;
+  --sh:0 1px 3px rgba(0,0,0,.08);--shl:0 4px 16px rgba(0,0,0,.1);
+  --hh:52px;
 }
-html,body{height:100%;background:var(--bg);color:var(--t1);font-family:var(--sans);overflow:hidden}
-
-/* NAV */
-#nav{position:fixed;top:0;left:0;right:0;height:52px;z-index:200;background:rgba(7,17,31,.96);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px}
-.logo{display:flex;align-items:center;gap:7px}
-.lm{width:26px;height:26px;background:linear-gradient(135deg,var(--cw),var(--acc));border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;font-weight:600;color:#fff}
-.lt{font-weight:800;font-size:13px}.lt span{color:var(--cw)}
-.nav-sep{width:1px;height:18px;background:var(--border)}
-.nav-tabs{display:flex;gap:2px}
-.ntab{padding:5px 12px;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;border:none;background:none;color:var(--t3);font-family:var(--sans)}
-.ntab:hover{color:var(--t2);background:rgba(255,255,255,.04)}
-.ntab.on{background:rgba(14,165,233,.12);color:var(--cw)}
-.nav-r{margin-left:auto;display:flex;align-items:center;gap:8px}
-.nav-a{font-family:var(--mono);font-size:11px;color:var(--t3);text-decoration:none;padding:4px 8px;border-radius:4px;transition:all .15s;border:1px solid transparent}
-.nav-a:hover{color:var(--cw);border-color:rgba(14,165,233,.25);background:rgba(14,165,233,.06)}
-#bell{background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;position:relative;padding:4px}
-#bell:hover{color:var(--am)}
-#bell-dot{position:absolute;top:2px;right:2px;width:7px;height:7px;background:var(--rd);border-radius:50%;display:none}
-#sync-btn{background:none;border:1px solid var(--border);border-radius:var(--r);padding:4px 10px;font-family:var(--mono);font-size:11px;color:var(--t3);cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
-#sync-btn:hover{color:var(--cw);border-color:var(--cw)}
-
-/* LAYOUT */
-#app{padding-top:52px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-.view{display:none;flex:1;overflow:hidden}
-.view.on{display:flex}
-
-/* ═══════════════════════════════════════════════════════
-   VISTA 1 — HOY
-═══════════════════════════════════════════════════════ */
-#v-hoy{flex-direction:column;overflow-y:auto}
-.hoy-top{padding:20px 20px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;flex-shrink:0}
-.kpi{background:var(--s1);border:1px solid var(--border);border-radius:var(--rl);padding:14px 16px}
-.kpi-n{font-family:var(--mono);font-size:26px;font-weight:600;line-height:1}
-.kpi-l{font-size:11px;color:var(--t3);margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
-.kpi-sub{font-family:var(--mono);font-size:11px;color:var(--t3);margin-top:2px}
-.hoy-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:14px 20px 20px;flex:1;min-height:0}
-.hoy-col{background:var(--s1);border:1px solid var(--border);border-radius:var(--rl);display:flex;flex-direction:column;overflow:hidden}
-.col-hdr{padding:11px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
-.col-hdr h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--t2)}
-.col-badge{font-family:var(--mono);font-size:10px;background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:1px 7px;color:var(--t3)}
-.col-body{flex:1;overflow-y:auto;padding:8px}
-.add-col{padding:8px;border-top:1px solid var(--border);flex-shrink:0}
-.add-col button{width:100%;background:none;border:1px dashed var(--border);border-radius:var(--r);padding:7px;font-family:var(--sans);font-size:11px;color:var(--t3);cursor:pointer;transition:all .15s}
-.add-col button:hover{border-color:var(--cw);color:var(--cw)}
-
-/* Tarjeta de tarea */
-.tarea{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:all .15s;position:relative}
-.tarea:hover{border-color:var(--cw);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.3)}
-.tarea.drag-over{border-color:var(--cw);background:rgba(14,165,233,.06)}
-.t-tipo{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;border-radius:3px;padding:2px 7px;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
-.t-titulo{font-size:13px;font-weight:600;color:var(--t1);line-height:1.4;margin-bottom:4px}
-.t-meta{font-family:var(--mono);font-size:11px;color:var(--t3);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.t-plazo{font-family:var(--mono);font-size:11px;font-weight:600;padding:1px 6px;border-radius:3px}
-.p-vencido{background:rgba(239,68,68,.12);color:var(--rd)}
-.p-urgente{background:rgba(245,158,11,.12);color:var(--am)}
-.p-ok{background:rgba(34,197,94,.08);color:var(--gr)}
-.t-prioridad{position:absolute;top:10px;right:10px;font-size:9px}
-
-/* ═══════════════════════════════════════════════════════
-   VISTA 2 — PLAZOS
-═══════════════════════════════════════════════════════ */
-#v-plazos{flex-direction:column;overflow:hidden}
-.plazos-hdr{padding:14px 20px;display:flex;gap:10px;align-items:center;flex-shrink:0;border-bottom:1px solid var(--border);background:var(--bg)}
-.plazos-body{flex:1;overflow-y:auto;padding:16px 20px}
-.plazo-row{background:var(--s1);border:1px solid var(--border);border-radius:var(--rl);padding:14px 18px;margin-bottom:8px;display:grid;grid-template-columns:auto 1fr auto auto auto;gap:14px;align-items:center;cursor:pointer;transition:all .15s}
-.plazo-row:hover{border-color:var(--cw);background:var(--s2)}
-.pr-semaforo{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.pr-info{min-width:0}
-.pr-titulo{font-size:13px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pr-sub{font-family:var(--mono);font-size:11px;color:var(--t3);margin-top:2px}
-.pr-tipo{font-size:10px;font-weight:700;border-radius:3px;padding:3px 8px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
-.pr-fecha{font-family:var(--mono);font-size:12px;color:var(--t2);white-space:nowrap;text-align:right}
-.pr-dias{font-family:var(--mono);font-size:13px;font-weight:700;white-space:nowrap;min-width:60px;text-align:right}
-.timeline{background:var(--s1);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:16px}
-.tl-hdr{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--t3);margin-bottom:12px}
-.tl-bar{position:relative;height:8px;background:var(--s2);border-radius:4px;margin-bottom:4px}
-.tl-fill{position:absolute;left:0;top:0;height:100%;border-radius:4px;transition:width .5s}
-.tl-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--t3);margin-bottom:10px}
-
-/* ═══════════════════════════════════════════════════════
-   VISTA 3 — EMAIL / BANDEJA
-═══════════════════════════════════════════════════════ */
-#v-email{flex-direction:column;overflow:hidden}
-.email-hdr{padding:12px 20px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);flex-shrink:0}
-.email-body{flex:1;overflow:hidden;display:flex}
-.email-list{width:360px;border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0}
-.email-item{padding:12px 14px;border-bottom:1px solid rgba(30,50,85,.5);cursor:pointer;transition:background .1s}
-.email-item:hover{background:var(--s1)}.email-item.on{background:rgba(14,165,233,.07);border-left:2px solid var(--cw)}
-.ei-from{font-size:12px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ei-sub{font-size:12px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-.ei-meta{display:flex;justify-content:space-between;margin-top:4px}
-.ei-fecha{font-family:var(--mono);font-size:10px;color:var(--t3)}
-.ei-tipo{font-size:9px;font-weight:700;border-radius:3px;padding:1px 5px;text-transform:uppercase}
-.email-detail{flex:1;overflow-y:auto;padding:22px 26px}
-.ed-from{font-size:13px;font-weight:700;margin-bottom:4px}
-.ed-sub{font-size:16px;font-weight:700;margin-bottom:12px;line-height:1.3}
-.ed-meta{font-family:var(--mono);font-size:11px;color:var(--t3);margin-bottom:16px;display:flex;gap:14px;flex-wrap:wrap}
-.ed-body{font-size:13px;line-height:1.8;color:var(--t2);white-space:pre-wrap;border:1px solid var(--border);border-radius:var(--r);padding:14px;background:var(--s1)}
-.ed-actions{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
-.ed-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--t3);flex-direction:column;gap:8px}
-.ed-empty .big{font-size:32px}
-.ed-tag{font-size:9px;font-weight:700;border-radius:3px;padding:2px 6px;text-transform:uppercase;margin-right:4px}
-.email-setup{padding:24px;text-align:center;color:var(--t3)}
-.email-setup p{margin-bottom:12px;font-size:13px;line-height:1.6}
-
-/* ═══════════════════════════════════════════════════════
-   VISTA 4 — NOTAS
-═══════════════════════════════════════════════════════ */
-#v-notas{flex-direction:column;overflow:hidden}
-.notas-layout{flex:1;overflow:hidden;display:flex;gap:0}
-.notas-sidebar{width:260px;border-right:1px solid var(--border);overflow-y:auto;padding:10px}
+html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
+#hdr{height:var(--hh);background:var(--w);border-bottom:1px solid var(--g200);display:flex;align-items:center;padding:0 16px;gap:12px;box-shadow:var(--sh);position:sticky;top:0;z-index:100}
+.hdr-logo{width:32px;height:32px;background:var(--b600);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0}
+.hdr-title{font-size:15px;font-weight:700}.hdr-sep{width:1px;height:18px;background:var(--g200)}.hdr-mod{font-size:13px;color:var(--g600);font-weight:500}
+.hdr-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.hdr-a{font-size:12px;font-weight:600;color:var(--g600);text-decoration:none;padding:5px 10px;border-radius:var(--r);border:1px solid var(--g200);background:var(--w);transition:all .15s;display:inline-flex;align-items:center;gap:5px}
+.hdr-a:hover{background:var(--g50);border-color:var(--g300);color:var(--g800)}
+.hdr-a.primary{background:var(--b600);border-color:var(--b600);color:#fff}.hdr-a.primary:hover{background:var(--b700)}
+.hdr-av{width:26px;height:26px;border-radius:6px;background:linear-gradient(135deg,var(--b600),#6366f1);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px}
+.hdr-user{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--g600);font-weight:500}
+.tabs-bar{background:var(--w);border-bottom:1px solid var(--g200);padding:0 16px;display:flex;gap:2px;flex-shrink:0}
+.tab-btn{padding:10px 14px;font-size:13px;font-weight:600;color:var(--g600);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:var(--f);transition:all .15s}
+.tab-btn:hover{color:var(--g900)}.tab-btn.on{color:var(--b600);border-bottom-color:var(--b600)}
+#app{height:calc(100vh - var(--hh));display:flex;flex-direction:column;overflow:hidden}
+.view{display:none;flex:1;overflow:hidden;flex-direction:column}.view.on{display:flex}
+/* HOY */
+#v-hoy{overflow-y:auto}
+.hoy-inner{padding:16px;display:flex;flex-direction:column;gap:14px;max-width:1200px;margin:0 auto;width:100%}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px;box-shadow:var(--sh)}
+.kpi-n{font-size:26px;font-weight:800;line-height:1}.kpi-l{font-size:11px;color:var(--g500);margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.kanban{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.k-col{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);display:flex;flex-direction:column;box-shadow:var(--sh);min-height:280px}
+.k-hdr{padding:12px 14px;border-bottom:1px solid var(--g200);display:flex;align-items:center;gap:8px}
+.k-hdr h3{font-size:13px;font-weight:700;color:var(--g800)}
+.k-badge{font-size:10px;font-weight:700;background:var(--g100);color:var(--g600);border-radius:10px;padding:1px 7px;border:1px solid var(--g200)}
+.k-body{flex:1;padding:8px;display:flex;flex-direction:column;gap:6px;min-height:80px}
+.k-add{padding:8px;border-top:1px solid var(--g200)}
+.k-add button{width:100%;background:none;border:1px dashed var(--g300);border-radius:var(--r);padding:7px;font-family:var(--f);font-size:12px;font-weight:600;color:var(--g500);cursor:pointer;transition:all .15s}
+.k-add button:hover{border-color:var(--b500);color:var(--b600);background:var(--b50)}
+.tarea{background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:10px 12px;cursor:pointer;transition:all .15s;position:relative}
+.tarea:hover{border-color:var(--b500);box-shadow:var(--sh);transform:translateY(-1px)}
+.t-tipo{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;border-radius:4px;padding:2px 7px;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
+.t-titulo{font-size:13px;font-weight:600;color:var(--g900);line-height:1.4;margin-bottom:5px}
+.t-meta{font-size:11px;color:var(--g500);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.t-plazo{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px}
+.p-vencido{background:var(--rd50);color:var(--rd600)}.p-urgente{background:var(--am50);color:var(--am600)}.p-ok{background:var(--gr50);color:var(--gr600)}
+.t-prio{position:absolute;top:8px;right:8px;font-size:10px}
+.tp-requerimiento{background:var(--rd50);color:var(--rd600)}.tp-liquidacion{background:var(--am50);color:var(--am600)}
+.tp-recurso{background:var(--pu50);color:var(--pu600)}.tp-alegacion{background:#fdf4ff;color:#9333ea}
+.tp-rpa{background:var(--b50);color:var(--b700)}.tp-general{background:var(--g100);color:var(--g600)}
+.tp-reunion{background:var(--te50);color:var(--te600)}.tp-email{background:var(--gr50);color:var(--gr600)}
+/* PLAZOS */
+#v-plazos{overflow:hidden}
+.plazos-tb{padding:10px 16px;display:flex;gap:8px;align-items:center;background:var(--g50);border-bottom:1px solid var(--g200);flex-shrink:0}
+.plazos-body{flex:1;overflow-y:auto;padding:14px 16px}
+.plazo-row{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:12px 16px;margin-bottom:8px;display:grid;grid-template-columns:12px 1fr auto auto auto;gap:12px;align-items:center;cursor:pointer;transition:all .15s;box-shadow:var(--sh)}
+.plazo-row:hover{border-color:var(--b500);transform:translateY(-1px)}
+.pr-sem{width:10px;height:10px;border-radius:50%}.pr-titulo{font-size:13px;font-weight:700;color:var(--g900)}
+.pr-sub{font-size:11px;color:var(--g500);margin-top:2px}.pr-tipo{font-size:10px;font-weight:700;border-radius:4px;padding:3px 8px}
+.pr-fecha{font-size:12px;color:var(--g600);white-space:nowrap;text-align:right}.pr-dias{font-size:13px;font-weight:700;white-space:nowrap;text-align:right;min-width:60px}
+/* EMAIL */
+#v-email{overflow:hidden}
+.email-tb{padding:10px 16px;display:flex;gap:8px;align-items:center;background:var(--g50);border-bottom:1px solid var(--g200);flex-shrink:0}
+.email-layout{flex:1;overflow:hidden;display:flex}
+.email-list{width:300px;border-right:1px solid var(--g200);overflow-y:auto;flex-shrink:0}
+.email-item{padding:12px 14px;border-bottom:1px solid var(--g100);cursor:pointer;transition:background .1s}
+.email-item:hover{background:var(--g50)}.email-item.on{background:var(--b50);border-left:3px solid var(--b600)}
+.ei-from{font-size:12px;font-weight:700;color:var(--g900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ei-sub{font-size:12px;color:var(--g600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.ei-meta{display:flex;justify-content:space-between;margin-top:4px}.ei-fecha{font-size:10px;color:var(--g500)}.ei-tipo{font-size:9px;font-weight:700;border-radius:3px;padding:1px 5px}
+.email-detail{flex:1;overflow-y:auto;padding:22px 24px}
+.ed-from{font-size:13px;font-weight:700;color:var(--g900);margin-bottom:4px}
+.ed-sub{font-size:16px;font-weight:700;color:var(--g900);margin-bottom:12px;line-height:1.3}
+.ed-meta{font-size:11px;color:var(--g500);margin-bottom:16px;display:flex;gap:14px;flex-wrap:wrap}
+.ed-body{font-size:13px;line-height:1.8;color:var(--g700);white-space:pre-wrap;border:1px solid var(--g200);border-radius:var(--r);padding:14px;background:var(--g50)}
+.ed-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.ed-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--g400);flex-direction:column;gap:8px}.ed-empty div{font-size:32px}
+/* NOTAS */
+#v-notas{overflow:hidden}
+.notas-tb{padding:10px 16px;display:flex;gap:8px;align-items:center;background:var(--g50);border-bottom:1px solid var(--g200);flex-shrink:0}
+.notas-layout{flex:1;overflow:hidden;display:flex}
+.notas-sidebar{width:240px;border-right:1px solid var(--g200);overflow-y:auto;padding:8px}
 .nota-item{padding:10px 11px;border-radius:var(--r);cursor:pointer;transition:all .15s;border:1px solid transparent;margin-bottom:4px}
-.nota-item:hover{background:var(--s1);border-color:var(--border)}.nota-item.on{background:var(--s2);border-color:var(--cw)}
-.ni-title{font-size:13px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ni-preview{font-size:11px;color:var(--t3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ni-fecha{font-family:var(--mono);font-size:10px;color:var(--t3);margin-top:4px}
+.nota-item:hover{background:var(--g100);border-color:var(--g200)}.nota-item.on{background:var(--b50);border-color:var(--b100)}
+.ni-title{font-size:13px;font-weight:600;color:var(--g900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ni-preview{font-size:11px;color:var(--g500);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ni-fecha{font-size:10px;color:var(--g400);margin-top:4px}
 .nota-editor{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.ne-toolbar{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:center;flex-shrink:0}
-.ne-title{width:100%;background:none;border:none;font-family:var(--sans);font-size:18px;font-weight:700;color:var(--t1);outline:none;padding:14px 18px;border-bottom:1px solid var(--border)}
-.ne-title::placeholder{color:var(--t3)}
-.ne-body{flex:1;width:100%;background:none;border:none;font-family:var(--mono);font-size:13px;color:var(--t2);outline:none;padding:14px 18px;resize:none;line-height:1.8}
-.ne-body::placeholder{color:var(--t3)}
-.ne-footer{padding:8px 16px;border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--t3);display:flex;gap:12px}
-.notas-empty{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:var(--t3)}
-
-/* ═══════════════════════════════════════════════════════
-   TIPOS COLORES
-═══════════════════════════════════════════════════════ */
-.tp-requerimiento{background:rgba(239,68,68,.12);color:var(--rd)}
-.tp-liquidacion{background:rgba(245,158,11,.12);color:var(--am)}
-.tp-recurso{background:rgba(99,102,241,.12);color:var(--acc)}
-.tp-alegacion{background:rgba(168,85,247,.12);color:var(--pu)}
-.tp-rpa{background:rgba(14,165,233,.12);color:var(--cw)}
-.tp-general{background:rgba(100,116,139,.1);color:var(--t3)}
-.tp-reunion{background:rgba(20,184,166,.12);color:var(--te)}
-.tp-email{background:rgba(34,197,94,.08);color:var(--gr)}
-
+.ne-title{width:100%;background:none;border:none;font-family:var(--f);font-size:18px;font-weight:700;color:var(--g900);outline:none;padding:14px 18px;border-bottom:1px solid var(--g200)}
+.ne-title::placeholder{color:var(--g400)}.ne-body{flex:1;width:100%;background:none;border:none;font-family:var(--f);font-size:13px;color:var(--g700);outline:none;padding:14px 18px;resize:none;line-height:1.8}
+.ne-body::placeholder{color:var(--g400)}.ne-footer{padding:8px 16px;border-top:1px solid var(--g200);font-size:11px;color:var(--g500);display:flex;background:var(--g50)}
 /* SHARED */
-.btn{border:none;border-radius:var(--r);padding:6px 14px;font-family:var(--sans);font-size:12px;font-weight:700;cursor:pointer;transition:opacity .15s;display:inline-flex;align-items:center;gap:6px}
-.btn:hover{opacity:.85}
-.btn-cw{background:var(--cw);color:#fff}.btn-g{background:var(--s2);color:var(--t2);border:1px solid var(--border)}
-.btn-g:hover{color:var(--t1);border-color:var(--cw)}.btn-rd{background:var(--rd);color:#fff}
-.sw{position:relative}.sw input{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px 6px 28px;font-family:var(--mono);font-size:12px;color:var(--t1);outline:none;width:100%}
-.sw input:focus{border-color:var(--cw)}.sw:before{content:"\2315";position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--t3);font-size:14px;pointer-events:none}
-select.ctl{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:6px 9px;font-family:var(--mono);font-size:12px;color:var(--t1);outline:none;cursor:pointer}
-select.ctl:focus{border-color:var(--cw)}
-
-/* MODAL */
-#ov{position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(5px);z-index:500;display:none;align-items:center;justify-content:center;padding:16px}
-#ov.open{display:flex}
-.modal{background:var(--s1);border:1px solid var(--border);border-radius:14px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;padding:24px}
-.modal h2{font-size:17px;font-weight:700;margin-bottom:18px}
-.mg{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mf{display:flex;flex-direction:column;gap:5px}.full{grid-column:1/-1}
-.mf label{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em}
-.mf input,.mf select,.mf textarea{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;font-family:var(--mono);font-size:12px;color:var(--t1);outline:none;transition:border-color .15s}
-.mf input:focus,.mf select:focus,.mf textarea:focus{border-color:var(--cw)}
-.mfoot{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
-
-/* TOAST */
-#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(70px);background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:9px 18px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:9999;transition:transform .3s cubic-bezier(.4,0,.2,1);pointer-events:none;font-family:var(--mono)}
-#toast.show{transform:translateX(-50%) translateY(0)}
-
-/* NOTIF PANEL */
-#notif-pnl{position:fixed;right:0;top:52px;width:340px;bottom:0;background:var(--s1);border-left:1px solid var(--border);z-index:300;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);overflow-y:auto;padding:16px}
+.sw{position:relative}.sw input{background:var(--w);border:1px solid var(--g200);border-radius:var(--r);padding:6px 10px 6px 30px;font-family:var(--f);font-size:12px;color:var(--g900);outline:none;width:220px}
+.sw input:focus{border-color:var(--b500)}.sw:before{content:"\2315";position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--g500);font-size:14px;pointer-events:none}
+select.ctl{background:var(--w);border:1px solid var(--g200);border-radius:var(--r);padding:6px 9px;font-family:var(--f);font-size:12px;color:var(--g700);outline:none;cursor:pointer}
+select.ctl:focus{border-color:var(--b500)}
+.btn{border:none;border-radius:var(--r);padding:7px 14px;font-family:var(--f);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--b600);color:#fff}.btn-primary:hover{background:var(--b700)}
+.btn-sec{background:var(--w);color:var(--g700);border:1px solid var(--g200)}.btn-sec:hover{background:var(--g50)}
+.btn-danger{background:var(--rd50);color:var(--rd600);border:1px solid #fecdd3}.btn-danger:hover{background:#fee2e2}
+.ml{margin-left:auto}
+/* NOTIF */
+#notif-pnl{position:fixed;right:0;top:var(--hh);width:300px;bottom:0;background:var(--w);border-left:1px solid var(--g200);z-index:200;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);overflow-y:auto;padding:14px;box-shadow:var(--shl)}
 #notif-pnl.open{transform:translateX(0)}
-.np-hdr{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
-.np-hdr button{background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px}
-.np-item{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:11px 12px;margin-bottom:7px;cursor:pointer;transition:border-color .15s}
-.np-item:hover{border-color:var(--cw)}.np-item.unread{border-left:3px solid var(--am)}
-.np-title{font-size:12px;font-weight:600;color:var(--t1);margin-bottom:3px}
-.np-body{font-size:11px;color:var(--t3);line-height:1.5}
-.np-fecha{font-family:var(--mono);font-size:10px;color:var(--t3);margin-top:5px}
-
-::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-@media(max-width:768px){.hoy-cols{grid-template-columns:1fr}.email-list{width:100%}.notas-sidebar{width:200px}}
+.np-hdr{font-size:14px;font-weight:700;color:var(--g900);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+.np-hdr button{background:none;border:none;color:var(--g500);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:4px}
+.np-hdr button:hover{background:var(--g100)}
+.np-item{background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:all .15s}
+.np-item:hover{border-color:var(--b500)}.np-item.unread{border-left:3px solid var(--am600)}
+.np-title{font-size:12px;font-weight:600;color:var(--g900);margin-bottom:3px}.np-body{font-size:11px;color:var(--g600);line-height:1.5}.np-fecha{font-size:10px;color:var(--g500);margin-top:4px}
+#bell{background:none;border:1px solid var(--g200);border-radius:var(--r);color:var(--g600);cursor:pointer;font-size:15px;position:relative;padding:5px 8px;display:flex;align-items:center}
+#bell:hover{background:var(--g50);color:var(--g900)}
+#bell-dot{position:absolute;top:3px;right:3px;width:7px;height:7px;background:var(--rd600);border-radius:50%;display:none}
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 48px rgba(0,0,0,.15)}
+.mhdr{padding:16px 20px 14px;border-bottom:1px solid var(--g200);display:flex;align-items:center;justify-content:space-between}
+.mhdr h2{font-size:16px;font-weight:700;color:var(--g900)}.mhdr button{background:none;border:none;color:var(--g400);font-size:20px;cursor:pointer;padding:2px 6px;border-radius:4px;line-height:1}
+.mhdr button:hover{background:var(--g100);color:var(--g700)}.mbody{padding:16px 20px}
+.mg{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mf{display:flex;flex-direction:column;gap:4px}.mf.full{grid-column:1/-1}
+.mf label{font-size:10px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em}
+.mf input,.mf select,.mf textarea{background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:7px 10px;font-family:var(--f);font-size:12px;color:var(--g900);outline:none;transition:border-color .15s;width:100%}
+.mf input:focus,.mf select:focus,.mf textarea:focus{border-color:var(--b500);background:var(--w)}
+.mfoot{padding:12px 20px;border-top:1px solid var(--g200);display:flex;gap:8px;justify-content:flex-end}
+/* TOAST */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(70px);background:var(--g900);color:#fff;border-radius:8px;padding:9px 18px;font-size:13px;box-shadow:var(--shl);z-index:9999;transition:transform .3s cubic-bezier(.4,0,.2,1);pointer-events:none}
+#toast.show{transform:translateX(-50%) translateY(0)}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-thumb{background:var(--g300);border-radius:3px}
+@media(max-width:900px){.kanban{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-
-<!-- NAV -->
-<nav id="nav">
-  <div class="logo"><div class="lm">CW</div><div class="lt"><span>Customs</span> Way</div></div>
-  <div class="nav-sep"></div>
-  <div class="nav-tabs">
-    <button class="ntab on" onclick="tab('hoy',this)">&#128197; Hoy</button>
-    <button class="ntab" onclick="tab('plazos',this)">&#9200; Plazos</button>
-    <button class="ntab" onclick="tab('email',this)">&#128140; Bandeja</button>
-    <button class="ntab" onclick="tab('notas',this)">&#128221; Notas</button>
-  </div>
-  <div class="nav-r">
-    <a href="pendencias.html" class="nav-a">&#128196; RPAs</a>
-    <a href="taric.html" class="nav-a">&#9889; TARIC</a>
-    <button id="sync-btn" onclick="sincronizarEmail()">&#8635; Sincronizar</button>
+<div id="hdr">
+  <div class="hdr-logo">CW</div>
+  <div class="hdr-sep"></div>
+  <div class="hdr-title">Despacho Personal</div>
+  <div class="hdr-sep"></div>
+  <div class="hdr-mod">&#128274; Solo administrador</div>
+  <div class="hdr-r">
+    <div class="hdr-user"><div class="hdr-av" id="hdr-av">?</div><span id="hdr-name" style="font-size:12px;color:var(--g700);font-weight:500"></span></div>
     <button id="bell" onclick="toggleNotif()">&#128276;<span id="bell-dot"></span></button>
+    <a href="pendencias.html" class="hdr-a">&#128196; Control RPA</a>
+    <a href="taric.html" class="hdr-a">&#9889; TARIC</a>
+    <a href="index.html" class="hdr-a primary">&#127968; Menú principal</a>
   </div>
-</nav>
-
+</div>
 <div id="app">
-
-  <!-- VISTA HOY -->
+  <div class="tabs-bar">
+    <button class="tab-btn on" onclick="tab('hoy',this)">&#128197; Hoy</button>
+    <button class="tab-btn" onclick="tab('plazos',this)">&#9200; Plazos</button>
+    <button class="tab-btn" onclick="tab('email',this)">&#128140; Bandeja</button>
+    <button class="tab-btn" onclick="tab('notas',this)">&#128221; Notas</button>
+  </div>
   <div id="v-hoy" class="view on">
-    <div class="hoy-top" id="kpis">
-      <div class="kpi"><div class="kpi-n" id="k-urgentes" style="color:var(--rd)">0</div><div class="kpi-l">Urgentes hoy</div><div class="kpi-sub">Plazos &lt;24h</div></div>
-      <div class="kpi"><div class="kpi-n" id="k-pendientes" style="color:var(--am)">0</div><div class="kpi-l">Pendientes</div><div class="kpi-sub">Sin comenzar</div></div>
-      <div class="kpi"><div class="kpi-n" id="k-emails" style="color:var(--cw)">0</div><div class="kpi-l">Emails nuevos</div><div class="kpi-sub">Sin clasificar</div></div>
-      <div class="kpi"><div class="kpi-n" id="k-plazos7" style="color:var(--pu)">0</div><div class="kpi-l">Plazos &lt;7d</div><div class="kpi-sub">Pr&oacute;ximos vencimientos</div></div>
-    </div>
-    <div class="hoy-cols">
-      <div class="hoy-col">
-        <div class="col-hdr"><h3>&#128308; Pendiente</h3><span class="col-badge" id="b-pend">0</span></div>
-        <div class="col-body" id="col-pendiente" ondragover="ev(event)" ondrop="drop(event,'pendiente')"></div>
-        <div class="add-col"><button onclick="nuevaTarea('pendiente')">+ Agregar tarea</button></div>
+    <div class="hoy-inner">
+      <div class="kpi-row">
+        <div class="kpi"><div class="kpi-n" id="k-urgentes" style="color:var(--rd600)">0</div><div class="kpi-l">Urgentes hoy</div></div>
+        <div class="kpi"><div class="kpi-n" id="k-pendientes" style="color:var(--am600)">0</div><div class="kpi-l">Pendientes</div></div>
+        <div class="kpi"><div class="kpi-n" id="k-emails" style="color:var(--b600)">0</div><div class="kpi-l">Emails nuevos</div></div>
+        <div class="kpi"><div class="kpi-n" id="k-plazos7" style="color:var(--pu600)">0</div><div class="kpi-l">Plazos &lt;7 días</div></div>
       </div>
-      <div class="hoy-col">
-        <div class="col-hdr"><h3>&#128993; En curso</h3><span class="col-badge" id="b-curso">0</span></div>
-        <div class="col-body" id="col-en_curso" ondragover="ev(event)" ondrop="drop(event,'en_curso')"></div>
-        <div class="add-col"><button onclick="nuevaTarea('en_curso')">+ Agregar tarea</button></div>
-      </div>
-      <div class="hoy-col">
-        <div class="col-hdr"><h3>&#9989; Hecho</h3><span class="col-badge" id="b-hecho">0</span></div>
-        <div class="col-body" id="col-hecho" ondragover="ev(event)" ondrop="drop(event,'hecho')"></div>
-        <div class="add-col"><button onclick="nuevaTarea('hecho')">+ Agregar tarea</button></div>
+      <div class="kanban">
+        <div class="k-col">
+          <div class="k-hdr"><h3>&#128308; Pendiente</h3><span class="k-badge" id="b-pend">0</span></div>
+          <div class="k-body" id="col-pendiente" ondragover="event.preventDefault()" ondrop="drop(event,'pendiente')"></div>
+          <div class="k-add"><button onclick="nuevaTarea('pendiente')">+ Agregar tarea</button></div>
+        </div>
+        <div class="k-col">
+          <div class="k-hdr"><h3>&#128993; En curso</h3><span class="k-badge" id="b-curso">0</span></div>
+          <div class="k-body" id="col-en_curso" ondragover="event.preventDefault()" ondrop="drop(event,'en_curso')"></div>
+          <div class="k-add"><button onclick="nuevaTarea('en_curso')">+ Agregar tarea</button></div>
+        </div>
+        <div class="k-col">
+          <div class="k-hdr"><h3>&#9989; Hecho</h3><span class="k-badge" id="b-hecho">0</span></div>
+          <div class="k-body" id="col-hecho" ondragover="event.preventDefault()" ondrop="drop(event,'hecho')"></div>
+          <div class="k-add"><button onclick="nuevaTarea('hecho')">+ Agregar tarea</button></div>
+        </div>
       </div>
     </div>
   </div>
-
-  <!-- VISTA PLAZOS -->
   <div id="v-plazos" class="view">
-    <div class="plazos-hdr">
-      <div class="sw" style="max-width:260px"><input type="text" id="qp" placeholder="Buscar expediente, DUA..." oninput="renderPlazos()"></div>
-      <select class="ctl" id="fp-tipo" onchange="renderPlazos()">
-        <option value="">Todos los tipos</option>
-        <option value="requerimiento">Requerimientos</option>
-        <option value="liquidacion">Liquidaciones</option>
-        <option value="recurso">Recursos</option>
-        <option value="alegacion">Alegaciones</option>
-        <option value="rpa">RPA / R&eacute;gimen 51</option>
-        <option value="general">General</option>
-      </select>
-      <select class="ctl" id="fp-estado" onchange="renderPlazos()">
-        <option value="">Todos los estados</option>
-        <option value="vencido">Vencidos</option>
-        <option value="urgente">Urgentes (&lt;5d)</option>
-        <option value="proximo">Pr&oacute;ximos (&lt;15d)</option>
-        <option value="ok">En plazo</option>
-      </select>
-      <button class="btn btn-cw" style="margin-left:auto" onclick="nuevoPlazoDlg()">+ Nuevo plazo</button>
+    <div class="plazos-tb">
+      <div class="sw"><input type="text" id="qp" placeholder="Buscar..." oninput="renderPlazos()"></div>
+      <select class="ctl" id="fp-tipo" onchange="renderPlazos()"><option value="">Todos</option><option value="requerimiento">Requerimientos</option><option value="liquidacion">Liquidaciones</option><option value="recurso">Recursos</option><option value="alegacion">Alegaciones</option><option value="rpa">RPA</option></select>
+      <button class="btn btn-primary ml" onclick="nuevaTarea('pendiente')">+ Nueva tarea con plazo</button>
     </div>
-    <div class="plazos-body">
-      <div class="timeline" id="timeline-wrap"></div>
-      <div id="plazos-list"></div>
-    </div>
+    <div class="plazos-body" id="plazos-list"></div>
   </div>
-
-  <!-- VISTA EMAIL -->
   <div id="v-email" class="view">
-    <div class="email-hdr">
-      <span style="font-family:var(--mono);font-size:12px;color:var(--t3)">mvalencia@customsway.eu</span>
-      <select class="ctl" id="fe-tipo" onchange="renderEmails()">
-        <option value="">Todos</option>
-        <option value="requerimiento">Requerimientos</option>
-        <option value="liquidacion">Liquidaciones</option>
-        <option value="recurso">Recursos</option>
-        <option value="alegacion">Alegaciones</option>
-        <option value="rpa">RPA</option>
-        <option value="email">General</option>
-      </select>
-      <button class="btn btn-cw" style="margin-left:auto" onclick="sincronizarEmail()">&#8635; Sincronizar</button>
-      <button class="btn btn-g" onclick="configEmail()">&#9881; Configurar</button>
+    <div class="email-tb">
+      <span style="font-size:12px;color:var(--g500);font-weight:500">mvalencia@customsway.eu</span>
+      <select class="ctl" id="fe-tipo" onchange="renderEmails()"><option value="">Todos</option><option value="requerimiento">Requerimientos</option><option value="liquidacion">Liquidaciones</option><option value="recurso">Recursos</option><option value="alegacion">Alegaciones</option></select>
+      <button class="btn btn-primary ml" onclick="sincronizarEmail()">&#8635; Sincronizar</button>
+      <button class="btn btn-sec" onclick="configEmail()">&#9881; Configurar</button>
     </div>
-    <div class="email-body">
+    <div class="email-layout">
       <div class="email-list" id="email-list"></div>
-      <div class="email-detail" id="email-detail">
-        <div class="ed-empty"><div class="big">&#128140;</div><p>Selecciona un email</p></div>
-      </div>
+      <div class="email-detail" id="email-detail"><div class="ed-empty"><div>&#128140;</div><p style="font-size:13px">Selecciona un email</p></div></div>
     </div>
   </div>
-
-  <!-- VISTA NOTAS -->
   <div id="v-notas" class="view">
-    <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-shrink:0">
-      <button class="btn btn-cw" onclick="nuevaNota()">+ Nueva nota</button>
-      <div class="sw" style="flex:1;max-width:240px"><input type="text" id="qn" placeholder="Buscar notas..." oninput="renderNotas()"></div>
+    <div class="notas-tb">
+      <button class="btn btn-primary" onclick="nuevaNota()">+ Nueva nota</button>
+      <div class="sw"><input type="text" id="qn" placeholder="Buscar notas..." oninput="renderNotas()"></div>
     </div>
     <div class="notas-layout">
       <div class="notas-sidebar" id="notas-sidebar"></div>
-      <div class="nota-editor" id="nota-editor">
-        <div class="notas-empty"><div style="font-size:28px">&#128221;</div><p style="color:var(--t3);font-size:13px">Selecciona o crea una nota</p></div>
-      </div>
+      <div class="nota-editor" id="nota-editor"><div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:8px;color:var(--g400)"><div style="font-size:28px">&#128221;</div><p style="font-size:13px">Selecciona o crea una nota</p></div></div>
     </div>
   </div>
-
 </div>
-
-<!-- Panel notificaciones -->
 <div id="notif-pnl">
   <div class="np-hdr"><span>Notificaciones</span><button onclick="toggleNotif()">&#10005;</button></div>
-  <div id="notif-list"><p style="color:var(--t3);font-size:12px">Sin notificaciones</p></div>
+  <div id="notif-list"><p style="color:var(--g500);font-size:12px">Sin notificaciones</p></div>
 </div>
-
-<!-- Modal tarea / plazo -->
-<div id="ov">
-  <div class="modal">
-    <h2 id="m-title">Nueva tarea</h2>
-    <div class="mg">
-      <div class="mf full"><label>T&iacute;tulo *</label><input id="f-tit" placeholder="Descripci&oacute;n de la tarea..."></div>
-      <div class="mf"><label>Tipo</label>
-        <select id="f-tipo">
-          <option value="general">General</option>
-          <option value="requerimiento">Requerimiento</option>
-          <option value="liquidacion">Liquidaci&oacute;n</option>
-          <option value="recurso">Recurso</option>
-          <option value="alegacion">Alegaci&oacute;n</option>
-          <option value="rpa">RPA / R&eacute;g. 51</option>
-          <option value="reunion">Reuni&oacute;n</option>
-          <option value="email">Email</option>
-        </select>
-      </div>
-      <div class="mf"><label>Prioridad</label>
-        <select id="f-prio">
-          <option value="normal">Normal</option>
-          <option value="alta">Alta &#128308;</option>
-          <option value="urgente">Urgente &#128680;</option>
-          <option value="baja">Baja</option>
-        </select>
-      </div>
-      <div class="mf"><label>Cliente</label><input id="f-cl" placeholder="REDWOOD, IESA..." list="dl-cl-t"></div>
-      <div class="mf"><label>Dossier / DUA</label><input id="f-dos" placeholder="172000 / 25ES..."></div>
-      <div class="mf"><label>Fecha l&iacute;mite</label><input type="date" id="f-lim"></div>
-      <div class="mf"><label>Hora l&iacute;mite</label><input type="time" id="f-hora"></div>
-      <div class="mf"><label>Estado</label>
-        <select id="f-est">
-          <option value="pendiente">Pendiente</option>
-          <option value="en_curso">En curso</option>
-          <option value="hecho">Hecho</option>
-        </select>
-      </div>
-      <div class="mf"><label>D&iacute;as h&aacute;biles plazo</label>
-        <select id="f-phabil">
-          <option value="">Sin plazo legal</option>
-          <option value="10">10 d&iacute;as h&aacute;biles (Requerimiento)</option>
-          <option value="15">15 d&iacute;as h&aacute;biles (Alegaciones)</option>
-          <option value="30">30 d&iacute;as (Liquidaci&oacute;n)</option>
-          <option value="31">1 mes (Recurso)</option>
-        </select>
-      </div>
-      <div class="mf full"><label>Notas</label><textarea id="f-notas" rows="3" placeholder="Referencias, RGEs, observaciones..."></textarea></div>
-      <div class="mf"><label>Notificar por email</label>
-        <select id="f-notif">
-          <option value="">Sin notificaci&oacute;n</option>
-          <option value="dia">El mismo d&iacute;a</option>
-          <option value="1d">1 d&iacute;a antes</option>
-          <option value="2d">2 d&iacute;as antes</option>
-          <option value="3d">3 d&iacute;as antes</option>
-          <option value="semana">1 semana antes</option>
-        </select>
-      </div>
-      <div class="mf"><label>Email notificaci&oacute;n</label><input id="f-email" value="mvalencia@customsway.eu"></div>
-    </div>
-    <datalist id="dl-cl-t"></datalist>
-    <div class="mfoot">
-      <button class="btn btn-rd" id="btn-del" onclick="eliminarTarea()" style="display:none;margin-right:auto">Eliminar</button>
-      <button class="btn btn-g" onclick="cerrarM()">Cancelar</button>
-      <button class="btn btn-cw" onclick="guardarTarea()">Guardar</button>
-    </div>
-  </div>
-</div>
-
+<div id="modal-root"></div>
 <div id="toast"></div>
-
 <script>
 'use strict';
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 let sb;try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});}catch(e){}
+
+// ── GUARD: solo admin ───────────────────────────────────────────
+var CU_ADM = null;
+try{ CU_ADM = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null'); }catch(e){}
+if(!CU_ADM || CU_ADM.rol !== 'admin'){
+  document.body.innerHTML =
+    '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--g50)">'+
+    '<div style="text-align:center;max-width:380px;padding:40px;background:var(--w);border-radius:16px;border:1px solid var(--g200);box-shadow:0 8px 32px rgba(0,0,0,.08)">'+
+    '<div style="font-size:40px;margin-bottom:16px">&#128274;</div>'+
+    '<div style="font-size:20px;font-weight:800;color:var(--g900);margin-bottom:8px">Acceso restringido</div>'+
+    '<div style="font-size:13px;color:var(--g600);margin-bottom:24px;line-height:1.6">'+
+    'El <strong>Despacho Personal</strong> es una herramienta privada<br>accesible &#250;nicamente para el administrador.</div>'+
+    '<a href="index.html" style="display:inline-flex;align-items:center;gap:8px;background:var(--b600);color:#fff;text-decoration:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:700">'+
+    '&#8592; Volver al portal</a></div></div>';
+}
+// Header: iniciales + nombre
+if(CU_ADM){
+  const init=(CU_ADM.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const av=document.getElementById('hdr-av');if(av)av.textContent=init;
+  const nm=document.getElementById('hdr-name');if(nm)nm.textContent=(CU_ADM.nombre||'').split(' ').slice(0,2).join(' ');
+}
 
 // ── Festivos España 2025-2026 (Andalucía) ─────────────────────────
 const FESTIVOS=new Set(['2025-01-01','2025-01-06','2025-02-28','2025-04-17','2025-04-18','2025-05-01','2025-06-24','2025-08-15','2025-10-12','2025-11-01','2025-12-06','2025-12-08','2025-12-25','2026-01-01','2026-01-06','2026-02-28','2026-04-02','2026-04-03','2026-05-01','2026-06-24','2026-08-15','2026-10-12','2026-11-01','2026-12-06','2026-12-08','2026-12-25']);
@@ -469,14 +335,10 @@ async function loadNotifs(){
 // ── KPIs ──────────────────────────────────────────────────────────
 function kpis(){
   const hoy=new Date();hoy.setHours(23,59,59);
-  const urgentes=tareas.filter(t=>t.estado!=='hecho'&&t.fecha_limite){
-    const fl=new Date(t.fecha_limite);return fl<=hoy;
-  }).length;
+  const urgentes=tareas.filter(t=>t.estado!=='hecho'&&t.fecha_limite&&(()=>{const fl=new Date(t.fecha_limite);return fl<=hoy;})()).length;
   const pend=tareas.filter(t=>t.estado==='pendiente').length;
   const mailsNew=emails.filter(e=>!e.leido).length;
-  const p7=tareas.filter(t=>t.estado!=='hecho'&&t.fecha_limite){
-    const d=Math.round((new Date(t.fecha_limite)-new Date())/86400000);return d>=0&&d<=7;
-  }).length;
+  const p7=tareas.filter(t=>t.estado!=='hecho'&&t.fecha_limite&&(()=>{const d=Math.round((new Date(t.fecha_limite)-new Date())/86400000);return d>=0&&d<=7;})()).length;
   document.getElementById('k-urgentes').textContent=urgentes;
   document.getElementById('k-pendientes').textContent=pend;
   document.getElementById('k-emails').textContent=mailsNew;
@@ -530,6 +392,10 @@ async function drop(e,estado){
 }
 
 // ── Modal tarea ────────────────────────────────────────────────────
+function modalTareaHTML(titulo,t=null){
+  const est=t?t.estado||'pendiente':'pendiente';
+  return `<div class="modal-overlay" id="ov" onclick="if(event.target.id==='ov')cerrarM()"><div class="modal" onclick="event.stopPropagation()"><div class="mhdr"><h2>${titulo}</h2><button onclick="cerrarM()">&times;</button></div><div class="mbody"><div class="mg"><div class="mf full"><label>Título *</label><input id="f-tit" placeholder="Descripción de la tarea..."></div><div class="mf"><label>Tipo</label><select id="f-tipo"><option value="general">General</option><option value="requerimiento">Requerimiento</option><option value="liquidacion">Liquidación</option><option value="recurso">Recurso</option><option value="alegacion">Alegación</option><option value="rpa">RPA / Rég. 51</option><option value="reunion">Reunión</option><option value="email">Email</option></select></div><div class="mf"><label>Prioridad</label><select id="f-prio"><option value="normal">Normal</option><option value="alta">Alta 🔴</option><option value="urgente">Urgente 🚨</option><option value="baja">Baja</option></select></div><div class="mf"><label>Cliente</label><input id="f-cl" placeholder="REDWOOD, IESA..."></div><div class="mf"><label>Dossier / DUA</label><input id="f-dos" placeholder="172000"></div><div class="mf"><label>Fecha límite</label><input type="date" id="f-lim"></div><div class="mf"><label>Estado</label><select id="f-est"><option value="pendiente">Pendiente</option><option value="en_curso">En curso</option><option value="hecho">Hecho</option></select></div><div class="mf"><label>Plazo legal</label><select id="f-phabil"><option value="">Sin plazo legal</option><option value="10">10 días hábiles (Requerimiento)</option><option value="15">15 días hábiles (Alegaciones)</option><option value="30">30 días (Liquidación)</option><option value="31">1 mes (Recurso)</option></select></div><div class="mf"><label>Notificación</label><select id="f-notif"><option value="">Sin notificación</option><option value="dia">El mismo día</option><option value="1d">1 día antes</option><option value="3d">3 días antes</option><option value="semana">1 semana antes</option></select></div><div class="mf"><label>Email notif.</label><input id="f-email" value="mvalencia@customsway.eu"></div><div class="mf full"><label>Notas</label><textarea id="f-notas" rows="3" placeholder="Referencias, RGEs..."></textarea></div></div></div><div class="mfoot"><button class="btn btn-danger" id="btn-del" style="display:none;margin-right:auto" onclick="eliminarTarea()">Eliminar</button><button class="btn btn-sec" onclick="cerrarM()">Cancelar</button><button class="btn btn-primary" onclick="guardarTarea()">Guardar</button></div></div></div>`;
+}
 function nuevaTarea(estado='pendiente'){
   editId=null;document.getElementById('m-title').textContent='Nueva tarea';
   document.getElementById('btn-del').style.display='none';
@@ -541,7 +407,9 @@ function nuevaTarea(estado='pendiente'){
   document.getElementById('f-phabil').value='';
   document.getElementById('f-notif').value='';
   document.getElementById('f-email').value='mvalencia@customsway.eu';
-  document.getElementById('ov').classList.add('open');
+  document.getElementById('modal-root').innerHTML=modalTareaHTML('Nueva tarea');
+  document.getElementById('f-est').value=estado;
+  document.getElementById('f-phabil').addEventListener('change',calcPlazo);
 }
 function abrirTarea(id){
   const t=tareas.find(x=>x.id===id);if(!t)return;
@@ -781,7 +649,7 @@ function renderNotifs(){
   const unread=notifs.filter(n=>!n.leida).length;
   document.getElementById('bell-dot').style.display=unread?'block':'none';
   const nl=document.getElementById('notif-list');
-  if(!notifs.length){nl.innerHTML='<p style="color:var(--t3);font-size:12px">Sin notificaciones</p>';return;}
+  if(!notifs.length){nl.innerHTML='<p style="color:var(--g500);font-size:12px">Sin notificaciones</p>';return;}
   nl.innerHTML=notifs.map(n=>'<div class="np-item'+(n.leida?'':' unread')+'" onclick="marcarLeida(\''+n.id+'\')">'+
     '<div class="np-title">'+(n.titulo||'')+'</div>'+
     '<div class="np-body">'+(n.mensaje||'')+'</div>'+
@@ -837,23 +705,17 @@ function tab(id,el){
 let _tt;
 function toast(msg,tipo='ok'){
   const t=document.getElementById('toast');t.textContent=msg;
-  t.style.color=tipo==='error'?'var(--rd)':tipo==='warn'?'var(--am)':'var(--t1)';
+  t.style.color=tipo==='error'?'var(--rd600)':tipo==='warn'?'var(--am600)':'var(--g900)';
   t.classList.add('show');clearTimeout(_tt);_tt=setTimeout(()=>t.classList.remove('show'),3000);
 }
 
 // ── Init ──────────────────────────────────────────────────────────
+function calcPlazo(){
+  const phab=document.getElementById('f-phabil')?.value;
+  const lim=document.getElementById('f-lim')?.value;
+  if(phab&&lim){const nueva=sumarDiasHabiles(lim,parseInt(phab));document.getElementById('f-lim').value=nueva;toast('Fecha calculada: '+new Date(nueva).toLocaleDateString('es-ES'));}
+}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){cerrarM();document.getElementById('notif-pnl').classList.remove('open');}});
-document.getElementById('ov').addEventListener('click',e=>{if(e.target===document.getElementById('ov'))cerrarM();});
-
-// Calcular días tras seleccionar tipo
-document.getElementById('f-phabil').addEventListener('change',function(){
-  const phab=this.value;const lim=document.getElementById('f-lim').value;
-  if(phab&&lim){
-    const nueva=sumarDiasHabiles(lim,parseInt(phab));
-    document.getElementById('f-lim').value=nueva;
-    toast('Fecha límite calculada: '+new Date(nueva).toLocaleDateString('es-ES'));
-  }
-});
 
 async function init(){
   await Promise.all([loadTareas(),loadNotas(),loadEmails(),loadNotifs()]);
@@ -862,6 +724,7 @@ async function init(){
   setInterval(()=>{loadTareas();loadEmails();loadNotifs();},300000);
 }
 init();
+
 </script>
 </body>
 </html>
