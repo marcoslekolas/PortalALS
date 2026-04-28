@@ -792,7 +792,7 @@ const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 const sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
 
 // ── Proxy URL (CORS: el browser no puede llamar a Anthropic directamente) ──
-const PROXY_URL='https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/anthropic-proxy';
+const OR_PROXY='https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/openrouter-proxy'; // openrouter-proxy ya desplegado en TARIC
 
 // ═══ ACCESS CONTROL ═══
 async function checkAccess(){
@@ -1119,18 +1119,22 @@ FORMATO:
 Si no hay novedades en una sección, escribe "Sin novedades esta semana."`;
 
   try{
-    const r=await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/anthropic-proxy',{
+    // perplexity/sonar-pro: búsqueda web en tiempo real integrada
+    const r=await fetch(OR_PROXY,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,
-        tools:[{type:'web_search_20250305',name:'web_search'}],
-        messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({
+        model:'perplexity/sonar-pro',
+        max_tokens:4000,
+        temperature:0.1,
+        messages:[{role:'user',content:prompt}]
+      })
     });
     if(!r.ok){
       const errTxt=await r.text().catch(()=>'');
       throw new Error('API '+r.status+': '+errTxt.substring(0,200));
     }
     const data=await r.json();
-    const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    const text=data?.choices?.[0]?.message?.content||'';
     out.innerHTML=fmtBrief(text||'Sin resultado.');
     try{await sb.from('cw_briefings').insert({fecha:today,contenido:text,creado_en:now.toISOString()});}catch(e){}
     lbl.textContent='Actualizado: '+now.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+now.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
@@ -1235,15 +1239,17 @@ async function sendChat(){
   inp.value='';CB=true;document.getElementById('csend').disabled=true;
   addMsg('user',text);CH.push({role:'user',content:text});showTp();
   try{
-    const r=await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/anthropic-proxy',{method:'POST',headers:{'Content-Type':'application/json'},
+    const msgs=[{role:'system',content:SYS},...CH];
+    const r=await fetch(OR_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',max_tokens:1000,system:SYS,
-        tools:[{type:'web_search_20250305',name:'web_search'}],
-        messages:CH
+        model:'anthropic/claude-sonnet-4-5',
+        max_tokens:1000,
+        temperature:0.1,
+        messages:msgs
       })});
     if(!r.ok){const e=await r.text().catch(()=>'');throw new Error('API '+r.status+': '+e.substring(0,150));}
     const data=await r.json();
-    const reply=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n')||'Error en la respuesta.';
+    const reply=data?.choices?.[0]?.message?.content||'Sin respuesta.';
     document.getElementById('tpdot')?.remove();
     addMsg('ai',reply);CH.push({role:'assistant',content:reply});
     if(CH.length>20)CH=CH.slice(-20);
@@ -1341,17 +1347,19 @@ portal.alsalgeciras.com · ${dateStr}
 FUENTES CONSULTADAS: [lista de URLs o referencias normativas verificadas]`;
 
   try{
-    const r=await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/anthropic-proxy',{
+    // perplexity/sonar-pro: verifica normativa actualizada con búsqueda web
+    const r=await fetch(OR_PROXY,{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',max_tokens:4000,
-        tools:[{type:'web_search_20250305',name:'web_search'}],
+        model:'perplexity/sonar-pro',
+        max_tokens:4000,
+        temperature:0.1,
         messages:[{role:'user',content:prompt}]
       })
     });
     if(!r.ok){const e=await r.text().catch(()=>'');throw new Error('API '+r.status+': '+e.substring(0,200));}
     const data=await r.json();
-    const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    const text=data?.choices?.[0]?.message?.content||'';
     lastReportText=text;
     out.innerHTML=fmtReport(text);
     ['rpt-copy-btn','rpt-email-btn','rpt-print-btn'].forEach(id=>document.getElementById(id).disabled=false);
