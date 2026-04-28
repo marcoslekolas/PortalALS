@@ -791,41 +791,8 @@ const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 const sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
 
-// ── API Key (mismo patrón que el portal ALS) ──────────────────────
-let _anthropicKey=null;
-async function getAnthropicKey(){
-  if(_anthropicKey) return _anthropicKey;
-  // 1. Intentar desde localStorage (caché)
-  let k=null;
-  try{k=localStorage.getItem('als_anthropic_key');}catch(e){}
-  if(k){_anthropicKey=k;return k;}
-  // 2. Leer de Supabase als_config
-  try{
-    const r=await fetch(SB_URL+'/rest/v1/als_config?clave=in.(anthropic_api_key,gemini_api_key)&select=clave,valor',{
-      headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}
-    });
-    const d=await r.json();
-    if(d&&d.length){
-      const row=d.find(x=>x.clave==='anthropic_api_key')||d.find(x=>x.clave==='gemini_api_key');
-      k=row?.valor;
-      if(k){
-        try{localStorage.setItem('als_anthropic_key',k);}catch(e){}
-        _anthropicKey=k;
-        return k;
-      }
-    }
-  }catch(e){console.warn('getAnthropicKey:',e.message);}
-  return null;
-}
-
-function anthropicHeaders(key){
-  return{
-    'Content-Type':'application/json',
-    'x-api-key':key,
-    'anthropic-version':'2023-06-01',
-    'anthropic-beta':'web-search-2025-03-05'
-  };
-}
+// ── Proxy URL (CORS: el browser no puede llamar a Anthropic directamente) ──
+const PROXY_URL='https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/anthropic-proxy';
 
 // ═══ ACCESS CONTROL ═══
 async function checkAccess(){
@@ -1152,13 +1119,8 @@ FORMATO:
 Si no hay novedades en una sección, escribe "Sin novedades esta semana."`;
 
   try{
-    const key=await getAnthropicKey();
-    if(!key){
-      out.innerHTML='<span style="color:var(--rd600)">⚠ API key de Anthropic no configurada. Ve a Configuración → als_config y añade la clave con nombre <code>anthropic_api_key</code>.</span>';
-      btn.disabled=false;btn.textContent='Actualizar ahora →';return;
-    }
-    const r=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',headers:anthropicHeaders(key),
+    const r=await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/anthropic-proxy',{
+      method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,
         tools:[{type:'web_search_20250305',name:'web_search'}],
         messages:[{role:'user',content:prompt}]})
@@ -1273,9 +1235,7 @@ async function sendChat(){
   inp.value='';CB=true;document.getElementById('csend').disabled=true;
   addMsg('user',text);CH.push({role:'user',content:text});showTp();
   try{
-    const key=await getAnthropicKey();
-    if(!key){document.getElementById('tpdot')?.remove();addMsg('ai','⚠ API key no configurada. Añade anthropic_api_key en als_config.');CB=false;document.getElementById('csend').disabled=false;return;}
-    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:anthropicHeaders(key),
+    const r=await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/anthropic-proxy',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         model:'claude-sonnet-4-20250514',max_tokens:1000,system:SYS,
         tools:[{type:'web_search_20250305',name:'web_search'}],
@@ -1381,13 +1341,8 @@ portal.alsalgeciras.com · ${dateStr}
 FUENTES CONSULTADAS: [lista de URLs o referencias normativas verificadas]`;
 
   try{
-    const key=await getAnthropicKey();
-    if(!key){
-      out.innerHTML='<span style="color:var(--rd600)">⚠ API key no configurada. Añade anthropic_api_key en als_config.</span>';
-      btn.disabled=false;btn.textContent='Generar informe →';return;
-    }
-    const r=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',headers:anthropicHeaders(key),
+    const r=await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/anthropic-proxy',{
+      method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         model:'claude-sonnet-4-20250514',max_tokens:4000,
         tools:[{type:'web_search_20250305',name:'web_search'}],
