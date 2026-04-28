@@ -791,6 +791,42 @@ const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 const sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
 
+// ── API Key (mismo patrón que el portal ALS) ──────────────────────
+let _anthropicKey=null;
+async function getAnthropicKey(){
+  if(_anthropicKey) return _anthropicKey;
+  // 1. Intentar desde localStorage (caché)
+  let k=null;
+  try{k=localStorage.getItem('als_anthropic_key');}catch(e){}
+  if(k){_anthropicKey=k;return k;}
+  // 2. Leer de Supabase als_config
+  try{
+    const r=await fetch(SB_URL+'/rest/v1/als_config?clave=in.(anthropic_api_key,gemini_api_key)&select=clave,valor',{
+      headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}
+    });
+    const d=await r.json();
+    if(d&&d.length){
+      const row=d.find(x=>x.clave==='anthropic_api_key')||d.find(x=>x.clave==='gemini_api_key');
+      k=row?.valor;
+      if(k){
+        try{localStorage.setItem('als_anthropic_key',k);}catch(e){}
+        _anthropicKey=k;
+        return k;
+      }
+    }
+  }catch(e){console.warn('getAnthropicKey:',e.message);}
+  return null;
+}
+
+function anthropicHeaders(key){
+  return{
+    'Content-Type':'application/json',
+    'x-api-key':key,
+    'anthropic-version':'2023-06-01',
+    'anthropic-beta':'web-search-2025-03-05'
+  };
+}
+
 // ═══ ACCESS CONTROL ═══
 async function checkAccess(){
   let cu=null;
@@ -1116,19 +1152,29 @@ FORMATO:
 Si no hay novedades en una sección, escribe "Sin novedades esta semana."`;
 
   try{
+    const key=await getAnthropicKey();
+    if(!key){
+      out.innerHTML='<span style="color:var(--rd600)">⚠ API key de Anthropic no configurada. Ve a Configuración → als_config y añade la clave con nombre <code>anthropic_api_key</code>.</span>';
+      btn.disabled=false;btn.textContent='Actualizar ahora →';return;
+    }
     const r=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,
+      method:'POST',headers:anthropicHeaders(key),
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,
         tools:[{type:'web_search_20250305',name:'web_search'}],
         messages:[{role:'user',content:prompt}]})
     });
+    if(!r.ok){
+      const errTxt=await r.text().catch(()=>'');
+      throw new Error('API '+r.status+': '+errTxt.substring(0,200));
+    }
     const data=await r.json();
     const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
     out.innerHTML=fmtBrief(text||'Sin resultado.');
     try{await sb.from('cw_briefings').insert({fecha:today,contenido:text,creado_en:now.toISOString()});}catch(e){}
     lbl.textContent='Actualizado: '+now.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+now.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   }catch(e){
-    out.innerHTML='<span style="color:var(--rd600)">Error al obtener el briefing. Verifica la conexión.</span>';
+    console.error('Briefing error:',e);
+    out.innerHTML='<span style="color:var(--rd600)">Error: '+e.message+'</span>';
   }
   btn.disabled=false; btn.textContent='Actualizar ahora →';
 }
@@ -1227,12 +1273,15 @@ async function sendChat(){
   inp.value='';CB=true;document.getElementById('csend').disabled=true;
   addMsg('user',text);CH.push({role:'user',content:text});showTp();
   try{
-    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+    const key=await getAnthropicKey();
+    if(!key){document.getElementById('tpdot')?.remove();addMsg('ai','⚠ API key no configurada. Añade anthropic_api_key en als_config.');CB=false;document.getElementById('csend').disabled=false;return;}
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:anthropicHeaders(key),
       body:JSON.stringify({
         model:'claude-sonnet-4-20250514',max_tokens:1000,system:SYS,
         tools:[{type:'web_search_20250305',name:'web_search'}],
         messages:CH
       })});
+    if(!r.ok){const e=await r.text().catch(()=>'');throw new Error('API '+r.status+': '+e.substring(0,150));}
     const data=await r.json();
     const reply=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n')||'Error en la respuesta.';
     document.getElementById('tpdot')?.remove();
@@ -1332,14 +1381,20 @@ portal.alsalgeciras.com · ${dateStr}
 FUENTES CONSULTADAS: [lista de URLs o referencias normativas verificadas]`;
 
   try{
+    const key=await getAnthropicKey();
+    if(!key){
+      out.innerHTML='<span style="color:var(--rd600)">⚠ API key no configurada. Añade anthropic_api_key en als_config.</span>';
+      btn.disabled=false;btn.textContent='Generar informe →';return;
+    }
     const r=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',headers:{'Content-Type':'application/json'},
+      method:'POST',headers:anthropicHeaders(key),
       body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',max_tokens:1000,
+        model:'claude-sonnet-4-20250514',max_tokens:4000,
         tools:[{type:'web_search_20250305',name:'web_search'}],
         messages:[{role:'user',content:prompt}]
       })
     });
+    if(!r.ok){const e=await r.text().catch(()=>'');throw new Error('API '+r.status+': '+e.substring(0,200));}
     const data=await r.json();
     const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
     lastReportText=text;
