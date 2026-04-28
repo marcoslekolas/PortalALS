@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>Customs Way · Control RPA</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"><\/script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#09101f;--surface:#101828;--surface2:#1a2540;--border:#1e3050;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#475569;
+  --cw:#0ea5e9;--cw2:#0284c7;--accent:#2563eb;
+  --mono:"IBM Plex Mono",monospace;--sans:"Syne",sans-serif;
+  --r:6px;--rl:10px;
+  --c-arch:#22c55e;--c-liq:#10b981;--c-eliq:#3b82f6;
+  --c-prorroga:#8b5cf6;--c-urgente:#f97316;--c-vencido:#ef4444;
+  --c-sinf:#64748b;--c-ok:#06b6d4;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden}
+#hdr{position:fixed;top:0;left:0;right:0;height:54px;z-index:200;background:rgba(9,16,31,.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 18px;gap:14px}
+.logo{display:flex;align-items:center;gap:8px}
+.logo-mark{width:28px;height:28px;background:linear-gradient(135deg,var(--cw),var(--accent));border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:600;color:#fff}
+.logo-text{font-weight:800;font-size:14px}.logo-text span{color:var(--cw)}
+.sep{width:1px;height:20px;background:var(--border)}
+.hdr-mod{font-size:13px;font-weight:600;color:var(--text2)}
+.hdr-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.hdr-a{font-family:var(--mono);font-size:11px;color:var(--text3);cursor:pointer;padding:4px 9px;border-radius:4px;transition:all .15s;text-decoration:none;border:1px solid transparent}
+.hdr-a:hover{color:var(--cw);border-color:rgba(14,165,233,.3);background:rgba(14,165,233,.07)}
+.hdr-date{font-family:var(--mono);font-size:11px;color:var(--text3);margin-left:6px}
+#app{padding-top:54px;height:100vh;display:flex;flex-direction:column}
+/* Stats */
+#sbar{background:var(--surface);border-bottom:1px solid var(--border);padding:9px 18px;display:flex;gap:5px;flex-wrap:wrap;align-items:center;flex-shrink:0}
+.sp{display:inline-flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 11px;font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.sp:hover,.sp.on{border-color:currentColor;background:rgba(255,255,255,.03)}
+.sp .dot{width:6px;height:6px;border-radius:50%}.sp .n{font-weight:600;color:var(--text)}
+.gsep{flex:1}
+.ginfo{display:flex;gap:16px;align-items:center;font-family:var(--mono);font-size:11px;color:var(--text3)}
+.ginfo strong{color:var(--text);font-size:12px}.gvr{color:var(--c-vencido)}.gvg{color:var(--c-arch)}
+/* Toolbar */
+#tb{padding:9px 18px;display:flex;gap:7px;align-items:center;flex-wrap:wrap;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0}
+.sw{position:relative;flex:1;min-width:180px;max-width:300px}
+.sw input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px 6px 30px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none}
+.sw input:focus{border-color:var(--cw)}.sw:before{content:"\2315";position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:15px;pointer-events:none}
+select.ctl{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:6px 9px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;cursor:pointer}
+select.ctl:focus{border-color:var(--cw)}
+.btn{border:none;border-radius:var(--r);padding:6px 14px;font-family:var(--sans);font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
+.btn:hover{opacity:.85}.btn-cw{background:var(--cw);color:#fff}.btn-g{background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
+.btn-g:hover{color:var(--text);border-color:var(--cw)}.ml{margin-left:auto}
+/* Tabla */
+#tw{flex:1;overflow:auto}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
+thead th{text-align:left;padding:8px 9px;font-family:var(--sans);font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);cursor:pointer;white-space:nowrap;user-select:none}
+thead th:hover{color:var(--text2)}.sorted{color:var(--cw)!important}
+tbody tr{border-bottom:1px solid rgba(30,48,80,.4);cursor:pointer;transition:background .1s}
+tbody tr:hover{background:rgba(26,37,64,.6)}.row-sel{background:rgba(14,165,233,.07)!important;border-left:2px solid var(--cw)}
+td{padding:8px 9px;vertical-align:middle}.clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:3px;padding:2px 7px;font-size:10px;font-weight:600;font-family:var(--sans);white-space:nowrap}
+.badge:before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.b-archivado{background:rgba(34,197,94,.1);color:var(--c-arch)}.b-liquidado{background:rgba(16,185,129,.1);color:var(--c-liq)}
+.b-e_liquidacion{background:rgba(59,130,246,.12);color:var(--c-eliq)}.b-prorroga{background:rgba(139,92,246,.12);color:var(--c-prorroga)}
+.b-urgente{background:rgba(249,115,22,.15);color:var(--c-urgente)}.b-vencido{background:rgba(239,68,68,.12);color:var(--c-vencido)}
+.b-sin_fecha{background:rgba(100,116,139,.1);color:var(--c-sinf)}.b-en_tiempo{background:rgba(6,182,212,.1);color:var(--c-ok)}
+.dv{color:var(--c-vencido);font-weight:600}.du{color:var(--c-urgente);font-weight:600}.dok{color:var(--c-ok);font-weight:600}
+.rchip{display:inline-block;background:rgba(59,130,246,.1);color:#60a5fa;border:1px solid rgba(59,130,246,.2);border-radius:3px;padding:1px 5px;font-size:10px;margin:1px}
+.echip{display:inline-block;background:rgba(16,185,129,.1);color:var(--c-liq);border:1px solid rgba(16,185,129,.25);border-radius:3px;padding:1px 5px;font-size:10px;margin:1px}
+/* Panel */
+#pnl{position:fixed;right:0;top:54px;bottom:0;width:480px;background:var(--surface);border-left:1px solid var(--border);transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);overflow-y:auto;z-index:150;display:flex;flex-direction:column}
+#pnl.open{transform:translateX(0)}
+.ph{padding:16px 18px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.ph-dua{font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:2px}
+.ph-dos{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--text)}
+.ph-cl{font-size:13px;font-weight:700;color:var(--text);margin-top:2px}
+.ph-x{position:absolute;right:14px;top:14px;background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;padding:4px;border-radius:4px}
+.ph-x:hover{color:var(--text)}
+.pb{padding:18px;display:flex;flex-direction:column;gap:14px;flex:1}
+.ps{display:flex;flex-direction:column;gap:6px}
+.plbl{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:2px}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.fb{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 11px}
+.fbl{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+.fbv{font-family:var(--mono);font-size:12px;color:var(--text);font-weight:500}
+.sbox{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;font-size:12px;line-height:1.6;color:var(--text2)}
+.pta{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 11px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical;min-height:72px;outline:none;line-height:1.5}
+.pta:focus{border-color:var(--cw)}
+.psel{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;cursor:pointer}
+.psel:focus{border-color:var(--cw)}
+.pbtn{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 12px;text-align:left;font-family:var(--sans);font-size:12px;font-weight:600;color:var(--text);cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px}
+.pbtn:hover{border-color:var(--cw);color:var(--cw)}.pbtn.prim{background:var(--cw);border-color:var(--cw);color:#fff;justify-content:center}
+.pbtn.prim:hover{opacity:.85;color:#fff}.pbtn.danger{color:var(--c-vencido)}.pbtn.danger:hover{border-color:var(--c-vencido)}
+.exp-list{display:flex;flex-direction:column;gap:5px}
+.exp-item{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 11px;display:flex;align-items:center;gap:7px}
+.exp-n{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--c-liq);flex:1}
+.exp-m{font-size:11px;color:var(--text3)}
+.exp-item button{background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 5px}
+.exp-item button:hover{color:var(--c-vencido)}
+.add-row{display:flex;gap:5px;margin-top:4px}
+.add-row input{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 9px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none}
+.add-row input:focus{border-color:var(--cw)}.add-row input.fl{flex:2}.add-row input.fd{flex:1}
+.add-row button{background:var(--cw);border:none;border-radius:var(--r);padding:7px 12px;color:#fff;font-weight:700;cursor:pointer;font-size:14px}
+.desc-input{width:100%;margin-top:5px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 9px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none}
+.desc-input:focus{border-color:var(--cw)}
+/* Modal */
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);z-index:300;display:none;align-items:center;justify-content:center;padding:16px}
+#ov.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;padding:22px}
+.modal h2{font-size:17px;font-weight:700;margin-bottom:18px}
+.mg{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mf{display:flex;flex-direction:column;gap:4px}.full{grid-column:1/-1}
+.mf label{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}
+.mf input,.mf select,.mf textarea{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;transition:border-color .15s}
+.mf input:focus,.mf select:focus,.mf textarea:focus{border-color:var(--cw)}
+.mfoot{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
+/* Elix modal */
+#ov-el{position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(6px);z-index:400;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto}
+#ov-el.open{display:flex}
+.elmod{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);width:100%;max-width:720px;margin:auto}
+.elh{padding:16px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.elh h2{font-size:15px;font-weight:700;flex:1}.elh button{background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer}
+.elb{padding:20px}
+.elp{background:#fff;color:#1a1a1a;border-radius:var(--r);padding:30px 38px;font-family:"Times New Roman",serif;font-size:13px;line-height:1.7;margin-bottom:14px;max-height:60vh;overflow-y:auto}
+.elp h3{font-size:14px;text-align:center;margin-bottom:18px;font-weight:700}
+.ep-datos{border:1px solid #ccc;padding:12px;margin:14px 0;font-size:12px}
+.ep-datos h4{font-weight:700;margin-bottom:8px;text-decoration:underline}
+.ep-row{display:flex;gap:14px;margin-bottom:4px}
+.ep-k{width:175px;font-weight:600;flex-shrink:0}
+.el-act{display:flex;gap:8px;justify-content:flex-end;padding:0 20px 16px}
+/* Toast */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(70px);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 18px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:9999;transition:transform .3s cubic-bezier(.4,0,.2,1);pointer-events:none}
+#toast.show{transform:translateX(-50%) translateY(0)}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+@media(max-width:768px){
+  #pnl{width:100%;top:auto;bottom:0;height:88vh;transform:translateY(100%);border-left:none;border-top:1px solid var(--border);border-radius:12px 12px 0 0}
+  #pnl.open{transform:translateY(0)}.ginfo{display:none}
+}
+</style>
+</head>
+<body>
+<div id="hdr">
+  <div class="logo"><div class="logo-mark">CW</div><div class="logo-text"><span>Customs</span> Way</div></div>
+  <div class="sep"></div>
+  <div class="hdr-mod">Control RPA &middot; R&eacute;gimen 51</div>
+  <div class="hdr-r">
+    <a href="taric.html" class="hdr-a">&#9889; Clasificador TARIC</a>
+    <a href="index_work.html" class="hdr-a">&#127981; Portal Alm&eacute;n</a>
+    <span class="hdr-date" id="hdr-date"></span>
+  </div>
+</div>
+<div id="app">
+  <div id="sbar">
+    <div class="sp on" onclick="setF('all',this)"><div class="dot" style="background:var(--text3)"></div><span class="n" id="n-all">0</span> Total</div>
+    <div class="sp" onclick="setF('vencido',this)" style="color:var(--c-vencido)"><div class="dot" style="background:var(--c-vencido)"></div><span class="n" id="n-vencido">0</span> Vencidos</div>
+    <div class="sp" onclick="setF('urgente',this)" style="color:var(--c-urgente)"><div class="dot" style="background:var(--c-urgente)"></div><span class="n" id="n-urgente">0</span> Urgente</div>
+    <div class="sp" onclick="setF('e_liquidacion',this)" style="color:var(--c-eliq)"><div class="dot" style="background:var(--c-eliq)"></div><span class="n" id="n-e_liquidacion">0</span> E.Liquidaci&oacute;n</div>
+    <div class="sp" onclick="setF('sin_fecha',this)" style="color:var(--c-sinf)"><div class="dot" style="background:var(--c-sinf)"></div><span class="n" id="n-sin_fecha">0</span> Sin fecha</div>
+    <div class="sp" onclick="setF('en_tiempo',this)" style="color:var(--c-ok)"><div class="dot" style="background:var(--c-ok)"></div><span class="n" id="n-en_tiempo">0</span> En tiempo</div>
+    <div class="sp" onclick="setF('prorroga',this)" style="color:var(--c-prorroga)"><div class="dot" style="background:var(--c-prorroga)"></div><span class="n" id="n-prorroga">0</span> Pr&oacute;rroga</div>
+    <div class="sp" onclick="setF('archivado',this)" style="color:var(--c-arch)"><div class="dot" style="background:var(--c-arch)"></div><span class="n" id="n-archivado">0</span> Archivados</div>
+    <div class="sp" onclick="setF('liquidado',this)" style="color:var(--c-liq)"><div class="dot" style="background:var(--c-liq)"></div><span class="n" id="n-liquidado">0</span> Liquidados</div>
+    <div class="gsep"></div>
+    <div class="ginfo">
+      <span>Garant&iacute;a: <strong id="g-tot">30.000,00 &euro;</strong></span>
+      <span>Comprometido: <strong class="gvr" id="g-used">0,00 &euro;</strong></span>
+      <span>Disponible: <strong class="gvg" id="g-free">30.000,00 &euro;</strong></span>
+    </div>
+  </div>
+  <div id="tb">
+    <div class="sw"><input type="text" id="q" placeholder="DUA, dossier, cliente, RGE..." oninput="render()"></div>
+    <select class="ctl" id="sel-cl" onchange="render()"><option value="">Todos los clientes</option></select>
+    <select class="ctl" id="sel-reg" onchange="render()">
+      <option value="">R&eacute;gimen</option>
+      <option value="51">51 &mdash; Perf. Activo</option>
+      <option value="5100">5100 &mdash; RPA</option>
+      <option value="106">106 &mdash; Imp. Temporal</option>
+    </select>
+    <select class="ctl" id="sel-ord" onchange="render()">
+      <option value="fecha_limite">&#8593; Fecha l&iacute;mite</option>
+      <option value="dias_resto">&#8593; D&iacute;as restantes</option>
+      <option value="dossier">&#8593; Dossier</option>
+      <option value="cliente">&#8593; Cliente</option>
+    </select>
+    <button class="btn btn-cw ml" onclick="abrirNuevo()">+ Nueva RPA</button>
+  </div>
+  <div id="tw">
+    <table>
+      <thead><tr>
+        <th onclick="srt('estado')">Estado</th>
+        <th onclick="srt('dossier')">Dossier</th>
+        <th onclick="srt('dua')">DUA Entrada</th>
+        <th onclick="srt('cliente')">Cliente</th>
+        <th onclick="srt('expedidor')">Expedidor</th>
+        <th>DUAs Export.</th>
+        <th onclick="srt('admision')">Admisi&oacute;n</th>
+        <th onclick="srt('fecha_limite')">L&iacute;mite</th>
+        <th onclick="srt('dias_resto')">D&iacute;as</th>
+        <th onclick="srt('importe')">Importe</th>
+        <th onclick="srt('regimen')">R&eacute;g.</th>
+        <th>RGEs</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+<!-- Panel lateral -->
+<div id="pnl">
+  <div class="ph">
+    <button class="ph-x" onclick="cerrarP()">&#10005;</button>
+    <div class="ph-dua" id="p-dua"></div>
+    <div class="ph-dos" id="p-dos"></div>
+    <div class="ph-cl" id="p-cl"></div>
+    <div style="margin-top:8px" id="p-badge"></div>
+  </div>
+  <div class="pb" id="p-body"></div>
+</div>
+<!-- Modal nuevo/editar -->
+<div id="ov">
+  <div class="modal">
+    <h2 id="m-title">Nueva RPA</h2>
+    <div class="mg">
+      <div class="mf full"><label>DUA Importaci&oacute;n *</label><input id="f-dua" placeholder="25ES001167300..."></div>
+      <div class="mf"><label>N&ordm; Dossier</label><input type="number" id="f-dos" placeholder="171000"></div>
+      <div class="mf"><label>R&eacute;gimen</label><select id="f-reg"><option value="51">51 &mdash; Perfeccionamiento Activo</option><option value="5100">5100 &mdash; RPA</option><option value="106">106 &mdash; Imp. Temporal</option></select></div>
+      <div class="mf"><label>Fecha admisi&oacute;n</label><input type="date" id="f-adm"></div>
+      <div class="mf"><label>Fecha l&iacute;mite ultimaci&oacute;n</label><input type="date" id="f-lim"></div>
+      <div class="mf"><label>Valor en aduana (&euro;)</label><input type="number" step="0.01" id="f-val" placeholder="0.00"></div>
+      <div class="mf"><label>Importe garantizado (&euro;)</label><input type="number" step="0.01" id="f-imp" placeholder="0.00"></div>
+      <div class="mf"><label>C&oacute;digo NC mercader&iacute;a (10 d&iacute;gitos)</label><input id="f-nc" placeholder="8415820099" maxlength="10"></div>
+      <div class="mf"><label>Coef. rendimiento (%)</label><input type="number" id="f-coef" placeholder="100" min="0" max="100"></div>
+      <div class="mf"><label>Autorizaci&oacute;n</label><input id="f-aut" placeholder="SOLICITUD / 1020..."></div>
+      <div class="mf full"><label>Descripci&oacute;n mercanc&iacute;a</label><input id="f-desc" placeholder="1 PALLET CONTENIENDO..."></div>
+      <div class="mf"><label>Cliente</label><input id="f-cl" list="dl-cl"></div>
+      <div class="mf"><label>Expedidor</label><input id="f-exp" placeholder="GIBDOCK"></div>
+      <div class="mf full"><label>Destinatario</label><input id="f-dest" placeholder="IESA"></div>
+      <div class="mf full"><label>Situaci&oacute;n / Anotaciones</label><textarea id="f-sit" rows="3" placeholder="SOLICITADO E LIQUIDACION RGE..."></textarea></div>
+      <div class="mf"><label>Estado</label><select id="f-est">
+        <option value="en_tiempo">En tiempo</option><option value="sin_fecha">Sin fecha l&iacute;mite</option>
+        <option value="e_liquidacion">E. Liquidaci&oacute;n solicitada</option><option value="prorroga">Pr&oacute;rroga</option>
+        <option value="urgente">Urgente</option><option value="vencido">Vencido</option>
+        <option value="liquidado">Liquidado</option><option value="archivado">Archivado</option>
+      </select></div>
+      <div class="mf"><label>Liquidado</label><select id="f-liq">
+        <option value="">Pendiente</option><option value="SI">S&iacute; &mdash; ultimado</option>
+        <option value="CONCEDIDO EL MES">Concedido este mes</option>
+      </select></div>
+    </div>
+    <datalist id="dl-cl"></datalist>
+    <div class="mfoot">
+      <button class="btn btn-g" onclick="cerrarM()">Cancelar</button>
+      <button class="btn btn-cw" onclick="guardar()">Guardar</button>
+    </div>
+  </div>
+</div>
+<!-- Modal Estado Liquidacion Anexo 71-06 -->
+<div id="ov-el">
+  <div class="elmod">
+    <div class="elh"><h2>&#128196; Estado de Liquidaci&oacute;n &mdash; Anexo 71-06 UE 2015/2446</h2><button onclick="cerrarEl()">&#10005;</button></div>
+    <div class="elb"><div class="elp" id="el-prev"></div></div>
+    <div class="el-act">
+      <button class="btn btn-g" onclick="cerrarEl()">Cerrar</button>
+      <button class="btn btn-cw" onclick="imprimirEl()">&#128424; Imprimir / PDF</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script>
+'use strict';
+const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
+const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
+const OR_EP='https://openrouter.ai/api/v1/chat/completions';
+const GTOTAL=30000;
+const TABLE='rpa_pendencias';
+const AGENTE={nombre:'Antonio Varela Vento',nif:'31.234.621-T',titulo:'Agente de Aduanas Colegiado',empresa:'Customs Way',dir:'Algeciras - La Línea de la Concepción',cp:'11300 - La Línea de la Concepción',tel:'956 625 988',fax:'956 625 984',movil:'622 671 454',email:'avarela@oeali.com',aduana:'ADMINISTRACIÓN DE ADUANAS DE LA LINEA DE LA CONCEPCIÓN'};
+const EL={archivado:'Archivado',liquidado:'Liquidado',e_liquidacion:'E.Liquidación',prorroga:'Prórroga',urgente:'Urgente ⚠',vencido:'Vencido',sin_fecha:'Sin fecha',en_tiempo:'En tiempo'};
+let sb,datos=[],fE='all',oC='fecha_limite',oD=1,selI=null,editI=null;
+let _orKey=localStorage.getItem('als_openrouter_key')||'';
+try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});}catch(e){}
+async function loadKey(){if(_orKey)return;try{const{data}=await sb.from('als_config').select('valor').eq('clave','gemini_api_key').single();if(data?.valor){_orKey=data.valor;localStorage.setItem('als_openrouter_key',_orKey);}}catch(e){}}
+async function cargar(){
+  try{
+    const{data,error}=await sb.from(TABLE).select('*').order('created_at',{ascending:false});
+    if(error)throw error;
+    datos=data||[];
+  }catch(e){datos=JSON.parse(localStorage.getItem('cw_rpas')||'[]');}
+  recalc();poblarCl();stats();render();
+}
+async function persist(r,id=null){
+  try{
+    if(id){const{error}=await sb.from(TABLE).update(r).eq('id',id);if(error)throw error;}
+    else{const{error}=await sb.from(TABLE).insert(r);if(error)throw error;}
+  }catch(e){
+    const a=JSON.parse(localStorage.getItem('cw_rpas')||'[]');
+    if(id){const i=a.findIndex(x=>x.id===id);if(i>=0)a[i]=r;}
+    else a.unshift({...r,id:Date.now().toString()});
+    localStorage.setItem('cw_rpas',JSON.stringify(a));
+  }
+  await cargar();
+}
+async function del(id){
+  try{const{error}=await sb.from(TABLE).delete().eq('id',id);if(error)throw error;}
+  catch(e){const a=JSON.parse(localStorage.getItem('cw_rpas')||'[]');const i=a.findIndex(x=>x.id===id);if(i>=0){a.splice(i,1);localStorage.setItem('cw_rpas',JSON.stringify(a));}}
+  await cargar();
+}
+function recalc(){
+  const h=new Date();h.setHours(0,0,0,0);
+  datos.forEach(r=>{
+    if(['archivado','liquidado'].includes(r.estado))return;
+    if(!r.fecha_limite){if(r.estado==='en_tiempo'||!r.estado)r.estado='sin_fecha';return;}
+    const fl=new Date(r.fecha_limite);fl.setHours(0,0,0,0);
+    r.dias_resto=Math.round((fl-h)/86400000);
+    if(['e_liquidacion','prorroga'].includes(r.estado))return;
+    r.estado=r.dias_resto<0?'vencido':r.dias_resto<=15?'urgente':'en_tiempo';
+  });
+}
+function stats(){
+  ['all','archivado','liquidado','e_liquidacion','prorroga','urgente','vencido','sin_fecha','en_tiempo'].forEach(e=>{
+    const n=e==='all'?datos.length:datos.filter(r=>r.estado===e).length;
+    const el=document.getElementById('n-'+e);if(el)el.textContent=n;
+  });
+  const c=datos.filter(r=>!['archivado','liquidado'].includes(r.estado)).reduce((s,r)=>s+(parseFloat(r.importe)||0),0);
+  const f=GTOTAL-c;
+  document.getElementById('g-used').textContent=fe(c);
+  document.getElementById('g-free').textContent=fe(f);
+  document.getElementById('g-free').className=f<2000?'gvr':'gvg';
+}
+function fe(n){return n.toLocaleString('es-ES',{style:'currency',currency:'EUR',minimumFractionDigits:2});}
+function fd(d){return d?d.substring(0,10):'—';}
+function setF(e,el){fE=e;document.querySelectorAll('.sp').forEach(s=>s.classList.remove('on'));el.classList.add('on');render();}
+function poblarCl(){
+  const cl=[...new Set(datos.map(r=>(r.cliente||'').toUpperCase().trim()).filter(Boolean))].sort();
+  const s=document.getElementById('sel-cl');s.innerHTML='<option value="">Todos los clientes</option>';
+  const dl=document.getElementById('dl-cl');dl.innerHTML='';
+  cl.forEach(c=>{s.add(new Option(c,c));const o=document.createElement('option');o.value=c;dl.appendChild(o);});
+}
+function filt(){
+  const q=(document.getElementById('q').value||'').toLowerCase().trim();
+  const fc=document.getElementById('sel-cl').value;
+  const fr=document.getElementById('sel-reg').value;
+  return datos.filter(r=>{
+    if(fE!=='all'&&r.estado!==fE)return false;
+    if(fc&&(r.cliente||'').toUpperCase()!==fc)return false;
+    if(fr&&r.regimen!==fr)return false;
+    if(q){const h=[r.dua,r.cliente,r.expedidor,r.destinatario,r.situacion,r.dossier,...(r.rges||[]),...(r.duas_exportacion||[]).map(d=>d.dua)].join(' ').toLowerCase();if(!h.includes(q))return false;}
+    return true;
+  }).sort((a,b)=>{
+    let va=a[oC]??'',vb=b[oC]??'';
+    if(typeof va==='string')va=va.toLowerCase();if(typeof vb==='string')vb=vb.toLowerCase();
+    if(va===''||va===null||va===undefined)return 1;if(vb===''||vb===null||vb===undefined)return -1;
+    return va<vb?-oD:va>vb?oD:0;
+  });
+}
+function srt(c){oC===c?oD*=-1:(oC=c,oD=1);render();}
+function dh(r){
+  if(!r.fecha_limite)return '<span style="color:var(--text3)">—</span>';
+  const d=r.dias_resto??Math.round((new Date(r.fecha_limite)-new Date())/86400000);
+  if(d<0)return '<span class="dv">'+Math.abs(d)+'d</span>';
+  if(d===0)return '<span class="du">HOY</span>';
+  if(d<=15)return '<span class="du">'+d+'d</span>';
+  return '<span class="dok">'+d+'d</span>';
+}
+function cf(r){
+  if(!r.fecha_limite)return 'var(--text3)';
+  const d=r.dias_resto??Math.round((new Date(r.fecha_limite)-new Date())/86400000);
+  return d<0?'var(--c-vencido)':d<=15?'var(--c-urgente)':'var(--text2)';
+}
+function render(){
+  const d=filt(),tb=document.getElementById('tbody');
+  if(!d.length){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:var(--text3)">Sin registros con estos filtros</td></tr>';return;}
+  tb.innerHTML=d.map(r=>{
+    const idx=datos.indexOf(r);
+    const rg=(r.rges||[]).slice(0,2).map(g=>'<span class="rchip">'+g.substring(0,14)+'</span>').join('');
+    const ex=(r.duas_exportacion||[]).slice(0,2).map(e=>'<span class="echip">'+e.dua+'</span>').join('');
+    return '<tr onclick="abrirP('+idx+')" class="'+(selI===idx?'row-sel':'')+'">'+
+      '<td><span class="badge b-'+r.estado+'">'+(EL[r.estado]||r.estado)+'</span></td>'+
+      '<td style="font-weight:600;color:var(--text)">'+(r.dossier||'—')+'</td>'+
+      '<td class="clip" style="max-width:150px;color:var(--text2)">'+(r.dua||'—')+'</td>'+
+      '<td class="clip" style="max-width:100px;font-weight:600">'+(r.cliente||'—')+'</td>'+
+      '<td class="clip" style="max-width:100px;color:var(--text2)">'+(r.expedidor||'—')+'</td>'+
+      '<td>'+(ex||'<span style="color:var(--text3)">—</span>')+'</td>'+
+      '<td style="color:var(--text2)">'+fd(r.admision)+'</td>'+
+      '<td style="color:'+cf(r)+'">'+fd(r.fecha_limite)+'</td>'+
+      '<td>'+dh(r)+'</td>'+
+      '<td style="text-align:right">'+(r.importe!=null?parseFloat(r.importe).toFixed(2)+' €':'—')+'</td>'+
+      '<td style="color:var(--text3)">'+(r.regimen||'51')+'</td>'+
+      '<td>'+rg+'</td>'+
+      '</tr>';
+  }).join('');
+}
+function abrirP(idx){
+  selI=idx;const r=datos[idx];
+  document.getElementById('p-dua').textContent=r.dua||'';
+  document.getElementById('p-dos').textContent=r.dossier?'#'+r.dossier:'—';
+  document.getElementById('p-cl').textContent=r.cliente||'—';
+  document.getElementById('p-badge').innerHTML='<span class="badge b-'+r.estado+'">'+(EL[r.estado]||r.estado)+'</span>';
+  const ex=r.duas_exportacion||[];
+  const rg=r.rges||[];
+  document.getElementById('p-body').innerHTML=
+    '<div class="ps"><div class="plbl">Partes</div><div class="fg">'+
+      '<div class="fb"><div class="fbl">Cliente</div><div class="fbv">'+(r.cliente||'—')+'</div></div>'+
+      '<div class="fb"><div class="fbl">Régimen</div><div class="fbv">'+(r.regimen||'51')+'</div></div>'+
+      '<div class="fb"><div class="fbl">Expedidor</div><div class="fbv">'+(r.expedidor||'—')+'</div></div>'+
+      '<div class="fb"><div class="fbl">Destinatario</div><div class="fbv">'+(r.destinatario||'—')+'</div></div>'+
+    '</div></div>'+
+    '<div class="ps"><div class="plbl">Plazos y valores</div><div class="fg">'+
+      '<div class="fb"><div class="fbl">Admisión</div><div class="fbv">'+fd(r.admision)+'</div></div>'+
+      '<div class="fb"><div class="fbl">Fecha límite</div><div class="fbv" style="color:'+cf(r)+'">'+fd(r.fecha_limite)+'</div></div>'+
+      '<div class="fb"><div class="fbl">Días restantes</div><div class="fbv">'+dh(r)+'</div></div>'+
+      '<div class="fb"><div class="fbl">Importe garantía</div><div class="fbv">'+(r.importe!=null?parseFloat(r.importe).toFixed(2)+' €':'—')+'</div></div>'+
+      '<div class="fb"><div class="fbl">Valor aduana</div><div class="fbv">'+(r.valor_aduana?parseFloat(r.valor_aduana).toFixed(2)+' €':'—')+'</div></div>'+
+      '<div class="fb"><div class="fbl">Código NC</div><div class="fbv">'+(r.codigo_nc||'—')+'</div></div>'+
+      '<div class="fb"><div class="fbl">Coef. rendimiento</div><div class="fbv">'+(r.coef_rendimiento?r.coef_rendimiento+'%':'—')+'</div></div>'+
+      '<div class="fb"><div class="fbl">Autorización</div><div class="fbv">'+(r.autorizacion||'—')+'</div></div>'+
+    '</div></div>'+
+    (r.descripcion?'<div class="ps"><div class="plbl">Mercancía</div><div class="sbox">'+r.descripcion+'</div></div>':'')+
+    '<div class="ps"><div class="plbl">DUAs Exportación vinculadas (ultiman el régimen)</div>'+
+      '<div class="exp-list" id="exp-list">'+
+        (ex.length?ex.map((e,i)=>'<div class="exp-item"><span class="exp-n">'+e.dua+'</span><span class="exp-m">'+(e.fecha?fd(e.fecha):'')+' '+(e.descripcion?'· '+e.descripcion:'')+'</span><button onclick="qExp('+idx+','+i+')">&#10005;</button></div>').join(''):
+        '<span style="color:var(--text3);font-size:12px">Sin DUAs vinculadas</span>')+
+      '</div>'+
+      '<div class="add-row">'+
+        '<input type="text" id="ne-dua" class="fl" placeholder="DUA exportación (25ES...)">'+
+        '<input type="date" id="ne-fecha" class="fd">'+
+        '<button onclick="aExp('+idx+')">+</button>'+
+      '</div>'+
+      '<input type="text" id="ne-desc" class="desc-input" placeholder="Descripción producto transformado (opcional)">'+
+    '</div>'+
+    (rg.length?'<div class="ps"><div class="plbl">RGEs</div><div>'+rg.map(g=>'<span class="rchip">'+g+'</span>').join('')+'</div></div>':'')+
+    (r.situacion?'<div class="ps"><div class="plbl">Situación</div><div class="sbox">'+r.situacion+'</div></div>':'')+
+    '<div class="ps"><div class="plbl">Anotación</div><textarea class="pta" id="p-nota" placeholder="Nueva nota o RGE...">'+( r.situacion||'')+'</textarea></div>'+
+    '<div class="ps"><div class="plbl">Cambiar estado</div>'+
+      '<select class="psel" onchange="cambE('+idx+',this.value)">'+
+        Object.entries(EL).map(([k,v])=>'<option value="'+k+'"'+(r.estado===k?' selected':'')+'>'+v+'</option>').join('')+
+      '</select>'+
+    '</div>'+
+    '<div class="ps" style="gap:6px">'+
+      '<button class="pbtn" onclick="savNota('+idx+')">&#128190; Guardar anotación</button>'+
+      (r.dua&&r.admision?'<button class="pbtn prim" onclick="genEl('+idx+')">&#128196; Generar Estado de Liquidación (Anexo 71-06)</button>':'')+
+      '<button class="pbtn" onclick="abrirEd('+idx+')">&#9998; Editar registro</button>'+
+      '<button class="pbtn danger" onclick="elim(''+r.id+'')">&#128465; Eliminar</button>'+
+    '</div>';
+  document.getElementById('pnl').classList.add('open');
+  render();
+}
+function cerrarP(){selI=null;document.getElementById('pnl').classList.remove('open');render();}
+async function aExp(idx){
+  const dua=(document.getElementById('ne-dua').value||'').trim();
+  if(!dua){toast('Introduce el DUA de exportación','error');return;}
+  const r=datos[idx];const ex=r.duas_exportacion||[];
+  ex.push({dua:dua.toUpperCase(),fecha:document.getElementById('ne-fecha').value||null,descripcion:document.getElementById('ne-desc').value.trim()||null});
+  r.duas_exportacion=ex;await persist(r,r.id);toast('DUA exportación vinculada');abrirP(idx);
+}
+async function qExp(idx,i){const r=datos[idx];r.duas_exportacion=(r.duas_exportacion||[]).filter((_,j)=>j!==i);await persist(r,r.id);abrirP(idx);}
+async function cambE(idx,e){datos[idx].estado=e;await persist(datos[idx],datos[idx].id);stats();abrirP(idx);toast('Estado actualizado');}
+async function savNota(idx){
+  const t=(document.getElementById('p-nota').value||'').trim();
+  datos[idx].situacion=t;datos[idx].rges=[...new Set((t.toUpperCase().match(/RGE\d+/g)||[]))];
+  await persist(datos[idx],datos[idx].id);abrirP(idx);toast('Anotación guardada');
+}
+function abrirNuevo(){
+  editI=null;document.getElementById('m-title').textContent='Nueva RPA / Régimen 51';
+  ['f-dua','f-dos','f-adm','f-lim','f-val','f-imp','f-nc','f-coef','f-aut','f-desc','f-cl','f-exp','f-dest','f-sit'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('f-reg').value='51';document.getElementById('f-est').value='en_tiempo';document.getElementById('f-liq').value='';
+  document.getElementById('ov').classList.add('open');
+}
+function abrirEd(idx){
+  editI=idx;const r=datos[idx];
+  document.getElementById('m-title').textContent='Editar — Dossier '+(r.dossier||'');
+  document.getElementById('f-dua').value=r.dua||'';document.getElementById('f-dos').value=r.dossier||'';
+  document.getElementById('f-reg').value=r.regimen||'51';document.getElementById('f-adm').value=r.admision||'';
+  document.getElementById('f-lim').value=r.fecha_limite||'';document.getElementById('f-val').value=r.valor_aduana||'';
+  document.getElementById('f-imp').value=r.importe||'';document.getElementById('f-nc').value=r.codigo_nc||'';
+  document.getElementById('f-coef').value=r.coef_rendimiento||'';document.getElementById('f-aut').value=r.autorizacion||'';
+  document.getElementById('f-desc').value=r.descripcion||'';document.getElementById('f-cl').value=r.cliente||'';
+  document.getElementById('f-exp').value=r.expedidor||'';document.getElementById('f-dest').value=r.destinatario||'';
+  document.getElementById('f-sit').value=r.situacion||'';document.getElementById('f-est').value=r.estado||'en_tiempo';
+  document.getElementById('f-liq').value=r.liquidado||'';
+  document.getElementById('ov').classList.add('open');
+}
+function cerrarM(){document.getElementById('ov').classList.remove('open');}
+async function guardar(){
+  const dua=(document.getElementById('f-dua').value||'').trim();
+  if(!dua){toast('El DUA es obligatorio','error');return;}
+  const sit=(document.getElementById('f-sit').value||'').trim();
+  const obj={dua:dua.toUpperCase(),dossier:parseInt(document.getElementById('f-dos').value)||null,regimen:document.getElementById('f-reg').value,admision:document.getElementById('f-adm').value||null,fecha_limite:document.getElementById('f-lim').value||null,valor_aduana:parseFloat(document.getElementById('f-val').value)||null,importe:parseFloat(document.getElementById('f-imp').value)||null,codigo_nc:document.getElementById('f-nc').value.trim()||null,coef_rendimiento:parseFloat(document.getElementById('f-coef').value)||100,autorizacion:document.getElementById('f-aut').value.trim()||null,descripcion:document.getElementById('f-desc').value.trim()||null,cliente:(document.getElementById('f-cl').value||'').trim().toUpperCase(),expedidor:(document.getElementById('f-exp').value||'').trim().toUpperCase(),destinatario:(document.getElementById('f-dest').value||'').trim().toUpperCase(),situacion:sit,liquidado:document.getElementById('f-liq').value,rges:[...new Set((sit.toUpperCase().match(/RGE\d+/g)||[]))],estado:document.getElementById('f-est').value,duas_exportacion:editI!==null?(datos[editI].duas_exportacion||[]):[]};
+  await persist(obj,editI!==null?datos[editI].id:null);cerrarM();toast(editI!==null?'Registro actualizado':'Nueva RPA añadida');
+}
+async function elim(id){if(!confirm('\xbfEliminar este registro?'))return;await del(id);cerrarP();toast('Eliminado');}
+function genEl(idx){
+  const r=datos[idx];const hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const ex=r.duas_exportacion||[];const imp=r.importe?parseFloat(r.importe).toFixed(2):'—';
+  const html=
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">'+
+      '<div><div style="font-weight:700;font-size:15px">'+AGENTE.nombre+'</div><div>'+AGENTE.nif+'</div><div style="font-weight:600">'+AGENTE.titulo+'</div><div>'+AGENTE.empresa+'</div><div>'+AGENTE.dir+'</div></div>'+
+      '<div style="text-align:right;font-size:11px"><div>'+AGENTE.cp+'</div><div>Tel.: '+AGENTE.tel+'</div><div>Fax.: '+AGENTE.fax+'</div><div>Móvil.: '+AGENTE.movil+'</div><div>E-mail.: '+AGENTE.email+'</div></div>'+
+    '</div>'+
+    '<h3 style="text-align:center;text-decoration:underline;margin-bottom:18px">'+AGENTE.aduana+'</h3>'+
+    '<p style="margin-bottom:12px"><strong>DUA IMPORTACION:</strong> &nbsp; '+r.dua+(r.dossier?' / '+r.dossier:'')+'</p>'+
+    '<p style="margin-bottom:12px">'+AGENTE.nombre+' con NIF '+AGENTE.nif+', '+AGENTE.titulo+' tiene el honor de exponer:</p>'+
+    '<p style="margin-bottom:12px">Que en relación con el DUA de importación en Régimen de RPA de referencia, se presenta estado de liquidación conforme al anexo 71-06 del Reglamento Delegado (UE) 2015/2446 de la Comisión.</p>'+
+    '<p style="margin-bottom:10px"><strong>INFORMACIÓN SEGÚ EL ANEXO</strong></p>'+
+    '<div class="ep-datos"><h4>Datos entrada RPA</h4>'+
+      '<div class="ep-row"><span class="ep-k">Autorización:</span><span>'+(r.autorizacion||'SOLICITUD')+'</span></div>'+
+      '<div class="ep-row"><span class="ep-k">Fecha registro:</span><span>'+(r.admision?new Date(r.admision).toLocaleDateString('es-ES'):'—')+'</span></div>'+
+      '<div class="ep-row"><span class="ep-k">Valor Aduana:</span><span>'+(r.valor_aduana?parseFloat(r.valor_aduana).toFixed(2):'—')+'</span></div>'+
+      '<div class="ep-row"><span class="ep-k">Código mercancía:</span><span>'+(r.codigo_nc||'—')+'</span></div>'+
+      (r.descripcion?'<div style="margin-top:8px;font-size:11px;line-height:1.5">'+r.descripcion+'</div>':'')+
+    '</div>'+
+    '<div class="ep-datos"><h4>Producto Transformado / Ultimación</h4>'+
+      (ex.length?ex.map((e,i)=>(i>0?'<hr style="border:none;border-top:1px solid #ddd;margin:8px 0">':'')+
+        '<div class="ep-row"><span class="ep-k">DUA Exportación:</span><span>'+e.dua+'</span></div>'+
+        (e.fecha?'<div class="ep-row"><span class="ep-k">Fecha registro:</span><span>'+new Date(e.fecha).toLocaleDateString('es-ES')+'</span></div>':'')+
+        (e.descripcion?'<div class="ep-row"><span class="ep-k">Descripción:</span><span>'+e.descripcion+'</span></div>':'')).join(''):
+      '<div style="color:#888;font-size:12px;font-style:italic">Sin DUAs de exportación vinculadas — añadir en el panel de detalle</div>')+
+      '<div class="ep-row" style="margin-top:10px"><span class="ep-k">Coef. rendimiento:</span><span>'+(r.coef_rendimiento||100)+'%</span></div>'+
+      '<div class="ep-row"><span class="ep-k">Período ultimación:</span><span>'+(r.fecha_limite?new Date(r.fecha_limite).toLocaleDateString('es-ES'):'—')+'</span></div>'+
+    '</div>'+
+    '<div class="ep-datos"><h4>Derechos e importes (Anexo 71-06 ap. i y j)</h4>'+
+      '<div class="ep-row"><span class="ep-k">Importe derechos a pagar:</span><span>'+imp+' €</span></div>'+
+      (r.situacion?'<div class="ep-row"><span class="ep-k">Observaciones:</span><span style="font-size:11px">'+r.situacion+'</span></div>':'')+
+    '</div>'+
+    '<p style="margin-top:16px">Por ello es por lo que <strong>SOLICITO</strong>:</p>'+
+    '<p style="margin-top:8px;margin-bottom:32px">Que se ultime el Régimen de RPA y se reponga la garantía presentada.</p>'+
+    '<div style="text-align:right"><p>En La Línea a, &nbsp; '+hoy+'</p>'+
+    '<p style="margin-top:22px;font-weight:700;font-size:14px">'+AGENTE.nombre.toUpperCase()+'</p>'+
+    '<p style="font-size:11px">'+AGENTE.titulo.toUpperCase()+'</p></div>';
+  document.getElementById('el-prev').innerHTML=html;
+  document.getElementById('ov-el').classList.add('open');
+}
+function cerrarEl(){document.getElementById('ov-el').classList.remove('open');}
+function imprimirEl(){
+  const c=document.getElementById('el-prev').innerHTML;
+  const w=window.open('','_blank','width=820,height=920');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Estado de Liquidación RPA</title><style>body{font-family:"Times New Roman",serif;font-size:13px;line-height:1.7;color:#1a1a1a;padding:40px;max-width:720px;margin:0 auto}h3{font-size:14px;text-align:center;margin-bottom:16px;font-weight:700}.ep-datos{border:1px solid #ccc;padding:12px;margin:14px 0;font-size:12px}.ep-datos h4{font-weight:700;margin-bottom:8px;text-decoration:underline}.ep-row{display:flex;gap:14px;margin-bottom:4px}.ep-k{width:180px;font-weight:600;flex-shrink:0}strong{font-weight:700}@media print{body{padding:20px}}</style></head><body>'+c+'</body></html>');
+  w.document.close();w.focus();setTimeout(()=>w.print(),500);
+}
+let _tt;
+function toast(msg,t='ok'){const el=document.getElementById('toast');el.textContent=msg;el.style.color=t==='error'?'var(--c-vencido)':'var(--text)';el.classList.add('show');clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),2600);}
+document.getElementById('hdr-date').textContent=new Date().toLocaleDateString('es-ES',{weekday:'short',day:'numeric',month:'long',year:'numeric'});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){cerrarM();cerrarP();cerrarEl();}});
+document.getElementById('ov').addEventListener('click',e=>{if(e.target===document.getElementById('ov'))cerrarM();});
+document.getElementById('ov-el').addEventListener('click',e=>{if(e.target===document.getElementById('ov-el'))cerrarEl();});
+loadKey();cargar();
+</script>
+</body>
+</html>
