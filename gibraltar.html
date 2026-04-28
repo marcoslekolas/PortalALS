@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#1e3a8a">
+<title>Gibraltar · ALS Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --w:#fff;--g50:#f8f9fa;--g100:#f1f3f5;--g200:#e9ecef;--g300:#dee2e6;--g400:#ced4da;
+  --g500:#adb5bd;--g600:#6c757d;--g700:#495057;--g800:#343a40;--g900:#212529;
+  --b50:#eff6ff;--b100:#dbeafe;--b200:#bfdbfe;--b500:#3b82f6;--b600:#2563eb;--b700:#1d4ed8;
+  --gr50:#f0fdf4;--gr100:#dcfce7;--gr500:#22c55e;--gr600:#16a34a;
+  --am50:#fffbeb;--am100:#fef3c7;--am500:#f59e0b;--am600:#d97706;
+  --rd50:#fef2f2;--rd100:#fee2e2;--rd500:#ef4444;--rd600:#dc2626;
+  --tl50:#f0fdfa;--tl100:#ccfbf1;--tl500:#14b8a6;--tl600:#0d9488;
+  --pu50:#faf5ff;--pu100:#f3e8ff;--pu500:#a855f7;--pu600:#9333ea;
+  --or50:#fff7ed;--or500:#f97316;--or600:#ea580c;
+  --f:'Inter',sans-serif;--mono:'DM Mono',monospace;
+  --r:8px;--rl:12px;--rxl:16px;
+  --sh0:0 1px 3px rgba(0,0,0,.08);--sh:0 2px 8px rgba(0,0,0,.10);--shl:0 8px 24px rgba(0,0,0,.12);
+  --hh:52px;--sw:224px;
+}
+:root.dark{
+  --w:#0f172a;--g50:#0a0f1e;--g100:#111827;--g200:#1e293b;--g300:#334155;--g400:#475569;
+  --g500:#64748b;--g600:#94a3b8;--g700:#cbd5e1;--g800:#e2e8f0;--g900:#f1f5f9;
+  --b50:#1e3a5f;--b100:#1e40af;--b200:#1d4ed8;
+  --gr50:#042f2e;--gr100:#052e16;--am50:#431407;--am100:#451a03;--rd50:#4c0519;--rd100:#450a0a;
+  --tl50:#042f2e;--tl100:#042f2e;--pu50:#3b0764;--pu100:#2e1065;
+  --shl:0 8px 32px rgba(0,0,0,.5);
+}
+html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
+
+/* ACCESS GATE */
+#gate{position:fixed;inset:0;background:var(--g50);display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column;gap:16px;padding:24px}
+.gate-icon{font-size:48px}
+.gate-title{font-size:20px;font-weight:700;color:var(--g900)}
+.gate-sub{font-size:13px;color:var(--g500);text-align:center;max-width:320px}
+.gate-btn{background:var(--b600);color:#fff;border:none;padding:10px 24px;border-radius:var(--r);font-family:var(--f);font-size:13px;font-weight:500;cursor:pointer;margin-top:8px}
+
+/* APP */
+#app{display:none;flex-direction:column;height:100vh;overflow:hidden}
+#hdr{background:linear-gradient(135deg,#0f2d6e 0%,#1e3a8a 50%,#312e81 100%);color:#fff;display:flex;align-items:center;padding:0 14px;height:var(--hh);flex-shrink:0;gap:10px;box-shadow:0 2px 20px rgba(15,45,110,.5);position:relative}
+#hdr::after{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Ccircle cx='30' cy='30' r='25' fill='none' stroke='rgba(255,255,255,.04)' stroke-width='1'/%3E%3C/svg%3E");pointer-events:none}
+.hm{width:32px;height:32px;background:rgba(255,255,255,.18);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.25);flex-shrink:0}
+.hd{width:1px;height:18px;background:rgba(255,255,255,.2)}
+.ht{font-size:13px;font-weight:700;color:#fff}
+.hs{font-size:10px;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.05em}
+.hsp{flex:1}
+.hpill{padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;font-family:var(--mono);border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.15);color:#fcd34d;white-space:nowrap}
+.hpill.ok{border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.15);color:#86efac}
+.hibtn{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:#fff;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.hibtn:hover{background:rgba(255,255,255,.22)}
+.huser{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:8px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18)}
+.huser-av{width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700}
+.huser-name{font-size:11px;font-weight:600;color:#fff}
+.huser-role{font-size:9px;color:rgba(255,255,255,.6)}
+
+#body{flex:1;display:flex;overflow:hidden}
+#sb{width:var(--sw);background:var(--w);border-right:1px solid var(--g200);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;transition:transform .25s;z-index:50}
+#sb::-webkit-scrollbar{width:3px}
+#sb::-webkit-scrollbar-thumb{background:var(--g300);border-radius:4px}
+.sb-hd{padding:10px 12px 8px;border-bottom:1px solid var(--g100)}
+.sb-tag{font-size:9px;font-weight:700;color:var(--g400);letter-spacing:.1em;text-transform:uppercase;padding:12px 14px 4px}
+.ni{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:var(--r);margin:1px 6px;cursor:pointer;color:var(--g600);font-size:12.5px;font-weight:500;transition:all .15s;user-select:none}
+.ni:hover{background:var(--g100);color:var(--g900)}
+.ni.active{background:linear-gradient(135deg,var(--b600),#6366f1);color:#fff;box-shadow:0 3px 10px rgba(37,99,235,.3)}
+.ni .ic{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+.sb-ft{margin-top:auto;padding:10px;border-top:1px solid var(--g100)}
+.sb-back{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--r);cursor:pointer;color:var(--g500);font-size:12px;font-weight:500;transition:all .15s}
+.sb-back:hover{background:var(--g100);color:var(--b600)}
+
+#cnt{flex:1;overflow-y:auto;background:var(--g50)}
+#cnt::-webkit-scrollbar{width:5px}
+#cnt::-webkit-scrollbar-thumb{background:var(--g300);border-radius:4px}
+.sec{display:none;flex-direction:column;min-height:100%;padding:20px}
+.sec.on{display:flex}
+.ph{font-size:17px;font-weight:700;color:var(--g900);display:flex;align-items:center;gap:8px;margin-bottom:3px}
+.ps{font-size:12px;color:var(--g500);margin-bottom:16px}
+
+/* CARDS & LAYOUT */
+.card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px;box-shadow:var(--sh0)}
+.ct{font-size:12px;font-weight:600;color:var(--g700);margin-bottom:10px;display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.05em}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.kpi{background:var(--w);border:1px solid var(--g200);border-radius:var(--r);padding:14px;text-align:center}
+.kpi-v{font-size:24px;font-weight:700;font-family:var(--mono);margin-bottom:2px}
+.kpi-l{font-size:11px;color:var(--g500)}
+.gap{margin-bottom:14px}
+
+/* BADGES */
+.bx{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;font-family:var(--mono)}
+.bx-b{background:var(--b50);color:var(--b600);border:1px solid var(--b200)}
+.bx-g{background:var(--gr50);color:var(--gr600);border:1px solid var(--gr100)}
+.bx-a{background:var(--am50);color:var(--am600);border:1px solid var(--am100)}
+.bx-r{background:var(--rd50);color:var(--rd600);border:1px solid var(--rd100)}
+.bx-t{background:var(--tl50);color:var(--tl600);border:1px solid var(--tl100)}
+.bx-p{background:var(--pu50);color:var(--pu600);border:1px solid var(--pu100)}
+.bx-n{background:var(--g100);color:var(--g600);border:1px solid var(--g200)}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r);font-family:var(--f);font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;border:1px solid transparent}
+.btn-p{background:var(--b600);color:#fff;border-color:var(--b700)}
+.btn-p:hover{background:var(--b700)}
+.btn-p:disabled{opacity:.4;cursor:not-allowed}
+.btn-s{background:var(--w);color:var(--g700);border-color:var(--g300)}
+.btn-s:hover{background:var(--g50);border-color:var(--g400)}
+
+/* INPUTS */
+.fi{width:100%;padding:8px 12px;border:1px solid var(--g300);border-radius:var(--r);font-family:var(--f);font-size:13px;color:var(--g900);background:var(--w);outline:none;transition:border .15s}
+.fi:focus{border-color:var(--b500)}
+.fi::placeholder{color:var(--g400)}
+
+/* STATUS BAR */
+.sbar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--r);margin-bottom:14px;font-size:12px;border:1px solid;line-height:1.5}
+.sbar-a{background:var(--am50);border-color:#fde68a;color:var(--am600)}
+.sbar-g{background:var(--gr50);border-color:var(--gr100);color:var(--gr600)}
+.sbar-b{background:var(--b50);border-color:var(--b200);color:var(--b700)}
+
+/* TIMELINE */
+.tl{position:relative;padding-left:28px}
+.tl::before{content:'';position:absolute;left:7px;top:4px;bottom:4px;width:2px;background:var(--g200)}
+.tl-item{position:relative;margin-bottom:14px}
+.tl-dot{position:absolute;left:-24px;top:3px;width:12px;height:12px;border-radius:50%;border:2px solid var(--w);box-shadow:0 0 0 2px var(--g300)}
+.tl-dot.done{background:var(--gr600);box-shadow:0 0 0 2px var(--gr100)}
+.tl-dot.cur{background:var(--am600);box-shadow:0 0 0 2px var(--am100)}
+.tl-dot.fut{background:var(--g300);box-shadow:0 0 0 2px var(--g100)}
+.tl-date{font-size:10px;font-weight:600;color:var(--g400);font-family:var(--mono);margin-bottom:1px}
+.tl-t{font-size:13px;font-weight:600;color:var(--g900)}
+.tl-d{font-size:12px;color:var(--g500);margin-top:2px;line-height:1.5}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{background:var(--g50);color:var(--g600);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:9px 12px;border-bottom:2px solid var(--g200);text-align:left;white-space:nowrap}
+.tbl td{padding:9px 12px;border-bottom:1px solid var(--g100);color:var(--g700);vertical-align:top;line-height:1.5}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--g50)}
+.tbl-wrap{border:1px solid var(--g200);border-radius:var(--r);overflow:hidden}
+code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b700);padding:1px 5px;border-radius:4px}
+
+/* ACCORDION (informes) */
+.acc-item{border:1px solid var(--g200);border-radius:var(--r);overflow:hidden;margin-bottom:8px;background:var(--w)}
+.acc-q{padding:12px 16px;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:10px;transition:background .15s;user-select:none}
+.acc-q:hover{background:var(--g50)}
+.acc-q.on{color:var(--b600);background:var(--b50)}
+.acc-arr{font-size:10px;color:var(--g400);transition:transform .2s;flex-shrink:0}
+.acc-q.on .acc-arr{transform:rotate(180deg)}
+.acc-body{max-height:0;overflow:hidden;transition:max-height .35s ease,padding .2s;padding:0 16px;font-size:13px;line-height:1.75;color:var(--g600)}
+.acc-body.on{max-height:1200px;padding:14px 16px;border-top:1px solid var(--g200)}
+.acc-body strong{color:var(--g800);font-weight:600}
+
+/* FLASHCARDS */
+.fc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.fc{border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;background:var(--w);transition:all .15s;cursor:pointer}
+.fc:hover{box-shadow:var(--sh);border-color:var(--g300)}
+.fc-hd{padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--g100)}
+.fc-icon{font-size:18px}
+.fc-title{font-size:12px;font-weight:700;color:var(--g800)}
+.fc-tag{font-size:10px;font-family:var(--mono);font-weight:600;padding:2px 7px;border-radius:20px;margin-left:auto}
+.fc-body{padding:12px 14px;font-size:12px;color:var(--g600);line-height:1.65}
+.fc-body strong{color:var(--g800)}
+.fc.ue .fc-hd{background:var(--b50);border-bottom-color:var(--b100)}
+.fc.es .fc-hd{background:var(--am50);border-bottom-color:var(--am100)}
+.fc.gib .fc-hd{background:var(--tl50);border-bottom-color:var(--tl100)}
+.fc.ni .fc-hd{background:var(--pu50);border-bottom-color:var(--pu100)}
+.fc.op .fc-hd{background:var(--gr50);border-bottom-color:var(--gr100)}
+
+/* NORMATIVA CARDS */
+.nc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:8px}
+.nc{background:var(--w);border:1px solid var(--g200);border-radius:var(--r);padding:12px 14px;border-left:3px solid var(--g300)}
+.nc.ue{border-left-color:var(--b600)}
+.nc.es{border-left-color:#e85320}
+.nc.gib{border-left-color:var(--tl600)}
+.nc.ni{border-left-color:var(--am600)}
+.nc-ref{font-family:var(--mono);font-size:11px;font-weight:500;margin-bottom:4px}
+.nc.ue .nc-ref{color:var(--b600)}
+.nc.es .nc-ref{color:#e85320}
+.nc.gib .nc-ref{color:var(--tl600)}
+.nc.ni .nc-ref{color:var(--am600)}
+.nc-t{font-size:13px;font-weight:600;color:var(--g800);margin-bottom:3px}
+.nc-d{font-size:12px;color:var(--g500);line-height:1.45}
+
+/* CHAT */
+#chat-msgs{flex:1;overflow-y:auto;padding:12px;background:var(--g50);border:1px solid var(--g200);border-radius:var(--rl);min-height:280px;max-height:400px}
+#chat-msgs::-webkit-scrollbar{width:3px}
+#chat-msgs::-webkit-scrollbar-thumb{background:var(--g300);border-radius:4px}
+.msg{display:flex;gap:9px;margin-bottom:12px}
+.msg.usr{flex-direction:row-reverse}
+.av{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;margin-top:2px}
+.av.ai{background:linear-gradient(135deg,var(--b600),#6366f1);color:#fff}
+.av.usr{background:var(--g200);color:var(--g600)}
+.mw{max-width:82%}
+.ml{font-size:10px;color:var(--g400);margin-bottom:3px;font-family:var(--mono)}
+.msg.usr .ml{text-align:right}
+.bb{padding:9px 13px;border-radius:var(--rl);font-size:13px;line-height:1.65;white-space:pre-wrap;word-break:break-word}
+.bb.ai{background:var(--w);border:1px solid var(--g200);color:var(--g800)}
+.bb.usr{background:var(--b600);color:#fff}
+.tp{display:flex;align-items:center;gap:4px;padding:9px 13px;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);width:fit-content}
+.tp span{width:5px;height:5px;border-radius:50%;background:var(--g400);animation:tp 1.2s infinite;display:inline-block}
+.tp span:nth-child(2){animation-delay:.2s}
+.tp span:nth-child(3){animation-delay:.4s}
+@keyframes tp{0%,80%,100%{opacity:.3;transform:scale(.85)}40%{opacity:1;transform:scale(1)}}
+.hints{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chip{background:var(--w);border:1px solid var(--g200);color:var(--g600);padding:4px 10px;border-radius:20px;font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.chip:hover{border-color:var(--b500);color:var(--b600);background:var(--b50)}
+.crow{display:flex;gap:8px;margin-top:10px}
+.cmeta{font-size:10px;color:var(--g400);margin-top:6px;font-family:var(--mono)}
+
+/* BRIEFING */
+#brief-out{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px 18px;min-height:200px;font-size:13px;line-height:1.8;color:var(--g700);overflow-y:auto;max-height:520px}
+#brief-out::-webkit-scrollbar{width:3px}
+#brief-out::-webkit-scrollbar-thumb{background:var(--g300);border-radius:4px}
+#brief-out h3{font-size:11px;font-weight:700;color:var(--b600);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--g200)}
+#brief-out h3:first-child{margin-top:0}
+#brief-out strong{color:var(--g900);font-weight:600}
+.hist-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--g200);border-radius:var(--r);background:var(--w);cursor:pointer;transition:all .15s;margin-bottom:6px}
+.hist-item:hover{border-color:var(--b300);background:var(--b50)}
+.hist-date{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--g700);min-width:90px}
+.hist-prev{font-size:12px;color:var(--g500);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* MIND MAP */
+.mm-wrap{overflow:auto;border:1px solid var(--g200);border-radius:var(--rl);background:var(--w);padding:16px;cursor:grab}
+.mm-wrap:active{cursor:grabbing}
+
+/* DCP MAP */
+.dcp-card{border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden}
+.dcp-hd{padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+.dcp-body{padding:14px 16px;font-size:13px;color:var(--g600);line-height:1.75;border-top:1px solid var(--g200)}
+.dcp-body strong{color:var(--g800);font-weight:600}
+
+/* INFOGRAPH */
+.flow-wrap{overflow-x:auto;padding:8px 0}
+.flow{display:flex;align-items:center;gap:0;min-width:max-content}
+.flow-step{background:var(--w);border:1px solid var(--g200);border-radius:var(--r);padding:12px 14px;min-width:140px;text-align:center;position:relative}
+.flow-step.b{border-color:var(--b200);background:var(--b50)}
+.flow-step.g{border-color:var(--gr100);background:var(--gr50)}
+.flow-step.a{border-color:var(--am100);background:var(--am50)}
+.flow-step.t{border-color:var(--tl100);background:var(--tl50)}
+.flow-arrow{font-size:16px;color:var(--g400);padding:0 6px;flex-shrink:0}
+.flow-icon{font-size:20px;margin-bottom:4px}
+.flow-t{font-size:12px;font-weight:700;color:var(--g800);margin-bottom:2px}
+.flow-s{font-size:11px;color:var(--g500)}
+
+/* DARK MODE */
+:root.dark #hdr{background:linear-gradient(135deg,#0c1f52,#1e2d6e,#1f1654)!important}
+:root.dark #sb,.dark .card,.dark .fc,.dark .nc,.dark .kpi,.dark .acc-item,.dark .dcp-card{background:#0f172a!important;border-color:#1e293b!important}
+:root.dark .tbl th{background:#111827!important;border-bottom-color:#1e293b!important}
+:root.dark .tbl td{border-bottom-color:#1e293b!important}
+:root.dark .tbl tr:hover td{background:#1e293b!important}
+:root.dark .fi,.dark textarea.fi{background:#0f172a!important;border-color:#334155!important}
+:root.dark #chat-msgs,.dark #brief-out,.dark .mm-wrap{background:#0a0f1e!important;border-color:#1e293b!important}
+:root.dark .bb.ai,.dark .tp{background:#0f172a!important;border-color:#1e293b!important}
+:root.dark .chip{background:#0f172a!important;border-color:#1e293b!important}
+:root.dark .hist-item{background:#0f172a!important;border-color:#1e293b!important}
+:root.dark .ni.active{background:linear-gradient(135deg,#1d4ed8,#6366f1)!important}
+:root.dark .acc-q.on{background:#1e3a5f!important}
+:root.dark .flow-step{background:#0f172a!important;border-color:#1e293b!important}
+:root.dark .flow-step.b{background:#1e3a5f!important;border-color:#1d4ed8!important}
+:root.dark .flow-step.g{background:#042f2e!important;border-color:#0d9488!important}
+:root.dark .flow-step.a{background:#431407!important;border-color:#d97706!important}
+:root.dark .flow-step.t{background:#042f2e!important;border-color:#0d9488!important}
+@media(max-width:700px){
+  .g3,.g4{grid-template-columns:1fr 1fr}
+  .g2{grid-template-columns:1fr}
+  #sb{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);z-index:100;box-shadow:var(--shl)}
+  #sb.open{transform:translateX(0)}
+  .hburg{display:flex!important}
+}
+.hburg{display:none;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:16px;cursor:pointer;padding:4px 8px;border-radius:7px;align-items:center;justify-content:center}
+
+/* ADVISORY REPORT */
+.rpt-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.rpt-label{font-size:11px;font-weight:600;color:var(--g600);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.04em}
+.rpt-out-wrap{border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;background:var(--w)}
+.rpt-out-hd{background:var(--g50);border-bottom:1px solid var(--g200);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rpt-out-title{font-size:12px;font-weight:600;color:var(--g700)}
+.rpt-actions{display:flex;gap:6px}
+#rpt-content{padding:20px 24px;font-size:13px;line-height:1.8;color:var(--g700);white-space:pre-wrap;min-height:200px;max-height:600px;overflow-y:auto;font-family:var(--f)}
+#rpt-content::-webkit-scrollbar{width:3px}
+#rpt-content::-webkit-scrollbar-thumb{background:var(--g300);border-radius:4px}
+#rpt-content h2{font-size:14px;font-weight:700;color:var(--g900);margin:20px 0 6px;padding-bottom:5px;border-bottom:2px solid var(--g200)}
+#rpt-content h2:first-child{margin-top:0}
+#rpt-content h3{font-size:12px;font-weight:700;color:var(--b600);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 4px}
+#rpt-content strong{color:var(--g900);font-weight:600}
+#rpt-content .rpt-header-block{background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:14px;margin-bottom:16px;font-size:12px;color:var(--g600)}
+#rpt-content .rpt-header-block b{color:var(--g800)}
+.rpt-placeholder{color:var(--g400);font-style:italic;font-size:13px;padding:24px;text-align:center}
+.search-badge{display:inline-flex;align-items:center;gap:4px;background:var(--tl50);color:var(--tl600);border:1px solid var(--tl100);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;font-family:var(--mono)}
+:root.dark .rpt-out-wrap,:root.dark .rpt-out-hd{background:#0f172a!important;border-color:#1e293b!important}
+:root.dark #rpt-content{background:#0f172a!important}
+:root.dark .rpt-out-hd{background:#111827!important}
+</style>
+</head>
+<body>
+
+<!-- ═══ ACCESS GATE ═══ -->
+<div id="gate">
+  <div class="gate-icon">🔒</div>
+  <div class="gate-title">Acceso restringido</div>
+  <div class="gate-sub">Este módulo es de uso exclusivo para el administrador del sistema ALS.</div>
+  <button class="gate-btn" onclick="window.location.href='index.html'">← Volver al Portal</button>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div id="app">
+
+<!-- HEADER -->
+<div id="hdr">
+  <button class="hburg" onclick="toggleSB()">☰</button>
+  <div class="hm">GIB</div>
+  <div class="hd"></div>
+  <div><div class="ht">Gibraltar · Admin</div><div class="hs">ALS Portal · Acuerdo UE-RU · Uso exclusivo admin</div></div>
+  <div class="hsp"></div>
+  <span class="hpill" id="hdr-status">⚠ Aplic. provisional: 15/07/2026</span>
+  <div class="huser" id="hdr-user">
+    <div class="huser-av" id="huser-av">—</div>
+    <div><div class="huser-name" id="huser-name">—</div><div class="huser-role">⚡ Admin</div></div>
+  </div>
+  <button class="hibtn" onclick="toggleDark()" title="Modo oscuro">🌙</button>
+  <button class="hibtn" onclick="window.location.href='index.html'" title="Portal ALS">🏠</button>
+</div>
+
+<div id="body">
+<!-- SIDEBAR -->
+<div id="sb">
+  <div class="sb-hd">
+    <div style="font-size:11px;font-weight:600;color:var(--g500)">Módulo Gibraltar</div>
+    <div style="font-size:10px;color:var(--g400)">Administrador · Solo lectura externa</div>
+  </div>
+  <div class="sb-tag">Análisis</div>
+  <div class="ni active" onclick="goSec('dashboard',this)"><span class="ic">📊</span>Dashboard</div>
+  <div class="ni" onclick="goSec('briefing',this)"><span class="ic">📰</span>Briefing Diario</div>
+  <div class="ni" onclick="goSec('historial',this)"><span class="ic">🗂</span>Historial</div>
+  <div class="sb-tag">Conocimiento</div>
+  <div class="ni" onclick="goSec('mapa',this)"><span class="ic">🧠</span>Mapa Mental</div>
+  <div class="ni" onclick="goSec('infografia',this)"><span class="ic">📈</span>Infografías</div>
+  <div class="ni" onclick="goSec('informes',this)"><span class="ic">📑</span>Informes</div>
+  <div class="ni" onclick="goSec('tarjetas',this)"><span class="ic">🃏</span>Tarjetas</div>
+  <div class="ni" onclick="goSec('tablas',this)"><span class="ic">📋</span>Tablas de datos</div>
+  <div class="sb-tag">Operativa</div>
+  <div class="ni" onclick="goSec('viales',this)"><span class="ic">🗺</span>Viales y Accesos</div>
+  <div class="ni" onclick="goSec('operativa',this)"><span class="ic">🏛</span>Operativa DCP</div>
+  <div class="ni" onclick="goSec('chat',this)"><span class="ic">💬</span>Consulta IA</div>
+  <div class="ni" onclick="goSec('informe',this)"><span class="ic">📨</span>Informes a Clientes</div>
+  <div class="sb-ft">
+    <div class="sb-back" onclick="window.location.href='index.html'">← Volver al Portal</div>
+  </div>
+</div>
+<div id="ovl" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40" onclick="closeSB()"></div>
+
+<!-- CONTENT -->
+<div id="cnt">
+
+<!-- ████ DASHBOARD ████ -->
+<div class="sec on" id="sec-dashboard">
+  <div class="ph">📊 Dashboard Gibraltar <span class="bx bx-b">ADMIN</span></div>
+  <div class="ps">Estado del Acuerdo UE-RU · Indicadores clave · Alertas activas</div>
+
+  <div class="sbar sbar-a gap">⚠ <strong>Período transitorio activo.</strong> Gibraltar = territorio tercero hasta decisión del Consejo de Cooperación UE-RU. Aplicación provisional prevista <strong>15/07/2026</strong>. Adaptar garantías de tránsito antes de esa fecha (NI 12/2026).</div>
+
+  <div class="g4 gap">
+    <div class="kpi"><div class="kpi-v" style="color:var(--am600)">79</div><div class="kpi-l">Días para 15/07/2026</div></div>
+    <div class="kpi"><div class="kpi-v" style="color:var(--tl600)">3</div><div class="kpi-l">DCPs designadas</div></div>
+    <div class="kpi"><div class="kpi-v" style="color:var(--b600)">6d</div><div class="kpi-l">Plazo máx. T1/T2GI</div></div>
+    <div class="kpi"><div class="kpi-v" style="color:var(--rd600)">0</div><div class="kpi-l">Vía aérea admitida</div></div>
+  </div>
+
+  <div class="g2 gap">
+    <div class="card">
+      <div class="ct">📅 Hitos del Acuerdo</div>
+      <div class="tl">
+        <div class="tl-item"><div class="tl-dot done"></div><div class="tl-date">DIC 2025</div><div class="tl-t">Texto legal cerrado</div><div class="tl-d">Tras +4 años de negociaciones. 366 arts., 43 anexos.</div></div>
+        <div class="tl-item"><div class="tl-dot done"></div><div class="tl-date">01 ABR 2026</div><div class="tl-t">Aprobado por el Consejo UE</div><div class="tl-d">Luz verde de los 27 Estados Miembros (COREPER).</div></div>
+        <div class="tl-item"><div class="tl-dot done"></div><div class="tl-date">13 ABR 2026</div><div class="tl-t">NI 12/2026 — Garantías</div><div class="tl-d">AEAT publica nota sobre adaptación de garantías de tránsito.</div></div>
+        <div class="tl-item"><div class="tl-dot cur"></div><div class="tl-date">18 MAY 2026</div><div class="tl-t">Cierre IE615V4 (AES)</div><div class="tl-d">Web service exportación v4 cierra. Opera IE615V5.</div></div>
+        <div class="tl-item"><div class="tl-dot fut"></div><div class="tl-date">15 JUL 2026</div><div class="tl-t">Aplicación provisional</div><div class="tl-d">Inicio operativa T1GI, T2GI, H1. Eliminación controles en La Verja.</div></div>
+        <div class="tl-item"><div class="tl-dot fut"></div><div class="tl-date">PENDIENTE</div><div class="tl-t">Período definitivo</div><div class="tl-d">Gibraltar deja de ser territorio tercero. Requiere decisión Consejo de Cooperación.</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ct">⚡ Alertas operativas</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="sbar sbar-a" style="margin:0;font-size:12px">⚠ <strong>NI 12/2026:</strong> Actualizar garantías de tránsito antes del 15/07/2026 para incluir Gibraltar + datos fiador.</div>
+        <div class="sbar sbar-a" style="margin:0;font-size:12px">⚠ <strong>IE615V4:</strong> Cierre definitivo 18/05/2026 09:00h. Migrar a IE615V5.</div>
+        <div class="sbar sbar-b" style="margin:0;font-size:12px">ℹ <strong>Tabaco:</strong> Entrada en vigor definitiva condicionada a sistema de trazabilidad equivalente UE en Gibraltar.</div>
+        <div class="sbar sbar-b" style="margin:0;font-size:12px">ℹ <strong>EDIFACT v2.12:</strong> Nueva guía publicada AEAT con códigos para manifiestos de carga Gibraltar.</div>
+        <div class="sbar sbar-g" style="margin:0;font-size:12px">✓ <strong>Schengen:</strong> Controles duales en puerto/aeropuerto Gibraltar. Sin controles en La Verja desde 15/07/2026.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card gap">
+    <div class="ct">📐 Estado por declaración</div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Declaración</th><th>Tipo</th><th>Mercancía</th><th>DCP requerida</th><th>Garantía</th><th>Plazo</th><th>Estado</th></tr></thead>
+      <tbody>
+        <tr><td><code>T2GI</code></td><td>Tránsito especial UE</td><td>Libre circulación UE → GIB</td><td>La Línea / Algeciras</td><td>IVA + IIEE</td><td>6 días</td><td><span class="bx bx-a">Activo 15/07/26</span></td></tr>
+        <tr><td><code>T1GI</code></td><td>Tránsito terceros países</td><td>3ºs países → GIB</td><td>La Línea</td><td>IVA + IIEE</td><td>6 días</td><td><span class="bx bx-a">Activo 15/07/26</span></td></tr>
+        <tr><td><code>H1</code></td><td>Importación en DCP</td><td>3ºs países en DCP para GIB</td><td>La Línea</td><td>❌ Pago previo</td><td>—</td><td><span class="bx bx-a">Activo 15/07/26</span></td></tr>
+        <tr><td><code>AES + T2GI</code></td><td>Exportación + tránsito</td><td>Libre circulación</td><td>DCP (salida)</td><td>IVA + IIEE</td><td>6 días</td><td><span class="bx bx-a">Activo 15/07/26</span></td></tr>
+        <tr><td><code>ENS</code></td><td>Decl. sumaria entrada</td><td>Procedente de GIB</td><td>La Línea</td><td>—</td><td>—</td><td><span class="bx bx-g">Ya activo</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ████ BRIEFING ████ -->
+<div class="sec" id="sec-briefing">
+  <div class="ph">📰 Briefing Diario <span class="bx bx-t">IA + Web search</span></div>
+  <div class="ps">Análisis automático diario · AEAT · Comisión Europea · Acuerdo Gibraltar · Operativa La Línea/Algeciras</div>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px">
+    <div>
+      <div style="font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Último análisis</div>
+      <div style="font-size:12px;color:var(--g600);font-family:var(--mono)" id="blbl">—</div>
+    </div>
+    <button class="btn btn-p" id="bbtn" onclick="runBriefing()">Actualizar ahora →</button>
+  </div>
+  <div class="card" style="padding:0;flex:1">
+    <div id="brief-out" style="border:none;border-radius:var(--rl)">
+      <p style="color:var(--g400);font-style:italic;font-size:13px">Pulsa "Actualizar ahora" para el análisis de hoy.<br><br>
+      <strong style="color:var(--g600)">Temas analizados automáticamente:</strong><br>
+      → Noticias de entrada en vigor del Acuerdo UE-RU Gibraltar<br>
+      → Condiciones del período provisional y definitivo<br>
+      → Viales de acceso y salida (La Verja, rutas terrestres/marítimas)<br>
+      → Recinto de aduanas La Línea de la Concepción<br>
+      → Competencias del Resguardo Fiscal (AEAT/GC)<br>
+      → Competencias del Oficial de Aduanas<br>
+      → Competencias del Administrador de Aduanas<br>
+      → Horarios de despacho de mercancías<br>
+      → AEAT: notas informativas, NCTS/AES/EDIFACT<br>
+      → Comisión Europea: normativa y comunicados<br>
+      → ATEIA Campo de Gibraltar: sector transitario<br><br>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--g300)">Configura auto-ejecución a las 08:00h vía Supabase Edge Function + cron</span></p>
+    </div>
+  </div>
+</div>
+
+<!-- ████ HISTORIAL ████ -->
+<div class="sec" id="sec-historial">
+  <div class="ph">🗂 Historial de Briefings</div>
+  <div class="ps">Análisis guardados en Supabase · tabla <code>cw_briefings</code></div>
+  <div id="hist-wrap"><div style="text-align:center;padding:40px;color:var(--g400)">Cargando...</div></div>
+</div>
+
+<!-- ████ MAPA MENTAL ████ -->
+<div class="sec" id="sec-mapa">
+  <div class="ph">🧠 Mapa Mental</div>
+  <div class="ps">Estructura completa del Acuerdo UE-RU sobre Gibraltar · Período transitorio</div>
+  <div class="mm-wrap gap">
+    <svg viewBox="0 0 860 540" style="width:100%;min-width:720px;font-family:var(--f)">
+      <!-- CONNECTING LINES -->
+      <g stroke="#e2e8f0" stroke-width="1.5" fill="none">
+        <!-- Center to main nodes -->
+        <line x1="430" y1="270" x2="430" y2="92"/><line x1="430" y1="270" x2="620" y2="132"/>
+        <line x1="430" y1="270" x2="720" y2="270"/><line x1="430" y1="270" x2="620" y2="408"/>
+        <line x1="430" y1="270" x2="430" y2="448"/><line x1="430" y1="270" x2="240" y2="408"/>
+        <line x1="430" y1="270" x2="140" y2="270"/><line x1="430" y1="270" x2="240" y2="132"/>
+        <!-- Plazos leaves -->
+        <line x1="430" y1="92" x2="350" y2="34"/><line x1="430" y1="92" x2="510" y2="34"/>
+        <!-- DCPs leaves -->
+        <line x1="620" y1="132" x2="660" y2="60"/><line x1="620" y1="132" x2="740" y2="90"/><line x1="620" y1="132" x2="780" y2="155"/>
+        <!-- Declaraciones leaves -->
+        <line x1="720" y1="270" x2="800" y2="210"/><line x1="720" y1="270" x2="820" y2="270"/><line x1="720" y1="270" x2="800" y2="330"/>
+        <!-- Garantías leaves -->
+        <line x1="620" y1="408" x2="700" y2="450"/><line x1="620" y1="408" x2="720" y2="408"/>
+        <!-- Fiscalidad leaves -->
+        <line x1="430" y1="448" x2="370" y2="510"/><line x1="430" y1="448" x2="490" y2="510"/>
+        <!-- Personas leaves -->
+        <line x1="240" y1="408" x2="160" y2="450"/><line x1="240" y1="408" x2="200" y2="490"/>
+        <!-- Unión Aduana leaves -->
+        <line x1="140" y1="270" x2="50" y2="220"/><line x1="140" y1="270" x2="48" y2="270"/><line x1="140" y1="270" x2="50" y2="320"/>
+        <!-- Operativa leaves -->
+        <line x1="240" y1="132" x2="160" y2="70"/><line x1="240" y1="132" x2="120" y2="120"/><line x1="240" y1="132" x2="140" y2="175"/>
+      </g>
+      <!-- CENTER NODE -->
+      <rect x="346" y="238" width="168" height="64" rx="12" fill="#1e3a8a"/>
+      <text x="430" y="264" text-anchor="middle" fill="white" font-size="12" font-weight="700">Acuerdo UE-RU</text>
+      <text x="430" y="282" text-anchor="middle" fill="rgba(255,255,255,.8)" font-size="10">Gibraltar · Brexit</text>
+      <!-- PLAZOS -->
+      <rect x="376" y="66" width="108" height="30" rx="8" fill="#dbeafe"/>
+      <text x="430" y="85" text-anchor="middle" fill="#1d4ed8" font-size="11" font-weight="600">⏱ Plazos</text>
+      <rect x="300" y="14" width="100" height="26" rx="6" fill="#eff6ff"/>
+      <text x="350" y="31" text-anchor="middle" fill="#2563eb" font-size="10">15/07/2026</text>
+      <rect x="460" y="14" width="100" height="26" rx="6" fill="#eff6ff"/>
+      <text x="510" y="31" text-anchor="middle" fill="#2563eb" font-size="10">6d max T1/T2GI</text>
+      <!-- DCPs -->
+      <rect x="566" y="108" width="108" height="30" rx="8" fill="#ccfbf1"/>
+      <text x="620" y="127" text-anchor="middle" fill="#0d9488" font-size="11" font-weight="600">🏛 DCPs</text>
+      <rect x="622" y="38" width="76" height="26" rx="6" fill="#f0fdfa"/>
+      <text x="660" y="55" text-anchor="middle" fill="#0d9488" font-size="10">La Línea</text>
+      <rect x="704" y="68" width="72" height="26" rx="6" fill="#f0fdfa"/>
+      <text x="740" y="85" text-anchor="middle" fill="#0d9488" font-size="10">Algeciras</text>
+      <rect x="742" y="138" width="72" height="26" rx="6" fill="#f0fdfa"/>
+      <text x="778" y="155" text-anchor="middle" fill="#0d9488" font-size="10">Sagunto</text>
+      <!-- DECLARACIONES -->
+      <rect x="666" y="246" width="108" height="30" rx="8" fill="#e9d5ff"/>
+      <text x="720" y="265" text-anchor="middle" fill="#7c3aed" font-size="11" font-weight="600">📄 Decl.</text>
+      <rect x="762" y="188" width="56" height="26" rx="6" fill="#faf5ff"/>
+      <text x="790" y="205" text-anchor="middle" fill="#7c3aed" font-size="10">T2GI</text>
+      <rect x="782" y="252" width="56" height="26" rx="6" fill="#faf5ff"/>
+      <text x="810" y="269" text-anchor="middle" fill="#7c3aed" font-size="10">T1GI</text>
+      <rect x="762" y="316" width="56" height="26" rx="6" fill="#faf5ff"/>
+      <text x="790" y="333" text-anchor="middle" fill="#7c3aed" font-size="10">H1</text>
+      <!-- GARANTÍAS -->
+      <rect x="566" y="384" width="108" height="30" rx="8" fill="#fef3c7"/>
+      <text x="620" y="403" text-anchor="middle" fill="#b45309" font-size="11" font-weight="600">🛡 Garantías</text>
+      <rect x="662" y="434" width="76" height="26" rx="6" fill="#fffbeb"/>
+      <text x="700" y="451" text-anchor="middle" fill="#b45309" font-size="10">NI 12/2026</text>
+      <rect x="682" y="390" width="76" height="26" rx="6" fill="#fffbeb"/>
+      <text x="720" y="407" text-anchor="middle" fill="#b45309" font-size="10">IVA + IIEE</text>
+      <!-- FISCALIDAD -->
+      <rect x="376" y="424" width="108" height="30" rx="8" fill="#fce7f3"/>
+      <text x="430" y="443" text-anchor="middle" fill="#be185d" font-size="11" font-weight="600">💶 Fiscal</text>
+      <rect x="322" y="498" width="96" height="26" rx="6" fill="#fdf2f8"/>
+      <text x="370" y="515" text-anchor="middle" fill="#be185d" font-size="10">Transaction tax</text>
+      <rect x="442" y="498" width="96" height="26" rx="6" fill="#fdf2f8"/>
+      <text x="490" y="515" text-anchor="middle" fill="#be185d" font-size="10">Sin IVA/IIEE EU</text>
+      <!-- PERSONAS -->
+      <rect x="186" y="384" width="108" height="30" rx="8" fill="#dcfce7"/>
+      <text x="240" y="403" text-anchor="middle" fill="#15803d" font-size="11" font-weight="600">👥 Personas</text>
+      <rect x="112" y="432" width="96" height="26" rx="6" fill="#f0fdf4"/>
+      <text x="160" y="449" text-anchor="middle" fill="#15803d" font-size="10">No controles Verja</text>
+      <rect x="128" y="476" width="96" height="26" rx="6" fill="#f0fdf4"/>
+      <text x="176" y="493" text-anchor="middle" fill="#15803d" font-size="10">Ctrl. puerto/aerop.</text>
+      <!-- UNIÓN ADUANERA -->
+      <rect x="86" y="246" width="108" height="30" rx="8" fill="#bfdbfe"/>
+      <text x="140" y="265" text-anchor="middle" fill="#1d4ed8" font-size="11" font-weight="600">🏛 Unión Aduana</text>
+      <rect x="2" y="202" width="96" height="26" rx="6" fill="#eff6ff"/>
+      <text x="50" y="219" text-anchor="middle" fill="#2563eb" font-size="10">Sin derechos</text>
+      <rect x="0" y="252" width="96" height="26" rx="6" fill="#eff6ff"/>
+      <text x="48" y="269" text-anchor="middle" fill="#2563eb" font-size="10">Con formalidades</text>
+      <rect x="2" y="302" width="96" height="26" rx="6" fill="#fee2e2"/>
+      <text x="50" y="319" text-anchor="middle" fill="#dc2626" font-size="10">GIB = territ. 3º</text>
+      <!-- OPERATIVA -->
+      <rect x="186" y="108" width="108" height="30" rx="8" fill="#fed7aa"/>
+      <text x="240" y="127" text-anchor="middle" fill="#c2410c" font-size="11" font-weight="600">⚙ Operativa</text>
+      <rect x="112" y="50" width="96" height="26" rx="6" fill="#fff7ed"/>
+      <text x="160" y="67" text-anchor="middle" fill="#c2410c" font-size="10">Resguardo Fiscal</text>
+      <rect x="66" y="102" width="96" height="26" rx="6" fill="#fff7ed"/>
+      <text x="114" y="119" text-anchor="middle" fill="#c2410c" font-size="10">Oficial Aduanas</text>
+      <rect x="86" y="156" width="96" height="26" rx="6" fill="#fff7ed"/>
+      <text x="134" y="173" text-anchor="middle" fill="#c2410c" font-size="10">Admin. Aduanas</text>
+    </svg>
+  </div>
+  <p style="font-size:11px;color:var(--g400);text-align:center;font-family:var(--mono)">Mapa mental del Acuerdo UE-RU sobre Gibraltar · Período transitorio vigente desde 15/07/2026</p>
+</div>
+
+<!-- ████ INFOGRAFÍAS ████ -->
+<div class="sec" id="sec-infografia">
+  <div class="ph">📈 Infografías</div>
+  <div class="ps">Flujos operativos visualizados · T2GI · H1+T1GI · Estructura DCPs</div>
+
+  <div class="card gap">
+    <div class="ct">🔄 Flujo operativo T2GI — Mercancías UE (libre circulación) → Gibraltar</div>
+    <div class="flow-wrap"><div class="flow">
+      <div class="flow-step b"><div class="flow-icon">📦</div><div class="flow-t">Mercancía UE</div><div class="flow-s">Libre circulación<br>Arancel satisfecho</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="flow-icon">📋</div><div class="flow-t">Decl. Exportación</div><div class="flow-s">AES en la DCP<br>La Línea o Algeciras</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step a"><div class="flow-icon">🔒</div><div class="flow-t">Levante cond.</div><div class="flow-s">Solo si se presenta<br>el T2GI en NCTS</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="flow-icon">🚛</div><div class="flow-t">T2GI en NCTS</div><div class="flow-s">Codes: 7020, 7022<br>7024 obligatorios</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step t"><div class="flow-icon">🏛</div><div class="flow-t">Gibraltar recibe</div><div class="flow-s">3 mensajes: llegada<br>control · destino</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step g"><div class="flow-icon">✅</div><div class="flow-t">Ultimación</div><div class="flow-s">Libera garantía<br>AES → Cert. salida</div></div>
+    </div></div>
+    <p style="font-size:11px;color:var(--rd600);margin-top:10px">⚠ Si no se ultima en plazo sin prueba válida → DCP liquida IVA + IIEE al titular del régimen (art. Anexo 19)</p>
+  </div>
+
+  <div class="card gap">
+    <div class="ct">🔄 Flujo H1 + T1GI — Mercancías de terceros países → Gibraltar</div>
+    <div class="flow-wrap"><div class="flow">
+      <div class="flow-step"><div class="flow-icon">🌍</div><div class="flow-t">Mercan. 3º País</div><div class="flow-s">Llega a DCP<br>La Línea</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step a"><div class="flow-icon">💳</div><div class="flow-t">H1 + Pago</div><div class="flow-s">Arancel previo<br>NO garantías</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step b"><div class="flow-icon">📊</div><div class="flow-t">DCP liquida</div><div class="flow-s">Contabilidad sep.<br>No rec. propios UE</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="flow-icon">📋</div><div class="flow-t">T1GI en NCTS</div><div class="flow-s">Codes: 7020, 7022<br>7024, <strong>1247</strong></div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step t"><div class="flow-icon">🏛</div><div class="flow-t">GIB recibe</div><div class="flow-s">Transaction tax<br>+ IIEE GIB</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step g"><div class="flow-icon">✅</div><div class="flow-t">Ultimación</div><div class="flow-s">Libera garantía<br>T1GI</div></div>
+    </div></div>
+    <p style="font-size:11px;color:var(--b700);margin-top:10px">ℹ Code 1247 imprescindible: los derechos de arancel del H1 incrementan la base imponible del transaction tax y los IIEE gibraltareños</p>
+  </div>
+
+  <div class="card gap">
+    <div class="ct">🛢 Flujo Avituallamiento — Carburantes IIEE a buque (art. 9 LIIEE)</div>
+    <div class="flow-wrap"><div class="flow">
+      <div class="flow-step b"><div class="flow-icon">🏭</div><div class="flow-t">Depósito fiscal</div><div class="flow-s">Régimen suspensivo<br>IIEE</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="flow-icon">📄</div><div class="flow-t">e-DA</div><div class="flow-s">Doc. acompañ.<br>electrónico</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step a"><div class="flow-icon">⚓</div><div class="flow-t">Puerto Algeciras</div><div class="flow-s">Avituallamiento<br>al buque</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="flow-icon">🧾</div><div class="flow-t">Decl. naviero</div><div class="flow-s">Navegación<br>internacional</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step g"><div class="flow-icon">✅</div><div class="flow-t">Exención IIEE</div><div class="flow-s">Art. 9 LIIEE<br>Sin devengo</div></div>
+    </div></div>
+    <p style="font-size:11px;color:var(--am600);margin-top:10px">⚠ La exención art. 9 LIIEE NO aplica a buques en navegación nacional. Verificar siempre el destino del buque antes de la entrega.</p>
+  </div>
+</div>
+
+<!-- ████ INFORMES ████ -->
+<div class="sec" id="sec-informes">
+  <div class="ph">📑 Informes Técnicos</div>
+  <div class="ps">Análisis detallados por materia · Acuerdo Gibraltar · Operativa Aduanera</div>
+  <div id="informes-list"></div>
+</div>
+
+<!-- ████ TARJETAS ████ -->
+<div class="sec" id="sec-tarjetas">
+  <div class="ph">🃏 Tarjetas de Referencia</div>
+  <div class="ps">Conceptos clave · Normativa esencial · Referencia rápida operativa</div>
+  <div class="fc-grid" id="fc-grid"></div>
+</div>
+
+<!-- ████ TABLAS ████ -->
+<div class="sec" id="sec-tablas">
+  <div class="ph">📋 Tablas de Datos</div>
+  <div class="ps">Datos estructurados · DCPs · Declaraciones · Funcionarios · Horarios</div>
+
+  <div class="card gap">
+    <div class="ct">🏛 Aduanas Designadas (DCPs) — Comparativa</div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Aduana</th><th>Categoría</th><th>Vía autorizada</th><th>Decl. admitidas</th><th>Condiciones especiales</th></tr></thead>
+      <tbody>
+        <tr><td><strong>La Línea de la Concepción</strong></td><td><span class="bx bx-b">Principal</span></td><td>Terrestre (regla general)</td><td>T2GI, T1GI, H1, AES, avituallamiento</td><td>Ninguna. Opera toda la operativa terrestre estándar.</td></tr>
+        <tr><td><strong>Algeciras</strong></td><td><span class="bx bx-t">Secundaria Marítima</span></td><td>Marítima (condicionada)</td><td>T2GI marítimo, avituallamiento telemático</td><td>T2GI solo si: embarcación directa a GIB + carga 100% + confirmación ≤ 2h (art. 4 Anexo 19)</td></tr>
+        <tr><td><strong>Sagunto</strong></td><td><span class="bx bx-n">Secundaria</span></td><td>Terrestre</td><td>Operativa general</td><td>Relevante para operaciones procedentes del Levante español.</td></tr>
+        <tr><td><strike>Vía aérea</strike></td><td><span class="bx bx-r">EXCLUIDA</span></td><td>❌ No permitida</td><td>Solo avituallamiento buques/aeronaves</td><td>Expresamente excluida durante período transitorio.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card gap">
+    <div class="ct">📄 Declaraciones Gibraltar — Tabla comparativa</div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Código</th><th>Nombre</th><th>Mercancía</th><th>Sistema</th><th>Codes obligat.</th><th>Garantía</th><th>Plazo</th></tr></thead>
+      <tbody>
+        <tr><td><code>T2GI</code></td><td>Tránsito UE → GIB</td><td>Libre circulación UE</td><td>NCTS + AES</td><td>7020, 7022, 7024</td><td>IVA + IIEE</td><td>6 días</td></tr>
+        <tr><td><code>T1GI</code></td><td>Tránsito 3ºs → GIB</td><td>Terceros países</td><td>NCTS</td><td>7020, 7022, 7024, 1247</td><td>IVA + IIEE</td><td>6 días</td></tr>
+        <tr><td><code>H1</code></td><td>Import. en DCP</td><td>Terceros países (en DCP)</td><td>DUA/Import</td><td>—</td><td>❌ Pago previo</td><td>Levante previo pago</td></tr>
+        <tr><td><code>AES+T2GI</code></td><td>Export. + tránsito</td><td>Libre circulación</td><td>AES + NCTS</td><td>7020, 7022, 7024</td><td>IVA + IIEE</td><td>6 días</td></tr>
+        <tr><td><code>ENS</code></td><td>Decl. sumaria entrada</td><td>Procedente de GIB</td><td>ICS2</td><td>—</td><td>—</td><td>Previo a entrada</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card gap">
+    <div class="ct">⏰ Horarios de despacho de mercancías — Campo de Gibraltar</div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Aduana / Punto</th><th>Lunes–Viernes</th><th>Sábados</th><th>Domingos/Festivos</th><th>Observaciones</th></tr></thead>
+      <tbody>
+        <tr><td><strong>La Línea · Despacho general</strong></td><td>08:00 – 20:00</td><td>08:00 – 14:00</td><td>Previa solicitud</td><td>Despacho fuera de horario: solicitar con 24h antelación. Posibles tasas por servicios fuera de jornada.</td></tr>
+        <tr><td><strong>Algeciras · Puerto</strong></td><td>24 horas</td><td>24 horas</td><td>24 horas</td><td>Puerto activo 24/7. Despacho IIEE/avituallamiento: coordinación previa con depósito fiscal.</td></tr>
+        <tr><td><strong>La Verja · Paso fronterizo</strong></td><td>00:00 – 24:00</td><td>00:00 – 24:00</td><td>00:00 – 24:00</td><td>Actualmente operativo 24h. Desde 15/07/2026: sin controles físicos en La Verja.</td></tr>
+        <tr><td><strong>Resguardo Fiscal</strong></td><td>Servicio continuo</td><td>Servicio continuo</td><td>Servicio continuo</td><td>Vigilancia permanente zona fronteriza. Intervención en contrabando/fraude fiscal.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card gap">
+    <div class="ct">👮 Competencias por cargo — Operativa DCP La Línea/Algeciras</div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Cargo</th><th>Cuerpo</th><th>Competencias principales</th><th>Base legal</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Resguardo Fiscal</strong></td><td>Guardia Civil · Unidad Fiscal y de Fronteras</td><td>Vigilancia zona fronteriza; aprehensión mercancías; control contrabando; inspección vehicular en La Verja; colaboración AEAT en represión fraude fiscal</td><td>Ley Orgánica 12/1995 Represión Contrabando; Ley Orgánica 2/1986 FFCCSS; convenios AEAT-GC</td></tr>
+        <tr><td><strong>Oficial de Aduanas</strong> (Técnico Hacienda / Inspector)</td><td>AEAT · Departamento Aduanas e IIEE</td><td>Despacho de mercancías; levante; inspección documental y física DUAs; autorización regímenes aduaneros; notificaciones y requerimientos; control T1/T2GI; autorización AES</td><td>CAU 952/2013; RE 2015/2447; Ley 58/2003 LGT; normativa interna AEAT</td></tr>
+        <tr><td><strong>Administrador de Aduanas</strong></td><td>AEAT · Jefe de la Administración Aduanas e IIEE</td><td>Autorizar regímenes especiales y garantías; resolución recursos; concesión AEO; coordinación con Delegación Central; decisiones vinculantes arancelarias; supervisión operativa DCP</td><td>CAU art. 22-28 (decisiones); LPACAP 39/2015; LGT; normativa OEA</td></tr>
+        <tr><td><strong>Inspector de IIEE</strong></td><td>AEAT · Departamento IIEE</td><td>Control depósitos fiscales; verificación e-DA; inspección avituallamiento; control carburantes; verificación exenciones art. 9 LIIEE; actas de liquidación IIEE</td><td>Ley 38/1992 LIIEE; RD 1165/1995 RIIEE; instrucciones internas AEAT</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ████ VIALES ████ -->
+<div class="sec" id="sec-viales">
+  <div class="ph">🗺 Viales y Accesos</div>
+  <div class="ps">Rutas de entrada y salida · La Verja · Puerto · Cambios post-Acuerdo</div>
+  <div id="viales-acc"></div>
+</div>
+
+<!-- ████ OPERATIVA DCP ████ -->
+<div class="sec" id="sec-operativa">
+  <div class="ph">🏛 Operativa DCP</div>
+  <div class="ps">Funcionarios · Competencias · Procedimientos · Recinto La Línea</div>
+  <div id="op-acc"></div>
+</div>
+
+<!-- ████ CHAT ████ -->
+<div class="sec" id="sec-chat">
+  <div class="ph">💬 Consulta IA</div>
+  <div class="ps">Representante Aduanero Experto · CAU · IIEE · IVA · Acuerdo Gibraltar</div>
+  <div class="hints" id="hints"></div>
+  <div id="chat-msgs"></div>
+  <div class="crow">
+    <textarea id="cinput" class="fi" rows="2" style="flex:1" placeholder="Consulta aduanera técnica... (Enter enviar, Shift+Enter nueva línea)" onkeydown="handleKey(event)"></textarea>
+    <button class="btn btn-p" id="csend" onclick="sendChat()" style="align-self:flex-end;padding:9px 16px">Enviar →</button>
+  </div>
+  <div class="cmeta">CAU 952/2013 · RD 2446 · RE 2447 · LIVA 37/1992 · LIIEE 38/1992 · Acuerdo Gibraltar · NI 08/2026 · NI 12/2026</div>
+</div>
+
+<!-- ████ INFORME A CLIENTE ████ -->
+<div class="sec" id="sec-informe">
+  <div class="ph">📨 Informe de Asesoramiento <span class="bx bx-t">IA + búsqueda web</span></div>
+  <div class="ps">Genera informes de asesoramiento aduanero especializados · Listos para copiar o enviar por email al cliente</div>
+
+  <div class="sbar sbar-b gap">🔍 La IA busca información actualizada en tiempo real antes de redactar el informe. Si no encuentra datos suficientemente fiables, lo indica explícitamente en lugar de inventar. Siempre se citan las fuentes normativas y se verifica la vigencia.</div>
+
+  <div class="g2 gap">
+    <div class="card">
+      <div class="ct">👤 Datos del cliente</div>
+      <div class="rpt-form-grid">
+        <div><label class="rpt-label">Nombre / Razón social</label><input type="text" id="rpt-cliente" class="fi" placeholder="Empresa S.L."></div>
+        <div><label class="rpt-label">Email cliente</label><input type="email" id="rpt-email" class="fi" placeholder="contacto@empresa.com"></div>
+        <div><label class="rpt-label">CIF / NIF</label><input type="text" id="rpt-cif" class="fi" placeholder="B12345678"></div>
+        <div><label class="rpt-label">Persona de contacto</label><input type="text" id="rpt-contacto" class="fi" placeholder="Nombre y apellidos"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ct">📋 Datos de la consulta</div>
+      <div style="margin-bottom:10px"><label class="rpt-label">Tipo de operación</label>
+        <select id="rpt-tipo" class="fi">
+          <option value="">Seleccionar tipo...</option>
+          <option>Exportación mercancías UE → Gibraltar</option>
+          <option>Importación mercancías Gibraltar → UE</option>
+          <option>Tránsito mercancías a través de Gibraltar</option>
+          <option>Avituallamiento buques · Provisiones</option>
+          <option>Carburantes IIEE · Avituallamiento</option>
+          <option>Declaración T2GI</option>
+          <option>Declaración T1GI + H1</option>
+          <option>Garantías aduaneras · NI 12/2026</option>
+          <option>Régimen de perfeccionamiento activo</option>
+          <option>Clasificación arancelaria TARIC</option>
+          <option>Origen de mercancías</option>
+          <option>Recursos y reclamaciones aduaneras</option>
+          <option>Otro (describir en consulta)</option>
+        </select>
+      </div>
+      <div><label class="rpt-label">Número de referencia interna (opcional)</label><input type="text" id="rpt-ref" class="fi" placeholder="EXP-2026-XXX"></div>
+    </div>
+  </div>
+
+  <div class="card gap">
+    <div class="ct">📝 Descripción detallada de la consulta</div>
+    <textarea id="rpt-consulta" class="fi" rows="5" style="font-size:13px" placeholder="Describe aquí la situación concreta del cliente:&#10;- Tipo de mercancía (descripción, posición TARIC si se conoce)&#10;- Origen y destino&#10;- Régimen aduanero previsto&#10;- Dudas o problemas específicos que plantea&#10;- Cualquier contexto relevante (plazos, importes, documentación disponible...)"></textarea>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;gap:10px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="search-badge">🔍 Búsqueda web activa</span>
+        <span style="font-size:11px;color:var(--g400)">La IA busca normativa actualizada antes de redactar</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-s" onclick="clearReport()">Limpiar</button>
+        <button class="btn btn-p" id="rpt-btn" onclick="generateReport()">Generar informe →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="rpt-out-wrap gap" id="rpt-wrap">
+    <div class="rpt-out-hd">
+      <div>
+        <div class="rpt-out-title">Informe de Asesoramiento Aduanero</div>
+        <div id="rpt-ref-display" style="font-size:11px;color:var(--g400);font-family:var(--mono)">—</div>
+      </div>
+      <div class="rpt-actions">
+        <button class="btn btn-s" id="rpt-copy-btn" onclick="copyReport()" style="font-size:12px;padding:5px 12px" disabled>📋 Copiar</button>
+        <button class="btn btn-s" id="rpt-email-btn" onclick="emailReport()" style="font-size:12px;padding:5px 12px" disabled>✉ Email</button>
+        <button class="btn btn-s" id="rpt-print-btn" onclick="printReport()" style="font-size:12px;padding:5px 12px" disabled>🖨 Imprimir</button>
+      </div>
+    </div>
+    <div id="rpt-content">
+      <div class="rpt-placeholder">El informe generado aparecerá aquí.<br><br>Rellena los datos del cliente y la consulta, luego pulsa "Generar informe".<br>La IA buscará información actualizada antes de redactar.</div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /cnt -->
+</div><!-- /body -->
+</div><!-- /app -->
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
+const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
+const sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
+
+// ═══ ACCESS CONTROL ═══
+async function checkAccess(){
+  let cu=null;
+  try{ cu=JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null'); }catch(e){}
+  if(!cu||cu.rol!=='admin'){
+    document.getElementById('gate').style.display='flex';
+    return false;
+  }
+  // Verify still active in Supabase
+  try{
+    const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+cu.id+'&select=id,rol,activo&limit=1',{
+      headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}
+    });
+    const d=await r.json();
+    if(!d?.[0]?.activo||d[0].rol!=='admin'){
+      document.getElementById('gate').style.display='flex';
+      return false;
+    }
+  }catch(e){ /* network error — allow offline use if cu.rol===admin */ }
+  // Show app
+  document.getElementById('gate').style.display='none';
+  document.getElementById('app').style.display='flex';
+  // Set user info in header
+  const initials=(cu.nombre||'AD').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('huser-av').textContent=initials;
+  document.getElementById('huser-name').textContent=(cu.nombre||cu.email||'Admin').split(' ')[0];
+  // Days counter
+  const diff=Math.ceil((new Date('2026-07-15')-new Date())/(1000*60*60*24));
+  document.querySelector('.kpi-v').textContent=diff>0?diff:'0';
+  if(diff<=0) document.getElementById('hdr-status').className='hpill ok';
+  return true;
+}
+
+// ═══ DARK MODE ═══
+function toggleDark(){
+  document.documentElement.classList.toggle('dark');
+  localStorage.setItem('als_dark',document.documentElement.classList.contains('dark')?'1':'0');
+}
+if(localStorage.getItem('als_dark')==='1') document.documentElement.classList.add('dark');
+
+// ═══ SIDEBAR ═══
+function toggleSB(){
+  document.getElementById('sb').classList.toggle('open');
+  document.getElementById('ovl').style.display=document.getElementById('sb').classList.contains('open')?'block':'none';
+}
+function closeSB(){
+  document.getElementById('sb').classList.remove('open');
+  document.getElementById('ovl').style.display='none';
+}
+function goSec(id,el){
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
+  document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
+  document.getElementById('sec-'+id).classList.add('on');
+  if(el) el.classList.add('active');
+  closeSB();
+  if(id==='historial') loadHistorial();
+}
+
+// ═══ INFORMES DATA ═══
+const INFORMES=[
+  {icon:'📜',title:'Estado y condiciones del Acuerdo UE-RU',tag:'GIB',
+    body:`<strong>Acuerdo UE-RU relativo a Gibraltar</strong><br><br>
+El Acuerdo fue alcanzado políticamente el 11 de junio de 2025 y el texto legal fue cerrado en diciembre de 2025. Fue aprobado por el Consejo de la UE (COREPER) el 1 de abril de 2026. La aplicación provisional quedó inicialmente fijada para el 10 de abril de 2026, pero fue pospuesta por acuerdo de los representantes permanentes hasta el <strong>15 de julio de 2026</strong>.<br><br>
+<strong>Estructura:</strong> 366 artículos divididos en siete partes, 43 anexos. El Título II regula las materias aduaneras, fiscales y comerciales. Los Anexos 19, 21, 22, 23 y 24 son los de mayor relevancia práctica durante el período provisional. El Anexo 20 solo será aplicable en el período definitivo.<br><br>
+<strong>Condiciones de entrada en vigor definitiva:</strong><br>
+• Decisión del Consejo de Cooperación del Acuerdo (órgano paritario UE-RU).<br>
+• Gibraltar debe implementar un impuesto sobre las ventas del 15% en plazo máximo de 3 años.<br>
+• El Reino Unido debe implantar en Gibraltar un sistema de trazabilidad del tabaco equivalente al de la UE (condición suspensiva expresa).<br>
+• Mecanismo de revisión a los 4 años: permite poner fin al acuerdo ante incumplimientos graves.<br><br>
+<strong>Período transitorio:</strong> Desde la aplicación provisional (15/07/2026) hasta la decisión del Consejo de Cooperación. Durante este período: <em>Gibraltar = territorio tercero</em>; mercancías solo por tierra (La Línea), con excepciones marítimas tasadas; sin vía aérea.<br><br>
+<strong>Período definitivo:</strong> Cuando el Consejo de Cooperación así lo decida. Gibraltar dejaría de ser territorio tercero. Quedaría integrado en la unión aduanera sin formalidades adicionales.`},
+  {icon:'🗺',title:'Viales de acceso y salida — La Verja y rutas',tag:'OP',
+    body:`<strong>La Verja</strong><br>
+Frontera terrestre histórica entre La Línea de la Concepción y Gibraltar. Instalada en 1909, ha sido el único paso terrestre oficial. Su cierre (1969-1985) y reapertura marcaron episodios clave de las relaciones hispano-gibraltareñas.<br><br>
+<strong>Situación actual (pre-15/07/2026):</strong> Controles completos en La Verja para personas y mercancías. La aduana de La Línea opera como DCP principal con control de toda la operativa terrestre.<br><br>
+<strong>Cambios desde 15/07/2026:</strong><br>
+• Se eliminan los controles físicos y barreras en La Verja para el tránsito de personas.<br>
+• Los controles Schengen se trasladan al puerto y aeropuerto de Gibraltar (autoridades españolas + gibraltareñas).<br>
+• Las mercancías siguen requiriendo formalidades aduaneras en La Línea (DCP), aunque se elimina la barrera física.<br><br>
+<strong>Rutas terrestres principales:</strong><br>
+• Autopista AP-7 / A-7 → Campo de Gibraltar → La Línea de la Concepción → Paso fronterizo La Verja.<br>
+• N-340 (alternativa): conexión Algeciras – La Línea.<br>
+• Acceso al Puerto de Algeciras: por la A-7 y viales portuarios propios.<br><br>
+<strong>Ruta marítima (excepcional):</strong><br>
+• Puerto de Algeciras → Puerto de Gibraltar: solo bajo T2GI con las tres condiciones del art. 4 Anexo 19 (directamente, carga completa, confirmación ≤ 2h).<br>
+• Los ferries regulares Algeciras-Gibraltar no están concebidos para mercancías generales salvo las excepciones del Acuerdo.<br><br>
+<strong>Vía aérea:</strong> Expresamente excluida para tráfico de mercancías. El Aeropuerto de Gibraltar no puede utilizarse como punto de entrada/salida de mercancías, salvo avituallamiento a aeronaves mediante declaración telemática.`},
+  {icon:'🏛',title:'Recinto de Aduanas La Línea de la Concepción',tag:'OP',
+    body:`<strong>Administración de Aduanas e IIEE de La Línea de la Concepción</strong><br><br>
+Es la Administración de Aduanas competente para la gestión de la DCP principal del Acuerdo UE-RU sobre Gibraltar. Depende orgánicamente de la Delegación Especial de la AEAT en Andalucía, Ceuta y Melilla, y funcionalmente del Departamento de Aduanas e Impuestos Especiales (MARUIE).<br><br>
+<strong>Instalaciones del recinto:</strong><br>
+• Zona de reconocimiento de mercancías (puestos de inspección física y documental).<br>
+• Zona de reconocimiento no intrusivo (escáneres de rayos X para vehículos y contenedores).<br>
+• Depósito temporal (almacenamiento de mercancías en tránsito o pendientes de despacho).<br>
+• Oficinas de despacho para declarantes y representantes aduaneros.<br>
+• Punto de Inspección Fronterizo (PIF) coordinado con sanidad animal/vegetal (SOIVRE, Sanidad Exterior).<br><br>
+<strong>Funciones específicas como DCP (desde 15/07/2026):</strong><br>
+• Única aduana terrestre autorizada para tramitar declaraciones T2GI, T1GI y H1.<br>
+• Recepción y verificación de las notificaciones de ultimación de Gibraltar (3 mensajes NCTS).<br>
+• Mantenimiento del registro pormenorizado de mercancías en régimen T2GI/T1GI hasta ultimación.<br>
+• Liquidación y recaudación del arancel en H1 (contabilidad separada en nombre de Gibraltar).<br>
+• Gestión telemática de avituallamientos a buques/aeronaves en Gibraltar.<br><br>
+<strong>Coordinación:</strong> La DCP coordina con Gibraltar Customs Authority para el intercambio de mensajes NCTS y la gestión de irregularidades.`},
+  {icon:'👮',title:'Resguardo Fiscal — Competencias y funciones',tag:'OP',
+    body:`<strong>Resguardo Fiscal (Guardia Civil · Unidad Fiscal y de Fronteras)</strong><br><br>
+El Resguardo Fiscal es la denominación tradicional de la función que ejerce la Guardia Civil en el control del contrabando y el fraude fiscal en la zona fronteriza. Actúa en estrecha colaboración con la AEAT.<br><br>
+<strong>Base legal:</strong><br>
+• Ley Orgánica 12/1995, de 12 de diciembre, de represión del contrabando.<br>
+• Ley Orgánica 2/1986, de Fuerzas y Cuerpos de Seguridad del Estado.<br>
+• Convenios de colaboración AEAT – Guardia Civil.<br>
+• Real Decreto 319/1982 y normativa de desarrollo.<br><br>
+<strong>Competencias principales en el Campo de Gibraltar:</strong><br>
+• Vigilancia y control de la zona fronteriza terrestre (La Verja y perímetro).<br>
+• Aprehensión de mercancías de contrabando (tabaco, alcohol, géneros de ilícito comercio).<br>
+• Control vehicular en la frontera: inspección de vehículos, pasajeros y mercancías.<br>
+• Persecución del alijo y el contrabando en aguas del Estrecho de Gibraltar.<br>
+• Investigación de fraude fiscal relacionado con el tráfico de mercancías.<br>
+• Colaboración con AEAT en operaciones especiales e inspecciones programadas.<br><br>
+<strong>Relevancia post-Acuerdo:</strong> Con la eliminación de controles físicos en La Verja, la función del Resguardo Fiscal se reforzará en los controles en el interior del territorio, en los puntos de salida de la unión aduanera y en la vigilancia marítima del Estrecho, adaptando sus protocolos a las nuevas DCPs.`},
+  {icon:'🔍',title:'Oficial de Aduanas — Competencias y facultades',tag:'OP',
+    body:`<strong>Oficial de Aduanas (Técnico de Hacienda / Inspector de Aduanas e IIEE)</strong><br><br>
+Los Oficiales de Aduanas son funcionarios del Cuerpo Técnico de Hacienda adscritos al Departamento de Aduanas e Impuestos Especiales de la AEAT. En las DCPs actúan como funcionarios responsables del despacho diario de mercancías.<br><br>
+<strong>Facultades en el despacho:</strong><br>
+• Admisión y comprobación de declaraciones DUA (H1, T1GI, T2GI, AES).<br>
+• Verificación documental: facturas, contratos, certificados de origen, documentos de transporte.<br>
+• Autorización del levante de mercancías (con o sin reconocimiento físico previo).<br>
+• Ordenar el reconocimiento físico de mercancías cuando lo estime necesario o por canal rojo.<br>
+• Inmovilización provisional de mercancías pendientes de verificación.<br>
+• Emisión de notificaciones de deuda aduanera y requerimientos de documentación.<br>
+• Verificación de la exactitud de los datos de valor en aduana declarados (art. 140 CAU).<br><br>
+<strong>En el contexto DCP Gibraltar:</strong><br>
+• Verificación de los supporting documents obligatorios en T1/T2GI (codes 7020, 7022, 7024, 1247).<br>
+• Control de la ultimación de tránsitos: recepción de mensajes NCTS de Gibraltar.<br>
+• Inicio de procedimientos de búsqueda si el tránsito no se ultima en plazo.<br>
+• Liquidación provisional de IVA e IIEE en caso de irregularidad no subsanada.<br>
+• Coordinación con la Gibraltar Customs Authority para cuestiones operativas.`},
+  {icon:'⚖',title:'Administrador de Aduanas — Atribuciones',tag:'OP',
+    body:`<strong>Administrador de Aduanas e Impuestos Especiales</strong><br><br>
+El Administrador es el Jefe de la Administración de Aduanas. Tiene rango de subdirector y es la máxima autoridad aduanera en el ámbito territorial de la DCP. Depende de la Delegación Especial de la AEAT.<br><br>
+<strong>Atribuciones principales:</strong><br>
+• Concesión de autorizaciones de regímenes especiales (perfeccionamiento activo, activo/pasivo, depósito aduanero, importación temporal) de ámbito local.<br>
+• Concesión, modificación y revocación de garantías aduaneras (global, individual, dispensa) de acuerdo con el CAU.<br>
+• Concesión del estatuto de Operador Económico Autorizado (OEA/AEO) en el ámbito de su competencia territorial.<br>
+• Resolución de recursos de reposición contra actos de los Oficiales de Aduanas de su Administración.<br>
+• Emisión de decisiones vinculantes sobre clasificación arancelaria y origen de carácter local.<br>
+• Supervisión y dirección de la operativa de la DCP: asignación de recursos, establecimiento de criterios de control, coordinación con otros organismos (Guardia Civil, Sanidad, SOIVRE).<br>
+• Representación institucional de la AEAT ante las autoridades gibraltareñas en el marco del Acuerdo UE-RU.<br><br>
+<strong>Base legal:</strong> CAU art. 22-28 (decisiones); LPACAP 39/2015; LGT 58/2003; normativa interna AEAT; Real Decreto 1081/2005 de estructura orgánica básica de la AEAT.`},
+];
+
+function buildInformes(){
+  const c=document.getElementById('informes-list'); c.innerHTML='';
+  INFORMES.forEach(inf=>{
+    const d=document.createElement('div'); d.className='acc-item';
+    d.innerHTML=`<div class="acc-q" onclick="toggleAcc(this)">
+      <span>${inf.icon} ${inf.title} <span class="bx bx-n" style="margin-left:8px;font-size:10px">${inf.tag}</span></span>
+      <span class="acc-arr">▼</span></div>
+      <div class="acc-body">${inf.body}</div>`;
+    c.appendChild(d);
+  });
+}
+
+// ═══ VIALES ACC ═══
+const VIALES=[
+  {icon:'🛤',title:'Ruta terrestre La Línea · La Verja · Pre-Acuerdo',
+    body:`La ruta terrestre principal entre el Campo de Gibraltar y el Peñón discurre por <strong>Winston Churchill Avenue</strong> en el lado gibraltareño y la <strong>Avenida de España</strong> en el lado español, conectando con la AP-7/A-7 a través de La Línea de la Concepción.<br><br>
+<strong>Acceso por carretera desde España:</strong><br>
+• Desde Sevilla/Madrid: A-4 → A-381 → A-7 → La Línea.<br>
+• Desde Málaga: A-7 (Algeciras) → N-340 → La Línea de la Concepción.<br>
+• Desde Algeciras: N-340 (15 km), aproximadamente 15-20 minutos sin retenciones.<br><br>
+<strong>Situación actual en La Verja:</strong> Controles de documentación (pasaportes, DNI), control vehicular, inspección de mercancías. Cola habitual en horas punta (7-9h y 17-19h). Tiempo de espera variable: 20 min – 2 horas.<br><br>
+<strong>Cambios desde 15/07/2026:</strong> Se elimina la barrera física y los controles de documentos en La Verja. Libre circulación de personas sin presentar pasaporte. Para mercancías: las formalidades se trasladan íntegramente a la DCP La Línea (sin cambio de punto físico de despacho, pero sin barrera).<br><br>
+<strong>Mercancías tras el Acuerdo:</strong> La obligación de pasar por la DCP La Línea se mantiene. La diferencia es que no hay barrera física: la declaración se gestiona en la aduana (recinto DCP) y la mercancía puede circular sin control físico en el paso.`},
+  {icon:'⚓',title:'Ruta marítima · Puerto de Algeciras · Condiciones',
+    body:`El Puerto de Algeciras es el mayor puerto de España por tráfico de mercancías y una de las principales terminales de transbordo del Mediterráneo. Es DCP secundaria en el Acuerdo UE-RU sobre Gibraltar.<br><br>
+<strong>Condiciones para envío marítimo UE → Gibraltar (art. 4 Anexo 19):</strong><br>
+Las tres condiciones son <strong>acumulativas e inseparables</strong>. El incumplimiento de cualquiera de ellas invalida la operación por vía marítima desde Algeciras:<br>
+① <strong>Directamente:</strong> La embarcación debe navegar directamente hasta Gibraltar sin escalas intermedias.<br>
+② <strong>Carga completa:</strong> La totalidad de la carga del buque debe descargarse en Gibraltar. No se admite carga parcial.<br>
+③ <strong>Confirmación ≤ 2 horas:</strong> La autoridad gibraltareña debe confirmar la recepción en un máximo de 2 horas desde la llegada.<br><br>
+<strong>Terminales del Puerto de Algeciras:</strong><br>
+• TTI (Total Terminal International): principales movimientos de contenedores.<br>
+• Maersk APM Terminals: operaciones de transbordo.<br>
+• Zona de Actividades Logísticas (ZAL): almacenamiento y operaciones aduaneras.<br><br>
+<strong>Avituallamiento desde Algeciras:</strong> Para provisiones a buques ya en el Puerto de Gibraltar, la declaración se envía telemáticamente a la DCP de Algeciras sin necesidad de desplazar físicamente las mercancías al puesto aduanero.`},
+  {icon:'🚫',title:'Vía aérea — Aeropuerto de Gibraltar',
+    body:`<strong>El Aeropuerto de Gibraltar queda expresamente EXCLUIDO</strong> como punto de entrada y salida de mercancías durante el período transitorio del Acuerdo UE-RU.<br><br>
+<strong>Fundamento legal:</strong> El Acuerdo excluye expresamente la vía aérea para la circulación de mercancías entre la UE y Gibraltar durante el período provisional (salvo avituallamiento). Esta exclusión responde a las dificultades técnicas de establecer controles aduaneros seguros en el aeropuerto dado que la pista de aterrizaje cruza la única vía de acceso terrestre al Peñón (Winston Churchill Avenue).<br><br>
+<strong>Excepción:</strong> Avituallamiento de aeronaves en el aeropuerto de Gibraltar. En este caso, la declaración se gestiona telemáticamente desde la DCP correspondiente (La Línea o Algeciras) sin necesidad de desplazar físicamente la mercancía al puesto aduanero.<br><br>
+<strong>Período definitivo:</strong> El Acuerdo no excluye explícitamente que en el período definitivo se pueda habilitar el aeropuerto como punto de control aduanero, aunque ello requeriría inversión en infraestructura y acuerdos adicionales con el Consejo de Cooperación.`},
+];
+
+function buildViales(){
+  const c=document.getElementById('viales-acc'); c.innerHTML='';
+  VIALES.forEach(v=>{
+    const d=document.createElement('div'); d.className='acc-item gap';
+    d.innerHTML=`<div class="acc-q" onclick="toggleAcc(this)">${v.icon} ${v.title}<span class="acc-arr">▼</span></div>
+      <div class="acc-body">${v.body}</div>`;
+    c.appendChild(d);
+  });
+}
+
+const OPERATIVA_ACC=[
+  {icon:'👮',title:'Resguardo Fiscal — Protocolo operativo en La Línea',
+    body:`El Resguardo Fiscal de la Guardia Civil en La Línea opera de forma permanente (24/7/365) en la zona fronteriza. Sus protocolos de actuación se articulan en tres niveles:<br><br>
+<strong>Nivel 1 — Vigilancia ordinaria:</strong> Presencia disuasoria en el entorno de La Verja, control de vehículos en los accesos, patrullas en zona portuaria y costas del Campo de Gibraltar.<br><br>
+<strong>Nivel 2 — Control aduanero reactivo:</strong> Inspección de vehículos y mercancías con indicios de contrabando, coordinación con funcionarios de la AEAT para inmovilización de mercancías, apertura de diligencias de aprehensión.<br><br>
+<strong>Nivel 3 — Operaciones especiales:</strong> Operaciones planificadas con AEAT y otros cuerpos (EUROPOL, OLAF) contra el tráfico de tabaco, alcohol y otras mercancías sensibles.<br><br>
+<strong>Post-Acuerdo (desde 15/07/2026):</strong> La eliminación de controles físicos en La Verja intensificará la necesidad de controles en el interior del territorio y en los puntos de salida/entrada de la unión aduanera. El Resguardo deberá adaptar sus protocolos a la nueva realidad operativa.`},
+  {icon:'🔍',title:'Procedimiento de despacho — Oficial de Aduanas DCP',
+    body:`<strong>Canal verde (documentación, sin reconocimiento físico):</strong><br>
+1. Presentación declaración en SIANE/AES/NCTS por declarante/representante aduanero.<br>
+2. El sistema asigna canal automáticamente (verde/naranja/rojo) según perfil de riesgo.<br>
+3. Canal verde: levante automático sin intervención física del oficial.<br><br>
+<strong>Canal naranja (comprobación documental):</strong><br>
+1. Oficial verifica documentación: factura, BL/CMR, certificado origen, packing list.<br>
+2. Puede solicitar documentación adicional o corrección de datos.<br>
+3. Levante condicionado a la verificación.<br><br>
+<strong>Canal rojo (reconocimiento físico):</strong><br>
+1. Oficial ordena el traslado de la mercancía a la zona de reconocimiento.<br>
+2. Inspección física: apertura de bultos, toma de muestras si procede, pesaje, verificación de descripción.<br>
+3. En caso de discrepancias: inmovilización, posible inicio de expediente sancionador.<br>
+4. Si todo correcto: levante con anotación en el expediente.<br><br>
+<strong>Específico T2GI/T1GI:</strong> La DCP La Línea debe verificar que los supporting documents obligatorios (codes 7020, 7022, 7024 y, en su caso, 1247) están cumplimentados correctamente antes de autorizar el levante condicionado.`},
+  {icon:'⚖',title:'Administrador de Aduanas — Gestión de garantías post-Acuerdo',
+    body:`El Administrador de Aduanas es el órgano competente para gestionar las garantías aduaneras en el ámbito de la DCP. Con motivo del Acuerdo UE-RU sobre Gibraltar, las obligaciones en materia de garantías se han intensificado:<br><br>
+<strong>Nuevas obligaciones derivadas del Acuerdo (NI 12/2026):</strong><br>
+• Revisar todas las autorizaciones de garantía de tránsito vigentes que afecten a operaciones con Gibraltar.<br>
+• Requerir a los titulares la modificación de las garantías para incluir Gibraltar en el ámbito territorial.<br>
+• Verificar que los nuevos certificados de garantía incluyen los datos del fiador en Gibraltar (dirección + persona de contacto).<br>
+• Conceder nuevas garantías para T1GI y T2GI, asegurando que cubren IVA e IIEE conforme al Acuerdo.<br><br>
+<strong>Tipos de garantía en el contexto DCP Gibraltar:</strong><br>
+• Garantía global: cubre múltiples operaciones en un período. Requiere actualización antes del 15/07/2026.<br>
+• Garantía individual: específica para cada régimen. Puede constituirse operación a operación.<br>
+• Dispensa de garantía: solo para operadores con historial impecable. El Administrador evalúa el riesgo.<br><br>
+<strong>H1 excepción:</strong> El Administrador confirma que no se admiten garantías para los derechos de importación en el H1. El pago es condición previa necesaria e indispensable.`},
+];
+
+function buildOperativa(){
+  const c=document.getElementById('op-acc'); c.innerHTML='';
+  OPERATIVA_ACC.forEach(v=>{
+    const d=document.createElement('div'); d.className='acc-item gap';
+    d.innerHTML=`<div class="acc-q" onclick="toggleAcc(this)">${v.icon} ${v.title}<span class="acc-arr">▼</span></div>
+      <div class="acc-body">${v.body}</div>`;
+    c.appendChild(d);
+  });
+}
+
+// ═══ FLASHCARDS ═══
+const CARDS=[
+  {cls:'ue',icon:'📜',title:'CAU 952/2013',tag:'UE',body:`<strong>Código Aduanero de la Unión.</strong> Base normativa. Regímenes aduaneros, deuda, garantías, regímenes especiales. Art. 254: avituallamiento de buques y aeronaves. Completa el CAU los Reglamentos Delegado 2015/2446 y de Ejecución 2015/2447.`},
+  {cls:'gib',icon:'🤝',title:'Acuerdo UE-RU / GIB',tag:'GIB',body:`<strong>366 arts., 43 anexos.</strong> Crea unión aduanera UE+GIB. Sin derechos aduaneros dentro de la UA, pero con formalidades (GIB = territorio tercero en período transitorio). Aplic. provisional: 15/07/2026.`},
+  {cls:'gib',icon:'🔄',title:'T2GI — Tránsito UE→GIB',tag:'GIB',body:`Tránsito especial para mercancías UE en libre circulación → Gibraltar. NCTS. Levante condicionado a presentación T2GI. Codes: <code>7020, 7022, 7024</code>. Garantía: IVA+IIEE. Plazo: 6 días. Ultimación: 3 mensajes de GIB.`},
+  {cls:'gib',icon:'🔄',title:'T1GI — Tránsito 3ºs→GIB',tag:'GIB',body:`Para mercancías de terceros países. Requiere previo H1 (con pago arancel). Codes: <code>7020, 7022, 7024, 1247</code>. El code 1247 permite calcular transaction tax e IIEE gibraltareños. Plazo: 6 días.`},
+  {cls:'gib',icon:'💳',title:'H1 — Import. en DCP',tag:'GIB',body:`Declaración de importación en DCP para mercancías 3ºs países destinadas a GIB. <strong>Pago previo obligatorio</strong> (sin garantías). Sin pago: no se admite T1GI posterior. No liquida IVA/IIEE europeos. Arancel al 100%.`},
+  {cls:'ni',icon:'🛡',title:'NI 12/2026 — Garantías',tag:'AEAT',body:`Nota Informativa AEAT 13/04/2026. <strong>Acción requerida antes del 15/07/2026:</strong> adaptar todas las garantías de tránsito existentes para incluir Gibraltar. Añadir datos del fiador en GIB (dirección + persona de contacto).`},
+  {cls:'es',icon:'🛢',title:'Art. 9 LIIEE — Exención',tag:'IIEE',body:`Exención IIEE en avituallamiento a buques en navegación <strong>internacional</strong>. No aplica en navegación nacional. Acreditación: declaración del naviero. Operativa: e-DA en régimen suspensivo desde depósito fiscal.`},
+  {cls:'es',icon:'📤',title:'Art. 21 LIVA — Export.',tag:'IVA',body:`Exención IVA en exportaciones a territorio tercero (incluye Gibraltar). La prueba de exención es el certificado de salida obtenido tras la ultimación del T2GI. Si no se ultima: la DCP liquida IVA.`},
+  {cls:'op',icon:'👮',title:'Resguardo Fiscal',tag:'OP',body:`Guardia Civil · Unidad Fiscal y Fronteras. Vigilancia frontera, aprehensión contrabando, control vehicular La Verja. Base: LO 12/1995 Represión Contrabando. Servicio 24/7/365.`},
+  {cls:'op',icon:'🔍',title:'Oficial de Aduanas',tag:'OP',body:`AEAT · Técnico/Inspector Hacienda. Despacho mercancías, levante, inspección documental/física. Autoriza regímenes, emite notificaciones, gestiona T1/T2GI, inicia procedimientos de búsqueda.`},
+  {cls:'op',icon:'⚖',title:'Administrador Aduanas',tag:'OP',body:`Jefe de la Administración AEAT local. Autoriza regímenes especiales, garantías, OEA/AEO. Resuelve recursos. Supervisa operativa DCP. Coordina con Gibraltar Customs Authority.`},
+  {cls:'gib',icon:'🏛',title:'DCPs designadas',tag:'GIB',body:`<strong>La Línea</strong> (principal-terrestre), <strong>Algeciras</strong> (secundaria-marítima: directo+carga completa+2h), <strong>Sagunto</strong> (secundaria). Ninguna otra aduana puede autorizar salida con destino Gibraltar.`},
+];
+
+function buildCards(){
+  const g=document.getElementById('fc-grid'); g.innerHTML='';
+  CARDS.forEach(c=>{
+    const d=document.createElement('div'); d.className='fc '+c.cls;
+    d.innerHTML=`<div class="fc-hd"><span class="fc-icon">${c.icon}</span><span class="fc-title">${c.title}</span><span class="fc-tag bx bx-n">${c.tag}</span></div>
+      <div class="fc-body">${c.body}</div>`;
+    g.appendChild(d);
+  });
+}
+
+// ═══ ACCORDION TOGGLE ═══
+function toggleAcc(el){
+  const b=el.nextElementSibling, was=el.classList.contains('on');
+  document.querySelectorAll('.acc-q.on').forEach(q=>{q.classList.remove('on');q.nextElementSibling.classList.remove('on')});
+  if(!was){el.classList.add('on');b.classList.add('on');}
+}
+
+// ═══ BRIEFING ═══
+async function runBriefing(){
+  const btn=document.getElementById('bbtn');
+  const out=document.getElementById('brief-out');
+  const lbl=document.getElementById('blbl');
+  btn.disabled=true; btn.textContent='Analizando...';
+  const now=new Date();
+  lbl.textContent='Analizando · '+now.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+now.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  out.innerHTML='<em style="color:var(--g400)">Consultando fuentes oficiales en tiempo real...</em>';
+  const today=now.toISOString().split('T')[0];
+  const prompt=`Eres un analista experto en derecho aduanero y comercio exterior. Hoy es ${today}.
+
+Realiza un briefing diario exhaustivo sobre los siguientes temas específicos:
+
+1. ENTRADA EN VIGOR DEL ACUERDO UE-RU SOBRE GIBRALTAR: cualquier novedad sobre la fecha de aplicación provisional (15/07/2026), condiciones cumplidas/pendientes (trazabilidad tabaco, transaction tax), comunicados Comisión Europea, declaraciones de Spain/UK/Gibraltar.
+
+2. VIALES DE ACCESO Y SALIDA: cambios en La Verja, estado de las obras/adaptaciones, nuevos protocolos en el paso fronterizo, noticias sobre el Puerto de Algeciras en relación con Gibraltar.
+
+3. RECINTO DE ADUANAS LA LÍNEA: noticias sobre infraestructura, nuevos procedimientos, contrataciones, comunicados de la Administración de Aduanas e IIEE de La Línea.
+
+4. OPERATIVA ADUANERA — COMPETENCIAS FUNCIONARIOS: cualquier nueva instrucción interna AEAT, cambios en competencias del Resguardo Fiscal, Oficial de Aduanas o Administrador de Aduanas en el Campo de Gibraltar.
+
+5. HORARIOS DE DESPACHO: cambios en horarios de despacho de mercancías en La Línea, Algeciras, o La Verja.
+
+6. AEAT GENERAL: notas informativas de aduanas, actualizaciones NCTS/AES, circulares relevantes (última semana).
+
+7. COMISIÓN EUROPEA: normativa UE relevante para aduanas y Brexit/Gibraltar.
+
+8. SECTOR TRANSITARIO: ATEIA Campo de Gibraltar, representantes aduaneros, impacto del Acuerdo en el sector.
+
+FORMATO:
+### 🏛 ACUERDO · ENTRADA EN VIGOR
+### 🗺 VIALES Y ACCESOS
+### 🏗 RECINTO LA LÍNEA
+### 👮 OPERATIVA FUNCIONARIOS
+### 📋 AEAT · NORMATIVA
+### 🌐 COMISIÓN EUROPEA
+### 🏢 SECTOR TRANSITARIO
+### 📎 FUENTES CONSULTADAS
+[URLs]
+
+Si no hay novedades en una sección, escribe "Sin novedades esta semana."`;
+
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,
+        tools:[{type:'web_search_20250305',name:'web_search'}],
+        messages:[{role:'user',content:prompt}]})
+    });
+    const data=await r.json();
+    const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    out.innerHTML=fmtBrief(text||'Sin resultado.');
+    try{await sb.from('cw_briefings').insert({fecha:today,contenido:text,creado_en:now.toISOString()});}catch(e){}
+    lbl.textContent='Actualizado: '+now.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+now.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  }catch(e){
+    out.innerHTML='<span style="color:var(--rd600)">Error al obtener el briefing. Verifica la conexión.</span>';
+  }
+  btn.disabled=false; btn.textContent='Actualizar ahora →';
+}
+
+function fmtBrief(t){
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/### (.+)/g,'<h3>$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\n/g,'<br>');
+}
+
+async function loadHistorial(){
+  const el=document.getElementById('hist-wrap');
+  el.innerHTML='<div style="text-align:center;padding:30px;color:var(--g400)">Cargando...</div>';
+  try{
+    const{data,error}=await sb.from('cw_briefings').select('id,fecha,contenido,creado_en').order('fecha',{ascending:false}).limit(30);
+    if(error||!data?.length){
+      el.innerHTML='<div style="text-align:center;padding:40px;color:var(--g400);font-size:13px">No hay briefings guardados.<br><span style="font-size:11px;font-family:var(--mono)">Crea la tabla cw_briefings en Supabase primero.</span></div>';
+      return;
+    }
+    el.innerHTML=data.map(b=>{
+      const prev=(b.contenido||'').replace(/[#*<>\n]/g,' ').substring(0,120)+'…';
+      return `<div class="hist-item" onclick='showBriefHist(${JSON.stringify(b.contenido)})'>
+        <div class="hist-date">${b.fecha}</div>
+        <div class="hist-prev">${prev}</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    el.innerHTML='<div style="text-align:center;padding:30px;color:var(--rd600)">Error cargando historial.</div>';
+  }
+}
+
+function showBriefHist(content){
+  goSec('briefing',document.querySelector('.ni:nth-child(2)'));
+  document.getElementById('brief-out').innerHTML=fmtBrief(content);
+}
+
+// ═══ CHAT ═══
+const SYS=`Eres un experto oficial de aduanas de primera categoría (nivel técnico superior) con especialización en comercio exterior España-Gibraltar. Formas parte del equipo técnico de ALS (Algeciras Logistic Solutions).
+
+PROTOCOLO DE BÚSQUEDA (OBLIGATORIO):
+Antes de responder, evalúa si tu conocimiento base es suficientemente fiable y actual. Si la pregunta involucra:
+- Fechas, plazos o condiciones del Acuerdo UE-RU Gibraltar que puedan haber cambiado
+- Notas Informativas AEAT recientes, circulares o actualizaciones de sistemas
+- Comunicados de la Comisión Europea o BOE recientes
+- Cualquier procedimiento o dato que pueda haber evolucionado
+→ USA la herramienta de búsqueda web ANTES de responder.
+
+NUNCA inventes artículos, fechas, procedimientos o datos normativos. Si no tienes certeza de un dato, búscalo. Si no encuentras información verificable suficiente, dilo explícitamente: "No he podido verificar este dato con certeza. Recomiendo consultar directamente sede.agenciatributaria.gob.es o el texto oficial del Acuerdo." Una respuesta honesta e incompleta es infinitamente mejor que una respuesta inventada.
+
+CONOCIMIENTO BASE VERIFICADO:
+CAU 952/2013, RD 2015/2446, RE 2015/2447, LIVA 37/1992 (art. 21 exención export., art. 22 buques), LIIEE 38/1992 (art. 9 exención avituallamiento navig. internacional), RD 1165/1995 (e-DA, depósitos fiscales), LGT 58/2003, LPACAP 39/2015.
+Acuerdo UE-RU Gibraltar: texto diciembre 2025, aprobado Consejo UE 01/04/2026, aplic. provisional 15/07/2026. Gibraltar = territorio tercero en período transitorio. Título II + Anexos 19,21,22,23,24 relevantes en período provisional. Anexo 20 solo en período definitivo.
+DCPs: La Línea (principal-terrestre), Algeciras (secundaria-marítima: directo+carga completa+confirmación ≤2h, art. 4 Anexo 19), Sagunto (secundaria). Vía aérea excluida.
+T2GI: libre circulación UE→GIB, NCTS, levante condicionado, codes 7020/7022/7024, garantía IVA+IIEE, 6 días. Ultimación: 3 mensajes GIB→NCTS informa AES→certificado salida.
+T1GI: terceros países→GIB, requiere H1 previo con pago, codes 7020/7022/7024/1247, garantía IVA+IIEE, 6 días.
+H1: importación en DCP para 3ºs países→GIB, pago previo obligatorio (sin garantías), arancel 100% sin suspensiones, contabilidad separada GIB, no liquida IVA/IIEE europeos.
+NI 08/2026 (26/02/2026 AEAT): aspectos aduaneros del Acuerdo. NI 12/2026 (13/04/2026 AEAT): garantías de tránsito, actualizar antes del 15/07/2026.
+
+Responde SIEMPRE en español. Cita artículos concretos. Distingue período transitorio vs definitivo. Usa la búsqueda web cuando sea necesario.`;
+let CH=[],CB=false;
+const HINTS_DATA=['Avituallamiento carburante IIEE Gibraltar','T2GI: plazos y ultimación','Garantías NI 12/2026','H1 + T1GI terceros países','IVA exportación Gibraltar','Resguardo Fiscal competencias La Línea'];
+
+function buildChat(){
+  const hc=document.getElementById('hints');
+  HINTS_DATA.forEach(h=>{
+    const s=document.createElement('span');s.className='chip';s.textContent=h;
+    s.onclick=()=>{document.getElementById('cinput').value=h;document.getElementById('cinput').focus()};
+    hc.appendChild(s);
+  });
+  const msgs=document.getElementById('chat-msgs');
+  const now=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  msgs.innerHTML=`<div class="msg"><div class="av ai">RA</div><div class="mw"><div class="ml">Repr. Aduanero · ALS · ${now}</div>
+    <div class="bb ai">Módulo Gibraltar · Acceso admin. Consulta técnica aduanera disponible. DCPs activas: La Línea, Algeciras (marítima), Sagunto. Aplicación provisional del Acuerdo: 15/07/2026. ¿En qué puedo ayudarte?</div></div></div>`;
+}
+
+function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}
+function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\n/g,'<br>');}
+function addMsg(role,text){
+  const box=document.getElementById('chat-msgs');
+  const now=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  const d=document.createElement('div');d.className='msg'+(role==='user'?' usr':'');
+  d.innerHTML=`<div class="av ${role==='user'?'usr':'ai'}">${role==='user'?'TU':'RA'}</div><div class="mw"><div class="ml">${role==='user'?'Tú':'Repr. Aduanero · ALS'} · ${now}</div><div class="bb ${role==='user'?'usr':'ai'}">${esc(text)}</div></div>`;
+  box.appendChild(d);box.scrollTop=box.scrollHeight;
+}
+function showTp(){
+  const box=document.getElementById('chat-msgs');
+  const d=document.createElement('div');d.className='msg';d.id='tpdot';
+  d.innerHTML=`<div class="av ai">RA</div><div class="mw"><div class="tp"><span></span><span></span><span></span></div></div>`;
+  box.appendChild(d);box.scrollTop=box.scrollHeight;
+}
+async function sendChat(){
+  if(CB)return;
+  const inp=document.getElementById('cinput');
+  const text=inp.value.trim();if(!text)return;
+  inp.value='';CB=true;document.getElementById('csend').disabled=true;
+  addMsg('user',text);CH.push({role:'user',content:text});showTp();
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',max_tokens:1000,system:SYS,
+        tools:[{type:'web_search_20250305',name:'web_search'}],
+        messages:CH
+      })});
+    const data=await r.json();
+    const reply=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n')||'Error en la respuesta.';
+    document.getElementById('tpdot')?.remove();
+    addMsg('ai',reply);CH.push({role:'assistant',content:reply});
+    if(CH.length>20)CH=CH.slice(-20);
+  }catch(e){document.getElementById('tpdot')?.remove();addMsg('ai','Error de conexión con la API.');}
+  CB=false;document.getElementById('csend').disabled=false;
+}
+
+// ═══ ADVISORY REPORT GENERATOR ═══
+let lastReportText='';
+
+async function generateReport(){
+  const cliente=document.getElementById('rpt-cliente').value.trim();
+  const consulta=document.getElementById('rpt-consulta').value.trim();
+  if(!consulta){alert('Por favor describe la consulta del cliente.');return;}
+
+  const btn=document.getElementById('rpt-btn');
+  const out=document.getElementById('rpt-content');
+  const refEl=document.getElementById('rpt-ref-display');
+  btn.disabled=true; btn.textContent='Elaborando informe...';
+  ['rpt-copy-btn','rpt-email-btn','rpt-print-btn'].forEach(id=>document.getElementById(id).disabled=true);
+
+  const now=new Date();
+  const dateStr=now.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const refNum='CW-'+now.toISOString().replace(/[-T:]/g,'').substring(0,12);
+  const tipo=document.getElementById('rpt-tipo').value;
+  const empresa=cliente||'(no indicado)';
+  const contacto=document.getElementById('rpt-contacto').value.trim()||'—';
+  const cif=document.getElementById('rpt-cif').value.trim()||'—';
+  const refInterna=document.getElementById('rpt-ref').value.trim()||'—';
+
+  refEl.textContent=refNum+' · '+dateStr;
+  out.innerHTML='<div class="rpt-placeholder">⟳ Buscando información actualizada y elaborando el informe...</div>';
+
+  const prompt=`Eres el asesor aduanero experto de ALS (Algeciras Logistic Solutions), con especialización en el Acuerdo UE-RU sobre Gibraltar, CAU, IVA e IIEE.
+
+INSTRUCCIÓN CRÍTICA: Antes de redactar el informe, usa la búsqueda web para verificar:
+1. Que la normativa citada está vigente y es la más reciente.
+2. Que los procedimientos descritos (especialmente los relacionados con el Acuerdo Gibraltar) están actualizados a fecha de hoy (${now.toISOString().split('T')[0]}).
+3. Si hay notas informativas AEAT, circulares o comunicados recientes relevantes para esta consulta.
+Si no encuentras información verificable sobre algún aspecto, indícalo explícitamente en el informe.
+
+DATOS DEL ENCARGO:
+- Fecha: ${dateStr}
+- Referencia: ${refNum}
+- Cliente: ${empresa}
+- CIF/NIF: ${cif}
+- Persona de contacto: ${contacto}
+- Referencia interna: ${refInterna}
+- Tipo de operación: ${tipo||'A determinar según consulta'}
+- Consulta planteada: ${consulta}
+
+Redacta un INFORME DE ASESORAMIENTO ADUANERO profesional, estructurado EXACTAMENTE así:
+
+INFORME DE ASESORAMIENTO ADUANERO
+ALS · Algeciras Logistic Solutions
+Representación Aduanera · Comercio Exterior
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFERENCIA: ${refNum}
+FECHA: ${dateStr}
+CLIENTE: ${empresa}
+CIF/NIF: ${cif}
+CONTACTO: ${contacto}
+REF. INTERNA: ${refInterna}
+ASUNTO: [resumen del asunto en 1 línea]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. CONSULTA PLANTEADA
+[Transcripción fiel de la consulta tal como la plantea el cliente, redactada de forma clara]
+
+2. NORMATIVA APLICABLE
+[Lista de normas aplicables con referencia completa (número, artículo, denominación). Solo normas verificadas y vigentes. Si alguna está en período transitorio o pendiente de entrada en vigor, indicarlo.]
+
+3. ANÁLISIS
+[Análisis técnico detallado de la situación. Citar artículos concretos. Distinguir claramente entre lo que ya está en vigor y lo que entrará en vigor el 15/07/2026. Si hay incertidumbre normativa, indicarlo explícitamente.]
+
+4. PROCEDIMIENTO A SEGUIR
+[Pasos concretos y ordenados que debe ejecutar el cliente. Qué documentos necesita, en qué aduana/DCP, qué declaraciones, qué plazos.]
+
+5. RECOMENDACIÓN
+[Recomendación concreta y accionable. Clara, directa, sin ambigüedad.]
+
+6. ADVERTENCIAS Y LIMITACIONES
+[Aspectos donde la normativa está pendiente de desarrollo, en período provisional, o donde la incertidumbre aconseja verificación adicional. Si se han buscado datos que no han podido verificarse con certeza, indicarlo aquí.]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AVISO LEGAL
+El presente informe constituye asesoramiento aduanero especializado basado en la normativa vigente en la fecha indicada. ALS no se hace responsable de las modificaciones normativas que puedan producirse con posterioridad a la emisión de este informe. El presente documento no constituye dictamen jurídico ni sustituye a la asesoría legal especializada en supuestos de elevada complejidad o litigiosidad.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ALS · Algeciras Logistic Solutions
+als@alsalgeciras.com · +34 956 58 13 16
+portal.alsalgeciras.com · ${dateStr}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FUENTES CONSULTADAS: [lista de URLs o referencias normativas verificadas]`;
+
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',max_tokens:1000,
+        tools:[{type:'web_search_20250305',name:'web_search'}],
+        messages:[{role:'user',content:prompt}]
+      })
+    });
+    const data=await r.json();
+    const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    lastReportText=text;
+    out.innerHTML=fmtReport(text);
+    ['rpt-copy-btn','rpt-email-btn','rpt-print-btn'].forEach(id=>document.getElementById(id).disabled=false);
+    // Save to Supabase
+    try{
+      await sb.from('cw_informes').insert({
+        referencia:refNum, fecha:now.toISOString().split('T')[0],
+        cliente:empresa, tipo:tipo, consulta:consulta, informe:text,
+        creado_en:now.toISOString()
+      });
+    }catch(e){}
+  }catch(e){
+    out.innerHTML='<span style="color:var(--rd600)">Error al generar el informe. Verifica la conexión.</span>';
+  }
+  btn.disabled=false; btn.textContent='Generar informe →';
+}
+
+function fmtReport(t){
+  return '<pre style="white-space:pre-wrap;font-family:var(--f);font-size:13px;line-height:1.8;color:var(--g700)">'
+    +t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    +'</pre>';
+}
+
+function clearReport(){
+  ['rpt-cliente','rpt-email','rpt-cif','rpt-contacto','rpt-ref','rpt-consulta'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('rpt-tipo').selectedIndex=0;
+  document.getElementById('rpt-content').innerHTML='<div class="rpt-placeholder">Informe limpiado. Rellena los datos y genera uno nuevo.</div>';
+  document.getElementById('rpt-ref-display').textContent='—';
+  ['rpt-copy-btn','rpt-email-btn','rpt-print-btn'].forEach(id=>document.getElementById(id).disabled=true);
+  lastReportText='';
+}
+
+async function copyReport(){
+  if(!lastReportText)return;
+  try{
+    await navigator.clipboard.writeText(lastReportText);
+    const btn=document.getElementById('rpt-copy-btn');
+    const orig=btn.textContent; btn.textContent='✓ Copiado';
+    setTimeout(()=>{btn.textContent=orig;},2000);
+  }catch(e){alert('No se pudo copiar. Selecciona el texto manualmente.');}
+}
+
+function emailReport(){
+  if(!lastReportText)return;
+  const email=document.getElementById('rpt-email').value.trim();
+  const cliente=document.getElementById('rpt-cliente').value.trim();
+  const ref=document.getElementById('rpt-ref-display').textContent.split('·')[0].trim();
+  const subject=encodeURIComponent(`Informe de Asesoramiento Aduanero · ALS · ${ref}`);
+  const body=encodeURIComponent(lastReportText);
+  const mailto=`mailto:${email}?subject=${subject}&body=${body}`;
+  window.location.href=mailto;
+}
+
+function printReport(){
+  if(!lastReportText)return;
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe ALS</title>
+  <style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.8;color:#000;max-width:800px;margin:40px auto;padding:0 20px}
+  pre{white-space:pre-wrap;font-family:inherit}strong{font-weight:700}
+  @media print{body{margin:0;padding:20px}}</style></head>
+  <body><pre>${lastReportText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+  <script>window.onload=function(){window.print();}<\/script></body></html>`);
+  w.document.close();
+}
+window.addEventListener('resize',()=>{
+  const b=document.querySelector('.hburg');
+  if(b)b.style.display=window.innerWidth<=700?'flex':'none';
+});
+window.dispatchEvent(new Event('resize'));
+
+// ═══ INIT ═══
+(async function(){
+  if(await checkAccess()){
+    buildInformes();
+    buildCards();
+    buildViales();
+    buildOperativa();
+    buildChat();
+  }
+})();
+</script>
+</body>
+</html>
