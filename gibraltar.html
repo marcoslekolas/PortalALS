@@ -334,7 +334,8 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
   <div class="sb-tag">Análisis</div>
   <div class="ni active" onclick="goSec('dashboard',this)"><span class="ic">📊</span>Dashboard</div>
   <div class="ni" onclick="goSec('briefing',this)"><span class="ic">📰</span>Briefing Diario</div>
-  <div class="ni" onclick="goSec('historial',this)"><span class="ic">🗂</span>Historial</div>
+  <div class="ni" onclick="goSec('historial',this)"><span class="ic">🗂</span>Historial Briefings</div>
+  <div class="ni" onclick="goSec('hinformes',this)"><span class="ic">📁</span>Historial Informes</div>
   <div class="sb-tag">Conocimiento</div>
   <div class="ni" onclick="goSec('mapa',this)"><span class="ic">🧠</span>Mapa Mental</div>
   <div class="ni" onclick="goSec('infografia',this)"><span class="ic">📈</span>Infografías</div>
@@ -444,6 +445,17 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
   <div class="ph">🗂 Historial de Briefings</div>
   <div class="ps">Análisis guardados en Supabase · tabla <code>cw_briefings</code></div>
   <div id="hist-wrap"><div style="text-align:center;padding:40px;color:var(--g400)">Cargando...</div></div>
+</div>
+
+<!-- ████ HISTORIAL INFORMES ████ -->
+<div class="sec" id="sec-hinformes">
+  <div class="ph">📁 Historial de Informes</div>
+  <div class="ps">Informes de asesoramiento emitidos · Supabase · tabla <code>cw_informes</code></div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap" id="hinf-filters">
+    <input type="text" id="hinf-search" class="fi" style="flex:1;min-width:200px" placeholder="Buscar por cliente, referencia o tipo..." oninput="filterInformes()">
+    <button class="btn btn-s" onclick="loadHInformes()" style="font-size:12px">↺ Recargar</button>
+  </div>
+  <div id="hinf-wrap"><div style="text-align:center;padding:40px;color:var(--g400)">Cargando...</div></div>
 </div>
 
 <!-- ████ MAPA MENTAL ████ -->
@@ -850,6 +862,7 @@ function goSec(id,el){
   if(el) el.classList.add('active');
   closeSB();
   if(id==='historial') loadHistorial();
+  if(id==='hinformes') loadHInformes();
 }
 
 // ═══ INFORMES DATA ═══
@@ -1427,6 +1440,96 @@ function printReport(){
   <script>window.onload=function(){window.print();}<\/script></body></html>`);
   w.document.close();
 }
+
+// ═══ HISTORIAL INFORMES ═══
+let _allInformes = [];
+
+async function loadHInformes(){
+  const el=document.getElementById('hinf-wrap');
+  el.innerHTML='<div style="text-align:center;padding:30px;color:var(--g400)">Cargando...</div>';
+  try{
+    const{data,error}=await sb.from('cw_informes')
+      .select('id,referencia,fecha,cliente,tipo,consulta,informe,creado_en')
+      .order('creado_en',{ascending:false})
+      .limit(100);
+    if(error||!data?.length){
+      el.innerHTML='<div style="text-align:center;padding:40px;color:var(--g400);font-size:13px">No hay informes emitidos todavía.</div>';
+      return;
+    }
+    _allInformes=data;
+    renderInformes(data);
+  }catch(e){
+    el.innerHTML='<div style="text-align:center;padding:30px;color:var(--rd600)">Error cargando historial.</div>';
+  }
+}
+
+function renderInformes(data){
+  const el=document.getElementById('hinf-wrap');
+  if(!data.length){
+    el.innerHTML='<div style="text-align:center;padding:30px;color:var(--g400)">Sin resultados.</div>';
+    return;
+  }
+  el.innerHTML=`
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr>
+          <th>Referencia</th><th>Fecha</th><th>Cliente</th><th>Tipo</th><th>Consulta</th><th style="width:100px">Acciones</th>
+        </tr></thead>
+        <tbody>${data.map(inf=>{
+          const prev=(inf.consulta||'').substring(0,80)+(inf.consulta?.length>80?'…':'');
+          const fecha=inf.fecha||inf.creado_en?.substring(0,10)||'—';
+          return `<tr>
+            <td><span class="bx bx-b" style="font-size:10px">${inf.referencia||'—'}</span></td>
+            <td style="white-space:nowrap;font-family:var(--mono);font-size:12px">${fecha}</td>
+            <td style="font-weight:500">${inf.cliente||'—'}</td>
+            <td style="font-size:12px;color:var(--g500)">${inf.tipo||'—'}</td>
+            <td style="font-size:12px;color:var(--g600)">${prev}</td>
+            <td>
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-s" style="font-size:11px;padding:4px 8px" onclick='verInforme(${JSON.stringify(inf.id)})'>Ver</button>
+                <button class="btn btn-s" style="font-size:11px;padding:4px 8px" onclick='emailInforme(${JSON.stringify(inf.informe||"")},${JSON.stringify(inf.referencia||"")})'>✉</button>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--g400);font-family:var(--mono);margin-top:8px">${data.length} informe${data.length!==1?'s':''} · tabla cw_informes</div>`;
+}
+
+function filterInformes(){
+  const q=document.getElementById('hinf-search').value.toLowerCase();
+  if(!q){renderInformes(_allInformes);return;}
+  const filtered=_allInformes.filter(i=>
+    (i.cliente||'').toLowerCase().includes(q)||
+    (i.referencia||'').toLowerCase().includes(q)||
+    (i.tipo||'').toLowerCase().includes(q)||
+    (i.consulta||'').toLowerCase().includes(q)
+  );
+  renderInformes(filtered);
+}
+
+function verInforme(id){
+  const inf=_allInformes.find(i=>i.id===id);
+  if(!inf) return;
+  lastReportText=inf.informe||'';
+  // Ir a la sección de informe y mostrar el contenido
+  goSec('informe', document.querySelector('.ni[onclick*="informe"]'));
+  document.getElementById('rpt-cliente').value=inf.cliente||'';
+  document.getElementById('rpt-tipo').value=inf.tipo||'';
+  document.getElementById('rpt-consulta').value=inf.consulta||'';
+  document.getElementById('rpt-ref-display').textContent=(inf.referencia||'—')+' · '+(inf.fecha||'');
+  document.getElementById('rpt-content').innerHTML=fmtReport(inf.informe||'');
+  ['rpt-copy-btn','rpt-email-btn','rpt-print-btn'].forEach(id=>document.getElementById(id).disabled=false);
+}
+
+function emailInforme(texto,ref){
+  if(!texto) return;
+  const subject=encodeURIComponent(`Informe de Asesoramiento Aduanero · Customs-Way · ${ref}`);
+  const body=encodeURIComponent(texto);
+  window.location.href=`mailto:?subject=${subject}&body=${body}`;
+}
+
 window.addEventListener('resize',()=>{
   const b=document.querySelector('.hburg');
   if(b)b.style.display=window.innerWidth<=700?'flex':'none';
