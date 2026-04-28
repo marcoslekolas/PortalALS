@@ -503,6 +503,137 @@ function clasificarEmail(asunto,cuerpo){
   for(const[tipo,kws]of Object.entries(EMAIL_KEYWORDS)){if(kws.some(k=>txt.includes(k)))return tipo;}
   return 'email';
 }
+function renderEmails(){
+  const ft=document.getElementById('fe-tipo')?.value||'';
+  let d=emails;if(ft)d=d.filter(e=>e.tipo===ft);
+  const el=document.getElementById('email-list');
+  if(!d.length){
+    el.innerHTML='<div style="padding:24px;text-align:center;color:var(--g500)">'+
+      '<div style="font-size:28px;margin-bottom:8px">&#128140;</div>'+
+      '<div style="font-size:13px;font-weight:600;margin-bottom:4px">Sin emails</div>'+
+      '<div style="font-size:12px">Pulsa <strong>Sincronizar</strong> para cargar<br>o <strong>Configurar</strong> para conectar tu cuenta</div>'+
+    '</div>';
+    return;
+  }
+  el.innerHTML=d.map(e=>
+    '<div class="email-item'+(emailSelId===e.id?' on':'')+(e.leido?'':' ')+'" onclick="abrirEmail(\''+e.id+'\')">'+
+    '<div class="ei-from">'+(e.de_nombre||e.de||'—')+'</div>'+
+    '<div class="ei-sub">'+(e.asunto||'Sin asunto')+'</div>'+
+    '<div class="ei-meta">'+
+      '<span class="ei-fecha">'+(e.fecha?new Date(e.fecha).toLocaleDateString('es-ES'):'')+'</span>'+
+      '<span class="ei-tipo tp-'+(e.tipo||'email')+'">'+(TIPOS_LABEL[e.tipo]||'Email')+'</span>'+
+    '</div></div>'
+  ).join('');
+}
+async function abrirEmail(id){
+  emailSelId=id;const e=emails.find(x=>x.id===id);if(!e)return;
+  if(!e.leido){e.leido=true;try{await sb.from('cw_emails').update({leido:true}).eq('id',id);}catch(ex){}}
+  renderEmails();kpis();
+  document.getElementById('email-detail').innerHTML=
+    '<div class="ed-from">De: '+(e.de_nombre?e.de_nombre+' &lt;'+e.de+'&gt;':e.de||'—')+'</div>'+
+    '<div class="ed-sub">'+(e.asunto||'Sin asunto')+'</div>'+
+    '<div class="ed-meta">'+
+      '<span>'+(e.fecha?new Date(e.fecha).toLocaleString('es-ES'):'')+'</span>'+
+      '<span class="ei-tipo tp-'+(e.tipo||'email')+'">'+(TIPOS_LABEL[e.tipo]||'Email')+'</span>'+
+    '</div>'+
+    '<div class="ed-body">'+(e.cuerpo||'Sin contenido')+'</div>'+
+    '<div class="ed-actions">'+
+      '<button class="btn btn-primary" onclick="crearTareaDesdeEmail(\''+id+'\')">+ Crear tarea</button>'+
+      '<button class="btn btn-sec" onclick="reclasificarEmail(\''+id+'\')">&#127991; Reclasificar</button>'+
+    '</div>';
+}
+function crearTareaDesdeEmail(id){
+  const e=emails.find(x=>x.id===id);if(!e)return;
+  editId=null;
+  document.getElementById('modal-root').innerHTML=modalTareaHTML('Tarea desde email');
+  document.getElementById('f-tit').value=(e.asunto||'').substring(0,80);
+  document.getElementById('f-tipo').value=e.tipo||'email';
+  document.getElementById('f-cl').value=e.de_nombre||'';
+  document.getElementById('f-notas').value='Email de: '+(e.de||'')+'\n'+(e.cuerpo||'').substring(0,300);
+}
+function reclasificarEmail(id){
+  const e=emails.find(x=>x.id===id);if(!e)return;
+  const tipos=Object.entries(TIPOS_LABEL).map(([k,v],i)=>i+'. '+v).join('\n');
+  const n=prompt('Tipo actual: '+(TIPOS_LABEL[e.tipo]||e.tipo)+'\nElige número:\n'+tipos);
+  if(n===null)return;
+  const keys=Object.keys(TIPOS_LABEL);const idx=parseInt(n);
+  if(isNaN(idx)||idx<0||idx>=keys.length)return;
+  e.tipo=keys[idx];
+  sb.from('cw_emails').update({tipo:e.tipo}).eq('id',id).then(()=>renderEmails()).catch(()=>{});
+  toast('Tipo actualizado');
+}
+async function sincronizarEmail(){
+  toast('Sincronizando...');
+  try{
+    const resp=await fetch('https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/sync-email',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1'},
+      body:JSON.stringify({cuenta:'mvalencia@customsway.eu'})
+    });
+    if(resp.ok){const d=await resp.json();toast('Sincronizados '+(d.count||0)+' emails nuevos');}
+    else toast('Edge Function pendiente de configurar','warn');
+  }catch(e){toast('Edge Function pendiente — ver instrucciones','warn');}
+  await loadEmails();
+}
+function configEmail(){
+  document.getElementById('modal-root').innerHTML=`
+    <div class="modal-overlay" onclick="if(event.target===this)this.parentElement.innerHTML=''">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="mhdr">
+          <h2>&#9881; Configurar cuenta de email</h2>
+          <button onclick="document.getElementById('modal-root').innerHTML=''">&times;</button>
+        </div>
+        <div class="mbody">
+          <p style="font-size:13px;color:var(--g600);margin-bottom:16px;line-height:1.6">
+            Para leer emails de <strong>mvalencia@customsway.eu</strong> necesitas una
+            <strong>contraseña de aplicación</strong> de Microsoft (App Password).<br><br>
+            Ve a <a href="https://account.microsoft.com/security" target="_blank" style="color:var(--b600)">account.microsoft.com/security</a>
+            → Contraseñas de aplicación → Crear nueva.
+          </p>
+          <div class="mg">
+            <div class="mf full">
+              <label>Cuenta de email</label>
+              <input id="cfg-email" value="mvalencia@customsway.eu">
+            </div>
+            <div class="mf full">
+              <label>Contraseña de aplicación (App Password)</label>
+              <input type="password" id="cfg-pass" placeholder="xxxx xxxx xxxx xxxx">
+            </div>
+            <div class="mf full" style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--r);padding:10px 12px">
+              <p style="font-size:12px;color:var(--am600);line-height:1.5">
+                &#9888; La contraseña se guarda localmente en este dispositivo y se envía a la
+                Edge Function de Supabase para la sincronización. No se comparte con terceros.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="mfoot">
+          <button class="btn btn-sec" onclick="document.getElementById('modal-root').innerHTML=''">Cancelar</button>
+          <button class="btn btn-primary" onclick="guardarConfigEmail()">Guardar y sincronizar</button>
+        </div>
+      </div>
+    </div>`;
+}
+async function guardarConfigEmail(){
+  const email=document.getElementById('cfg-email')?.value?.trim();
+  const pass=document.getElementById('cfg-pass')?.value?.trim();
+  if(!pass){toast('Introduce la contraseña de aplicación');return;}
+  // Guardar en Supabase als_config
+  try{
+    await sb.from('als_config').upsert([
+      {clave:'email_imap_user',valor:email},
+      {clave:'email_imap_pass',valor:pass}
+    ],{onConflict:'clave'});
+    toast('Configuración guardada');
+  }catch(e){
+    // Fallback localStorage
+    localStorage.setItem('cw_email_user',email||'');
+    localStorage.setItem('cw_email_pwd',pass||'');
+    toast('Configuración guardada localmente');
+  }
+  document.getElementById('modal-root').innerHTML='';
+  await sincronizarEmail();
+}
 
 // ── NOTAS ──────────────────────────────────────────────────────────
 let notaTimer=null;
