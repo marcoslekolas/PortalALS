@@ -1303,6 +1303,11 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="nav-item" onclick="nav('empresas',this)"><span class="ni">🏢</span><span class="nav-item-txt">Empresas</span></div>
         <div class="nav-item" onclick="nav('estadisticas',this)"><span class="ni">📈</span><span class="nav-item-txt">Estadísticas</span></div>
         <div class="nav-item" id="nav-facturacion" onclick="nav('facturacion',this)"><span class="ni">💶</span><span class="nav-item-txt">Facturación</span></div>
+        <!-- Módulos externos — visibilidad controlada por rol -->
+        <div class="sb-sec" id="sb-sec-ext" style="display:none">Customs Way</div>
+        <div class="nav-item" id="nav-rpa" style="display:none" onclick="window.location.href='pendencias.html'"><span class="ni">📄</span><span class="nav-item-txt">Control RPA</span></div>
+        <div class="nav-item" id="nav-airport" style="display:none" onclick="window.location.href='airport_cargo.html'"><span class="ni">✈️</span><span class="nav-item-txt">Airport Cargo</span></div>
+        <div class="nav-item" id="nav-taric" style="display:none" onclick="window.location.href='taric.html'"><span class="ni">⚡</span><span class="nav-item-txt">Clasificador TARIC</span></div>
         <!-- Configuración eliminada del sidebar — accesible solo desde home (admin) -->
       </div>
 
@@ -1316,6 +1321,11 @@ textarea.fi{resize:vertical;min-height:72px}
         <div class="nav-item" onclick="nav('permisos',this)"><span class="ni">🔑</span><span class="nav-item-txt">Permisos por rol</span></div>
         <div class="nav-item" onclick="nav('versiones',this)"><span class="ni">🏷️</span><span class="nav-item-txt">Versiones</span></div>
         <div class="nav-item" onclick="nav('informe',this)"><span class="ni">📊</span><span class="nav-item-txt">Informe semanal</span></div>
+        <div class="sb-sec">Customs Way</div>
+        <div class="nav-item" onclick="window.location.href='pendencias.html'"><span class="ni">📄</span><span class="nav-item-txt">Control RPA</span></div>
+        <div class="nav-item" onclick="window.location.href='airport_cargo.html'"><span class="ni">✈️</span><span class="nav-item-txt">Airport Cargo</span></div>
+        <div class="nav-item" onclick="window.location.href='taric.html'"><span class="ni">⚡</span><span class="nav-item-txt">Clasificador TARIC</span></div>
+        <div class="nav-item" onclick="window.location.href='despacho.html'"><span class="ni">📅</span><span class="nav-item-txt">Despacho Personal</span></div>
         <div style="margin-top:auto;padding:12px 8px;border-top:1px solid var(--g200)">
           <button class="btn btn-s btn-sm" style="width:100%;justify-content:center" onclick="enterMod('operativa')">← Ir a Operativa</button>
           <button class="btn btn-s btn-sm" style="width:100%;justify-content:center;margin-top:6px" onclick="showHome()">🏠 Inicio</button>
@@ -3218,6 +3228,32 @@ function showHome(){
   cargarNotificacionesPendientes();
   iniciarPresenciaGlobal();
 
+  // ── Módulos externos en sidebar — visibilidad por rol ──────────
+  const rolesExt = ['admin','aduanas'];
+  const hayExt = rolesExt.includes(CU.rol);
+  const secExt = document.getElementById('sb-sec-ext');
+  const navRpa = document.getElementById('nav-rpa');
+  const navAirport = document.getElementById('nav-airport');
+  const navTaric = document.getElementById('nav-taric');
+  if(secExt)  secExt.style.display  = hayExt ? '' : 'none';
+  if(navRpa)  navRpa.style.display  = hayExt ? '' : 'none';
+  if(navAirport) navAirport.style.display = hayExt ? '' : 'none';
+  if(navTaric)navTaric.style.display = hayExt ? '' : 'none';
+
+  // ── Card Control RPA (admin + aduanas) ─────────────────────────
+  if(['admin','aduanas'].includes(CU.rol))
+    c.innerHTML+=`<div class="hm-card" style="background:linear-gradient(145deg,#134e4a,#0f766e);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="window.location.href='pendencias.html'" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
+      <div class="hm-card-icon">📄</div>
+      <div class="hm-card-body">
+        <div class="hm-ctitle">Control RPA</div>
+        <div class="hm-cdesc">Régimen 51 · Perfeccionamiento Activo</div>
+        <div class="hm-card-feats">
+          <span>📅 Plazos</span><span>🔗 DUAs export.</span><span>📋 Anexo 71-06</span><span>📊 Garantías</span>
+        </div>
+        <div class="hm-card-cta">Entrar →</div>
+      </div>
+    </div>`;
+
   if(CU.rol==='admin')
     c.innerHTML+=`<div class="hm-card hm-card-cfg" onclick="enterMod('configuracion')">
       <div class="hm-card-bg"></div>
@@ -3227,6 +3263,20 @@ function showHome(){
         <div class="hm-cdesc">Admin · Usuarios · Log</div>
         <div class="hm-card-feats">
           <span>👥 Usuarios</span><span>📋 Log</span><span>🏷️ Versiones</span><span>🔑 Accesos</span>
+        </div>
+        <div class="hm-card-cta">Entrar →</div>
+      </div>
+    </div>`;
+
+  // ── Card Despacho Personal (solo admin, invisible para el resto) ─
+  if(CU.rol==='admin')
+    c.innerHTML+=`<div class="hm-card" style="background:linear-gradient(145deg,#1e1b4b,#312e81);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="window.location.href='despacho.html'" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
+      <div class="hm-card-icon">📅</div>
+      <div class="hm-card-body">
+        <div class="hm-ctitle">Despacho Personal</div>
+        <div class="hm-cdesc">Tareas · Plazos · Email · Notas</div>
+        <div class="hm-card-feats">
+          <span>✅ Kanban</span><span>⏱ Plazos</span><span>📧 Bandeja</span><span>📝 Notas</span>
         </div>
         <div class="hm-card-cta">Entrar →</div>
       </div>
