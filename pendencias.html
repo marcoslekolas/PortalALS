@@ -539,6 +539,35 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){cerrarM();cerrarP()
 document.getElementById('ov').addEventListener('click',e=>{if(e.target===document.getElementById('ov'))cerrarM();});
 document.getElementById('ov-el').addEventListener('click',e=>{if(e.target===document.getElementById('ov-el'))cerrarEl();});
 loadKey();cargar();
+// Mostrar enlace Despacho solo a admin
+(function(){
+  try{
+    const cu=JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null');
+    if(cu&&cu.rol==='admin'){
+      const a=document.createElement('a');
+      a.href='despacho.html';a.className='hdr-a';
+      a.textContent='📅 Despacho';
+      document.querySelector('.hdr-r').insertBefore(a,document.querySelector('.hdr-a'));
+    }
+    // Bloquear acceso a roles no autorizados
+    if(!cu||!['admin','aduanas'].includes(cu.rol)){
+      document.body.innerHTML=`
+        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#09101f;font-family:'Syne',sans-serif">
+          <div style="text-align:center;max-width:400px;padding:32px">
+            <div style="font-size:48px;margin-bottom:16px">🔒</div>
+            <div style="font-size:22px;font-weight:800;color:#e8edf5;margin-bottom:8px">Acceso restringido</div>
+            <div style="font-size:14px;color:#4a637d;margin-bottom:24px;line-height:1.6">
+              El módulo <strong style="color:#8fa3bf">Control RPA</strong> es accesible únicamente para los roles <strong style="color:#8fa3bf">Administrador</strong> y <strong style="color:#8fa3bf">Aduanas</strong>.
+            </div>
+            <a href="index_work.html" style="display:inline-flex;align-items:center;gap:8px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;padding:10px 22px;font-size:14px;font-weight:700">
+              ← Volver al portal
+            </a>
+          </div>
+        </div>`;
+      throw new Error('Acceso denegado');
+    }
+  }catch(e){ if(e.message==='Acceso denegado') throw e; }
+})();
 </script>
 </body>
 </html>
