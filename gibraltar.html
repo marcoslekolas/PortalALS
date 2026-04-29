@@ -1069,11 +1069,21 @@ function closeSB(){
 function goSec(id,el){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
-  document.getElementById('sec-'+id).classList.add('on');
-  if(el) el.classList.add('active');
+  const sec=document.getElementById('sec-'+id);
+  if(sec) sec.classList.add('on');
+  if(el){
+    el.classList.add('active');
+    const b=el.querySelector('.upd-badge');
+    if(b) b.style.display='none';
+  }
   closeSB();
   if(id==='historial') loadHistorial();
   if(id==='hinformes') loadHInformes();
+  if(id==='mapa'){
+    if(!GIB.mmBuilt) buildMindMap();
+    else if(GIB.updNodes.length) buildMindMap(); // refresh if updated
+  }
+  if(id==='chat' && !GIB.chatBuilt) buildChat();
 }
 
 // ═══ INFORMES DATA ═══
@@ -1432,7 +1442,23 @@ H1: importación en DCP para 3ºs países→GIB, pago previo obligatorio (sin ga
 NI 08/2026 (26/02/2026 AEAT): aspectos aduaneros del Acuerdo. NI 12/2026 (13/04/2026 AEAT): garantías de tránsito, actualizar antes del 15/07/2026.
 
 Responde SIEMPRE en español. Cita artículos concretos. Distingue período transitorio vs definitivo. Usa la búsqueda web cuando sea necesario.`;
-let CH=[],CB=false;
+// ── Chat history — persisted in localStorage ─────────────────────────
+const CHAT_KEY = 'cw_gib_chat';
+let CB = false;
+
+function loadCH() {
+  try { return JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveCH(ch) {
+  try { localStorage.setItem(CHAT_KEY, JSON.stringify(ch.slice(-30))); } catch(e) {}
+}
+function clearCH() {
+  localStorage.removeItem(CHAT_KEY);
+  const box = document.getElementById('chat-msgs');
+  if(box) box.innerHTML = '';
+  buildChatWelcome();
+}
+let CH = loadCH();
 const HINTS_DATA=['Avituallamiento carburante IIEE Gibraltar','T2GI: plazos y ultimación','Garantías NI 12/2026','H1 + T1GI terceros países','IVA exportación Gibraltar','Resguardo Fiscal competencias La Línea'];
 
 function buildChat(){
@@ -1470,13 +1496,16 @@ async function sendChat(){
   const inp=document.getElementById('cinput');
   const text=inp.value.trim();if(!text)return;
   inp.value='';CB=true;document.getElementById('csend').disabled=true;
-  addMsg('user',text);CH.push({role:'user',content:text});showTp();
+  addMsg('user',text);
+  CH.push({role:'user',content:text});
+  saveCH(CH);
+  showTp();
   try{
     const msgs=[{role:'system',content:SYS},...CH];
     const r=await fetch(OR_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         model:'anthropic/claude-sonnet-4-5',
-        max_tokens:1000,
+        max_tokens:4000,
         temperature:0.1,
         messages:msgs
       })});
@@ -1484,8 +1513,10 @@ async function sendChat(){
     const data=await r.json();
     const reply=data?.choices?.[0]?.message?.content||'Sin respuesta.';
     document.getElementById('tpdot')?.remove();
-    addMsg('ai',reply);CH.push({role:'assistant',content:reply});
-    if(CH.length>20)CH=CH.slice(-20);
+    addMsg('ai',reply);
+    CH.push({role:'assistant',content:reply});
+    if(CH.length>30) CH=CH.slice(-30);
+    saveCH(CH);
   }catch(e){document.getElementById('tpdot')?.remove();addMsg('ai','Error de conexión con la API.');}
   CB=false;document.getElementById('csend').disabled=false;
 }
