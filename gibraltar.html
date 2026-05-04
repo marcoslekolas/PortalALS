@@ -795,6 +795,8 @@ const GIB = {
 };
 GIB.mmBuilt = false;
 GIB.chatBuilt = false;
+GIB.vialesBuilt = false;
+GIB.operativaBuilt = false;
 
 function showBadge(sec) {
   const b = document.getElementById('b-' + sec);
@@ -1084,6 +1086,8 @@ function goSec(id,el){
     else if(GIB.updNodes.length) buildMindMap(); // refresh if updated
   }
   if(id==='chat' && !GIB.chatBuilt) buildChat();
+  if(id==='viales' && !GIB.vialesBuilt){ buildViales(); GIB.vialesBuilt=true; }
+  if(id==='operativa' && !GIB.operativaBuilt){ buildOperativa(); GIB.operativaBuilt=true; }
 }
 
 // ═══ INFORMES DATA ═══
@@ -1374,7 +1378,10 @@ Si no hay novedades en una sección, escribe "Sin novedades esta semana."`;
     const data=await r.json();
     const text=data?.choices?.[0]?.message?.content||'';
     out.innerHTML=fmtBrief(text||'Sin resultado.');
-    try{await sb.from('cw_briefings').insert({fecha:today,contenido:text,creado_en:now.toISOString()});}catch(e){}
+    try{
+      const{error:saveErr}=await sb.from('cw_briefings').insert({fecha:today,contenido:text,creado_en:now.toISOString()});
+      if(saveErr) console.error('[Briefing] Error guardando en cw_briefings:',saveErr.message,saveErr.hint||'');
+    }catch(e){ console.error('[Briefing] Excepción al guardar:',e); }
     GIB.lastBriefingDate=today; GIB.lastBriefingText=text; analyseBriefing(text);
     lbl.textContent='Actualizado: '+now.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+now.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   }catch(e){
@@ -1395,20 +1402,32 @@ async function loadHistorial(){
   const el=document.getElementById('hist-wrap');
   el.innerHTML='<div style="text-align:center;padding:30px;color:var(--g400)">Cargando...</div>';
   try{
-    const{data,error}=await sb.from('cw_briefings').select('id,fecha,contenido,creado_en').order('fecha',{ascending:false}).limit(30);
-    if(error||!data?.length){
-      el.innerHTML='<div style="text-align:center;padding:40px;color:var(--g400);font-size:13px">No hay briefings guardados.<br><span style="font-size:11px;font-family:var(--mono)">Crea la tabla cw_briefings en Supabase primero.</span></div>';
+    const{data,error}=await sb.from('cw_briefings').select('id,fecha,contenido,creado_en').order('creado_en',{ascending:false}).limit(30);
+    if(error){
+      console.error('[Historial] Error Supabase:',error.message,error.hint||'',error.details||'');
+      el.innerHTML=`<div style="text-align:center;padding:40px;color:var(--rd600);font-size:13px">
+        <strong>Error al cargar historial</strong><br>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--g500)">${error.message||'Error desconocido'}</span><br>
+        <span style="font-size:11px;color:var(--g400);margin-top:6px;display:block">Revisa RLS en Supabase → tabla <code>cw_briefings</code></span>
+        <a href="https://supabase.com/dashboard/project/bccqfqaehbmmqbisfbyv/editor" target="_blank" style="font-size:11px;color:var(--b600);margin-top:8px;display:inline-block">Abrir SQL Editor →</a>
+      </div>`;
+      return;
+    }
+    if(!data?.length){
+      el.innerHTML='<div style="text-align:center;padding:40px;color:var(--g400);font-size:13px">No hay briefings guardados todavía.<br><span style="font-size:11px;font-family:var(--mono)">Genera un briefing desde «Briefing Diario»</span></div>';
       return;
     }
     el.innerHTML=data.map(b=>{
       const prev=(b.contenido||'').replace(/[#*<>\n]/g,' ').substring(0,120)+'…';
-      return `<div class="hist-item" onclick='showBriefHist(${JSON.stringify(b.contenido)},"${b.fecha}")'>
-        <div class="hist-date">${b.fecha}</div>
+      const fecha=b.fecha||(b.creado_en?b.creado_en.substring(0,10):'—');
+      return `<div class="hist-item" onclick='showBriefHist(${JSON.stringify(b.contenido)},"${fecha}")'>
+        <div class="hist-date">${fecha}</div>
         <div class="hist-prev">${prev}</div>
       </div>`;
     }).join('');
   }catch(e){
-    el.innerHTML='<div style="text-align:center;padding:30px;color:var(--rd600)">Error cargando historial.</div>';
+    console.error('[Historial] Excepción:',e);
+    el.innerHTML='<div style="text-align:center;padding:30px;color:var(--rd600)">Error de conexión con Supabase.</div>';
   }
 }
 
