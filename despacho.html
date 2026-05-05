@@ -659,27 +659,70 @@ function autosaveNota(){
   clearTimeout(notaTimer);
   notaTimer=setTimeout(async()=>{
     if(!notaSelId)return;
-    const tit=(document.getElementById('nt')?.value||'').trim();
-    const cue=(document.getElementById('nb')?.value||'');
+    const titEl=document.getElementById('nt');
+    const cueEl=document.getElementById('nb');
+    if(!titEl||!cueEl)return; // editor ya no existe en DOM
+    const tit=(titEl.value||'').trim();
+    const cue=cueEl.value||'';
     const obj={titulo:tit||'Sin título',cuerpo:cue,updated_at:new Date().toISOString()};
-    await saveNota(obj,notaSelId);
-    const footer=document.querySelector('.ne-footer span');
-    if(footer)footer.textContent='Guardado: '+new Date().toLocaleString('es-ES');
+    // Guardar sin recargar todo (evita destruir el editor)
+    try{
+      if(notaSelId.length>10){ // UUID de Supabase
+        await sb.from('cw_notas').update(obj).eq('id',notaSelId);
+      } else {
+        // ID local (sin Supabase)
+        const a=JSON.parse(localStorage.getItem('cw_notas')||'[]');
+        const i=a.findIndex(x=>x.id===notaSelId);
+        if(i>=0){a[i]={...a[i],...obj};localStorage.setItem('cw_notas',JSON.stringify(a));}
+      }
+      // Actualizar cache local sin rerender
+      const idx=notas.findIndex(x=>x.id===notaSelId);
+      if(idx>=0) notas[idx]={...notas[idx],...obj};
+      // Actualizar solo el footer y el preview del sidebar
+      const footer=document.querySelector('.ne-footer span');
+      if(footer)footer.textContent='Guardado: '+new Date().toLocaleString('es-ES');
+      // Actualizar preview en sidebar sin rerenderizar todo
+      const sideItem=document.querySelector('.nota-item[onclick*="\''+notaSelId+'\'"] .ni-preview');
+      if(sideItem)sideItem.textContent=cue.substring(0,60);
+      const sideTitle=document.querySelector('.nota-item[onclick*="\''+notaSelId+'\'"] .ni-title');
+      if(sideTitle)sideTitle.textContent=tit||'Sin título';
+    }catch(e){
+      console.warn('autosave error:',e.message);
+      // Fallback localStorage silencioso
+      const a=JSON.parse(localStorage.getItem('cw_notas')||'[]');
+      const i=a.findIndex(x=>x.id===notaSelId);
+      if(i>=0){a[i]={...a[i],...obj};localStorage.setItem('cw_notas',JSON.stringify(a));}
+    }
   },800);
 }
 async function nuevaNota(){
-  const obj={titulo:'Nueva nota',cuerpo:'',created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
-  try{const{data}=await sb.from('cw_notas').insert(obj).select().single();notaSelId=data.id;}
-  catch(e){const id=Date.now().toString();notas.unshift({...obj,id});notaSelId=id;localStorage.setItem('cw_notas',JSON.stringify(notas));}
-  await loadNotas();selNota(notaSelId);
+  const now=new Date().toISOString();
+  const obj={titulo:'Nueva nota',cuerpo:'',created_at:now,updated_at:now};
+  try{
+    const{data,error}=await sb.from('cw_notas').insert(obj).select().single();
+    if(error)throw error;
+    notaSelId=data.id;
+    notas.unshift(data);
+  }catch(e){
+    // Fallback: usar UUID simulado para que autosaveNota lo trate como local
+    const id='local_'+Date.now();
+    notas.unshift({...obj,id});
+    notaSelId=id;
+    localStorage.setItem('cw_notas',JSON.stringify(notas));
+  }
+  renderNotas();
+  selNota(notaSelId);
+  // Foco en el título
+  setTimeout(()=>document.getElementById('nt')?.focus(),50);
 }
 async function delNota(id){
   if(!confirm('¿Eliminar esta nota?'))return;
   try{await sb.from('cw_notas').delete().eq('id',id);}
   catch(e){const a=JSON.parse(localStorage.getItem('cw_notas')||'[]').filter(x=>x.id!==id);localStorage.setItem('cw_notas',JSON.stringify(a));}
+  notas=notas.filter(x=>x.id!==id);
   notaSelId=null;
-  document.getElementById('nota-editor').innerHTML='<div class="notas-empty"><div style="font-size:28px">📝</div><p style="color:var(--t3);font-size:13px">Selecciona o crea una nota</p></div>';
-  await loadNotas();
+  document.getElementById('nota-editor').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:8px;color:var(--g400)"><div style="font-size:28px">&#128221;</div><p style="font-size:13px">Selecciona o crea una nota</p></div>';
+  renderNotas();
 }
 
 // ── NOTIFICACIONES ────────────────────────────────────────────────
