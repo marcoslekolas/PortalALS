@@ -314,6 +314,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div class="sb-sec">Acciones</div>
         <div class="nav-item" onclick="openNueva()"><span class="ni">➕</span><span class="nav-item-txt">Nueva entrada</span></div>
         <div class="nav-item" onclick="abrirEmail()"><span class="ni">📧</span><span class="nav-item-txt">Notificar consignatario</span></div>
+        <div class="nav-item" onclick="abrirEmailCliente()"><span class="ni">👤</span><span class="nav-item-txt">Notificar cliente</span></div>
         <div class="nav-item" onclick="abrirInstrTransp()"><span class="ni">🚛</span><span class="nav-item-txt">Instruc. transportista</span></div>
       </div>
       <!-- Footer -->
@@ -367,7 +368,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
           <thead><tr>
             <th style="width:44px;padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:44px;cursor:pointer;padding:8px"><input type="checkbox" id="chk-all" onchange="toggleAll(this)" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer"></label></th>
             <th>AWB</th><th>Consignatario / Cliente</th><th>Buque</th><th>Handler</th><th>Apto</th>
-            <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th>
+            <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th><th>Despacho</th><th>ETA Buque</th><th>T1 Cad.</th><th>Libre hasta</th>
             <th>Almacenaje</th><th>Gest.Doc.</th><th>T.Recinto</th><th>T.Mant.</th>
             <th>Finde</th><th>Express</th><th>C.Camión</th><th>Apertura</th>
             <th style="background:var(--b50);color:var(--b700)" class="col-sticky-r2">TOTAL €</th>
@@ -716,7 +717,11 @@ async function init(){
       return;
     }
     var tr = ev.target.closest('tr.tbl-row');
-    if(tr){ var tid = tr.getAttribute('data-id'); if(tid) openDetalle(tid); }
+    if(tr){ 
+      if(ev.target.closest('td.col-sticky-r')) return;
+      var tid = tr.getAttribute('data-id'); 
+      if(tid) openDetalle(tid); 
+    }
   });
 }
 
@@ -809,7 +814,7 @@ function trackAwb(evt,awb){
 
 function renderRows(list){
   var tbody=document.getElementById('tbody');
-  if(!list.length){tbody.innerHTML='<tr><td colspan="22"><div class="empty">Sin entradas</div></td></tr>';return;}
+  if(!list.length){tbody.innerHTML='<tr><td colspan="26"><div class="empty">Sin entradas</div></td></tr>';return;}
   var rows=list.map(function(e){
     var isAuto=hasH(e.handling);
     var kg=parseFloat(e.kilos_tasables)||0;
@@ -840,6 +845,10 @@ function renderRows(list){
       '<td style="text-align:right;font-size:12px">'+kg+'</td>'+
       '<td style="text-align:right;font-size:12px">'+(e.bultos||'—')+'</td>'+
       '<td><span class="badge '+(e.status==='T1'?'ba':e.status==='Comunitario'?'bg':'bgr')+'" style="font-size:10px">'+(e.status||'—')+'</span></td>'+
+      '<td><span class="badge '+(e.despachado?'bg':'ba')+'" style="font-size:10px">'+(e.despachado?'✅ Despachado':'⏳ Pendiente')+'</span></td>'+
+      '<td class="sm">'+(e.eta_buque?fd(e.eta_buque):'—')+'</td>'+
+      '<td class="sm">'+(e.fecha_caducidad_t1?fd(e.fecha_caducidad_t1):'—')+'</td>'+
+      (function(){var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);var hoy=new Date();hoy.setHours(0,0,0,0);var vencido=fml&&fml<hoy;return'<td class="sm" style="'+(vencido?'color:var(--rd600);font-weight:600':fml?'color:var(--gr600)':'')+'">'+( fml?fd(fml):'—')+'</td>';})()
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(alm):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(gd):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(tr):'—')+'</td>'+
@@ -849,7 +858,7 @@ function renderRows(list){
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(cc?fn(cc):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(ap?fn(ap):'—')+'</td>'+
       '<td class="col-sticky-r2" style="text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);background:var(--b50)">'+fc(tot)+'</td>'+
-      '<td class="col-sticky-r" onclick="event.stopPropagation()" style="white-space:nowrap;background:var(--w);padding:6px 8px">'+
+      '<td class="col-sticky-r" style="white-space:nowrap;background:var(--w);padding:6px 8px">'+
         '<button class="btn btn-sm btn-s" data-action="edit" data-id="'+e.id+'" title="Editar">✏️</button> '+
         '<button class="btn btn-sm btn-d" data-action="del" data-id="'+e.id+'" title="Eliminar">🗑️</button>'+
       '</td></tr>';
@@ -880,9 +889,9 @@ function exportarAirportCSV(){
       fd(e.fecha_llegada),fd(e.fecha_retirada),d,
       e.kilos_tasables||0,e.bultos||0,e.status||'',(e.observaciones||''),
       calcTotal(e).toFixed(2)
-    ].map(function(v){return String(v).replace(/,/g,';');});
+    ].map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';});
   });
-  var csv=[headers.join(',')].concat(rows.map(function(r){return r.join(',');})).join('\n');
+  var csv=[headers.join(';')].concat(rows.map(function(r){return r.join(';');})).join('\n');
   var blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
   var url=URL.createObjectURL(blob);
   var a=document.createElement('a');a.href=url;a.download='airport_cargo_'+new Date().toISOString().slice(0,10)+'.csv';
@@ -1287,6 +1296,23 @@ async function crearNuevoAnio(){
   closeModal();loadTarifasView();
 }
 
+function fechaMaximaLibre(fecha_llegada, handling) {
+  if (!fecha_llegada || !handling) return null;
+  var l = new Date(fecha_llegada);
+  var dow = l.getDay();
+  var diasLibres;
+  if (handling === 'Swissport') {
+    diasLibres = (dow === 0 || dow === 6) ? 2 : 1;
+  } else if (handling === 'Groundforce') {
+    diasLibres = 3;
+  } else {
+    return null;
+  }
+  var max = new Date(l);
+  max.setDate(max.getDate() + diasLibres);
+  return max;
+}
+
 // ── DETALLE ──────────────────────────────────────────────
 function openDetalle(id){
   var e=ALL.filter(function(x){return String(x.id)===String(id);})[0];
@@ -1324,6 +1350,12 @@ function openDetalle(id){
     '<div><div class="sm">Fecha retirada</div><div class="fw">'+( fd(e.fecha_retirada)||'⚠️ pendiente')+'</div></div>'+
     '<div><div class="sm">Kg tasables</div><div class="fw">'+kg+' kg</div></div>'+
     '<div><div class="sm">Bultos</div><div class="fw">'+( e.bultos||'—')+'</div></div>'+
+    '<div><div class="sm">Vuelo / Hora</div><div class="fw">'+( e.vuelo||'—')+(e.hora_llegada?' · '+e.hora_llegada:'')+'</div></div>'+
+    '<div><div class="sm">ETA Buque</div><div class="fw">'+( e.eta_buque?fd(e.eta_buque):'—')+'</div></div>'+
+    '<div><div class="sm">Estado despacho</div><span class="badge '+(e.despachado?'bg':'ba')+'">'+( e.despachado?'✅ Despachado':'⏳ Pendiente despacho')+'</span></div>'+
+    '<div><div class="sm">Caducidad T1</div><div class="fw">'+( e.fecha_caducidad_t1?fd(e.fecha_caducidad_t1):'—')+'</div></div>'+
+    '<div><div class="sm">T1 Sellado</div><div class="fw">'+( e.t1_sellado?'🔏 Sí':'—')+'</div></div>'+
+    '<div><div class="sm">Fecha bandeja T1</div><div class="fw">'+( e.fecha_bandeja_t1?fd(e.fecha_bandeja_t1):'—')+'</div></div>'+
     '</div>'+
     '<div class="fdiv"></div>'+costsHtml+
     (e.observaciones?'<div style="margin-top:10px;padding:9px;background:var(--g50);border-radius:var(--r);font-size:12px;color:var(--g600)">'+e.observaciones+'</div>':'');
@@ -1371,12 +1403,24 @@ async function showForm(e){
     '<div class="fg"><label class="fl">Status aduanero</label><select id="f-status" class="fi fs">'+statusOpts+'</select></div>'+
     '</div>'+
     '<div class="fr3">'+
-    '<div class="fg"><label class="fl">Fecha llegada</label><input id="f-ll" class="fi" type="date" value="'+(e?e.fecha_llegada||'':'')+'" oninput="liveCalc()"></div>'+
-    '<div class="fg"><label class="fl">Fecha retirada *</label><input id="f-rt" class="fi" type="date" value="'+(e?e.fecha_retirada||'':'')+'" oninput="liveCalc()" '+(e&&!e.fecha_retirada?'style="border-color:var(--am500)"':'')+'>'+
+    '<div class="fg"><label class="fl">Fecha llegada <span style="font-size:10px;color:var(--g400)">(puede dejarse en blanco)</span></label><input id="f-ll" class="fi" type="date" value="'+(e?e.fecha_llegada||'':'')+'" oninput="liveCalc()"></div>'+
+    '<div class="fg"><label class="fl">Vuelo <span style="font-size:10px;color:var(--g400)">(opcional)</span></label><input id="f-vuelo" class="fi" value="'+(e?e.vuelo||'':'')+'" placeholder="Ej: IB3456"></div>'+
+    '<div class="fg"><label class="fl">Hora llegada <span style="font-size:10px;color:var(--g400)">(opcional)</span></label><input id="f-hora" class="fi" type="time" value="'+(e?e.hora_llegada||'':'')+'"></div>'+
+    '</div>'+
+    '<div class="fr3">'+
+    '<div class="fg"><label class="fl">Fecha retirada</label><input id="f-rt" class="fi" type="date" value="'+(e?e.fecha_retirada||'':'')+'" oninput="liveCalc()" '+(e&&!e.fecha_retirada?'style="border-color:var(--am500)"':'')+'>'+
     '</div>'+
     '<div class="fg"><label class="fl">Kg tasables *</label><input id="f-kg" class="fi" type="number" min="0" step="0.01" value="'+(e?e.kilos_tasables||'':'')+'" oninput="liveCalc()"></div>'+
+    '<div class="fg"><label class="fl">Bultos</label><input id="f-blt" class="fi" type="number" min="0" value="'+(e?e.bultos||'':'')+'"></div>'+
     '</div>'+
-    '<div class="fg"><label class="fl">Bultos</label><input id="f-blt" class="fi" type="number" min="0" value="'+(e?e.bultos||'':'')+'" style="max-width:120px"></div>'+
+    '<div class="sect">Estado del despacho y T1</div>'+
+    '<div class="fr3">'+
+    '<div class="fg"><label class="fl">ETA Buque</label><input id="f-eta-buque" class="fi" type="date" value="'+(e?e.eta_buque||'':'')+'"></div>'+
+    '<div class="fg"><label class="fl">Caducidad T1</label><input id="f-cad-t1" class="fi" type="date" value="'+(e?e.fecha_caducidad_t1||'':'')+'"></div>'+
+    '<div class="fg"><label class="fl">Fecha bandeja T1</label><input id="f-bandeja-t1" class="fi" type="date" value="'+(e?e.fecha_bandeja_t1||'':'')+'"></div>'+
+    '</div>'+
+    '<label class="toggle-row"><input type="checkbox" id="f-despachado" '+(e&&e.despachado?'checked':'')+'>  ✅ Mercancía despachada</label>'+
+    '<label class="toggle-row"><input type="checkbox" id="f-t1-sellado" '+(e&&e.t1_sellado?'checked':'')+'>  🔏 T1 para sellado</label>'+
     '<div id="ext" '+(isAuto?'':'style="display:none"')+'>'+
     '<div class="sect">Cargos opcionales</div>'+
     '<label class="toggle-row"><input type="checkbox" id="f-fi" '+(e&&e.aplica_finde?'checked':'')+' onchange="liveCalc()"> 📅 Fin de semana / festivos</label>'+
@@ -1454,7 +1498,14 @@ function buildObj(){
     aplica_express:isAuto?gc('f-ex'):false,aplica_carga_camion:isAuto?gc('f-cc'):false,
     aplica_apertura:isAuto?gc('f-ap'):false,coste_manual:(!isAuto&&h)?parseFloat(gv('f-man'))||null:null,
     observaciones:gv('f-obs').trim()||null,mes_operacion:calcMes(rt),
-    operation_year:rt?new Date(rt).getFullYear():null};
+    operation_year:rt?new Date(rt).getFullYear():null,
+    vuelo:gv('f-vuelo').trim()||null,
+    hora_llegada:gv('f-hora')||null,
+    eta_buque:gv('f-eta-buque')||null,
+    despachado:gc('f-despachado'),
+    fecha_caducidad_t1:gv('f-cad-t1')||null,
+    t1_sellado:gc('f-t1-sellado'),
+    fecha_bandeja_t1:gv('f-bandeja-t1')||null};
 }
 async function crearEntrada(){
   var o=buildObj();
@@ -1485,30 +1536,74 @@ function loadView(){
 
 function emEmpChange(sel){var o=sel.options[sel.selectedIndex];var i=document.getElementById('em-email');if(i&&o&&o.dataset.email)i.value=o.dataset.email;}
 // ── EMAIL ────────────────────────────────────────────────
-function buildEmailCuerpo(sel,clienteNombre,apts,totalBlt,totalKg,hoy,firmaKey){
-  var FIRMAS={
-    als:{nombre:'Dpto. de Operaciones — ALGECIRAS LOGISTIC SOLUTIONS (ALS)',tel:'+34 956 58 13 16',email:'als@alsalgeciras.com',dir:'Pol. La Menacha, Avda. La Bahia 14, Algeciras'},
-    cw:{nombre:'Dpto. de Operaciones — CUSTOMS WAY',tel:'(pendiente)',email:'(pendiente)',dir:'(pendiente)'}
-  };
-  var firma=FIRMAS[firmaKey||'als']||FIRMAS.als;
-  var TB='https://marcoslekolas.github.io/PortalALS/tracking.html?awb=';
-  var byBuque={};
-  sel.forEach(function(e){var bk=e.buque||'(Sin buque asignado)';if(!byBuque[bk])byBuque[bk]=[];byBuque[bk].push(e);});
-  var NL='\n';
-  var detalle=Object.keys(byBuque).map(function(buque){
-    var exps=byBuque[buque];
-    var bloque='  Buque: '+buque+NL;
-    exps.forEach(function(e){
-      var diffCons=(e.consignatario||'').toLowerCase()!==(clienteNombre||'').toLowerCase();
-      var consStr=diffCons?' | Consignatario: '+(e.consignatario||'—'):'';
-      var obsStr=e.observaciones?NL+'    Obs: '+e.observaciones:'';
-      var trackStr=e.id?NL+'    Seguimiento: '+TB+encodeURIComponent(e.id):'';
-      bloque+='  · AWB: '+formatAwb(e.awb||'—')+consStr+' | '+(e.bultos||'—')+' bto'+(e.bultos!==1?'s':'')+
-        ' | '+(e.kilos_tasables||'—')+' kg | Status: '+(e.status||'—')+
-        ' | Llegada: '+fd(e.fecha_llegada)+obsStr+trackStr+NL;
+function buildEmailCuerpo(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasLasExps){
+  var NL = '\n';
+  var firma = 'Departamento de Aduana — CUSTOMS-WAY SL\nT. 856 003 50 02\nEmail: aduana@customsway.eu';
+  var TB = 'https://marcoslekolas.github.io/PortalALS/tracking.html?awb=';
+  
+  function txtTable(headers, rows, widths){
+    var sep = '+' + widths.map(function(w){return '-'.repeat(w+2);}).join('+') + '+';
+    var hdr = '|' + headers.map(function(h,i){var pad=widths[i];return ' '+h.substring(0,pad)+(h.length<pad?' '.repeat(pad-h.length):'')+' ';}).join('|') + '|';
+    var body = rows.map(function(r){
+      return '|' + r.map(function(c,i){var s=String(c===null||c===undefined?'—':c);var pad=widths[i];return ' '+s.substring(0,pad)+(s.length<pad?' '.repeat(pad-s.length):'')+' ';}).join('|') + '|';
+    }).join(NL);
+    return [sep, hdr, sep, body, sep].join(NL);
+  }
+  
+  var byBuque = {};
+  sel.forEach(function(e){ var bk = e.buque||'(Sin buque)'; if(!byBuque[bk]) byBuque[bk]=[]; byBuque[bk].push(e); });
+  
+  var detalle = Object.keys(byBuque).map(function(buque){
+    var exps = byBuque[buque];
+    var tableRows = exps.map(function(e){
+      return [
+        formatAwb(e.awb||'—'),
+        e.consignatario||'—',
+        (e.bultos||'—')+' btos',
+        (e.kilos_tasables||'—')+' kg',
+        e.status||'—',
+        fd(e.fecha_llegada),
+        e.observaciones||''
+      ];
     });
-    return bloque;
-  }).join(NL);
+    var tbl = txtTable(
+      ['AWB','Consignatario','Bultos','Kilos','Status','Llegada','Observaciones'],
+      tableRows,
+      [15,20,8,10,12,10,25]
+    );
+    return '  BUQUE: '+buque+NL+tbl;
+  }).join(NL+NL);
+  
+  var hoyDate = new Date(); hoyDate.setHours(0,0,0,0);
+  var pendAll = todasLasExps||[];
+  var pendExps = pendAll.filter(function(e){
+    if(e.fecha_retirada) return false;
+    if(e.fecha_llegada){var d=new Date(e.fecha_llegada); return d>=hoyDate;}
+    if(e.eta_buque){var d2=new Date(e.eta_buque); return d2>=hoyDate;}
+    return false;
+  });
+  
+  var pendSection = '';
+  if(pendExps.length){
+    var pendRows = pendExps.map(function(e){
+      return [
+        formatAwb(e.awb||'—'),
+        e.consignatario||e.cliente||'—',
+        e.buque||'—',
+        e.eta_buque?fd(e.eta_buque):(e.fecha_llegada?fd(e.fecha_llegada):'—'),
+        e.observaciones||''
+      ];
+    });
+    var pendTbl = txtTable(
+      ['AWB','Consignatario','Buque','Prevision','Observaciones'],
+      pendRows,
+      [15,20,15,12,30]
+    );
+    pendSection = NL+NL+
+      '══ EXPEDICIONES PENDIENTES DE LLEGADA ══════════════════════'+NL+NL+
+      pendTbl;
+  }
+  
   return [
     'Estimados Sres. / Dear Sirs,',NL,NL,
     'Nos dirigimos a ustedes para informarles de la situacion actual de sus expediciones aereas en transito hacia '+apts+'.',NL,NL,
@@ -1518,17 +1613,16 @@ function buildEmailCuerpo(sel,clienteNombre,apts,totalBlt,totalKg,hoy,firmaKey){
     'Total bultos: '+totalBlt,NL,
     'Total kilos: '+totalKg.toLocaleString('es-ES')+' kg',NL,NL,
     '── DETALLE POR BUQUE ────────────────────────────────────',NL,NL,
-    detalle,NL,
+    detalle,
+    pendSection,NL,NL,
     '──────────────────────────────────────────────────────',NL,NL,
     '── PROXIMOS PASOS ───────────────────────────────────────',NL,NL,
     'Las mercancias se encuentran en proceso de gestion aduanera. Una vez concluido, coordinaremos la entrega conforme a sus instrucciones.',NL,NL,
-    'Puede consultar el estado actualizado de cada expedicion en los enlaces de seguimiento indicados arriba.',NL,NL,
     'Para cualquier consulta:',NL,
-    'Tel: '+firma.tel,NL,
-    'Email: '+firma.email,NL,
-    'Dir: '+firma.dir,NL,NL,
+    firma,NL,NL,
     'Atentamente / Kind regards,',NL,
-    firma.nombre,NL,
+    'Departamento de Aduana',NL,
+    'CUSTOMS-WAY SL',NL,
     '──────────────────────────────────────────────────────',NL,
     hoy
   ].join('');
@@ -1571,44 +1665,92 @@ async function abrirEmail(){
   var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
   var totalKg=sel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
   var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
-  var cc='als@alsalgeciras.com';
-  var asunto=encodeURIComponent('Situacion expediciones aeropuerto — '+(clienteNombre||'ALS')+' · '+new Date().toLocaleDateString('es-ES'));
+  var asunto=encodeURIComponent('Situacion expediciones aeropuerto — '+(clienteNombre||'Airport Cargo')+' · '+new Date().toLocaleDateString('es-ES'));
 
-  // Modal de confirmación con selector de firma
   var prev=document.getElementById('email-firma-modal');
   if(prev) prev.remove();
   var modal=document.createElement('div');
   modal.id='email-firma-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML='<div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:28px 32px;min-width:300px;max-width:440px;width:100%">'
-    +'<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:6px">Confirmar envio</div>'
-    +'<div style="font-size:12px;color:#64748b;margin-bottom:16px">Para: <b style="color:#94a3b8">'+emailDest+'</b> &nbsp;·&nbsp; '+sel.length+' expedici'+(sel.length===1?'on':'ones')+'</div>'
-    +'<label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:6px">Firma / Remitente:</label>'
-    +'<select id="em-firma-sel" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;margin-bottom:20px">'
-    +'<option value="als">ALS — Algeciras Logistic Solutions</option>'
-    +'<option value="cw">Customs Way (pendiente configurar)</option>'
-    +'</select>'
+    +'<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:6px">📧 Notificacion a consignatario</div>'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:4px">Para: <b style="color:#94a3b8">'+emailDest+'</b></div>'
+    +'<div style="font-size:11px;color:#475569;margin-bottom:16px">Desde: aduana@customsway.eu · '+sel.length+' expedici'+(sel.length===1?'on':'ones')+'</div>'
     +'<div style="display:flex;gap:10px;justify-content:flex-end">'
     +'<button id="em-cancel-btn" style="background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer">Cancelar</button>'
     +'<button id="em-send-btn" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">Enviar correo</button>'
-    +'</div>'
-    +'</div>';
+    +'</div></div>';
   document.body.appendChild(modal);
-
   document.getElementById('em-cancel-btn').onclick=function(){modal.remove();};
   document.getElementById('em-send-btn').onclick=function(){
-    var firmaKey=document.getElementById('em-firma-sel').value;
-    var cuerpo=buildEmailCuerpo(sel,clienteNombre,apts,totalBlt,totalKg,hoy,firmaKey);
-    var mailtoUrl='mailto:'+emailDest+'?cc='+encodeURIComponent(cc)+'&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
+    var cuerpo=buildEmailCuerpo(sel,clienteNombre,apts,totalBlt,totalKg,hoy,ALL);
+    var mailtoUrl='mailto:'+emailDest+'?cc=aduana@customsway.eu&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
     var a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';
     document.body.appendChild(a);a.click();document.body.removeChild(a);
     modal.remove();
     toast('Abriendo cliente de correo…');
   };
+  modal.addEventListener('click',function(ev){if(ev.target===modal)modal.remove();});
 }
 
+async function abrirEmailCliente(){
+  var ids=getSelected();
+  var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL;
+  if(!sel.length){toast('Sin entradas. Selecciona una o varias en la tabla.');return;}
+
+  var clienteNombre=sel.map(function(e){return e.cliente||e.consignatario||'';}).filter(Boolean)[0]||'';
+
+  var emailDest='';
+  try{
+    var er=await sb.from('empresas').select('nombre,email_confronta').order('nombre');
+    var empresas=er.data||[];
+    if(clienteNombre&&empresas.length){
+      var q=clienteNombre.toLowerCase();
+      var match=empresas.filter(function(emp){
+        return(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase().substring(0,5));
+      })[0]||null;
+      if(match) emailDest=match.email_confronta||'';
+    }
+  }catch(e){}
+
+  if(!emailDest){
+    toast('No se encontro email para "'+clienteNombre+'". Configuralo en la ficha de empresa.');
+    return;
+  }
+
+  var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
+  var totalKg=sel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
+  var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
+  var asunto=encodeURIComponent('Situacion expediciones aeropuerto — '+(clienteNombre||'Airport Cargo')+' · '+new Date().toLocaleDateString('es-ES'));
+
+  var prev=document.getElementById('email-cliente-modal');
+  if(prev) prev.remove();
+  var modal=document.createElement('div');
+  modal.id='email-cliente-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML='<div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:28px 32px;min-width:300px;max-width:440px;width:100%">'
+    +'<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:6px">📧 Notificacion a cliente</div>'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:4px">Para: <b style="color:#94a3b8">'+emailDest+'</b></div>'
+    +'<div style="font-size:11px;color:#475569;margin-bottom:16px">Desde: aduana@customsway.eu · '+sel.length+' expedici'+(sel.length===1?'on':'ones')+'</div>'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end">'
+    +'<button id="ecl-cancel-btn" style="background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer">Cancelar</button>'
+    +'<button id="ecl-send-btn" style="background:#059669;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">Enviar correo</button>'
+    +'</div></div>';
+  document.body.appendChild(modal);
+  document.getElementById('ecl-cancel-btn').onclick=function(){modal.remove();};
+  document.getElementById('ecl-send-btn').onclick=function(){
+    var cuerpo=buildEmailCuerpo(sel,clienteNombre,apts,totalBlt,totalKg,hoy,ALL);
+    var mailtoUrl='mailto:'+emailDest+'?cc=aduana@customsway.eu&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
+    var a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    modal.remove();
+    toast('Abriendo cliente de correo…');
+  };
+  modal.addEventListener('click',function(ev){if(ev.target===modal)modal.remove();});
+}
 // ── Instrucciones para transportista ─────────────────────────────
-function buildInstrBodyAirport(transpNombre, byH, TB){
+function buildInstrBodyAirport(transpNombre, byH, TB, todasLasExps){
   var NL = String.fromCharCode(10);
   var hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
   var handlers = Object.keys(byH);
@@ -1620,6 +1762,16 @@ function buildInstrBodyAirport(transpNombre, byH, TB){
       totalExps++;
     });
   });
+  
+  function txtTable(headers, rows, widths){
+    var sep = '+' + widths.map(function(w){return '-'.repeat(w+2);}).join('+') + '+';
+    var hdr = '|' + headers.map(function(h,i){var pad=widths[i];return ' '+h.substring(0,pad)+(h.length<pad?' '.repeat(pad-h.length):'')+' ';}).join('|') + '|';
+    var body = rows.map(function(r){
+      return '|' + r.map(function(c,i){var s=String(c===null||c===undefined?'—':c);var pad=widths[i];return ' '+s.substring(0,pad)+(s.length<pad?' '.repeat(pad-s.length):'')+' ';}).join('|') + '|';
+    }).join(NL);
+    return [sep, hdr, sep, body, sep].join(NL);
+  }
+  
   var lines = [
     'INSTRUCCIONES DE RECOGIDA - AIRPORT CARGO', NL,
     '==============================================', NL, NL,
@@ -1629,28 +1781,94 @@ function buildInstrBodyAirport(transpNombre, byH, TB){
     'Total bultos:  '+totalBultos, NL,
     'Total kilos:   '+totalKg.toLocaleString('es-ES')+' kg', NL, NL
   ];
+  
   handlers.forEach(function(h){
-    var exps = byH[h];
+    var exps = byH[h].filter(function(e){ return !!e.fecha_llegada; });
+    if(!exps.length) return;
     lines.push('----------------------------------------------', NL);
     lines.push('LUGAR DE RECOGIDA: '+h.toUpperCase(), NL);
     lines.push('----------------------------------------------', NL, NL);
-    exps.forEach(function(e, i){
-      lines.push('  '+(i+1)+'. AWB: '+formatAwb(e.awb||'—'), NL);
-      lines.push('     Consignatario: '+(e.consignatario||e.cliente||'—'), NL);
-      lines.push('     Bultos: '+(e.bultos||'—')+' | Kilos: '+(e.kilos_tasables||e.kilos||'—')+' kg', NL);
-      if(e.id) lines.push('     Seguimiento: '+TB+encodeURIComponent(e.id), NL);
-      lines.push('', NL);
+    var tableRows = exps.map(function(e){
+      return [
+        formatAwb(e.awb||'—'),
+        e.consignatario||e.cliente||'—',
+        (e.bultos||'—')+' btos',
+        (e.kilos_tasables||'—')+' kg',
+        fd(e.fecha_llegada),
+        e.vuelo||'—',
+        e.observaciones||''
+      ];
     });
+    lines.push(txtTable(
+      ['AWB','Consignatario','Bultos','Kilos','Llegada','Vuelo','Observaciones'],
+      tableRows,
+      [15,20,8,10,10,8,20]
+    ));
+    lines.push(NL, NL);
   });
+  
+  var hoyDate = new Date(); hoyDate.setHours(0,0,0,0);
+  var pendExps = (todasLasExps||[]).filter(function(e){
+    if(e.fecha_llegada){var d=new Date(e.fecha_llegada); return !e.fecha_retirada && d>=hoyDate;}
+    if(e.eta_buque){var d2=new Date(e.eta_buque); return !e.fecha_retirada && d2>=hoyDate;}
+    return false;
+  });
+  
+  if(pendExps.length){
+    lines.push('----------------------------------------------', NL);
+    lines.push('PROXIMAS LLEGADAS PENDIENTES', NL);
+    lines.push('----------------------------------------------', NL, NL);
+    var pendRows = pendExps.map(function(e){
+      return [
+        formatAwb(e.awb||'—'),
+        e.consignatario||e.cliente||'—',
+        e.buque||'—',
+        e.eta_buque?fd(e.eta_buque):(e.fecha_llegada?fd(e.fecha_llegada):'—'),
+        (e.bultos||'—')+' btos / '+(e.kilos_tasables||'—')+' kg',
+        e.observaciones||''
+      ];
+    });
+    lines.push(txtTable(
+      ['AWB','Consignatario','Buque','Prevision','Cantidad','Observaciones'],
+      pendRows,
+      [15,20,15,12,14,25]
+    ));
+    lines.push(NL, NL);
+  }
+  
   lines.push('----------------------------------------------', NL, NL);
-  lines.push('CONTACTO ALS', NL);
-  lines.push('Tel: +34 956 58 13 16', NL);
-  lines.push('Email: als@alsalgeciras.com', NL, NL);
+  lines.push('CONTACTO', NL);
+  lines.push('Departamento de Aduana — CUSTOMS-WAY SL', NL);
+  lines.push('T. 856 003 50 02', NL);
+  lines.push('Email: aduana@customsway.eu', NL, NL);
   lines.push('Atentamente,', NL);
-  lines.push('Dpto. de Operaciones - ALGECIRAS LOGISTIC SOLUTIONS (ALS)', NL);
+  lines.push('Departamento de Aduana - CUSTOMS-WAY SL', NL);
   lines.push('==============================================', NL);
   lines.push(hoy);
   return lines.join('');
+}
+
+function generarPDFTransp(byH){
+  var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  var expsConLlegada=[];
+  Object.keys(byH).forEach(function(h){
+    byH[h].filter(function(e){return !!e.fecha_llegada;}).forEach(function(e){
+      var ecopy = Object.assign({}, e); ecopy._handler = h;
+      expsConLlegada.push(ecopy);
+    });
+  });
+  if(!expsConLlegada.length){toast('No hay expediciones con fecha de llegada para imprimir');return;}
+  var rows=expsConLlegada.map(function(e){
+    return '<tr><td>'+formatAwb(e.awb||'—')+'</td><td>'+(e.consignatario||e.cliente||'—')+'</td><td>'+(e._handler||'—')+'</td><td>'+(e.bultos||'—')+'</td><td>'+(e.kilos_tasables||'—')+' kg</td><td>'+fd(e.fecha_llegada)+'</td><td>'+(e.vuelo||'—')+'</td><td>'+(e.status||'—')+'</td><td>'+(e.observaciones||'')+'</td></tr>';
+  }).join('');
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Lista Recogida Airport</title><style>body{font-family:Arial,sans-serif;font-size:12px;padding:20px}h2{margin-bottom:4px}p{color:#666;margin-bottom:16px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:5px 7px;text-align:left;font-size:11px}th{background:#e5e7eb;font-weight:700}tr:nth-child(even){background:#f9f9f9}@media print{@page{margin:1cm}}</style></head><body>';
+  html+='<h2>Lista de Mercancia Lista para Recoger — Airport Cargo</h2>';
+  html+='<p>'+hoy+' · '+expsConLlegada.length+' expediciones · CUSTOMS-WAY SL · aduana@customsway.eu</p>';
+  html+='<table><thead><tr><th>AWB</th><th>Consignatario</th><th>Handler</th><th>Bultos</th><th>Kilos</th><th>Llegada</th><th>Vuelo</th><th>Status</th><th>Obs.</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  html+='<br><p style="font-size:10px;color:#999">CUSTOMS-WAY SL · T. 856 003 50 02 · aduana@customsway.eu</p>';
+  html+='</body></html>';
+  var w=window.open('','_blank');
+  if(w){w.document.write(html);w.document.close();setTimeout(function(){w.print();},500);}
 }
 
 async function abrirInstrTransp(){
@@ -1662,7 +1880,6 @@ async function abrirInstrTransp(){
   sel.forEach(function(e){var h=e.handling||'(Sin handler)';if(!byH[h])byH[h]=[];byH[h].push(e);});
   var TB='https://marcoslekolas.github.io/PortalALS/tracking.html?awb=';
 
-  // Cargar transportistas de la BD
   var transp=[];
   try{
     var tr=await sb.from('empresas').select('id,nombre,email_confronta,telefono').contains('rol',['Transportista']).order('nombre');
@@ -1693,19 +1910,23 @@ async function abrirInstrTransp(){
     +optsHtml
     +'<option value="__nuevo__">➕ Nuevo transportista…</option>'
     +'</select>'
+    +'<label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:6px;margin-top:10px">Email del cliente (opcional, incluir en CC)</label>'
+    +'<input id="it-email-cli" type="email" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;margin-bottom:10px" placeholder="cliente@empresa.com">'
     +'<div id="it-nuevo-wrap" style="display:none;margin-bottom:10px">'
     +'<input id="it-nuevo-nombre" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;margin-bottom:8px" placeholder="Nombre transportista *">'
     +'<input id="it-nuevo-email" type="email" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;margin-bottom:8px" placeholder="Email *">'
-    +'<input id="it-nuevo-tel" type="tel" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px" placeholder="Teléfono (opcional)">'
+    +'<input id="it-nuevo-tel" type="tel" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px" placeholder="Telefono (opcional)">'
     +'</div>'
     +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid #334155">'
     +'<button id="it-close-btn" style="background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Cancelar</button>'
+    +'<button id="it-pdf-btn" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">📄 Ver/Imprimir PDF</button>'
     +'<button id="it-send-btn" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">Generar email</button>'
     +'</div></div>';
 
   document.body.appendChild(modal);
   document.getElementById('it-close-x').onclick=function(){modal.remove();};
   document.getElementById('it-close-btn').onclick=function(){modal.remove();};
+  document.getElementById('it-pdf-btn').onclick=function(){generarPDFTransp(byH);};
   document.getElementById('it-transp-sel').onchange=function(){
     document.getElementById('it-nuevo-wrap').style.display=this.value==='__nuevo__'?'block':'none';
   };
@@ -1731,10 +1952,12 @@ async function abrirInstrTransp(){
     }
     if(!emailDest){toast('El transportista no tiene email configurado');return;}
 
-    var cuerpo=buildInstrBodyAirport(transpNombre,byH,TB);
+    var emailCli=(document.getElementById('it-email-cli').value||'').trim();
+    var cuerpo=buildInstrBodyAirport(transpNombre,byH,TB,ALL);
     var asunto=encodeURIComponent('Instrucciones recogida airport — '+new Date().toLocaleDateString('es-ES'));
+    var cc='aduana@customsway.eu'+(emailCli?','+emailCli:'');
     var a=document.createElement('a');
-    a.href='mailto:'+emailDest+'?cc=als@alsalgeciras.com&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
+    a.href='mailto:'+emailDest+'?cc='+encodeURIComponent(cc)+'&subject='+asunto+'&body='+encodeURIComponent(cuerpo);
     document.body.appendChild(a);a.click();document.body.removeChild(a);
     modal.remove();
     toast('Abriendo correo para '+transpNombre+'...');
@@ -1742,7 +1965,6 @@ async function abrirInstrTransp(){
 
   modal.addEventListener('click',function(ev){if(ev.target===modal)modal.remove();});
 }
-
 // ── OCR AWB — prellenado formulario Airport Cargo ─────────────────
 async function procesarOCR_AWB_airport(input){
   var file=input&&input.files&&input.files[0];
