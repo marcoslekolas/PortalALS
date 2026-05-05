@@ -848,7 +848,7 @@ function renderRows(list){
       '<td><span class="badge '+(e.despachado?'bg':'ba')+'" style="font-size:10px">'+(e.despachado?'✅ Despachado':'⏳ Pendiente')+'</span></td>'+
       '<td class="sm">'+(e.eta_buque?fd(e.eta_buque):'—')+'</td>'+
       '<td class="sm">'+(e.fecha_caducidad_t1?fd(e.fecha_caducidad_t1):'—')+'</td>'+
-      (function(){var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);var hoy=new Date();hoy.setHours(0,0,0,0);var vencido=fml&&fml<hoy;return'<td class="sm" style="'+(vencido?'color:var(--rd600);font-weight:600':fml?'color:var(--gr600)':'')+'">'+( fml?fd(fml):'—')+'</td>';})()
+      (function(){var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);var hoy=new Date();hoy.setHours(0,0,0,0);var vencido=fml&&fml<hoy;return'<td class="sm" style="'+(vencido?'color:var(--rd600);font-weight:600':fml?'color:var(--gr600)':'')+'">'+( fml?fd(fml):'—')+'</td>';})() +
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(alm):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(gd):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(tr):'—')+'</td>'+
@@ -1489,16 +1489,30 @@ function liveCalc(){
     '<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;color:var(--b700);border-top:1px solid var(--b200);padding-top:8px;margin-top:6px"><span>TOTAL:</span><strong>'+fc(d.total)+'</strong></div>'+
     '</div>';
 }
+// Campos base — siempre presentes en la tabla airport_cargo
 function buildObj(){
   var h=gv('f-handler'),isAuto=hasH(h),rt=gv('f-rt')||null;
-  var cli=gv('f-cli').trim();return{awb:gv('f-awb').trim(),consignatario:gv('f-cons').trim(),cliente:cli||null,buque:gv('f-buque').trim()||null,
+  var cli=gv('f-cli').trim();
+  return{awb:gv('f-awb').trim(),consignatario:gv('f-cons').trim(),cliente:cli||null,buque:gv('f-buque').trim()||null,
     aeropuerto:gv('f-apto')||'AGP',handling:h||null,status:gv('f-status')||'T1',
     fecha_llegada:gv('f-ll')||null,fecha_retirada:rt,kilos_tasables:parseFloat(gv('f-kg'))||0,
     bultos:parseInt(gv('f-blt'))||null,aplica_finde:isAuto?gc('f-fi'):false,
     aplica_express:isAuto?gc('f-ex'):false,aplica_carga_camion:isAuto?gc('f-cc'):false,
     aplica_apertura:isAuto?gc('f-ap'):false,coste_manual:(!isAuto&&h)?parseFloat(gv('f-man'))||null:null,
     observaciones:gv('f-obs').trim()||null,mes_operacion:calcMes(rt),
-    operation_year:rt?new Date(rt).getFullYear():null,
+    operation_year:rt?new Date(rt).getFullYear():null};
+}
+// Campos extendidos — requieren columnas adicionales en Supabase.
+// SQL a ejecutar en Supabase SQL Editor:
+//   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS vuelo text;
+//   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS hora_llegada text;
+//   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS eta_buque date;
+//   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS despachado boolean DEFAULT false;
+//   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS fecha_caducidad_t1 date;
+//   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS t1_sellado boolean DEFAULT false;
+//   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS fecha_bandeja_t1 date;
+function buildObjExtended(){
+  return{
     vuelo:gv('f-vuelo').trim()||null,
     hora_llegada:gv('f-hora')||null,
     eta_buque:gv('f-eta-buque')||null,
@@ -1514,6 +1528,10 @@ async function crearEntrada(){
   if(!o.kilos_tasables){alert('Kilos tasables obligatorios');return;}
   var r=await sb.from('airport_cargo').insert(o);
   if(r.error){alert('Error: '+r.error.message);return;}
+  // Intentar guardar campos extendidos si las columnas existen en Supabase
+  var lastId=null;
+  try{var lr=await sb.from('airport_cargo').select('id').eq('awb',o.awb).order('id',{ascending:false}).limit(1);if(lr.data&&lr.data.length)lastId=lr.data[0].id;}catch(ex){}
+  if(lastId){try{await sb.from('airport_cargo').update(buildObjExtended()).eq('id',lastId);}catch(ex){}}
   toast('Entrada creada ✅');closeModal();await loadAll();loadView();
 }
 async function saveEntrada(id){
@@ -1521,6 +1539,8 @@ async function saveEntrada(id){
   if(!o.awb){alert('AWB obligatorio');return;}
   var r=await sb.from('airport_cargo').update(o).eq('id',id);
   if(r.error){alert('Error: '+r.error.message);return;}
+  // Intentar guardar campos extendidos si las columnas existen en Supabase
+  try{await sb.from('airport_cargo').update(buildObjExtended()).eq('id',id);}catch(ex){}
   toast('Guardado ✅');closeModal();await loadAll();loadView();
 }
 async function delEntrada(id){
