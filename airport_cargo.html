@@ -131,7 +131,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .mob-ov.show{display:block}
 .fdiv{border:none;border-top:1px solid var(--g200);margin:13px 0}
 .sect{font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.6px;margin:12px 0 7px}
-::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--g300);border-radius:3px}
+::-webkit-scrollbar{width:7px;height:13px}::-webkit-scrollbar-track{background:var(--g100);border-radius:4px}::-webkit-scrollbar-thumb{background:var(--g400);border-radius:4px;border:2px solid var(--g100)}::-webkit-scrollbar-thumb:hover{background:var(--g600)}
 @media(max-width:768px){
   #sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);box-shadow:var(--shl)}
   #sidebar.open{transform:translateX(0)}.hamburger{display:block}.mob-ov.show{display:block}
@@ -312,7 +312,6 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div class="nav-item" onclick="nav('resumen',this)"><span class="ni">📊</span><span class="nav-item-txt">Resumen mensual</span></div>
         <div class="nav-item" onclick="nav('tarifas',this)"><span class="ni">💰</span><span class="nav-item-txt">Tarifas por año</span></div>
         <div class="sb-sec">Acciones</div>
-        <div class="nav-item" onclick="openNueva()"><span class="ni">➕</span><span class="nav-item-txt">Nueva entrada</span></div>
         <div class="nav-item" onclick="abrirEmail()"><span class="ni">📧</span><span class="nav-item-txt">Notificar consignatario</span></div>
         <div class="nav-item" onclick="abrirEmailCliente()"><span class="ni">👤</span><span class="nav-item-txt">Notificar cliente</span></div>
         <div class="nav-item" onclick="abrirInstrTransp()"><span class="ni">🚛</span><span class="nav-item-txt">Instruc. transportista</span></div>
@@ -342,8 +341,6 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
           <div class="pt">📋 Entradas Aeropuerto</div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-s btn-sm" onclick="exportarAirportCSV()">⬇️ CSV</button>
-            <button class="btn btn-s btn-sm" onclick="abrirEmail()">📧 Notificar</button>
-            <button class="btn btn-s btn-sm" onclick="abrirInstrTransp()">🚛 Instruc. transp.</button>
             <button class="btn btn-p" onclick="openNueva()">+ Nueva entrada</button>
           </div>
         </div>
@@ -1636,6 +1633,7 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
 // Abre ventana de preview HTML del email (igual que el print PDF)
 function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
   var ccParam = emailCC ? encodeURIComponent('aduana@customsway.eu,'+emailCC) : encodeURIComponent('aduana@customsway.eu');
+  var mailtoUrl = 'mailto:'+emailDest+'?cc='+ccParam+'&subject='+asunto;
   var css = 'body{margin:0;background:#f8fafc;font-family:Arial,sans-serif}'+
     '#ec{padding:30px;max-width:900px;margin:0 auto;background:#fff;min-height:100vh}'+
     '@media print{.no-print{display:none}#ec{padding:10px}}';
@@ -1643,15 +1641,35 @@ function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
   var toolbar = '<div class="no-print" style="position:sticky;top:0;z-index:10;background:#1e293b;padding:10px 20px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
     '<span style="color:#fff;font-size:13px;font-weight:700;flex:1">&#128139; Vista previa del email</span>'+
     '<span style="color:#64748b;font-size:11px;margin-right:4px">Para: '+paraLabel+'</span>'+
-    '<button onclick="(function(){var h=document.getElementById(\'ec\').innerHTML;try{var b=new Blob([h],{type:\'text/html\'});var ci=new ClipboardItem({\'text/html\':b});navigator.clipboard.write([ci]).then(function(){alert(\'Contenido copiado. Pega en tu email (Ctrl+V).\');});}catch(ex){document.execCommand(\'selectAll\');document.execCommand(\'copy\');alert(\'Seleccion copiada. Pega en tu email.\');}})()" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">&#128203; Copiar contenido</button>'+
-    '<button onclick="window.open(\'mailto:'+emailDest+'?cc='+ccParam+'&subject='+asunto+'\')" style="background:#059669;color:#fff;border:none;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">&#9993; Abrir correo</button>'+
+    '<button onclick="(function(){var h=document.getElementById(\'ec\').innerHTML;try{var b=new Blob([h],{type:\'text/html\'});var ci=new ClipboardItem({\'text/html\':b});navigator.clipboard.write([ci]).then(function(){var bn=document.getElementById(\'cbanner\');if(bn){bn.textContent=\'✅ Contenido copiado — pega con Ctrl+V en tu correo\';bn.style.background=\'#059669\';}});}catch(ex){document.execCommand(\'selectAll\');document.execCommand(\'copy\');}})();" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">&#128203; Copiar</button>'+
+    '<button onclick="window.open(\''+mailtoUrl+'\')" style="background:#059669;color:#fff;border:none;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">&#9993; Abrir correo</button>'+
     '<button onclick="window.print()" style="background:#475569;color:#fff;border:none;border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer">&#128424; Imprimir</button>'+
     '<button onclick="window.close()" style="background:#334155;color:#e2e8f0;border:none;border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer">&#10005; Cerrar</button>'+
-    '</div>';
+    '</div>'+
+    '<div id="cbanner" class="no-print" style="background:#d97706;color:#fff;padding:8px 20px;font-size:12px;font-weight:600;text-align:center">Copiando contenido al portapapeles…</div>';
+  var autoScript = '<script>window.addEventListener("load",function(){'+
+    'var ec=document.getElementById("ec");var bn=document.getElementById("cbanner");'+
+    'if(!ec||!bn)return;'+
+    'try{'+
+    'var b=new Blob([ec.innerHTML],{type:"text/html"});'+
+    'navigator.clipboard.write([new ClipboardItem({"text/html":b})]).then(function(){'+
+    'bn.textContent="✅ Contenido copiado — pega con Ctrl+V en tu cliente de correo";'+
+    'bn.style.background="#059669";'+
+    '}).catch(function(){'+
+    'bn.textContent="Haz clic en Copiar y pega en tu correo con Ctrl+V";'+
+    'bn.style.background="#6b7280";'+
+    '});'+
+    '}catch(ex){'+
+    'bn.textContent="Haz clic en Copiar y pega en tu correo con Ctrl+V";'+
+    'bn.style.background="#6b7280";'+
+    '}'+
+    '});<\/script>';
   var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Email - '+emailDest+'</title><style>'+css+'</style></head><body>'+
-    toolbar+'<div id="ec">'+htmlContent+'</div></body></html>';
+    toolbar+'<div id="ec">'+htmlContent+'</div>'+autoScript+'</body></html>';
   var w = window.open('','_blank');
   if(w){ w.document.write(html); w.document.close(); }
+  // Auto-open email client (still within user gesture context)
+  try{ window.open(mailtoUrl); }catch(ex){}
 }
 
 async function abrirEmail(){
