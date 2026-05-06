@@ -1556,7 +1556,8 @@ function emEmpChange(sel){var o=sel.options[sel.selectedIndex];var i=document.ge
 // ── EMAIL HTML ─────────────────────────────────────────────
 // Genera el cuerpo HTML del email (mismo estilo que la vista de impresión)
 // pendFiltro = {campo:'consignatario'|'cliente', valor:'nombre exacto'} — filtra la sección de pendientes
-function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasLasExps, selIds, pendFiltro){
+// etiquetaNombre = 'Consignatario' | 'Cliente' (label en la cabecera del email, por defecto 'Cliente')
+function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasLasExps, selIds, pendFiltro, etiquetaNombre){
   var TS = 'border:1px solid #999;padding:5px 7px;text-align:left;font-size:11px;';
   var TH = TS+'background:#e5e7eb;font-weight:700;';
 
@@ -1624,7 +1625,7 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
     '<p>Estimados Sres. / Dear Sirs,</p>'+
     '<p>Nos dirigimos a ustedes para informarles de la situacion actual de sus expediciones aereas en transito hacia <strong>'+apts+'</strong>.</p>'+
     '<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px">'+
-    '<strong>Cliente:</strong> '+clienteNombre+' &nbsp;&middot;&nbsp; '+
+    '<strong>'+(etiquetaNombre||'Cliente')+':</strong> '+clienteNombre+' &nbsp;&middot;&nbsp; '+
     '<strong>Expediciones:</strong> '+sel.length+' &nbsp;&middot;&nbsp; '+
     '<strong>Bultos:</strong> '+totalBlt+' &nbsp;&middot;&nbsp; '+
     '<strong>Kilos:</strong> '+totalKg.toLocaleString('es-ES')+' kg</div>'+
@@ -1841,30 +1842,28 @@ async function abrirEmail(){
   }).filter(Boolean)));
   if(clientes.length>1){toast('Seleccion incompatible: '+clientes.length+' clientes distintos.');return;}
 
-  // Email siempre se busca por el campo 'cliente' (es quien tiene la ficha en empresas)
-  var clienteNombre=sel.map(function(e){return e.cliente||'';}).filter(Boolean)[0]||'';
-  var consigNombre=sel.map(function(e){return e.consignatario||'';}).filter(Boolean)[0]||clienteNombre;
+  // Destinatario: email de la empresa cuyo nombre coincide con el consignatario del registro
+  var consigNombre=sel.map(function(e){return e.consignatario||'';}).filter(Boolean)[0]||'';
+  if(!consigNombre){toast('Las entradas seleccionadas no tienen consignatario.');return;}
   var emailDest='';
   try{
     var er=await sb.from('empresas').select('nombre,email_confronta').order('nombre');
     var empresas=er.data||[];
-    if(clienteNombre&&empresas.length){
-      var q=clienteNombre.toLowerCase();
-      var match=empresas.filter(function(emp){
-        return(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase().substring(0,5));
-      })[0]||null;
-      if(match) emailDest=match.email_confronta||'';
-    }
+    var q=consigNombre.toLowerCase();
+    var match=empresas.filter(function(emp){
+      return(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase().substring(0,5));
+    })[0]||null;
+    if(match) emailDest=match.email_confronta||'';
   }catch(e){}
 
-  if(!emailDest){toast('No se encontro email para el cliente "'+clienteNombre+'". Configuralo en la ficha de empresa.');return;}
+  if(!emailDest){toast('No se encontro email para el consignatario "'+consigNombre+'". Configuralo en la ficha de empresa.');return;}
 
   var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
   var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
   var totalKg=sel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
   var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
-  var asunto=encodeURIComponent('Situacion expediciones aeropuerto - '+(consigNombre||clienteNombre||'Airport Cargo')+' - '+new Date().toLocaleDateString('es-ES'));
-  var htmlContent=buildEmailHtml(sel,consigNombre,apts,totalBlt,totalKg,hoy,ALL,ids,{campo:'consignatario',valor:consigNombre});
+  var asunto=encodeURIComponent('Situacion expediciones aeropuerto - '+consigNombre+' - '+new Date().toLocaleDateString('es-ES'));
+  var htmlContent=buildEmailHtml(sel,consigNombre,apts,totalBlt,totalKg,hoy,ALL,ids,{campo:'consignatario',valor:consigNombre},'Consignatario');
   abrirVentanaEmail(htmlContent,emailDest,asunto,null);
 }
 
@@ -1895,7 +1894,7 @@ async function abrirEmailCliente(){
   var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
   var asunto=encodeURIComponent('Situacion expediciones aeropuerto - '+(clienteNombre||'Airport Cargo')+' - '+new Date().toLocaleDateString('es-ES'));
   var cliNombre=sel.map(function(e){return e.cliente||'';}).filter(Boolean)[0]||clienteNombre;
-  var htmlContent=buildEmailHtml(sel,clienteNombre,apts,totalBlt,totalKg,hoy,ALL,ids,{campo:'cliente',valor:cliNombre});
+  var htmlContent=buildEmailHtml(sel,clienteNombre,apts,totalBlt,totalKg,hoy,ALL,ids,{campo:'cliente',valor:cliNombre},'Cliente');
   abrirVentanaEmail(htmlContent,emailDest,asunto,null);
 }
 // ── Instrucciones para transportista ─────────────────────────────
