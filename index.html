@@ -2879,8 +2879,16 @@ async function doLogin(){
     saveSession(CU);
     // Init SDK (best effort)
     if(!sb){try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});}catch(e3){console.warn('SDK init:',e3);}}
-    // Cargar permisos del rol en caché
-    await cargarPermisosRol(CU.rol);
+    // Cargar roles del usuario (multi-rol) desde als_usuario_roles
+    try{
+      const {data:rD}=await sb.from('als_usuario_roles').select('rol').eq('usuario_id',CU.id);
+      CU.roles = rD&&rD.length ? rD.map(r=>r.rol) : (CU.rol?[CU.rol]:[]);
+    }catch(e){ CU.roles = CU.rol?[CU.rol]:[]; }
+    // Mantener CU.rol como rol primario (el de mayor nivel para comprobaciones admin)
+    if(!CU.roles.includes(CU.rol) && CU.roles.length) CU.rol = CU.roles.includes('admin')?'admin':CU.roles[0];
+    saveSession(CU);
+    // Cargar permisos efectivos (unión de roles + overrides de usuario)
+    await cargarPermisosUsuario(CU.id, CU.roles);
     // Update last access
     fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,{method:'PATCH',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({ultimo_acceso:new Date().toISOString()})}).catch(()=>{});
     // Check if must change password
@@ -3230,8 +3238,9 @@ function showHome(){
   iniciarPresenciaGlobal();
 
   // ── Módulos externos en sidebar — visibilidad por rol ──────────
-  const puedeAirport = ['admin','aduanas','airport_cargo'].includes(CU.rol);
-  const puedeRpa     = ['admin','aduanas','control_rpa'].includes(CU.rol);
+  const _roles = CU.roles||[CU.rol];
+  const puedeAirport = _roles.some(r=>['admin','aduanas','airport_cargo'].includes(r));
+  const puedeRpa     = _roles.some(r=>['admin','aduanas','control_rpa'].includes(r));
   const hayExt = puedeAirport || puedeRpa;
   const secExt = document.getElementById('sb-sec-ext');
   const navRpa = document.getElementById('nav-rpa');
@@ -3313,7 +3322,8 @@ function enterMod(mod){
       CU=s;
       // Cargar permisos antes de continuar — como es async, iniciamos y continuamos
       // puedeAcceder() es permisivo mientras no están listos (_permisosListos=false)
-      cargarPermisosRol(CU.rol).catch(()=>{ _permisosListos=true; });
+      if(!CU.roles) CU.roles = CU.rol ? [CU.rol] : [];
+      cargarPermisosUsuario(CU.id, CU.roles).catch(()=>{ _permisosListos=true; });
     } else { showHome(); return; }
   }
   const puedeOperativa=['admin','operativa','aduanas'];
@@ -4499,43 +4509,46 @@ async function logAuth(evento, usuarioId, usuarioNombre, detalles){
 let _permisos = {__admin: true}; // permisivo por defecto
 let _permisosListos = false;
 
+// Wrapper de compatibilidad — usa cargarPermisosUsuario internamente
 async function cargarPermisosRol(rol){
-  if(!rol) return;
-  if(rol === 'admin'){
-    _permisos = {__admin: true};
-    _permisosListos = true;
-    return;
+  const roles = CU?.roles?.length ? CU.roles : (rol ? [rol] : []);
+  await cargarPermisosUsuario(CU?.id, roles);
+}
+
+// Carga permisos efectivos: unión de roles + overrides personalizados de usuario
+async function cargarPermisosUsuario(usuarioId, roles){
+  if(!roles || !roles.length){ _permisosListos=true; return; }
+  if(roles.includes('admin')){
+    _permisos={__admin:true}; _permisosListos=true; return;
   }
-  if(!sb){
-    // Sin Supabase — dar acceso básico según rol conocido
-    _permisos = {__admin: rol === 'admin'};
-    _permisosListos = true;
-    return;
-  }
-  try {
-    const {data} = await sb.from('als_permisos_rol')
-      .select('*')
-      .or(`rol.eq.${rol},rol.eq.*`);
-    if(data && data.length > 0){
-      _permisos = {};
-      data.forEach(p => { _permisos[p.modulo] = p; });
+  if(!sb){ _permisos={}; _permisosListos=true; return; }
+  const COLS=['puede_ver','puede_crear','puede_editar','puede_eliminar','puede_exportar'];
+  try{
+    // 1. Permisos de todos los roles (unión: si CUALQUIER rol lo permite, el usuario lo tiene)
+    const {data:rolPerms} = await sb.from('als_permisos_rol').select('*').in('rol', roles);
+    _permisos={};
+    if(rolPerms && rolPerms.length){
+      rolPerms.forEach(p=>{
+        if(!_permisos[p.modulo]) _permisos[p.modulo]={puede_ver:false,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false};
+        COLS.forEach(col=>{ _permisos[p.modulo][col] = _permisos[p.modulo][col] || !!p[col]; });
+      });
     } else {
-      // Sin datos en la tabla — dar acceso según rol (fallback seguro)
-      const fallback = {
-        admin: {__admin: true},
-        oficina: {'*': {puede_ver:true,puede_crear:true,puede_editar:true,puede_eliminar:false,puede_exportar:true}},
-        aduanas: {'expediciones':{puede_ver:true,puede_crear:false,puede_editar:true,puede_eliminar:false,puede_exportar:true},'dua':{puede_ver:true,puede_crear:true,puede_editar:true,puede_eliminar:false,puede_exportar:true},'taric':{puede_ver:true,puede_crear:true,puede_editar:true,puede_eliminar:false,puede_exportar:true}},
-        almacen: {'almacen':{puede_ver:true,puede_crear:true,puede_editar:true,puede_eliminar:false,puede_exportar:false},'expediciones':{puede_ver:true,puede_crear:false,puede_editar:true,puede_eliminar:false,puede_exportar:false}},
-        transportista: {'expediciones':{puede_ver:true,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false},'almacen':{puede_ver:true,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false}},
-      };
-      _permisos = fallback[rol] || {'*':{puede_ver:true,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false}};
+      // Fallback sin datos en BD
+      _permisos={'*':{puede_ver:true,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false}};
     }
-  } catch(e){
-    // Error de red — dar acceso permisivo para no bloquear
-    console.warn('cargarPermisosRol error:', e.message);
-    _permisos = {__admin: rol === 'admin'};
+    // 2. Overrides personalizados del usuario (null=heredar, true/false=forzar)
+    if(usuarioId){
+      const {data:userPerms} = await sb.from('als_usuario_permisos').select('*').eq('usuario_id', usuarioId);
+      (userPerms||[]).forEach(p=>{
+        if(!_permisos[p.modulo]) _permisos[p.modulo]={puede_ver:false,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false};
+        COLS.forEach(col=>{ if(p[col]!==null && p[col]!==undefined) _permisos[p.modulo][col]=p[col]; });
+      });
+    }
+  }catch(e){
+    console.warn('cargarPermisosUsuario error:',e.message);
+    _permisos={__admin:false};
   }
-  _permisosListos = true;
+  _permisosListos=true;
 }
 
 function puedeAcceder(modulo, accion = 'ver'){
@@ -9963,20 +9976,30 @@ async function delExpedicion(id,ref){
 async function loadUsuarios(){
   const el=document.getElementById('users-list');
   if(el) el.innerHTML='<div class="empty"><div class="empty-txt">Cargando usuarios...</div></div>';
-  const {data,error}=await sb.from('usuarios').select('*').order('rol').order('nombre');
+  const [{data,error},{data:rolesData}]=await Promise.all([
+    sb.from('usuarios').select('*').order('nombre'),
+    sb.from('als_usuario_roles').select('usuario_id,rol')
+  ]);
   if(error){ if(el) el.innerHTML=`<div class="empty"><div class="empty-txt">Error: ${error.message}</div></div>`; return; }
   if(!data||!data.length){ if(el) el.innerHTML='<div class="empty"><div class="empty-txt">Sin usuarios encontrados</div></div>'; return; }
 
+  // Agrupar roles por usuario_id
+  const rolesByUser={};
+  (rolesData||[]).forEach(r=>{ if(!rolesByUser[r.usuario_id]) rolesByUser[r.usuario_id]=[]; rolesByUser[r.usuario_id].push(r.rol); });
+
   const rolColor={admin:'var(--rd500)',operativa:'var(--b600)',aduanas:'var(--tl500)',almacen:'var(--am500)',transportista:'var(--g500)',airport_cargo:'#0369a1',control_rpa:'#065f46'};
-  const rolLabel={admin:'⚡ Admin',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista',airport_cargo:'✈️ Airport Cargo',control_rpa:'📄 Control RPA'};
-  const esAdmin=CU?.rol==='admin';
+  const rolLabel={admin:'⚡ Admin',oficina:'🏢 Oficina',operativa:'🏢 Oficina',aduanas:'🏛️ Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista',airport_cargo:'✈️ Airport Cargo',control_rpa:'📄 Control RPA'};
+  const esAdmin=CU?.roles?.includes('admin')||CU?.rol==='admin';
 
   if(el) el.innerHTML=`<div class="tc">
     ${(data||[]).map(u=>{
       const isMe=u.id===CU?.id;
       const inactivo=u.activo===false;
+      // Roles del usuario: de als_usuario_roles si existen, sino de usuarios.rol
+      const uRoles=rolesByUser[u.id]&&rolesByUser[u.id].length ? rolesByUser[u.id] : (u.rol?[u.rol]:[]);
+      const primaryRol=uRoles.includes('admin')?'admin':uRoles[0]||u.rol;
       const avatar=(u.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-      const avatarColor=rolColor[u.rol]||'var(--g500)';
+      const avatarColor=rolColor[primaryRol]||'var(--g500)';
       return`<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--g100);${inactivo?'opacity:.5':''}">
         <div style="width:38px;height:38px;border-radius:50%;background:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${avatar}</div>
         <div style="flex:1;min-width:0">
@@ -9991,16 +10014,15 @@ async function loadUsuarios(){
             ${u.ultimo_acceso?` · Acceso: ${fdt(u.ultimo_acceso)}`:''}
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-          <span style="background:${avatarColor}22;color:${avatarColor};border:1px solid ${avatarColor}44;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700">${rolLabel[u.rol]||u.rol}</span>
-          ${esAdmin?`<button class="btn btn-s btn-sm" onclick="editUser('${u.id}')" title="Editar usuario">✏️</button>
-          <button class="btn btn-s btn-sm" onclick="verPermisosRol('${u.rol}')" title="Ver permisos del rol" style="font-size:11px">🔑</button>`:''}
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:280px">
+          ${uRoles.map(r=>`<span style="background:${(rolColor[r]||'var(--g500)') }22;color:${rolColor[r]||'var(--g500)'};border:1px solid ${(rolColor[r]||'var(--g500)')}44;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700">${rolLabel[r]||r}</span>`).join('')}
+          ${esAdmin?`<button class="btn btn-s btn-sm" onclick="editUser('${u.id}')" title="Editar usuario">✏️</button>`:''}
         </div>
       </div>`;
     }).join('')}
   </div>
   ${esAdmin?`<div style="padding:12px 16px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
-    <span style="font-size:12px;color:var(--g500);align-self:center">Gestión de roles →</span>
+    <span style="font-size:12px;color:var(--g500);align-self:center">Permisos por rol →</span>
     ${['admin','operativa','aduanas','almacen','transportista','airport_cargo','control_rpa'].map(r=>`
       <button class="btn btn-s btn-sm" onclick="verPermisosRol('${r}')" style="font-size:11px">
         🔑 ${rolLabel[r]||r}
@@ -10010,22 +10032,54 @@ async function loadUsuarios(){
 
 async function editUser(id){
   if(!puedeAcceder('usuarios','editar')){showToast('⛔ Sin permisos para editar usuarios');return;}
-  const {data:u}=await sb.from('usuarios').select('*').eq('id',id).single();
+  const [{data:u},{data:uRolesData},{data:uPermsData}]=await Promise.all([
+    sb.from('usuarios').select('*').eq('id',id).single(),
+    sb.from('als_usuario_roles').select('rol').eq('usuario_id',id),
+    sb.from('als_usuario_permisos').select('*').eq('usuario_id',id)
+  ]);
   if(!u)return;
   const isMe=u.id===CU?.id;
-  const rolOpts=['almacen','operativa','aduanas','transportista','airport_cargo','control_rpa','admin'].map(r=>`
-    <option value="${r}" ${u.rol===r?'selected':''}>${
-      {almacen:'📦 Almacén',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',transportista:'🚛 Transportista',airport_cargo:'✈️ Airport Cargo',control_rpa:'📄 Control RPA',admin:'⚡ Administrador'}[r]||r
-    }</option>`).join('');
-  const rolDesc={
-    admin:'Acceso total — gestión de usuarios, configuración y todos los módulos',
-    oficina:'Operativa completa: expediciones, buques, facturación, alertas, estadísticas',
-    aduanas:'Clasificador TARIC, borrador DUA, vista de expediciones (sin facturación)',
-    almacen:'APP Almacén: fotos, confirmaciones, ubicaciones, listos embarcar',
-    transportista:'Solo lectura: expediciones asignadas y listos para embarcar',
-    airport_cargo:'Acceso exclusivo al módulo Airport Cargo (AGP · Swissport · Groundforce)',
-    control_rpa:'Acceso exclusivo al módulo Control RPA (Régimen 51 · Perfeccionamiento Activo)',
-  };
+  const esAdmin=CU?.roles?.includes('admin')||CU?.rol==='admin';
+
+  // Roles actuales del usuario
+  const uRoles=new Set((uRolesData&&uRolesData.length ? uRolesData.map(r=>r.rol) : (u.rol?[u.rol]:[])));
+
+  const ALL_ROLES=[
+    {key:'almacen',   label:'📦 Almacén',       desc:'APP Almacén: fotos, confirmaciones, ubicaciones'},
+    {key:'operativa', label:'🏢 Oficina',        desc:'Operativa completa: expediciones, buques, facturación'},
+    {key:'aduanas',   label:'🏛️ Aduanas',       desc:'Clasificador TARIC, borrador DUA, expediciones'},
+    {key:'transportista',label:'🚛 Transportista',desc:'Solo lectura: expediciones asignadas y listos embarcar'},
+    {key:'airport_cargo',label:'✈️ Airport Cargo',desc:'Módulo Airport Cargo (AGP · Swissport · Groundforce)'},
+    {key:'control_rpa',  label:'📄 Control RPA', desc:'Módulo Control RPA (Régimen 51 · Perfeccionamiento Activo)'},
+    {key:'admin',     label:'⚡ Administrador',   desc:'Acceso total — todos los módulos y configuración'},
+  ];
+
+  // Calcular permisos efectivos de rol (unión) para mostrar como referencia
+  const TODOS_MODULOS=[
+    {key:'expediciones',label:'📦 Expediciones'},{key:'buques',label:'🚢 Buques'},
+    {key:'alertas',label:'🔔 Alertas'},{key:'incidencias',label:'⚠️ Incidencias'},
+    {key:'empresas',label:'🏢 Empresas'},{key:'estadisticas',label:'📈 Estadísticas'},
+    {key:'facturacion',label:'💶 Facturación'},{key:'dua',label:'🏛️ DUA'},
+    {key:'taric',label:'🔍 TARIC'},{key:'almacen',label:'📦 Almacén'},
+    {key:'airport_cargo',label:'✈️ Airport Cargo'},{key:'rpa',label:'📄 Control RPA'},
+    {key:'log',label:'📋 Log'},{key:'usuarios',label:'👥 Usuarios'},{key:'configuracion',label:'⚙️ Configuración'},
+  ];
+  const COLS=['puede_ver','puede_crear','puede_editar','puede_eliminar','puede_exportar'];
+  const COLH=['Ver','Crear','Editar','Elim.','Export.'];
+
+  // Permisos de rol (unión) para los roles seleccionados actualmente
+  const rolsArr=[...uRoles];
+  const {data:rolPermsData}=rolsArr.length ? await sb.from('als_permisos_rol').select('*').in('rol',rolsArr) : {data:[]};
+  const rolPermsMap={};
+  (rolPermsData||[]).forEach(p=>{
+    if(!rolPermsMap[p.modulo]) rolPermsMap[p.modulo]={puede_ver:false,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false};
+    COLS.forEach(col=>{ rolPermsMap[p.modulo][col]=rolPermsMap[p.modulo][col]||!!p[col]; });
+  });
+
+  // Overrides actuales del usuario
+  const uPermsMap={};
+  (uPermsData||[]).forEach(p=>{ uPermsMap[p.modulo]=p; });
+
   document.getElementById('m-title').textContent=`✏️ ${isMe?'Mi perfil':'Editar usuario'}`;
   document.getElementById('m-body').innerHTML=`
     <div class="fr2" style="margin-bottom:14px">
@@ -10039,46 +10093,139 @@ async function editUser(id){
       </div>
     </div>
 
-    <div class="fr2" style="margin-bottom:14px">
-      <div class="fg2">
-        <label class="fl2">Rol del usuario</label>
-        <select id="eu-r" class="fi fs" onchange="previewRolDesc(this.value)" ${isMe ? 'disabled title="No puedes cambiar tu propio rol"' : ''}>
-          ${rolOpts}
-        </select>
-        <div id="eu-rol-desc" style="font-size:11px;color:var(--g500);margin-top:5px;padding:6px 8px;background:var(--g50);border-radius:5px">
-          ${rolDesc[u.rol]||''}
-        </div>
-      </div>
-      <div class="fg2">
-        <label class="fl2">Estado</label>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="eu-activo" ${u.activo!==false?'checked':''} style="accent-color:var(--gr600);width:16px;height:16px">
-            <span style="font-size:13px">Usuario activo</span>
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="eu-mcp" ${u.must_change_password?'checked':''} style="accent-color:var(--am600);width:16px;height:16px">
-            <span style="font-size:13px">Forzar cambio de contraseña</span>
-          </label>
-        </div>
+    <div style="margin-bottom:14px">
+      <label class="fl2">Roles asignados ${isMe?'<span style="color:var(--g400);font-weight:400">(no modificable en tu propio perfil)</span>':''}</label>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px">
+        ${ALL_ROLES.map(r=>`
+          <label style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--g200);border-radius:6px;cursor:${isMe?'default':'pointer'};background:${uRoles.has(r.key)?'var(--b50)':'var(--w)'}">
+            <input type="checkbox" name="eu-roles" value="${r.key}" ${uRoles.has(r.key)?'checked':''}
+              ${isMe?'disabled':''}
+              style="accent-color:var(--b600);width:15px;height:15px;margin-top:1px;flex-shrink:0"
+              onchange="euRolesChanged()">
+            <span>
+              <span style="font-size:12px;font-weight:600;display:block">${r.label}</span>
+              <span style="font-size:10px;color:var(--g500)">${r.desc}</span>
+            </span>
+          </label>`).join('')}
       </div>
     </div>
 
-    <div style="border-top:1px solid var(--g100);padding-top:12px;margin-top:4px">
-      <label class="fl2">Nueva contraseña <span style="color:var(--g400);font-weight:400">(dejar vacío para no cambiar)</span></label>
+    <div style="margin-bottom:14px">
+      <label class="fl2">Estado</label>
+      <div style="display:flex;gap:16px;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="eu-activo" ${u.activo!==false?'checked':''} style="accent-color:var(--gr600);width:16px;height:16px">
+          <span style="font-size:13px">Usuario activo</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="eu-mcp" ${u.must_change_password?'checked':''} style="accent-color:var(--am600);width:16px;height:16px">
+          <span style="font-size:13px">Forzar cambio de contraseña</span>
+        </label>
+      </div>
+    </div>
+
+    <div style="border-top:1px solid var(--g100);padding-top:12px;margin-bottom:14px">
+      <label class="fl2">Nueva contraseña <span style="color:var(--g400);font-weight:400">(vacío = sin cambios)</span></label>
       <input id="eu-p" class="fi" type="password" placeholder="••••••••" style="margin-top:4px">
     </div>
 
-    ${isMe?'<div class="info-box" style="margin-top:12px">Estás editando tu propio perfil.</div>':''}
-    ${CU.rol==='admin'&&!isMe?`<div style="margin-top:12px">
-      <button class="btn btn-s btn-sm" onclick="verPermisosRol(document.getElementById('eu-r').value)">🔑 Ver permisos del rol seleccionado</button>
-    </div>`:''}`;
+    ${esAdmin&&!isMe?`
+    <div style="border-top:1px solid var(--g100);padding-top:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-size:13px;font-weight:700">⚙️ Permisos personalizados</div>
+          <div style="font-size:11px;color:var(--g500);margin-top:2px">Ajusta accesos específicos para este usuario. Se suman o anulan sobre los permisos del rol.</div>
+        </div>
+        <button class="btn btn-s btn-sm" onclick="resetUserPerms('${id}')" style="font-size:11px;flex-shrink:0">🗑 Restablecer</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px" id="eu-perms-table">
+        <thead>
+          <tr style="background:var(--g50)">
+            <th style="padding:6px 8px;text-align:left;color:var(--g600);font-weight:700">Módulo</th>
+            ${COLH.map(l=>`<th style="padding:6px 4px;text-align:center;color:var(--g500);font-weight:600">${l}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${TODOS_MODULOS.map(({key,label},i)=>{
+            const rp=rolPermsMap[key]||{};
+            const up=uPermsMap[key]||{};
+            // Efectivo = override si existe, sino hereda del rol
+            const eff={};
+            COLS.forEach(col=>{ eff[col]=up[col]!==undefined&&up[col]!==null ? up[col] : (rp[col]||false); });
+            const tieneOverride=COLS.some(col=>up[col]!==undefined&&up[col]!==null);
+            return`<tr style="border-top:1px solid var(--g100);${i%2?'background:var(--g50)':''}${tieneOverride?';outline:1px solid var(--b200);outline-offset:-1px':''}">
+              <td style="padding:6px 8px;font-weight:600;color:var(--g800)">
+                ${label}
+                ${tieneOverride?'<span style="font-size:9px;color:var(--b600);font-weight:700;margin-left:4px">CUSTOM</span>':''}
+              </td>
+              ${COLS.map(col=>{
+                const isOverriden=up[col]!==undefined&&up[col]!==null;
+                const rolVal=rp[col]||false;
+                return`<td style="text-align:center;padding:6px 4px">
+                  <input type="checkbox" data-mod="${key}" data-col="${col}" data-rolval="${rolVal}"
+                    ${eff[col]?'checked':''}
+                    style="width:14px;height:14px;accent-color:${isOverriden?(eff[col]?'var(--b600)':'var(--rd500)'):'var(--g400)'};cursor:pointer"
+                    onchange="euPermChanged(this)">
+                </td>`;
+              }).join('')}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`:''}
+    ${isMe?'<div class="info-box" style="margin-top:12px">Estás editando tu propio perfil.</div>':''}`;
 
   document.getElementById('m-foot').innerHTML=`
     <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
-    ${CU.rol==='admin'&&!isMe?`<button class="btn btn-d btn-sm" onclick="delUser('${u.id}')">🗑️ Eliminar</button>`:''}
+    ${esAdmin&&!isMe?`<button class="btn btn-d btn-sm" onclick="delUser('${u.id}')">🗑️ Eliminar</button>`:''}
     <button class="btn btn-p" onclick="saveUser('${u.id}')">💾 Guardar cambios</button>`;
   document.getElementById('mo').classList.add('open');
+}
+
+// Marca visualmente que un permiso ha sido modificado respecto al valor de rol
+function euPermChanged(cb){
+  const rolVal = cb.dataset.rolval === 'true';
+  const newVal = cb.checked;
+  // Si coincide con el valor del rol → color neutro; si difiere → color override
+  cb.style.accentColor = newVal === rolVal ? 'var(--g400)' : (newVal ? 'var(--b600)' : 'var(--rd500)');
+  // Marcar la fila
+  const tr=cb.closest('tr');
+  if(tr){
+    const rowOverride=[...tr.querySelectorAll('input[type=checkbox][data-mod]')].some(c=>{
+      return c.checked !== (c.dataset.rolval==='true');
+    });
+    tr.style.outline=rowOverride?'1px solid var(--b200)':'';
+    tr.style.outlineOffset=rowOverride?'-1px':'';
+  }
+}
+
+// Actualiza la tabla de permisos al cambiar los roles seleccionados
+async function euRolesChanged(){
+  const selected=[...document.querySelectorAll('input[name="eu-roles"]:checked')].map(c=>c.value);
+  if(!selected.length) return;
+  const {data:rp}=await sb.from('als_permisos_rol').select('*').in('rol',selected);
+  const newMap={};
+  const COLS=['puede_ver','puede_crear','puede_editar','puede_eliminar','puede_exportar'];
+  (rp||[]).forEach(p=>{
+    if(!newMap[p.modulo]) newMap[p.modulo]={};
+    COLS.forEach(col=>{ newMap[p.modulo][col]=newMap[p.modulo][col]||!!p[col]; });
+  });
+  // Actualizar colores de los checkboxes existentes
+  document.querySelectorAll('#eu-perms-table input[type=checkbox][data-mod]').forEach(cb=>{
+    const modPerms=newMap[cb.dataset.mod]||{};
+    const rolVal=!!(modPerms[cb.dataset.col]);
+    cb.dataset.rolval=rolVal;
+    const isOv=cb.checked!==rolVal;
+    cb.style.accentColor=isOv?(cb.checked?'var(--b600)':'var(--rd500)'):'var(--g400)';
+  });
+}
+
+async function resetUserPerms(userId){
+  if(!confirm('¿Eliminar todos los permisos personalizados de este usuario y volver a los del rol?')) return;
+  const {error}=await sb.from('als_usuario_permisos').delete().eq('usuario_id',userId);
+  if(error){showToast('❌ '+error.message);return;}
+  showToast('✅ Permisos personalizados eliminados');
+  editUser(userId); // Recargar modal
 }
 
 function previewRolDesc(rol){
@@ -10097,49 +10244,80 @@ function previewRolDesc(rol){
 async function saveUser(id){
   if(!puedeAcceder('usuarios','editar')){showToast('⛔ Sin permisos para editar usuarios');return;}
   const nuevoNombre=gv('eu-n').trim();
-  // Leer rol directamente del DOM (funciona aunque el select esté disabled)
-  const rolEl = document.getElementById('eu-r');
-  const nuevoRol = rolEl ? rolEl.value : gv('eu-r');
   if(!nuevoNombre){showToast('❌ El nombre no puede estar vacío');return;}
-  if(!nuevoRol){showToast('❌ Error: no se pudo leer el rol');return;}
-  const obj={
-    nombre:nuevoNombre,
-    email:gv('eu-e')||null,
-    rol:nuevoRol,
-    activo:document.getElementById('eu-activo')?.checked!==false,
-  };
+
+  // Roles seleccionados
+  const rolesSeleccionados=[...document.querySelectorAll('input[name="eu-roles"]:checked')].map(c=>c.value);
+  if(!rolesSeleccionados.length){showToast('❌ El usuario debe tener al menos un rol');return;}
+  // Rol primario para el campo usuarios.rol (admin > aduanas > operativa > resto)
+  const PRIO=['admin','aduanas','operativa','almacen','transportista','airport_cargo','control_rpa'];
+  const rolPrimario=PRIO.find(r=>rolesSeleccionados.includes(r))||rolesSeleccionados[0];
+
+  const obj={nombre:nuevoNombre,email:gv('eu-e')||null,rol:rolPrimario,activo:document.getElementById('eu-activo')?.checked!==false};
   const p=gv('eu-p');
   if(p) obj.password_hash=p;
-  try {
-    const mcp=document.getElementById('eu-mcp');
-    if(mcp) obj.must_change_password = p ? true : (mcp.checked||false);
-  } catch(e){}
-  // Usar .select() para verificar que el UPDATE realmente afectó filas
-  let {data:saved, error:saveErr}=await sb.from('usuarios').update(obj).eq('id',id).select();
-  if(saveErr && saveErr.message && saveErr.message.includes('must_change_password')){
+  try{ const mcp=document.getElementById('eu-mcp'); if(mcp) obj.must_change_password=p?true:(mcp.checked||false); }catch(e){}
+
+  // 1. Actualizar tabla usuarios
+  let {data:saved,error:saveErr}=await sb.from('usuarios').update(obj).eq('id',id).select();
+  if(saveErr&&saveErr.message&&saveErr.message.includes('must_change_password')){
     delete obj.must_change_password;
     const r2=await sb.from('usuarios').update(obj).eq('id',id).select();
     saveErr=r2.error; saved=r2.data;
   }
-  if(saveErr){
-    if(saveErr.message && saveErr.message.includes('enum')){
-      showToast('❌ Rol no válido en BD: '+nuevoRol+'. Ejecuta el SQL del fix en Supabase.');
-    } else {
-      showToast('❌ Error al guardar: '+saveErr.message);
-    }
-    return;
+  if(saveErr){showToast('❌ Error al guardar: '+saveErr.message);return;}
+  if(!saved||!saved.length){showToast('❌ No se actualizó ningún usuario — comprueba la conexión');return;}
+
+  // 2. Sincronizar als_usuario_roles: eliminar los que ya no están, insertar los nuevos
+  const {data:rolesActuales}=await sb.from('als_usuario_roles').select('rol').eq('usuario_id',id);
+  const actualesSet=new Set((rolesActuales||[]).map(r=>r.rol));
+  const nuevosSet=new Set(rolesSeleccionados);
+  const aEliminar=[...actualesSet].filter(r=>!nuevosSet.has(r));
+  const aInsertar=[...nuevosSet].filter(r=>!actualesSet.has(r));
+  if(aEliminar.length) await sb.from('als_usuario_roles').delete().eq('usuario_id',id).in('rol',aEliminar);
+  if(aInsertar.length) await sb.from('als_usuario_roles').insert(aInsertar.map(r=>({usuario_id:id,rol:r})));
+
+  // 3. Guardar permisos personalizados del usuario
+  const COLS=['puede_ver','puede_crear','puede_editar','puede_eliminar','puede_exportar'];
+  const permCbs=document.querySelectorAll('#eu-perms-table input[type=checkbox][data-mod]');
+  if(permCbs.length){
+    // Agrupar por módulo
+    const permsPorMod={};
+    permCbs.forEach(cb=>{
+      const mod=cb.dataset.mod; const col=cb.dataset.col;
+      if(!permsPorMod[mod]) permsPorMod[mod]={};
+      permsPorMod[mod][col]=cb.checked;
+    });
+    // Comparar con valores de rol para guardar solo donde hay override
+    const rolesActualesArr=[...nuevosSet];
+    const {data:rolRef}=rolesActualesArr.length ? await sb.from('als_permisos_rol').select('*').in('rol',rolesActualesArr) : {data:[]};
+    const rolRefMap={};
+    (rolRef||[]).forEach(p=>{ if(!rolRefMap[p.modulo]) rolRefMap[p.modulo]={}; COLS.forEach(col=>{ rolRefMap[p.modulo][col]=rolRefMap[p.modulo][col]||!!p[col]; }); });
+
+    // Filas donde al menos un valor difiere del rol → guardar como override
+    const overrides=[];
+    Object.entries(permsPorMod).forEach(([mod,perms])=>{
+      const rolMod=rolRefMap[mod]||{};
+      const tieneOverride=COLS.some(col=>perms[col]!==(rolMod[col]||false));
+      if(tieneOverride) overrides.push({usuario_id:id,modulo:mod,...Object.fromEntries(COLS.map(c=>[c,perms[c]]))});
+    });
+
+    // Eliminar overrides previos y reinsertar los actuales
+    await sb.from('als_usuario_permisos').delete().eq('usuario_id',id);
+    if(overrides.length) await sb.from('als_usuario_permisos').insert(overrides);
   }
-  if(!saved || saved.length===0){ showToast('❌ No se actualizó ningún usuario — comprueba la conexión'); return; }
-  await logAct('usuarios',id,nuevoNombre,'editar','rol',null,`${nuevoNombre} · ${nuevoRol}`);
+
+  await logAct('usuarios',id,nuevoNombre,'editar','rol',null,`${nuevoNombre} · [${rolesSeleccionados.join(',')}]`);
   // Si se editó el propio usuario, actualizar sesión
   if(id===CU?.id){
-    CU.nombre=nuevoNombre; CU.email=obj.email; CU.rol=nuevoRol;
+    CU.nombre=nuevoNombre; CU.email=obj.email; CU.rol=rolPrimario; CU.roles=rolesSeleccionados;
     const init=nuevoNombre.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     ['sb-av','hm-av'].forEach(eid=>{const e=document.getElementById(eid);if(e)e.textContent=init;});
     ['sb-name','hm-name'].forEach(eid=>{const e=document.getElementById(eid);if(e)e.textContent=nuevoNombre;});
     saveSession(CU);
+    await cargarPermisosUsuario(CU.id,CU.roles);
   }
-  showToast('✅ Usuario actualizado: '+nuevoNombre+' ('+nuevoRol+')');
+  showToast('✅ Usuario actualizado: '+nuevoNombre);
   closeModal();
   loadView(CV);
 }
@@ -10275,7 +10453,7 @@ async function guardarPermisosRol(rol){
 
   if(errMsg){ showToast('⚠️ Error al guardar: '+errMsg); return; }
   // Recargar permisos en caché si el rol editado es el del usuario actual
-  if(CU?.rol === rol) await cargarPermisosRol(rol);
+  if(CU?.roles?.includes(rol)) await cargarPermisosUsuario(CU.id, CU.roles);
   await logAct('als_permisos_rol', null, rol, 'editar', 'permisos', null, 'Permisos actualizados por admin');
   showToast('✅ Permisos guardados para el rol '+rol);
   closeModal();
