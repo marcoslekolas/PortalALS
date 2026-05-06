@@ -1841,7 +1841,9 @@ async function abrirEmail(){
   }).filter(Boolean)));
   if(clientes.length>1){toast('Seleccion incompatible: '+clientes.length+' clientes distintos.');return;}
 
-  var clienteNombre=sel.map(function(e){return e.cliente||e.consignatario||'';}).filter(Boolean)[0]||'';
+  // Email siempre se busca por el campo 'cliente' (es quien tiene la ficha en empresas)
+  var clienteNombre=sel.map(function(e){return e.cliente||'';}).filter(Boolean)[0]||'';
+  var consigNombre=sel.map(function(e){return e.consignatario||'';}).filter(Boolean)[0]||clienteNombre;
   var emailDest='';
   try{
     var er=await sb.from('empresas').select('nombre,email_confronta').order('nombre');
@@ -1855,15 +1857,14 @@ async function abrirEmail(){
     }
   }catch(e){}
 
-  if(!emailDest){toast('No se encontro email para "'+clienteNombre+'". Configuralo en la ficha de empresa.');return;}
+  if(!emailDest){toast('No se encontro email para el cliente "'+clienteNombre+'". Configuralo en la ficha de empresa.');return;}
 
   var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
   var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
   var totalKg=sel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
   var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
-  var asunto=encodeURIComponent('Situacion expediciones aeropuerto - '+(clienteNombre||'Airport Cargo')+' - '+new Date().toLocaleDateString('es-ES'));
-  var consigNombre=sel.map(function(e){return e.consignatario||'';}).filter(Boolean)[0]||clienteNombre;
-  var htmlContent=buildEmailHtml(sel,clienteNombre,apts,totalBlt,totalKg,hoy,ALL,ids,{campo:'consignatario',valor:consigNombre});
+  var asunto=encodeURIComponent('Situacion expediciones aeropuerto - '+(consigNombre||clienteNombre||'Airport Cargo')+' - '+new Date().toLocaleDateString('es-ES'));
+  var htmlContent=buildEmailHtml(sel,consigNombre,apts,totalBlt,totalKg,hoy,ALL,ids,{campo:'consignatario',valor:consigNombre});
   abrirVentanaEmail(htmlContent,emailDest,asunto,null);
 }
 
