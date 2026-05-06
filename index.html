@@ -10179,7 +10179,11 @@ async function verPermisosRol(rol){
   const defaultPerms = {puede_ver:false,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false};
 
   document.getElementById('m-title').textContent = `🔑 Permisos del rol: ${rolLabel[rol]||rol}`;
+  // Guardar qué módulos ya existen en BD para saber si hacer UPDATE o INSERT
+  const modulosExistentes = Object.keys(dbMap).join(',');
+
   document.getElementById('m-body').innerHTML = `
+    <input type="hidden" id="permisos-existentes" value="${modulosExistentes}">
     <div style="font-size:12px;color:var(--g500);margin-bottom:12px">
       Edita los permisos del rol <strong>${rolLabel[rol]||rol}</strong>. Los cambios afectan a todos los usuarios con este rol.
     </div>
@@ -10216,7 +10220,11 @@ async function guardarPermisosRol(rol){
   const checkboxes = document.querySelectorAll('#m-body input[type=checkbox][data-mod]');
   if(!checkboxes.length){ showToast('Sin cambios que guardar'); return; }
 
-  // Agrupar por módulo
+  // Leer qué módulos ya existen en BD (guardado al abrir el modal)
+  const existentesStr = document.getElementById('permisos-existentes')?.value || '';
+  const existentes = new Set(existentesStr ? existentesStr.split(',') : []);
+
+  // Agrupar checkboxes por módulo
   const porModulo = {};
   checkboxes.forEach(cb => {
     const mod = cb.dataset.mod;
@@ -10225,21 +10233,47 @@ async function guardarPermisosRol(rol){
     porModulo[mod][col] = cb.checked;
   });
 
-  // Construir array de filas para upsert
-  const filas = Object.entries(porModulo).map(([modulo, perms]) => ({
-    rol,
-    modulo,
-    puede_ver:      perms.puede_ver      || false,
-    puede_crear:    perms.puede_crear    || false,
-    puede_editar:   perms.puede_editar   || false,
-    puede_eliminar: perms.puede_eliminar || false,
-    puede_exportar: perms.puede_exportar || false,
-  }));
+  const toUpdate = []; // filas que ya existen → UPDATE
+  const toInsert = []; // filas nuevas → INSERT
 
-  const {error} = await sb.from('als_permisos_rol')
-    .upsert(filas, {onConflict: 'rol,modulo'});
+  Object.entries(porModulo).forEach(([modulo, perms]) => {
+    const fila = {
+      rol,
+      modulo,
+      puede_ver:      perms.puede_ver      || false,
+      puede_crear:    perms.puede_crear    || false,
+      puede_editar:   perms.puede_editar   || false,
+      puede_eliminar: perms.puede_eliminar || false,
+      puede_exportar: perms.puede_exportar || false,
+    };
+    if(existentes.has(modulo)) toUpdate.push(fila);
+    else toInsert.push(fila);
+  });
 
-  if(error){ showToast('⚠️ Error al guardar: '+error.message); return; }
+  let errMsg = null;
+
+  // Actualizar filas existentes una a una (respeta política UPDATE de RLS)
+  for(const fila of toUpdate){
+    const {error} = await sb.from('als_permisos_rol')
+      .update({
+        puede_ver:      fila.puede_ver,
+        puede_crear:    fila.puede_crear,
+        puede_editar:   fila.puede_editar,
+        puede_eliminar: fila.puede_eliminar,
+        puede_exportar: fila.puede_exportar,
+      })
+      .eq('rol', fila.rol)
+      .eq('modulo', fila.modulo);
+    if(error && !errMsg) errMsg = error.message;
+  }
+
+  // Insertar filas nuevas (requiere política INSERT en als_permisos_rol)
+  if(toInsert.length){
+    const {error} = await sb.from('als_permisos_rol').insert(toInsert);
+    if(error && !errMsg) errMsg = error.message;
+  }
+
+  if(errMsg){ showToast('⚠️ Error al guardar: '+errMsg); return; }
   // Recargar permisos en caché si el rol editado es el del usuario actual
   if(CU?.rol === rol) await cargarPermisosRol(rol);
   await logAct('als_permisos_rol', null, rol, 'editar', 'permisos', null, 'Permisos actualizados por admin');
