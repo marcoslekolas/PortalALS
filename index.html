@@ -10146,16 +10146,37 @@ async function saveUser(id){
 
 async function verPermisosRol(rol){
   if(!rol) return;
-  const {data} = await sb.from('als_permisos_rol').select('*').eq('rol',rol).order('modulo');
+  const {data} = await sb.from('als_permisos_rol').select('*').eq('rol',rol);
   const rolLabel = {admin:'⚡ Administrador',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista',airport_cargo:'✈️ Airport Cargo',control_rpa:'📄 Control RPA'};
-  const moduloLabel = {
-    expediciones:'📦 Expediciones', buques:'🚢 Buques', alertas:'🔔 Alertas',
-    incidencias:'⚠️ Incidencias', empresas:'🏢 Empresas', estadisticas:'📈 Estadísticas',
-    facturacion:'💶 Facturación', dua:'🏛️ DUA', taric:'🔍 TARIC',
-    almacen:'📦 Almacén', log:'📋 Log', usuarios:'👥 Usuarios',
-  };
+
+  // Lista completa de módulos — siempre se muestran todos independientemente de la BD
+  const TODOS_MODULOS = [
+    {key:'expediciones', label:'📦 Expediciones'},
+    {key:'buques',       label:'🚢 Buques'},
+    {key:'alertas',      label:'🔔 Alertas'},
+    {key:'incidencias',  label:'⚠️ Incidencias'},
+    {key:'empresas',     label:'🏢 Empresas'},
+    {key:'estadisticas', label:'📈 Estadísticas'},
+    {key:'facturacion',  label:'💶 Facturación'},
+    {key:'dua',          label:'🏛️ DUA'},
+    {key:'taric',        label:'🔍 TARIC'},
+    {key:'almacen',      label:'📦 Almacén'},
+    {key:'airport_cargo',label:'✈️ Airport Cargo'},
+    {key:'rpa',          label:'📄 Control RPA'},
+    {key:'log',          label:'📋 Log actividad'},
+    {key:'usuarios',     label:'👥 Usuarios'},
+    {key:'configuracion',label:'⚙️ Configuración'},
+  ];
+
   const cols = ['puede_ver','puede_crear','puede_editar','puede_eliminar','puede_exportar'];
   const colLabel = ['Ver','Crear','Editar','Eliminar','Exportar'];
+
+  // Mapa de permisos existentes en BD, indexado por módulo
+  const dbMap = {};
+  (data||[]).forEach(p => { dbMap[p.modulo] = p; });
+
+  // Defaults: todos false si no hay fila en BD
+  const defaultPerms = {puede_ver:false,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false};
 
   document.getElementById('m-title').textContent = `🔑 Permisos del rol: ${rolLabel[rol]||rol}`;
   document.getElementById('m-body').innerHTML = `
@@ -10170,18 +10191,20 @@ async function verPermisosRol(rol){
         </tr>
       </thead>
       <tbody>
-        ${(data||[]).map((p,i)=>`
-          <tr style="border-top:1px solid var(--g100);${i%2?'background:var(--g50)':''}">
-            <td style="padding:8px 10px;font-weight:600;color:var(--g800)">${moduloLabel[p.modulo]||p.modulo}</td>
+        ${TODOS_MODULOS.map(({key,label},i)=>{
+          const p = dbMap[key] || defaultPerms;
+          return `
+          <tr style="border-top:1px solid var(--g100);${i%2===0?'':'background:var(--g50)'}">
+            <td style="padding:8px 10px;font-weight:600;color:var(--g800)">${label}</td>
             ${cols.map(col=>`
               <td style="text-align:center;padding:8px">
-                <input type="checkbox" data-mod="${p.modulo}" data-col="${col}"
+                <input type="checkbox" data-mod="${key}" data-col="${col}"
                   ${p[col]?'checked':''} style="width:16px;height:16px;accent-color:var(--b600);cursor:pointer">
               </td>`).join('')}
-          </tr>`).join('')}
+          </tr>`;
+        }).join('')}
       </tbody>
-    </table>
-    ${!data||!data.length?`<div class="empty"><div class="empty-txt">Sin permisos configurados para este rol. Ejecuta el SQL fix_rls_usuarios.sql en Supabase.</div></div>`:''}`;
+    </table>`;
 
   document.getElementById('m-foot').innerHTML=`
     <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
@@ -10202,16 +10225,21 @@ async function guardarPermisosRol(rol){
     porModulo[mod][col] = cb.checked;
   });
 
-  let errores = 0;
-  for(const [modulo, perms] of Object.entries(porModulo)){
-    const {error} = await sb.from('als_permisos_rol')
-      .update(perms)
-      .eq('rol', rol)
-      .eq('modulo', modulo);
-    if(error) errores++;
-  }
+  // Construir array de filas para upsert
+  const filas = Object.entries(porModulo).map(([modulo, perms]) => ({
+    rol,
+    modulo,
+    puede_ver:      perms.puede_ver      || false,
+    puede_crear:    perms.puede_crear    || false,
+    puede_editar:   perms.puede_editar   || false,
+    puede_eliminar: perms.puede_eliminar || false,
+    puede_exportar: perms.puede_exportar || false,
+  }));
 
-  if(errores){ showToast('⚠️ Algunos permisos no se pudieron guardar'); return; }
+  const {error} = await sb.from('als_permisos_rol')
+    .upsert(filas, {onConflict: 'rol,modulo'});
+
+  if(error){ showToast('⚠️ Error al guardar: '+error.message); return; }
   // Recargar permisos en caché si el rol editado es el del usuario actual
   if(CU?.rol === rol) await cargarPermisosRol(rol);
   await logAct('als_permisos_rol', null, rol, 'editar', 'permisos', null, 'Permisos actualizados por admin');
