@@ -1987,7 +1987,7 @@ textarea.fi{resize:vertical;min-height:72px}
 // ── ALS App Code (global scope) ──
 
 const UBICACIONES=['Pendiente recibir','Almacén-Sin Ubicar','Almacén-1ª Planta','Almacén-Planta Baja','Almacén-ADT','Almacén-LAME','A bordo','Camión cargado','Landed','Puerto','Aeropuerto-Málaga AGP','Aeropuerto-Sevilla SVQ','Aeropuerto-Madrid MAD'];
-const ROLES_LABELS={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
+const ROLES_LABELS={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista',airport_cargo:'Airport Cargo',control_rpa:'Control RPA'};
 
 // ── Estado operación → clase CSS ──
 function estOpCls(op){
@@ -3198,7 +3198,7 @@ function showHome(){
       </div>
     </div>`;
 
-  if(['admin','operativa','aduanas'].includes(CU.rol))
+  if(['admin','operativa','aduanas','airport_cargo'].includes(CU.rol))
     c.innerHTML+=`<div class="hm-card hm-card-air" style="position:relative" onclick="window.location.href='airport_cargo.html'">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">✈️</div>
@@ -3230,23 +3230,24 @@ function showHome(){
   iniciarPresenciaGlobal();
 
   // ── Módulos externos en sidebar — visibilidad por rol ──────────
-  const rolesExt = ['admin','aduanas'];
-  const hayExt = rolesExt.includes(CU.rol);
+  const puedeAirport = ['admin','aduanas','airport_cargo'].includes(CU.rol);
+  const puedeRpa     = ['admin','aduanas','control_rpa'].includes(CU.rol);
+  const hayExt = puedeAirport || puedeRpa;
   const secExt = document.getElementById('sb-sec-ext');
   const navRpa = document.getElementById('nav-rpa');
   const navAirport = document.getElementById('nav-airport');
   const navTaric = document.getElementById('nav-taric');
-  if(secExt)  secExt.style.display  = hayExt ? '' : 'none';
-  if(navRpa)  navRpa.style.display  = hayExt ? '' : 'none';
-  if(navAirport) navAirport.style.display = hayExt ? '' : 'none';
-  if(navTaric)navTaric.style.display = hayExt ? '' : 'none';
+  if(secExt)   secExt.style.display   = hayExt ? '' : 'none';
+  if(navRpa)   navRpa.style.display   = puedeRpa ? '' : 'none';
+  if(navAirport) navAirport.style.display = puedeAirport ? '' : 'none';
+  if(navTaric) navTaric.style.display = puedeAirport ? '' : 'none';
 
   // ── Nav Gibraltar (solo admin) ──────────────────────────────────
   const navGibraltar = document.getElementById('nav-gibraltar');
   if(navGibraltar) navGibraltar.style.display = CU.rol==='admin' ? '' : 'none';
 
-  // ── Card Control RPA (admin + aduanas) ─────────────────────────
-  if(['admin','aduanas'].includes(CU.rol))
+  // ── Card Control RPA (admin + aduanas + control_rpa) ───────────
+  if(['admin','aduanas','control_rpa'].includes(CU.rol))
     c.innerHTML+=`<div class="hm-card" style="background:linear-gradient(145deg,#134e4a,#0f766e);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="window.location.href='pendencias.html'" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
       <div class="hm-card-icon">📄</div>
       <div class="hm-card-body">
@@ -9966,8 +9967,8 @@ async function loadUsuarios(){
   if(error){ if(el) el.innerHTML=`<div class="empty"><div class="empty-txt">Error: ${error.message}</div></div>`; return; }
   if(!data||!data.length){ if(el) el.innerHTML='<div class="empty"><div class="empty-txt">Sin usuarios encontrados</div></div>'; return; }
 
-  const rolColor={admin:'var(--rd500)',operativa:'var(--b600)',aduanas:'var(--tl500)',almacen:'var(--am500)',transportista:'var(--g500)'};
-  const rolLabel={admin:'⚡ Admin',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista'};
+  const rolColor={admin:'var(--rd500)',operativa:'var(--b600)',aduanas:'var(--tl500)',almacen:'var(--am500)',transportista:'var(--g500)',airport_cargo:'#0369a1',control_rpa:'#065f46'};
+  const rolLabel={admin:'⚡ Admin',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista',airport_cargo:'✈️ Airport Cargo',control_rpa:'📄 Control RPA'};
   const esAdmin=CU?.rol==='admin';
 
   if(el) el.innerHTML=`<div class="tc">
@@ -10000,7 +10001,7 @@ async function loadUsuarios(){
   </div>
   ${esAdmin?`<div style="padding:12px 16px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
     <span style="font-size:12px;color:var(--g500);align-self:center">Gestión de roles →</span>
-    ${['admin','operativa','aduanas','almacen','transportista'].map(r=>`
+    ${['admin','operativa','aduanas','almacen','transportista','airport_cargo','control_rpa'].map(r=>`
       <button class="btn btn-s btn-sm" onclick="verPermisosRol('${r}')" style="font-size:11px">
         🔑 ${rolLabel[r]||r}
       </button>`).join('')}
@@ -10012,9 +10013,9 @@ async function editUser(id){
   const {data:u}=await sb.from('usuarios').select('*').eq('id',id).single();
   if(!u)return;
   const isMe=u.id===CU?.id;
-  const rolOpts=['almacen','operativa','aduanas','transportista','admin'].map(r=>`
+  const rolOpts=['almacen','operativa','aduanas','transportista','airport_cargo','control_rpa','admin'].map(r=>`
     <option value="${r}" ${u.rol===r?'selected':''}>${
-      {almacen:'📦 Almacén',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',transportista:'🚛 Transportista',admin:'⚡ Administrador'}[r]
+      {almacen:'📦 Almacén',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',transportista:'🚛 Transportista',airport_cargo:'✈️ Airport Cargo',control_rpa:'📄 Control RPA',admin:'⚡ Administrador'}[r]||r
     }</option>`).join('');
   const rolDesc={
     admin:'Acceso total — gestión de usuarios, configuración y todos los módulos',
@@ -10022,6 +10023,8 @@ async function editUser(id){
     aduanas:'Clasificador TARIC, borrador DUA, vista de expediciones (sin facturación)',
     almacen:'APP Almacén: fotos, confirmaciones, ubicaciones, listos embarcar',
     transportista:'Solo lectura: expediciones asignadas y listos para embarcar',
+    airport_cargo:'Acceso exclusivo al módulo Airport Cargo (AGP · Swissport · Groundforce)',
+    control_rpa:'Acceso exclusivo al módulo Control RPA (Régimen 51 · Perfeccionamiento Activo)',
   };
   document.getElementById('m-title').textContent=`✏️ ${isMe?'Mi perfil':'Editar usuario'}`;
   document.getElementById('m-body').innerHTML=`
@@ -10144,7 +10147,7 @@ async function saveUser(id){
 async function verPermisosRol(rol){
   if(!rol) return;
   const {data} = await sb.from('als_permisos_rol').select('*').eq('rol',rol).order('modulo');
-  const rolLabel = {admin:'⚡ Administrador',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista'};
+  const rolLabel = {admin:'⚡ Administrador',oficina:'🏢 Oficina',aduanas:'🏛️ Aduanas',almacen:'📦 Almacén',transportista:'🚛 Transportista',airport_cargo:'✈️ Airport Cargo',control_rpa:'📄 Control RPA'};
   const moduloLabel = {
     expediciones:'📦 Expediciones', buques:'🚢 Buques', alertas:'🔔 Alertas',
     incidencias:'⚠️ Incidencias', empresas:'🏢 Empresas', estadisticas:'📈 Estadísticas',
