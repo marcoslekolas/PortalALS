@@ -1631,31 +1631,197 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
     pendHtml+'</div>';
 }
 
-// Abre el cliente de correo directamente via mailto: — sin descarga, sin ventana intermedia
-function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
-  var ccList = emailCC ? 'aduana@customsway.eu,'+emailCC : 'aduana@customsway.eu';
+// ── Versión texto plano con tablas alineadas (para mailto:) ──────────────────
+function buildEmailText(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasLasExps, selIds){
+  function p(s,n){s=String(s==null?'':s);return s.length>=n?s.substring(0,n):s+' '.repeat(n-s.length);}
+  function tRow(cols,ws){return '| '+cols.map(function(c,i){return p(c,ws[i]);}).join(' | ')+' |';}
+  function tSep(ws){return '+'+ws.map(function(w){return '-'.repeat(w+2);}).join('+')+'+'; }
 
-  // Extraer texto legible del HTML (tables → texto tabulado)
-  var tmp = document.createElement('div');
-  tmp.innerHTML = htmlContent;
-  tmp.querySelectorAll('script,style').forEach(function(el){el.remove();});
-  // Convertir filas de tabla en líneas separadas por tabulaciones
-  tmp.querySelectorAll('tr').forEach(function(tr){
-    var cells = Array.from(tr.querySelectorAll('th,td')).map(function(td){
-      return (td.innerText||td.textContent||'').replace(/\s+/g,' ').trim();
+  var hH=['AWB','Consignatario','Handler','Bultos','Kilos','Llegada','Vuelo','Status','Obs.'];
+  var hW=[14,22,12,9,8,10,8,7,22];
+
+  var byBuque={};
+  sel.forEach(function(e){var bk=e.buque||'(Sin buque)';if(!byBuque[bk])byBuque[bk]=[];byBuque[bk].push(e);});
+
+  var L=[];
+  L.push('Estimados Sres. / Dear Sirs,');
+  L.push('');
+  L.push('Les informamos de la situacion actual de sus expediciones aereas en transito hacia '+apts+'.');
+  L.push('');
+  L.push('Cliente: '+clienteNombre+'  |  Expediciones: '+sel.length+'  |  Bultos: '+totalBlt+'  |  Kilos: '+totalKg+' kg');
+  L.push('');
+
+  Object.keys(byBuque).forEach(function(buque){
+    L.push('BUQUE: '+buque.toUpperCase());
+    L.push(tSep(hW));
+    L.push(tRow(hH,hW));
+    L.push(tSep(hW));
+    byBuque[buque].forEach(function(e){
+      L.push(tRow([formatAwb(e.awb||''),e.consignatario||'',e.handling||'',
+        (e.bultos||'')+' btos',(e.kilos_tasables||'')+' kg',
+        fd(e.fecha_llegada),e.vuelo||'',e.status||'',e.observaciones||''],hW));
     });
-    tr.replaceWith(cells.join('\t')+'\n');
+    L.push(tSep(hW));
+    L.push('');
   });
-  var bodyText = (tmp.innerText||tmp.textContent||'').replace(/\n{3,}/g,'\n\n').trim();
 
-  var mailtoUrl = 'mailto:'+emailDest
-    +'?cc='+encodeURIComponent(ccList)
-    +'&subject='+asunto
-    +'&body='+encodeURIComponent(bodyText);
+  L.push('Las mercancias se encuentran en proceso de gestion aduanera.');
+  L.push('Una vez concluido, coordinaremos la entrega conforme a sus instrucciones.');
+  L.push('');
+  L.push('Atentamente / Kind regards,');
+  L.push('');
+  L.push('Departamento de Aduana - CUSTOMS-WAY SL');
+  L.push('T. 856 003 50 02  |  aduana@customsway.eu');
+  L.push(hoy);
 
-  // window.location.href con mailto: lanza el cliente de correo sin cerrar la app
-  window.location.href = mailtoUrl;
-  toast('📨 Abriendo cliente de correo…');
+  // Pendientes
+  var hoyDate=new Date();hoyDate.setHours(0,0,0,0);
+  var selSet=new Set((selIds||[]).map(String));
+  var pendExps=(todasLasExps||[]).filter(function(e){
+    if(selSet.has(String(e.id)))return false;
+    if(e.fecha_retirada)return false;
+    var d=e.fecha_llegada?new Date(e.fecha_llegada):(e.eta_buque?new Date(e.eta_buque):null);
+    if(!d)return true;
+    return d>=hoyDate;
+  });
+  if(pendExps.length){
+    L.push('');
+    L.push('------------------------------------------------------------------');
+    L.push('EXPEDICIONES CON LLEGADAS / RECOGIDAS PENDIENTES');
+    L.push('------------------------------------------------------------------');
+    var pH=['AWB','Consignatario','Buque','Handler','Prevision','Cantidad','Obs.'];
+    var pW=[14,22,14,12,10,16,22];
+    L.push(tSep(pW));
+    L.push(tRow(pH,pW));
+    L.push(tSep(pW));
+    pendExps.forEach(function(e){
+      var prev=e.eta_buque?fd(e.eta_buque):(e.fecha_llegada?fd(e.fecha_llegada):'Sin fecha');
+      L.push(tRow([formatAwb(e.awb||''),e.consignatario||e.cliente||'',
+        e.buque||'',e.handling||'',prev,
+        (e.bultos||'')+' / '+(e.kilos_tasables||'')+' kg',e.observaciones||''],pW));
+    });
+    L.push(tSep(pW));
+  }
+  return L.join('\n');
+}
+
+function buildInstrText(transpNombre, byH, todasLasExps, selIds){
+  function p(s,n){s=String(s==null?'':s);return s.length>=n?s.substring(0,n):s+' '.repeat(n-s.length);}
+  function tRow(cols,ws){return '| '+cols.map(function(c,i){return p(c,ws[i]);}).join(' | ')+' |';}
+  function tSep(ws){return '+'+ws.map(function(w){return '-'.repeat(w+2);}).join('+')+'+'; }
+
+  var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  var totalBultos=0,totalKg=0,totalExps=0;
+  Object.keys(byH).forEach(function(h){byH[h].forEach(function(e){
+    totalBultos+=(parseInt(e.bultos)||0);totalKg+=(parseFloat(e.kilos_tasables||e.kilos)||0);totalExps++;
+  });});
+
+  var hH=['AWB','Consignatario','Bultos','Kilos','Llegada','Vuelo','Status','Obs.'];
+  var hW=[14,22,9,8,10,8,7,22];
+
+  var L=[];
+  L.push('INSTRUCCIONES DE RECOGIDA - AIRPORT CARGO');
+  L.push('=========================================');
+  L.push('Transportista: '+transpNombre+'  |  Fecha: '+hoy+'  |  Exps: '+totalExps+'  |  Bultos: '+totalBultos+'  |  Kilos: '+totalKg+' kg');
+  L.push('');
+
+  Object.keys(byH).forEach(function(h){
+    var exps=byH[h].filter(function(e){return !!e.fecha_llegada;});
+    if(!exps.length)return;
+    L.push('LUGAR DE RECOGIDA: '+h.toUpperCase());
+    L.push(tSep(hW));
+    L.push(tRow(hH,hW));
+    L.push(tSep(hW));
+    exps.forEach(function(e){
+      L.push(tRow([formatAwb(e.awb||''),e.consignatario||e.cliente||'',
+        (e.bultos||'')+' btos',(e.kilos_tasables||'')+' kg',
+        fd(e.fecha_llegada),e.vuelo||'',e.status||'',e.observaciones||''],hW));
+    });
+    L.push(tSep(hW));
+    L.push('');
+  });
+
+  L.push('Departamento de Aduana - CUSTOMS-WAY SL');
+  L.push('T. 856 003 50 02  |  aduana@customsway.eu');
+  L.push(hoy);
+
+  // Pendientes
+  var hoyDate=new Date();hoyDate.setHours(0,0,0,0);
+  var selSet=new Set((selIds||[]).map(String));
+  var pendExps=(todasLasExps||[]).filter(function(e){
+    if(selSet.has(String(e.id)))return false;
+    if(e.fecha_retirada)return false;
+    var d=e.fecha_llegada?new Date(e.fecha_llegada):(e.eta_buque?new Date(e.eta_buque):null);
+    if(!d)return true;
+    return d>=hoyDate;
+  });
+  if(pendExps.length){
+    L.push('');
+    L.push('------------------------------------------------------------------');
+    L.push('EXPEDICIONES CON LLEGADAS / RECOGIDAS PENDIENTES');
+    L.push('------------------------------------------------------------------');
+    var pH=['AWB','Consignatario','Buque','Handler','Prevision','Cantidad','Obs.'];
+    var pW=[14,22,14,12,10,16,22];
+    L.push(tSep(pW));
+    L.push(tRow(pH,pW));
+    L.push(tSep(pW));
+    pendExps.forEach(function(e){
+      var prev=e.eta_buque?fd(e.eta_buque):(e.fecha_llegada?fd(e.fecha_llegada):'Sin fecha');
+      L.push(tRow([formatAwb(e.awb||''),e.consignatario||e.cliente||'',
+        e.buque||'',e.handling||'',prev,
+        (e.bultos||'')+' / '+(e.kilos_tasables||'')+' kg',e.observaciones||''],pW));
+    });
+    L.push(tSep(pW));
+  }
+  return L.join('\n');
+}
+
+// Genera un .eml con HTML completo y lo descarga sin diálogo (el OS lo abre en Mail/Outlook)
+// La primera vez Chrome pregunta "¿Abrir siempre?"; si el usuario acepta, queda totalmente automático.
+function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
+  var from = 'aduana@customsway.eu';
+  var ccList = emailCC ? 'aduana@customsway.eu,'+emailCC : 'aduana@customsway.eu';
+  var subjectDecoded = '';
+  try{ subjectDecoded = decodeURIComponent(asunto); }catch(e){ subjectDecoded = asunto; }
+
+  function toB64(str){
+    try{
+      var bytes = new TextEncoder().encode(str);
+      var chunks = [];
+      for(var i=0;i<bytes.length;i+=512){
+        chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i+512,bytes.length))));
+      }
+      return btoa(chunks.join(''));
+    }catch(ex){ return btoa(unescape(encodeURIComponent(str))); }
+  }
+
+  var subjectMime = '=?UTF-8?B?'+toB64(subjectDecoded)+'?=';
+  var fullHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
+    +'<body style="margin:0;padding:0;font-family:Arial,sans-serif">'+htmlContent+'</body></html>';
+
+  var eml =
+    'MIME-Version: 1.0\r\n'+
+    'From: Departamento Aduana CUSTOMS-WAY <'+from+'>\r\n'+
+    'To: '+emailDest+'\r\n'+
+    'Cc: '+ccList+'\r\n'+
+    'Subject: '+subjectMime+'\r\n'+
+    'Content-Type: text/html; charset=UTF-8\r\n'+
+    'Content-Transfer-Encoding: base64\r\n'+
+    '\r\n'+
+    toB64(fullHtml);
+
+  var blob = new Blob([eml], {type:'message/rfc822'});
+  var url = URL.createObjectURL(blob);
+  // Sin atributo download → Chrome descarga silencioso a la barra inferior sin diálogo
+  // El OS abre Mail/Outlook automáticamente si el usuario marcó "Abrir siempre" la primera vez
+  var a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);}, 6000);
+  toast('📨 Email generado — haz clic en el archivo de la barra de descargas');
 }
 
 async function abrirEmail(){
