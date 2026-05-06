@@ -99,6 +99,13 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .btn-s{background:var(--w);color:var(--g700);border-color:var(--g300)}.btn-s:hover{background:var(--g50)}
 .btn-d{background:var(--rd50);color:var(--rd600);border-color:#fecaca}
 .btn-sm{padding:5px 10px;font-size:12px}
+.alert-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;background:var(--rd500);color:#fff;border-radius:20px;font-size:10px;font-weight:700;margin-left:auto;flex-shrink:0}
+@keyframes badge-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.75;transform:scale(1.15)}}
+.alert-badge.pulse{animation:badge-pulse 1.6s ease-in-out infinite}
+.alerta-card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);overflow:hidden;box-shadow:var(--sh0);margin-bottom:18px}
+.alerta-card-hd{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--g200);font-size:13px;font-weight:700}
+.alerta-card-hd.red{background:var(--rd50);border-bottom-color:#fecaca;color:var(--rd600)}
+.alerta-card-hd.am{background:var(--am50);border-bottom-color:#fde68a;color:var(--am600)}
 .mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:300;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(2px)}
 .mo.open{display:flex}
 .modal{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);width:100%;max-width:640px;max-height:92vh;overflow-y:auto;box-shadow:var(--shl)}
@@ -306,6 +313,8 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
       </div>
       <!-- Navegación -->
       <div style="flex:1;overflow-y:auto;padding-top:6px">
+        <div class="sb-sec">Alertas</div>
+        <div class="nav-item" id="nav-alertas" onclick="nav('alertas',this)"><span class="ni">🔔</span><span class="nav-item-txt">Alertas</span><span id="alert-badge" class="alert-badge pulse" style="display:none">0</span></div>
         <div class="sb-sec">Módulo</div>
         <div class="nav-item active" onclick="nav('dashboard',this)"><span class="ni">🏠</span><span class="nav-item-txt">Dashboard</span></div>
         <div class="nav-item" onclick="nav('entradas',this)"><span class="ni">📋</span><span class="nav-item-txt">Entradas</span></div>
@@ -401,6 +410,14 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
           <button class="tab-btn" onclick="showTarifas('Groundforce',this)">✈️ Groundforce</button>
         </div>
         <div id="tar-content"></div>
+      </div>
+      <!-- ALERTAS -->
+      <div class="view" id="view-alertas">
+        <div class="ph">
+          <div class="pt">🔔 Alertas del día</div>
+          <button class="btn btn-s btn-sm" onclick="loadAlertas()">↺ Actualizar</button>
+        </div>
+        <div id="alertas-content"><p style="color:var(--g500);font-size:13px">Cargando alertas…</p></div>
       </div>
     </div>
   </div>
@@ -530,6 +547,7 @@ function nav(v,el){
   else if(v==='entradas')loadEntradas();
   else if(v==='resumen')loadResumen();
   else if(v==='tarifas')loadTarifasView();
+  else if(v==='alertas')loadAlertas();
 }
 
 // ── HELPERS ──────────────────────────────────────────────
@@ -679,11 +697,116 @@ async function loadAll(){
   return ALL;
 }
 
+// ── ALERTAS ──────────────────────────────────────────────────────────────────
+function getAlertas(){
+  var hoy=new Date(); hoy.setHours(0,0,0,0);
+  var manana=new Date(hoy); manana.setDate(manana.getDate()+1);
+  var hoyStr=hoy.toISOString().slice(0,10);
+  var mananaStr=manana.toISOString().slice(0,10);
+
+  var almacenaje=(ALL||[]).filter(function(e){
+    if(e.fecha_retirada) return false;
+    var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
+    if(!fml) return false;
+    return fml.toISOString().slice(0,10)===hoyStr;
+  });
+
+  var caducidadT1=(ALL||[]).filter(function(e){
+    if(e.fecha_retirada) return false;
+    if(!e.fecha_caducidad_t1) return false;
+    // Mostrar si vence hoy o mañana
+    return e.fecha_caducidad_t1>=hoyStr && e.fecha_caducidad_t1<=mananaStr;
+  });
+
+  return {almacenaje:almacenaje, caducidadT1:caducidadT1};
+}
+
+function actualizarBadgeAlertas(){
+  var a=getAlertas();
+  var total=a.almacenaje.length+a.caducidadT1.length;
+  var badge=document.getElementById('alert-badge');
+  if(!badge) return;
+  if(total>0){
+    badge.textContent=total;
+    badge.style.display='inline-flex';
+  } else {
+    badge.style.display='none';
+  }
+}
+
+function loadAlertas(){
+  var a=getAlertas();
+  var el=document.getElementById('alertas-content');
+  if(!el) return;
+
+  var TS='border:1px solid var(--g200);padding:7px 10px;font-size:12px;text-align:left;';
+  var TH=TS+'background:var(--g50);font-weight:700;color:var(--g600);font-size:10px;text-transform:uppercase;letter-spacing:.4px;';
+  function mkTable(headers,rows,emptyMsg){
+    if(!rows.length) return '<p style="font-size:12px;color:var(--g500);padding:10px 16px;margin:0">'+emptyMsg+'</p>';
+    var ths=headers.map(function(h){return '<th style="'+TH+'">'+h+'</th>';}).join('');
+    var trs=rows.map(function(r,ri){
+      var bg=ri%2===1?' background:var(--g50);':'';
+      return '<tr>'+r.map(function(c){return '<td style="'+TS+bg+'">'+c+'</td>';}).join('')+'</tr>';
+    }).join('');
+    return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+
+      '<thead><tr>'+ths+'</tr></thead><tbody>'+trs+'</tbody></table></div>';
+  }
+
+  var html='';
+
+  // — Almacenaje vence HOY —
+  html+='<div class="alerta-card">';
+  html+='<div class="alerta-card-hd red">⚠️ Período libre de almacenaje vence HOY'+(a.almacenaje.length?' <span style="margin-left:6px;background:var(--rd500);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px">'+a.almacenaje.length+'</span>':'')+'</div>';
+  html+=mkTable(
+    ['AWB','Consignatario','Handler','Llegada','Max. libre','Kilos','Obs.'],
+    a.almacenaje.map(function(e){
+      var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
+      return[
+        '<span style="font-family:var(--mono);font-size:11px">'+formatAwb(e.awb||'')+'</span>',
+        e.consignatario||e.cliente||'—',
+        e.handling||'—',
+        fd(e.fecha_llegada),
+        '<strong style="color:var(--rd600)">'+( fml?fd(fml):'—')+'</strong>',
+        (e.kilos_tasables||'—')+' kg',
+        e.observaciones||''
+      ];
+    }),
+    'Sin vencimientos de almacenaje hoy ✓'
+  );
+  html+='</div>';
+
+  // — Caducidad T1 hoy / mañana —
+  html+='<div class="alerta-card">';
+  html+='<div class="alerta-card-hd am">🕒 Caducidad T1 — vence hoy o mañana'+(a.caducidadT1.length?' <span style="margin-left:6px;background:var(--am500);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px">'+a.caducidadT1.length+'</span>':'')+'</div>';
+  var hoyStr=new Date().toISOString().slice(0,10);
+  html+=mkTable(
+    ['AWB','Consignatario','Handler','Status','Caducidad T1','T1 sellado','Obs.'],
+    a.caducidadT1.map(function(e){
+      var esHoy=e.fecha_caducidad_t1===hoyStr;
+      return[
+        '<span style="font-family:var(--mono);font-size:11px">'+formatAwb(e.awb||'')+'</span>',
+        e.consignatario||e.cliente||'—',
+        e.handling||'—',
+        e.status||'—',
+        '<strong style="color:'+(esHoy?'var(--rd600)':'var(--am600)')+'">'+fd(e.fecha_caducidad_t1)+(esHoy?' ⚠️':'')+'</strong>',
+        e.t1_sellado?'<span style="color:var(--gr600)">✓ Sí</span>':'<span style="color:var(--rd500)">✗ No</span>',
+        e.observaciones||''
+      ];
+    }),
+    'Sin caducidades de T1 próximas ✓'
+  );
+  html+='</div>';
+
+  el.innerHTML=html;
+  actualizarBadgeAlertas();
+}
+
 async function init(){
   initSidebar();
   initDarkMode();
   try{await loadTarifasDB();}catch(e){console.warn('tarifas error:',e);}
   await loadAll();
+  actualizarBadgeAlertas();
   loadDashboard();
   checkUrl();
   // Event delegation — must be set up after DOM ready, avoids onclick quote issues
