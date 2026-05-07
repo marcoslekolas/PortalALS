@@ -272,6 +272,9 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 :root.dark #mob-ov { background:rgba(0,0,0,.6) !important; }
 :root.dark #cons-list { background:#1a1a2e !important; border-color:#1e1e3f !important; }
 
+/* ── Column resize handles ── */
+.col-rh{position:absolute;right:0;top:0;width:6px;height:100%;cursor:col-resize;user-select:none;z-index:2;transition:background .1s}
+.col-rh:hover,.col-rh.dragging{background:var(--b500);opacity:.4}
 
 </style>
 <script>
@@ -880,13 +883,14 @@ async function loadDashboard(){
     alertEl.style.display='';
   } else if(alertEl){ alertEl.style.display='none'; }
   document.getElementById('dash-recent').innerHTML=miniTable(ALL.slice(0,8));
+  setTimeout(function(){initResizableTable(document.querySelector('#dash-recent .tbl'),'ac_col_dash');},0);
 }
 
 function miniTable(list){
   if(!list.length)return'<div class="empty">Sin entradas</div>';
   var rows=list.map(function(e){
     return'<tr class="tbl-row" data-id="'+e.id+'" style="cursor:pointer"><td style="font-family:var(--mono)">'+
-      formatAwb(e.awb||'—')+' </td><td style="width:110px;max-width:110px;overflow:hidden"><span style="font-size:12px;color:var(--g500);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(e.consignatario||'—')+'</span>'+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--g400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏢 '+e.cliente+'</div>':'')+'</td><td style="font-weight:700;font-size:13px;color:var(--g900)">'+(e.buque||'—')+'</td>'+
+      formatAwb(e.awb||'—')+' </td><td><span style="font-size:12px;color:var(--g500);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(e.consignatario||'—')+'</span>'+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--g400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏢 '+e.cliente+'</div>':'')+'</td><td style="font-weight:700;font-size:13px;color:var(--g900)">'+(e.buque||'—')+'</td>'+
       '<td><span class="badge bb">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+fd(e.fecha_llegada)+'</td><td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
       '<td style="font-weight:700;color:var(--b700)">'+fc(calcTotal(e))+'</td></tr>';
@@ -984,6 +988,7 @@ function renderRows(list){
       '</td></tr>';
   }).join('');
   tbody.innerHTML = rows;
+  initResizableTable(tbody.closest('table'), 'ac_col_ent');
 }
 
 
@@ -2361,6 +2366,45 @@ async function crearEmpresaDesdeConsignatario(){
     }).join('');
     toast('Empresa creada ✅');
   };
+}
+
+// ── RESIZABLE COLUMNS ────────────────────────────────────
+function initResizableTable(tbl, key) {
+  if (!tbl) return;
+  var ths = Array.prototype.slice.call(tbl.querySelectorAll('thead th'));
+  if (!ths.length) return;
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch(e) {}
+  if (!Object.keys(saved).length) {
+    ths.forEach(function(th, i) { saved[i] = th.getBoundingClientRect().width || th.offsetWidth; });
+  }
+  tbl.style.tableLayout = 'fixed';
+  ths.forEach(function(th, i) {
+    if (saved[i]) th.style.width = saved[i] + 'px';
+    th.style.overflow = 'hidden';
+    th.style.position = 'relative';
+    if (i >= ths.length - 1) return;
+    if (th.querySelector('.col-rh')) return;
+    var rh = document.createElement('div');
+    rh.className = 'col-rh';
+    th.appendChild(rh);
+    var sx, sw;
+    rh.addEventListener('mousedown', function(ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      sx = ev.pageX; sw = th.offsetWidth;
+      rh.classList.add('dragging');
+      function mv(e) { th.style.width = Math.max(40, sw + e.pageX - sx) + 'px'; }
+      function up() {
+        rh.classList.remove('dragging');
+        var ws = {}; ths.forEach(function(t, j) { ws[j] = t.offsetWidth; });
+        localStorage.setItem(key, JSON.stringify(ws));
+        document.removeEventListener('mousemove', mv);
+        document.removeEventListener('mouseup', up);
+      }
+      document.addEventListener('mousemove', mv);
+      document.addEventListener('mouseup', up);
+    });
+  });
 }
 
 </script>
