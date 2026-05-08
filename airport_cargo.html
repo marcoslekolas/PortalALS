@@ -1022,27 +1022,11 @@ function trackAwb(evt,awb){
   var fmt=formatAwb(awb);
   if(!fmt||fmt==='—') return;
   var clean=fmt.replace(/-/g,'');
-  // Bridge page: submits POST form to track-trace.com/aircargo
-  // Field name 'p' matches their aircargoform input (standard across their forms)
-  // target="_blank" opens results in new tab (same as their "Track direct" behavior)
-  var html='<!DOCTYPE html><html><head><meta charset="UTF-8">'+
-    '<style>body{font-family:Arial,sans-serif;background:#f5f5f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}'+
-    '.box{background:#fff;border-radius:10px;padding:30px 40px;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.1)}'+
-    'p{color:#555;font-size:14px;margin:8px 0}</style></head>'+
-    '<body><div class="box"><p>✈️ Abriendo tracking...</p><p style="font-family:monospace;font-size:16px;font-weight:700;color:#1d4ed8">'+fmt+'</p>'+
-    '<p style="font-size:12px;color:#999">Si no se abre automáticamente, pulsa el botón abajo</p>'+
-    '<button onclick="sf()" style="margin-top:12px;background:#1d4ed8;color:#fff;border:none;border-radius:6px;padding:8px 20px;font-size:13px;cursor:pointer">Abrir tracking →</button></div>'+
-    '<form method="POST" action="https://www.track-trace.com/aircargo" id="ttf" target="_blank">'+
-      '<input type="hidden" name="p" value="'+clean+'">'+
-      '<input type="hidden" name="type" value="aircargoawb">'+
-    '</form>'+
-    '<script>function sf(){document.getElementById("ttf").submit();}window.onload=function(){setTimeout(sf,400);}<\/script>'+
-  '</body></html>';
-  var blob=new Blob([html],{type:'text/html'});
-  var url=URL.createObjectURL(blob);
-  window.open(url,'_blank');
-  setTimeout(function(){URL.revokeObjectURL(url);},10000);
+  if(navigator.clipboard) navigator.clipboard.writeText(clean).catch(function(){});
+  window.open('https://www.track-trace.com/aircargo','_blank');
+  toast('✈️ '+fmt+' copiado · Pega en el campo de búsqueda y pulsa "Track direct"');
 }
+
 
 function renderRows(list, tbodyId){
   var tbody=document.getElementById(tbodyId||'tbody');
@@ -1612,17 +1596,15 @@ async function showForm(e){
   try{var er=await sb.from('empresas').select('id,nombre,email_confronta').order('nombre');empresas=er.data||[];}catch(ex){}
   var isEdit=!!e,h=e?e.handling||'':'',isAuto=hasH(h);
   document.getElementById('m-title').textContent=isEdit?'Editar — '+formatAwb(e.awb||'—'):'Nueva entrada Airport Cargo';
-  // Load handling companies from empresas (rol Handling Aeropuerto) + hardcoded fallbacks
+  // Load handling companies ONLY from empresas with rol Handling Aeropuerto
   var handlingEmps=[];
   try{
     var hResp=await sb.from('empresas').select('nombre').contains('rol',['Handling Aeropuerto']).order('nombre');
     handlingEmps=(hResp.data||[]).map(function(x){return x.nombre;});
   }catch(ex){}
-  // Ensure Swissport/Groundforce always appear (backwards compat)
-  ['Swissport','Groundforce'].forEach(function(n){if(!handlingEmps.includes(n))handlingEmps.push(n);});
   var handlerOpts=['<option value="" '+((!h)?'selected':'')+'>— Seleccionar —</option>'].concat(
     handlingEmps.map(function(n){return'<option '+(h===n?'selected':'')+'>'+n+'</option>';})
-  ).concat(['<option value="Otro" '+((h&&!hasH(h)&&!handlingEmps.includes(h))?'selected':'')+'>Otro</option>']).join('');
+  ).join('');
   var statusOpts=['T1','DAE','Comunitario'].map(function(s){return'<option '+(((e?e.status:'')||'T1')===s?'selected':'')+'>'+s+'</option>';}).join('');
   var aptOpts=['AGP','SVQ','MAD'].map(function(a){return'<option '+((e?e.aeropuerto||'AGP':'AGP')===a?'selected':'')+'>'+a+'</option>';}).join('');
   document.getElementById('m-body').innerHTML=
@@ -2040,6 +2022,24 @@ function buildInstrText(transpNombre, byH, todasLasExps, selIds){
 
 
 // ── Email: abre cliente de correo con HTML completo (tablas incluidas) ────────
+// Helper: obtiene el primer email disponible de un registro empresa
+function getEmailEmpresa(emp){
+  if(!emp) return '';
+  if(emp.email_confronta) return emp.email_confronta;
+  var otros=emp.otros_emails||[];
+  if(typeof otros==='string'){try{otros=JSON.parse(otros);}catch(e){otros=[];}}
+  return (Array.isArray(otros)&&otros.length)?otros[0]:'';
+}
+// Busca empresa por nombre (parcial) y devuelve email (email_confronta o primer otros_emails)
+function buscarEmailEmpresa(empresas, nombre){
+  if(!nombre||!empresas||!empresas.length) return '';
+  var q=nombre.toLowerCase();
+  var match=empresas.filter(function(emp){
+    var n=(emp.nombre||'').toLowerCase();
+    return n.includes(q)||q.includes(n.substring(0,Math.min(5,n.length)));
+  })[0]||null;
+  return match?getEmailEmpresa(match):'';
+}
 function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
   var fromEmail=(CU&&CU.email)||'aduana@customsway.eu';
   var fromName=(CU&&CU.nombre)?CU.nombre+' · Dpto. Aduana CUSTOMS-WAY':'Departamento Aduana CUSTOMS-WAY';
@@ -2054,8 +2054,7 @@ function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
     }catch(ex){return btoa(unescape(encodeURIComponent(str)));}
   }
 
-  function abrirEnCliente(destOverride){
-    var dest=destOverride||emailDest;
+  function abrirEnCliente(dest){
     var ccList=emailCC?fromEmail+','+emailCC:fromEmail;
     var subjectMime='=?UTF-8?B?'+toB64(subjectDecoded)+'?=';
     var fullHtml='<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;font-family:Arial,sans-serif">'+htmlContent+'</body></html>';
@@ -2070,52 +2069,59 @@ function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
       toB64(fullHtml);
     var blob=new Blob([eml],{type:'message/rfc822'});
     var url=URL.createObjectURL(blob);
-    // window.open en nueva pestaña: Edge/Chrome en macOS cede el blob al OS → abre el cliente de correo
-    var w=window.open(url,'_blank');
-    // Fallback: si el popup fue bloqueado, usar anchor click
-    if(!w){
-      var a=document.createElement('a');a.href=url;a.style.display='none';
-      document.body.appendChild(a);a.click();document.body.removeChild(a);
-    }
+    // target='_blank' abre en nueva pestaña → el OS detecta message/rfc822 → lanza Mail/Outlook
+    var a=document.createElement('a');
+    a.href=url;a.target='_blank';a.rel='noopener';
+    a.style.display='none';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
     setTimeout(function(){URL.revokeObjectURL(url);},10000);
-    toast('📧 Email abierto en tu cliente de correo — revisa la ventana nueva');
+    toast('📧 Revisa la nueva pestaña o tu cliente de correo');
   }
 
-  // Modal de previsualización
-  var prev=document.getElementById('email-prev-modal');
+  // Eliminar modal previo
+  var prev=document.getElementById('email-prev-dlg');
   if(prev)prev.remove();
-  var modal=document.createElement('div');
-  modal.id='email-prev-modal';
-  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  var destDisplay=emailDest||'<span style="color:#dc2626">⚠️ Sin email configurado</span>';
-  modal.innerHTML=
-    '<div style="background:#fff;border-radius:14px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.3)">'+
-      '<div style="padding:13px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:flex-start;gap:10px">'+
+  var styleEl=document.getElementById('email-dlg-style');
+  if(styleEl)styleEl.remove();
+  // Inyectar estilo backdrop (solo una vez)
+  var st=document.createElement('style');
+  st.id='email-dlg-style';
+  st.textContent='#email-prev-dlg{border:none;border-radius:14px;padding:0;max-width:860px;width:calc(100vw - 32px);max-height:90vh;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.3)}'+
+    '#email-prev-dlg::backdrop{background:rgba(0,0,0,.75)}';
+  document.head.appendChild(st);
+
+  // <dialog> con showModal() → top-layer garantizado, por encima de cualquier transform/z-index
+  var dlg=document.createElement('dialog');
+  dlg.id='email-prev-dlg';
+  dlg.innerHTML=
+    '<div style="display:flex;flex-direction:column;max-height:90vh">'+
+      '<div style="padding:13px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:flex-start;gap:10px;flex-shrink:0">'+
         '<div style="flex:1;min-width:0;font-size:12px;line-height:1.9">'+
           '<span style="color:#6b7280">De:</span> '+fromName+' &lt;'+fromEmail+'&gt;<br>'+
           '<span style="color:#6b7280">Para:</span> '+
-          '<input id="ep-dest" value="'+emailDest+'" style="font-size:12px;border:1px solid #d1d5db;border-radius:5px;padding:2px 7px;width:260px;font-weight:600">'+
-          (emailCC?' · CC: '+emailCC:'')+'<br>'+
+          '<input id="ep-dest" value="'+(emailDest||'')+'" placeholder="email@empresa.com" style="font-size:12px;font-weight:600;border:1px solid #d1d5db;border-radius:5px;padding:2px 7px;width:260px">'+
+          (emailCC?' &nbsp;·&nbsp; CC: '+emailCC:'')+'<br>'+
           '<span style="color:#6b7280">Asunto:</span> <strong>'+subjectDecoded+'</strong>'+
         '</div>'+
-        '<button id="ep-close" style="background:#f3f4f6;border:none;border-radius:8px;padding:5px 11px;font-size:13px;cursor:pointer;flex-shrink:0">✕</button>'+
+        '<button id="ep-close" style="background:#f3f4f6;border:none;border-radius:8px;padding:5px 11px;font-size:14px;cursor:pointer;flex-shrink:0">✕</button>'+
       '</div>'+
       '<div id="ep-preview" style="flex:1;overflow-y:auto;padding:20px;font-family:Arial,sans-serif;font-size:12px;line-height:1.5"></div>'+
-      '<div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;background:#f9fafb;gap:12px">'+
-        '<div style="font-size:11px;color:#6b7280">Puedes editar el destinatario arriba. Al pulsar el botón se abrirá el cliente de correo con las tablas y el formato completo.</div>'+
+      '<div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;background:#f9fafb;gap:12px;flex-shrink:0">'+
+        '<div style="font-size:11px;color:#6b7280">Puedes editar el destinatario. Al pulsar se abrirá el cliente de correo con el email HTML completo.</div>'+
         '<button id="ep-send" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📧 Abrir en cliente de correo</button>'+
       '</div>'+
     '</div>';
-  document.body.appendChild(modal);
+  document.body.appendChild(dlg);
   document.getElementById('ep-preview').innerHTML=htmlContent;
-  document.getElementById('ep-close').onclick=function(){modal.remove();};
+  document.getElementById('ep-close').onclick=function(){dlg.close();dlg.remove();};
   document.getElementById('ep-send').onclick=function(){
     var dest=(document.getElementById('ep-dest').value||'').trim();
-    if(!dest){toast('Introduce un email destinatario');return;}
-    modal.remove();
+    if(!dest){alert('Introduce un email destinatario');return;}
+    dlg.close();dlg.remove();
     abrirEnCliente(dest);
   };
-  modal.addEventListener('click',function(ev){if(ev.target===modal)modal.remove();});
+  dlg.addEventListener('click',function(ev){if(ev.target===dlg){dlg.close();dlg.remove();}});
+  dlg.showModal();
 }
 
 async function abrirEmail(){
@@ -2134,15 +2140,9 @@ async function abrirEmail(){
   if(!consigNombre){toast('Las entradas seleccionadas no tienen consignatario.');return;}
   var emailDest='';
   try{
-    var er=await sb.from('empresas').select('nombre,email_confronta').order('nombre');
-    var empresas=er.data||[];
-    var q=consigNombre.toLowerCase();
-    var match=empresas.filter(function(emp){
-      return(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase().substring(0,5));
-    })[0]||null;
-    if(match) emailDest=match.email_confronta||'';
+    var er=await sb.from('empresas').select('nombre,email_confronta,otros_emails').order('nombre');
+    emailDest=buscarEmailEmpresa(er.data||[],consigNombre);
   }catch(e){}
-
   if(!emailDest){toast('⚠️ Sin email para "'+consigNombre+'" — puedes introducirlo en el modal.');}
 
   var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
@@ -2162,17 +2162,9 @@ async function abrirEmailCliente(){
   var clienteNombre=sel.map(function(e){return e.cliente||e.consignatario||'';}).filter(Boolean)[0]||'';
   var emailDest='';
   try{
-    var er=await sb.from('empresas').select('nombre,email_confronta').order('nombre');
-    var empresas=er.data||[];
-    if(clienteNombre&&empresas.length){
-      var q=clienteNombre.toLowerCase();
-      var match=empresas.filter(function(emp){
-        return(emp.nombre||'').toLowerCase().includes(q)||q.includes((emp.nombre||'').toLowerCase().substring(0,5));
-      })[0]||null;
-      if(match) emailDest=match.email_confronta||'';
-    }
+    var er=await sb.from('empresas').select('nombre,email_confronta,otros_emails').order('nombre');
+    emailDest=buscarEmailEmpresa(er.data||[],clienteNombre);
   }catch(e){}
-
   if(!emailDest){toast('⚠️ Sin email para "'+clienteNombre+'" — puedes introducirlo en el modal.');}
 
   var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
@@ -2201,19 +2193,10 @@ async function abrirEmailAeropuerto(){
   // Buscar email de la empresa handling en Supabase
   var emailDest='';
   try{
-    var hr=await sb.from('empresas').select('nombre,email_confronta').contains('rol',['Handling Aeropuerto']).order('nombre');
-    var handlingEmps=hr.data||[];
-    var match=handlingEmps.filter(function(h){
-      return (h.nombre||'').toLowerCase().includes(handlerNombre.toLowerCase())||
-             handlerNombre.toLowerCase().includes((h.nombre||'').toLowerCase().substring(0,4));
-    })[0]||null;
-    if(match) emailDest=match.email_confronta||'';
+    var hr=await sb.from('empresas').select('nombre,email_confronta,otros_emails').contains('rol',['Handling Aeropuerto']).order('nombre');
+    emailDest=buscarEmailEmpresa(hr.data||[],handlerNombre);
   }catch(ex){}
-
-  if(!emailDest){
-    toast('No se encontró email para "'+handlerNombre+'". Configúralo en Empresas → rol Handling Aeropuerto.');
-    return;
-  }
+  if(!emailDest){toast('⚠️ Sin email para "'+handlerNombre+'" — puedes introducirlo en el modal.');}
 
   var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
   var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ')||'aeropuerto';
