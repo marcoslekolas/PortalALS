@@ -2040,9 +2040,6 @@ function buildInstrText(transpNombre, byH, todasLasExps, selIds){
 
 
 // ── Email: abre cliente de correo con HTML completo (tablas incluidas) ────────
-// Blob message/rfc822 sin atributo download ni target.
-// El navegador cede el blob al OS → Mail/Outlook se abre directamente.
-// La primera vez Edge pregunta con qué app abrir .eml; tras seleccionar "Siempre", queda automático.
 function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
   var fromEmail=(CU&&CU.email)||'aduana@customsway.eu';
   var fromName=(CU&&CU.nombre)?CU.nombre+' · Dpto. Aduana CUSTOMS-WAY':'Departamento Aduana CUSTOMS-WAY';
@@ -2057,14 +2054,15 @@ function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
     }catch(ex){return btoa(unescape(encodeURIComponent(str)));}
   }
 
-  function abrirEnCliente(){
+  function abrirEnCliente(destOverride){
+    var dest=destOverride||emailDest;
     var ccList=emailCC?fromEmail+','+emailCC:fromEmail;
     var subjectMime='=?UTF-8?B?'+toB64(subjectDecoded)+'?=';
     var fullHtml='<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;font-family:Arial,sans-serif">'+htmlContent+'</body></html>';
     var eml=
       'MIME-Version: 1.0\r\n'+
       'From: '+fromName+' <'+fromEmail+'>\r\n'+
-      'To: '+emailDest+'\r\n'+
+      'To: '+dest+'\r\n'+
       'Cc: '+ccList+'\r\n'+
       'Subject: '+subjectMime+'\r\n'+
       'Content-Type: text/html; charset=UTF-8\r\n'+
@@ -2072,42 +2070,51 @@ function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
       toB64(fullHtml);
     var blob=new Blob([eml],{type:'message/rfc822'});
     var url=URL.createObjectURL(blob);
-    // Sin download ni target: el navegador entrega el blob al OS → abre Mail/Outlook
-    var a=document.createElement('a');
-    a.href=url;
-    a.style.display='none';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function(){URL.revokeObjectURL(url);},8000);
+    // window.open en nueva pestaña: Edge/Chrome en macOS cede el blob al OS → abre el cliente de correo
+    var w=window.open(url,'_blank');
+    // Fallback: si el popup fue bloqueado, usar anchor click
+    if(!w){
+      var a=document.createElement('a');a.href=url;a.style.display='none';
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+    }
+    setTimeout(function(){URL.revokeObjectURL(url);},10000);
+    toast('📧 Email abierto en tu cliente de correo — revisa la ventana nueva');
   }
 
-  // Modal de previsualización — el usuario revisa antes de abrir el cliente
+  // Modal de previsualización
   var prev=document.getElementById('email-prev-modal');
   if(prev)prev.remove();
   var modal=document.createElement('div');
   modal.id='email-prev-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  var destDisplay=emailDest||'<span style="color:#dc2626">⚠️ Sin email configurado</span>';
   modal.innerHTML=
     '<div style="background:#fff;border-radius:14px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.3)">'+
       '<div style="padding:13px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:flex-start;gap:10px">'+
-        '<div style="flex:1;min-width:0;font-size:12px;line-height:1.8">'+
+        '<div style="flex:1;min-width:0;font-size:12px;line-height:1.9">'+
           '<span style="color:#6b7280">De:</span> '+fromName+' &lt;'+fromEmail+'&gt;<br>'+
-          '<span style="color:#6b7280">Para:</span> <strong>'+emailDest+'</strong>'+(emailCC?' · CC: '+emailCC:'')+'<br>'+
+          '<span style="color:#6b7280">Para:</span> '+
+          '<input id="ep-dest" value="'+emailDest+'" style="font-size:12px;border:1px solid #d1d5db;border-radius:5px;padding:2px 7px;width:260px;font-weight:600">'+
+          (emailCC?' · CC: '+emailCC:'')+'<br>'+
           '<span style="color:#6b7280">Asunto:</span> <strong>'+subjectDecoded+'</strong>'+
         '</div>'+
         '<button id="ep-close" style="background:#f3f4f6;border:none;border-radius:8px;padding:5px 11px;font-size:13px;cursor:pointer;flex-shrink:0">✕</button>'+
       '</div>'+
       '<div id="ep-preview" style="flex:1;overflow-y:auto;padding:20px;font-family:Arial,sans-serif;font-size:12px;line-height:1.5"></div>'+
       '<div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;background:#f9fafb;gap:12px">'+
-        '<div style="font-size:11px;color:#6b7280">Revisa el email. Al pulsar el botón se abrirá tu cliente de correo con el HTML completo.</div>'+
+        '<div style="font-size:11px;color:#6b7280">Puedes editar el destinatario arriba. Al pulsar el botón se abrirá el cliente de correo con las tablas y el formato completo.</div>'+
         '<button id="ep-send" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📧 Abrir en cliente de correo</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(modal);
   document.getElementById('ep-preview').innerHTML=htmlContent;
   document.getElementById('ep-close').onclick=function(){modal.remove();};
-  document.getElementById('ep-send').onclick=function(){modal.remove();abrirEnCliente();};
+  document.getElementById('ep-send').onclick=function(){
+    var dest=(document.getElementById('ep-dest').value||'').trim();
+    if(!dest){toast('Introduce un email destinatario');return;}
+    modal.remove();
+    abrirEnCliente(dest);
+  };
   modal.addEventListener('click',function(ev){if(ev.target===modal)modal.remove();});
 }
 
@@ -2136,7 +2143,7 @@ async function abrirEmail(){
     if(match) emailDest=match.email_confronta||'';
   }catch(e){}
 
-  if(!emailDest){toast('No se encontro email para el consignatario "'+consigNombre+'". Configuralo en la ficha de empresa.');return;}
+  if(!emailDest){toast('⚠️ Sin email para "'+consigNombre+'" — puedes introducirlo en el modal.');}
 
   var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
   var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
@@ -2166,7 +2173,7 @@ async function abrirEmailCliente(){
     }
   }catch(e){}
 
-  if(!emailDest){toast('No se encontro email para "'+clienteNombre+'". Configuralo en la ficha de empresa.');return;}
+  if(!emailDest){toast('⚠️ Sin email para "'+clienteNombre+'" — puedes introducirlo en el modal.');}
 
   var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
   var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ');
