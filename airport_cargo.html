@@ -381,7 +381,6 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
             <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th><th>Despacho</th><th>ETA Buque</th><th>T1 Cad.</th><th>Libre hasta</th>
             <th>Almacenaje</th><th>Gest.Doc.</th><th>T.Recinto</th><th>T.Mant.</th>
             <th>Finde</th><th>Express</th><th>C.Camión</th><th>Apertura</th>
-            <th title="Llegada confirmada en aeropuerto">✈️ OK</th>
             <th style="background:var(--b50);color:var(--b700)" class="col-sticky-r2">TOTAL €</th>
             <th class="col-sticky-r" style="width:72px"></th>
           </tr></thead>
@@ -1023,27 +1022,31 @@ function trackAwb(evt,awb){
   var fmt=formatAwb(awb);
   if(!fmt||fmt==='—') return;
   var clean=fmt.replace(/-/g,'');
-  // Copy to clipboard for pasting in track-trace.com
-  if(navigator.clipboard){
-    navigator.clipboard.writeText(clean).catch(function(){});
-  }
-  var w=window.open('https://www.track-trace.com/aircargo','_blank');
-  toast('✈️ AWB copiado · pégalo en el campo "Enter number..." y pulsa Track direct');
-  // Try to auto-fill after page loads (best-effort, cross-origin may block)
-  if(w){
-    setTimeout(function(){
-      try{
-        var inp=w.document.querySelector('input[name*="awb"],input[id*="awb"],input[placeholder*="number"],input[type="text"]');
-        if(inp){inp.value=clean;var btn=w.document.querySelector('input[type="submit"],button[type="submit"],button');if(btn)btn.click();}
-      }catch(ex){}
-    },2500);
-  }
+  // Bridge page: opens a local HTML that auto-submits a form pointing to track-trace.com
+  // track-trace accepts ?p=NUMBER and auto-fills + tracks directly
+  var bridgeHtml='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Tracking AWB...</title></head><body style="font-family:Arial;padding:40px;text-align:center">'+
+    '<p style="color:#555;font-size:14px">Abriendo tracking para <strong>'+fmt+'</strong>...</p>'+
+    '<form id="f" method="GET" action="https://www.track-trace.com/aircargo" target="_self">'+
+      '<input type="hidden" name="p" value="'+clean+'">'+
+    '</form>'+
+    '<script>'+
+      'setTimeout(function(){'+
+        'document.getElementById("f").submit();'+
+      '},300);'+
+    '<\/script>'+
+  '</body></html>';
+  var blob=new Blob([bridgeHtml],{type:'text/html'});
+  var url=URL.createObjectURL(blob);
+  var w=window.open(url,'_blank');
+  setTimeout(function(){URL.revokeObjectURL(url);},5000);
+  // Clipboard as backup
+  if(navigator.clipboard) navigator.clipboard.writeText(clean).catch(function(){});
 }
 
 function renderRows(list, tbodyId){
   var tbody=document.getElementById(tbodyId||'tbody');
   if(!tbody) return;
-  if(!list.length){tbody.innerHTML='<tr><td colspan="27"><div class="empty">Sin entradas</div></td></tr>';return;}
+  if(!list.length){tbody.innerHTML='<tr><td colspan="26"><div class="empty">Sin entradas</div></td></tr>';return;}
   var rows=list.map(function(e){
     var isAuto=hasH(e.handling);
     var kg=parseFloat(e.kilos_tasables)||0;
@@ -1085,10 +1088,6 @@ function renderRows(list, tbodyId){
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(ex?fn(ex):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(cc?fn(cc):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(ap?fn(ap):'—')+'</td>'+
-      '<td style="text-align:center;padding:4px" onclick="event.stopPropagation()">'+
-        '<input type="checkbox" class="llegada-chk" data-id="'+e.id+'" '+(e.confirmacion_llegada?'checked':'')+
-        ' onchange="toggleLlegadaChk(this)"'+
-        ' style="accent-color:#f97316;width:20px;height:20px;cursor:pointer"></td>'+
       '<td class="col-sticky-r2" style="text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);background:var(--b50)">'+fc(tot)+'</td>'+
       '<td class="col-sticky-r" style="white-space:nowrap;background:var(--w);padding:6px 8px">'+
         '<button class="btn btn-sm btn-s" data-action="edit" data-id="'+e.id+'" title="Editar">✏️</button> '+
@@ -1663,6 +1662,7 @@ async function showForm(e){
     '</div>'+
     '<label class="toggle-row"><input type="checkbox" id="f-despachado" '+(e&&e.despachado?'checked':'')+'>  ✅ Mercancía despachada</label>'+
     '<label class="toggle-row"><input type="checkbox" id="f-t1-sellado" '+(e&&e.t1_sellado?'checked':'')+'>  🔏 T1 para sellado</label>'+
+    '<label class="toggle-row" style="background:var(--am50);border-color:var(--am500)"><input type="checkbox" id="f-conf-llegada" '+(e&&e.confirmacion_llegada?'checked':'')+'>  ✈️ <strong>Llegada confirmada en aeropuerto</strong></label>'+
     '<div id="ext" '+(isAuto?'':'style="display:none"')+'>'+
     '<div class="sect">Cargos opcionales</div>'+
     '<label class="toggle-row"><input type="checkbox" id="f-fi" '+(e&&e.aplica_finde?'checked':'')+' onchange="liveCalc()"> 📅 Fin de semana / festivos</label>'+
@@ -1761,7 +1761,8 @@ function buildObjExtended(){
     despachado:gc('f-despachado'),
     fecha_caducidad_t1:gv('f-cad-t1')||null,
     t1_sellado:gc('f-t1-sellado'),
-    fecha_bandeja_t1:gv('f-bandeja-t1')||null};
+    fecha_bandeja_t1:gv('f-bandeja-t1')||null,
+    confirmacion_llegada:gc('f-conf-llegada')};
 }
 async function crearEntrada(){
   var o=buildObj();
@@ -2037,7 +2038,6 @@ function buildInstrText(transpNombre, byH, todasLasExps, selIds){
 }
 
 // Genera un .eml con HTML completo y lo descarga sin diálogo (el OS lo abre en Mail/Outlook)
-// La primera vez Chrome pregunta "¿Abrir siempre?"; si el usuario acepta, queda totalmente automático.
 function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
   var fromEmail = (CU&&CU.email)||'aduana@customsway.eu';
   var fromName = (CU&&CU.nombre)?CU.nombre+' · Dpto. Aduana CUSTOMS-WAY':'Departamento Aduana CUSTOMS-WAY';
@@ -2061,44 +2061,41 @@ function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
     var blob=new Blob([eml],{type:'message/rfc822'});
     var url=URL.createObjectURL(blob);
     var a=document.createElement('a');
-    a.href=url;a.target='_blank';
-    document.body.appendChild(a);a.click();document.body.removeChild(a);
-    setTimeout(function(){URL.revokeObjectURL(url);},6000);
-    toast('📨 Archivo email generado — ábrelo en tu cliente de correo y pulsa Enviar');
+    a.href=url;
+    a.download='notificacion_'+Date.now()+'.eml'; // forces download → OS opens with email client
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},8000);
+    toast('📨 Archivo .eml descargado — ábrelo para enviar desde tu cliente de correo');
   }
 
-  // Show preview modal — user must explicitly click Send
+  // Preview modal — user reviews before generating EML
   var prev=document.getElementById('email-prev-modal');
   if(prev)prev.remove();
   var modal=document.createElement('div');
   modal.id='email-prev-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML='<div style="background:#fff;border-radius:14px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.3)">'+
-    '<div style="padding:16px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:flex-start;gap:12px">'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:11px;color:#6b7280;margin-bottom:2px">De:</div>'+
-        '<div style="font-size:13px;color:#111;margin-bottom:8px">'+fromName+' &lt;'+fromEmail+'&gt;</div>'+
-        '<div style="font-size:11px;color:#6b7280;margin-bottom:2px">Para:</div>'+
-        '<div style="font-size:13px;color:#111;margin-bottom:8px">'+emailDest+(emailCC?' · CC: '+emailCC:'')+'</div>'+
-        '<div style="font-size:11px;color:#6b7280;margin-bottom:2px">Asunto:</div>'+
-        '<div style="font-size:13px;font-weight:600;color:#111">'+subjectDecoded+'</div>'+
+  modal.innerHTML=
+    '<div style="background:#fff;border-radius:14px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.3)">'+
+      '<div style="padding:14px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:flex-start;gap:10px">'+
+        '<div style="flex:1;min-width:0;font-size:12px;line-height:1.7">'+
+          '<span style="color:#6b7280">De:</span> <strong>'+fromName+'</strong> &lt;'+fromEmail+'&gt;<br>'+
+          '<span style="color:#6b7280">Para:</span> <strong>'+emailDest+'</strong>'+(emailCC?' &nbsp;·&nbsp; CC: '+emailCC:'')+'<br>'+
+          '<span style="color:#6b7280">Asunto:</span> <strong>'+subjectDecoded+'</strong>'+
+        '</div>'+
+        '<button id="ep-close" style="background:#f3f4f6;border:none;border-radius:8px;padding:5px 11px;font-size:13px;cursor:pointer;flex-shrink:0">✕</button>'+
       '</div>'+
-      '<button id="ep-close" style="background:#f3f4f6;border:none;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;color:#374151;flex-shrink:0">✕ Cerrar</button>'+
-    '</div>'+
-    '<div style="flex:1;overflow-y:auto;padding:0">'+
-      '<iframe id="ep-iframe" style="width:100%;height:500px;border:none;display:block"></iframe>'+
-    '</div>'+
-    '<div style="padding:14px 20px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;background:#f9fafb">'+
-      '<div style="font-size:12px;color:#6b7280">⚠️ Revisa el contenido antes de enviar. El email NO se enviará hasta que pulses el botón.</div>'+
-      '<button id="ep-send" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer">📨 Abrir en cliente de correo →</button>'+
-    '</div>'+
-  '</div>';
+      '<div id="ep-preview" style="flex:1;overflow-y:auto;padding:20px;font-family:Arial,sans-serif;font-size:12px;line-height:1.5">'+
+      '</div>'+
+      '<div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;background:#f9fafb;gap:12px">'+
+        '<div style="font-size:11px;color:#6b7280">Revisa el contenido. El email <strong>no se enviará</strong> hasta que pulses el botón.</div>'+
+        '<button id="ep-send" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📨 Generar y abrir en correo →</button>'+
+      '</div>'+
+    '</div>';
   document.body.appendChild(modal);
-
-  // Fill iframe after append
-  var iframe=document.getElementById('ep-iframe');
-  iframe.srcdoc='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,sans-serif;padding:20px}</style></head><body>'+htmlContent+'</body></html>';
-
+  // Inject HTML content into div (no iframe — avoids CSP issues)
+  document.getElementById('ep-preview').innerHTML=htmlContent;
   document.getElementById('ep-close').onclick=function(){modal.remove();};
   document.getElementById('ep-send').onclick=function(){generarEml();modal.remove();};
   modal.addEventListener('click',function(ev){if(ev.target===modal)modal.remove();});
