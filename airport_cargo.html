@@ -272,9 +272,6 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 :root.dark #mob-ov { background:rgba(0,0,0,.6) !important; }
 :root.dark #cons-list { background:#1a1a2e !important; border-color:#1e1e3f !important; }
 
-/* ── Column resize handles ── */
-.col-rh{position:absolute;right:0;top:0;width:6px;height:100%;cursor:col-resize;user-select:none;z-index:2;transition:background .1s}
-.col-rh:hover,.col-rh.dragging{background:var(--b500);opacity:.4}
 
 </style>
 <script>
@@ -320,12 +317,14 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div class="nav-item" id="nav-alertas" onclick="nav('alertas',this)"><span class="ni">🔔</span><span class="nav-item-txt">Alertas</span><span id="alert-badge" class="alert-badge pulse" style="display:none">0</span></div>
         <div class="sb-sec">Módulo</div>
         <div class="nav-item active" onclick="nav('dashboard',this)"><span class="ni">🏠</span><span class="nav-item-txt">Dashboard</span></div>
-        <div class="nav-item" onclick="nav('entradas',this)"><span class="ni">📋</span><span class="nav-item-txt">Entradas</span></div>
+        <div class="nav-item" onclick="nav('entradas',this)"><span class="ni">📋</span><span class="nav-item-txt">Entradas pendientes</span></div>
+        <div class="nav-item" onclick="nav('finalizadas',this)"><span class="ni">✅</span><span class="nav-item-txt">Finalizadas / Historial</span></div>
         <div class="nav-item" onclick="nav('resumen',this)"><span class="ni">📊</span><span class="nav-item-txt">Resumen mensual</span></div>
         <div class="nav-item" onclick="nav('tarifas',this)"><span class="ni">💰</span><span class="nav-item-txt">Tarifas por año</span></div>
         <div class="sb-sec">Acciones</div>
         <div class="nav-item" onclick="abrirEmail()"><span class="ni">📧</span><span class="nav-item-txt">Notificar consignatario</span></div>
         <div class="nav-item" onclick="abrirEmailCliente()"><span class="ni">👤</span><span class="nav-item-txt">Notificar cliente</span></div>
+        <div class="nav-item" onclick="abrirEmailAeropuerto()"><span class="ni">✈️</span><span class="nav-item-txt">Consulta aeropuerto</span></div>
         <div class="nav-item" onclick="abrirInstrTransp()"><span class="ni">🚛</span><span class="nav-item-txt">Instruc. transportista</span></div>
       </div>
       <!-- Footer -->
@@ -380,10 +379,46 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
             <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th><th>Despacho</th><th>ETA Buque</th><th>T1 Cad.</th><th>Libre hasta</th>
             <th>Almacenaje</th><th>Gest.Doc.</th><th>T.Recinto</th><th>T.Mant.</th>
             <th>Finde</th><th>Express</th><th>C.Camión</th><th>Apertura</th>
+            <th title="Llegada confirmada en aeropuerto">✈️ OK</th>
             <th style="background:var(--b50);color:var(--b700)" class="col-sticky-r2">TOTAL €</th>
             <th class="col-sticky-r" style="width:72px"></th>
           </tr></thead>
           <tbody id="tbody"></tbody>
+        </table></div>
+      </div>
+      <!-- FINALIZADAS -->
+      <div class="view" id="view-finalizadas">
+        <div class="ph">
+          <div class="pt">✅ Expediciones Finalizadas</div>
+          <button class="btn btn-s btn-sm" onclick="exportarAirportCSV()">⬇️ CSV</button>
+        </div>
+        <div class="fbar">
+          <input class="fi" id="src-fin" style="max-width:200px;padding:6px 10px;font-size:12px" placeholder="Buscar AWB, consignatario…" oninput="filtrarFin()">
+          <select class="fi fs" id="fil-h-fin" style="width:auto;padding:6px 26px 6px 10px;font-size:12px" onchange="filtrarFin()">
+            <option value="">Todos handlers</option><option>Swissport</option><option>Groundforce</option>
+          </select>
+          <select class="fi fs" id="fil-y-fin" style="width:auto;padding:6px 26px 6px 10px;font-size:12px" onchange="filtrarFin()">
+            <option value="">Todos años</option><option value="2026">2026</option><option value="2025">2025</option>
+          </select>
+          <select class="fi fs" id="fil-m-fin" style="width:auto;padding:6px 26px 6px 10px;font-size:12px" onchange="filtrarFin()">
+            <option value="">Todos meses</option>
+            <option value="01-Ene">Ene</option><option value="02-Feb">Feb</option><option value="03-Mar">Mar</option>
+            <option value="04-Abr">Abr</option><option value="05-May">May</option><option value="06-Jun">Jun</option>
+            <option value="07-Jul">Jul</option><option value="08-Ago">Ago</option><option value="09-Sep">Sep</option>
+            <option value="10-Oct">Oct</option><option value="11-Nov">Nov</option><option value="12-Dic">Dic</option>
+          </select>
+        </div>
+        <div class="tc"><table class="tbl">
+          <thead><tr>
+            <th style="width:44px;padding:0"></th>
+            <th>AWB</th><th>Consignatario / Cliente</th><th>Buque</th><th>Handler</th><th>Apto</th>
+            <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th><th>Despacho</th><th>ETA Buque</th><th>T1 Cad.</th><th>Libre hasta</th>
+            <th>Almacenaje</th><th>Gest.Doc.</th><th>T.Recinto</th><th>T.Mant.</th>
+            <th>Finde</th><th>Express</th><th>C.Camión</th><th>Apertura</th>
+            <th style="background:var(--b50);color:var(--b700)" class="col-sticky-r2">TOTAL €</th>
+            <th class="col-sticky-r" style="width:72px"></th>
+          </tr></thead>
+          <tbody id="tbody-fin"></tbody>
         </table></div>
       </div>
       <!-- RESUMEN -->
@@ -548,6 +583,7 @@ function nav(v,el){
   }
   if(v==='dashboard')loadDashboard();
   else if(v==='entradas')loadEntradas();
+  else if(v==='finalizadas')loadFinalizadas();
   else if(v==='resumen')loadResumen();
   else if(v==='tarifas')loadTarifasView();
   else if(v==='alertas')loadAlertas();
@@ -693,7 +729,7 @@ function desglose(e){
 var ALL=[];
 async function loadAll(){
   try{
-    var res=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:false});
+    var res=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:true,nullsFirst:false});
     if(res.error){console.error('loadAll:',res.error.message);ALL=[];}
     else ALL=res.data||[];
   }catch(e){console.error('loadAll exception:',e.message);ALL=[];}
@@ -707,7 +743,16 @@ function getAlertas(){
   var hoyStr=hoy.toISOString().slice(0,10);
   var mananaStr=manana.toISOString().slice(0,10);
 
-  var almacenaje=(ALL||[]).filter(function(e){
+  // Almacenaje vencido: fecha_maxima_libre <= hoy Y sin retirada
+  var almacenajeVencido=(ALL||[]).filter(function(e){
+    if(e.fecha_retirada) return false;
+    var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
+    if(!fml) return false;
+    return fml < hoy; // estrictamente pasado
+  });
+
+  // Almacenaje vence HOY
+  var almacenajeHoy=(ALL||[]).filter(function(e){
     if(e.fecha_retirada) return false;
     var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
     if(!fml) return false;
@@ -717,16 +762,15 @@ function getAlertas(){
   var caducidadT1=(ALL||[]).filter(function(e){
     if(e.fecha_retirada) return false;
     if(!e.fecha_caducidad_t1) return false;
-    // Mostrar si vence hoy o mañana
-    return e.fecha_caducidad_t1>=hoyStr && e.fecha_caducidad_t1<=mananaStr;
+    return e.fecha_caducidad_t1===hoyStr || e.fecha_caducidad_t1===mananaStr;
   });
 
-  return {almacenaje:almacenaje, caducidadT1:caducidadT1};
+  return {almacenajeVencido:almacenajeVencido, almacenajeHoy:almacenajeHoy, caducidadT1:caducidadT1};
 }
 
 function actualizarBadgeAlertas(){
   var a=getAlertas();
-  var total=a.almacenaje.length+a.caducidadT1.length;
+  var total=a.almacenajeVencido.length+a.almacenajeHoy.length+a.caducidadT1.length;
   var badge=document.getElementById('alert-badge');
   if(!badge) return;
   if(total>0){
@@ -757,16 +801,37 @@ function loadAlertas(){
 
   var html='';
 
+  // — Almacenaje VENCIDO (días pasados) —
+  if(a.almacenajeVencido.length){
+    html+='<div class="alerta-card">';
+    html+='<div class="alerta-card-hd red">🚨 Almacenaje VENCIDO — generando costes <span style="margin-left:6px;background:var(--rd500);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px">'+a.almacenajeVencido.length+'</span></div>';
+    html+=mkTable(
+      ['AWB','Consignatario','Handler','Llegada','Máx. libre','Días vencido','Kilos','Obs.'],
+      a.almacenajeVencido.map(function(e){
+        var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
+        var diasVenc=fml?Math.floor((new Date()-fml)/(1000*60*60*24)):0;
+        return[
+          '<span style="font-family:var(--mono);font-size:11px">'+formatAwb(e.awb||'')+'</span>',
+          '<span style="font-size:12px;color:var(--g500)">'+( e.consignatario||e.cliente||'—')+'</span>',
+          e.handling||'—',fd(e.fecha_llegada),
+          '<strong style="color:var(--rd600)">'+( fml?fd(fml):'—')+'</strong>',
+          '<strong style="color:var(--rd600)">+'+diasVenc+' días</strong>',
+          (e.kilos_tasables||'—')+' kg',e.observaciones||''
+        ];
+      }),'');
+    html+='</div>';
+  }
+
   // — Almacenaje vence HOY —
   html+='<div class="alerta-card">';
-  html+='<div class="alerta-card-hd red">⚠️ Período libre de almacenaje vence HOY'+(a.almacenaje.length?' <span style="margin-left:6px;background:var(--rd500);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px">'+a.almacenaje.length+'</span>':'')+'</div>';
+  html+='<div class="alerta-card-hd red">⚠️ Período libre de almacenaje vence HOY'+(a.almacenajeHoy.length?' <span style="margin-left:6px;background:var(--rd500);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px">'+a.almacenajeHoy.length+'</span>':'')+'</div>';
   html+=mkTable(
     ['AWB','Consignatario','Handler','Llegada','Max. libre','Kilos','Obs.'],
-    a.almacenaje.map(function(e){
+    a.almacenajeHoy.map(function(e){
       var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
       return[
         '<span style="font-family:var(--mono);font-size:11px">'+formatAwb(e.awb||'')+'</span>',
-        '<span style="font-size:12px;color:var(--g500)">'+(e.consignatario||e.cliente||'—')+'</span>',
+        '<span style="font-size:12px;color:var(--g500)">'+( e.consignatario||e.cliente||'—')+'</span>',
         e.handling||'—',
         fd(e.fecha_llegada),
         '<strong style="color:var(--rd600)">'+( fml?fd(fml):'—')+'</strong>',
@@ -788,7 +853,7 @@ function loadAlertas(){
       var esHoy=e.fecha_caducidad_t1===hoyStr;
       return[
         '<span style="font-family:var(--mono);font-size:11px">'+formatAwb(e.awb||'')+'</span>',
-        '<span style="font-size:12px;color:var(--g500)">'+(e.consignatario||e.cliente||'—')+'</span>',
+        e.consignatario||e.cliente||'—',
         e.handling||'—',
         e.status||'—',
         '<strong style="color:'+(esHoy?'var(--rd600)':'var(--am600)')+'">'+fd(e.fecha_caducidad_t1)+(esHoy?' ⚠️':'')+'</strong>',
@@ -814,6 +879,27 @@ async function init(){
   checkUrl();
   // Event delegation — must be set up after DOM ready, avoids onclick quote issues
   document.addEventListener('click', function(ev){
+    // Confirmación llegada aeropuerto
+    var llegadaChk = ev.target.closest('input.llegada-chk');
+    if(llegadaChk){
+      ev.stopPropagation();
+      var lid = llegadaChk.dataset.id;
+      var checked = llegadaChk.checked;
+      sb.from('airport_cargo').update({confirmacion_llegada:checked}).eq('id',lid).then(function(r){
+        if(r.error){toast('Error al guardar: '+r.error.message);llegadaChk.checked=!checked;return;}
+        // Update in-memory
+        var entry=ALL.find(function(e){return String(e.id)===String(lid);});
+        if(entry) entry.confirmacion_llegada=checked;
+        // Update row style
+        var row=llegadaChk.closest('tr');
+        if(row){
+          if(checked){row.style.background='#ffedd5';row.style.borderLeft='3px solid #f97316';}
+          else{var inc=row.querySelector('td:nth-child(8)')&&!row.querySelector('td:nth-child(8)').textContent.trim().match(/\d/);row.style.background=inc?'#fff8e1':'';row.style.borderLeft='';}
+        }
+        toast(checked?'✈️ Llegada confirmada':'Confirmación retirada');
+      });
+      return;
+    }
     var chk = ev.target.closest('input[type=checkbox]');
     if(chk) return;
     // Botón de tracking AWB
@@ -883,14 +969,13 @@ async function loadDashboard(){
     alertEl.style.display='';
   } else if(alertEl){ alertEl.style.display='none'; }
   document.getElementById('dash-recent').innerHTML=miniTable(ALL.slice(0,8));
-  setTimeout(function(){initResizableTable(document.querySelector('#dash-recent .tbl'),'ac_col_dash');},0);
 }
 
 function miniTable(list){
   if(!list.length)return'<div class="empty">Sin entradas</div>';
   var rows=list.map(function(e){
     return'<tr class="tbl-row" data-id="'+e.id+'" style="cursor:pointer"><td style="font-family:var(--mono)">'+
-      formatAwb(e.awb||'—')+' </td><td><span style="font-size:12px;color:var(--g500);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(e.consignatario||'—')+'</span>'+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--g400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏢 '+e.cliente+'</div>':'')+'</td><td style="font-weight:700;font-size:13px;color:var(--g900)">'+(e.buque||'—')+'</td>'+
+      formatAwb(e.awb||'—')+' </td><td>'+(e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
       '<td><span class="badge bb">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+fd(e.fecha_llegada)+'</td><td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
       '<td style="font-weight:700;color:var(--b700)">'+fc(calcTotal(e))+'</td></tr>';
@@ -899,7 +984,36 @@ function miniTable(list){
 }
 
 // ── ENTRADAS ─────────────────────────────────────────────
-async function loadEntradas(){await loadAll();renderRows(ALL);}
+async function loadEntradas(){
+  await loadAll();
+  // Entradas = sólo pendientes (sin fecha de retirada)
+  var pendientes=ALL.filter(function(e){return !e.fecha_retirada;});
+  renderRows(pendientes,'tbody');
+}
+
+async function loadFinalizadas(){
+  await loadAll();
+  // Finalizadas = con fecha de retirada, más recientes primero
+  var fin=ALL.filter(function(e){return !!e.fecha_retirada;})
+    .sort(function(a,b){return new Date(b.fecha_retirada)-new Date(a.fecha_retirada);});
+  renderRows(fin,'tbody-fin');
+  setTimeout(function(){initResizableTable(document.querySelector('#tbody-fin').closest('table'),'ac_col_fin');},0);
+}
+
+function filtrarFin(){
+  var q=(document.getElementById('src-fin').value||'').toLowerCase();
+  var h=document.getElementById('fil-h-fin').value||'';
+  var y=document.getElementById('fil-y-fin').value||'';
+  var m=document.getElementById('fil-m-fin').value||'';
+  var f=ALL.filter(function(e){
+    if(!e.fecha_retirada) return false;
+    if(q&&!((e.awb||'')+(e.consignatario||'')+(e.buque||'')).toLowerCase().includes(q))return false;
+    if(h&&e.handling!==h)return false;
+    if(y||m){var mo=calcMes(e.fecha_retirada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
+    return true;
+  });
+  renderRows(f,'tbody-fin');
+}
 
 function filtrar(){
   var q=(document.getElementById('src').value||'').toLowerCase();
@@ -907,12 +1021,13 @@ function filtrar(){
   var y=document.getElementById('fil-y').value||'';
   var m=document.getElementById('fil-m').value||'';
   var f=ALL.filter(function(e){
+    if(e.fecha_retirada) return false; // solo pendientes en esta vista
     if(q&&!((e.awb||'')+(e.consignatario||'')+(e.buque||'')).toLowerCase().includes(q))return false;
     if(h&&e.handling!==h)return false;
-    if(y||m){var mo=calcMes(e.fecha_retirada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
+    if(y||m){var mo=calcMes(e.fecha_llegada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
     return true;
   });
-  renderRows(f);
+  renderRows(f,'tbody');
 }
 
 // ── AWB TRACKING ─────────────────────────────────────────────
@@ -926,19 +1041,28 @@ function trackAwb(evt,awb){
   if(evt) evt.stopPropagation();
   var fmt=formatAwb(awb);
   if(!fmt||fmt==='—') return;
+  var clean=fmt.replace(/-/g,'');
+  // Copy to clipboard for pasting in track-trace.com
   if(navigator.clipboard){
-    navigator.clipboard.writeText(fmt)
-      .then(function(){ toast('📋 '+fmt+' copiado — pégalo en el buscador'); })
-      .catch(function(){ toast('✈️ '+fmt+' — abriendo tracking'); });
-  } else {
-    toast('✈️ Abriendo tracking: '+fmt);
+    navigator.clipboard.writeText(clean).catch(function(){});
   }
-  window.open('https://freight-awb-tracking.com','_blank');
+  var w=window.open('https://www.track-trace.com/aircargo','_blank');
+  toast('✈️ AWB copiado · pégalo en el campo "Enter number..." y pulsa Track direct');
+  // Try to auto-fill after page loads (best-effort, cross-origin may block)
+  if(w){
+    setTimeout(function(){
+      try{
+        var inp=w.document.querySelector('input[name*="awb"],input[id*="awb"],input[placeholder*="number"],input[type="text"]');
+        if(inp){inp.value=clean;var btn=w.document.querySelector('input[type="submit"],button[type="submit"],button');if(btn)btn.click();}
+      }catch(ex){}
+    },2500);
+  }
 }
 
-function renderRows(list){
-  var tbody=document.getElementById('tbody');
-  if(!list.length){tbody.innerHTML='<tr><td colspan="26"><div class="empty">Sin entradas</div></td></tr>';return;}
+function renderRows(list, tbodyId){
+  var tbody=document.getElementById(tbodyId||'tbody');
+  if(!tbody) return;
+  if(!list.length){tbody.innerHTML='<tr><td colspan="27"><div class="empty">Sin entradas</div></td></tr>';return;}
   var rows=list.map(function(e){
     var isAuto=hasH(e.handling);
     var kg=parseFloat(e.kilos_tasables)||0;
@@ -954,9 +1078,8 @@ function renderRows(list){
     var ap=isAuto?calcAp(e.aplica_apertura,kg,e.handling,yr):0;
     var tot=calcTotal(e);
     var inc=!e.fecha_retirada||!e.handling;
-    var bg=inc?' style="background:#fff8e1"':'';
-    // Use data-id on tr — onclick delegated via JS, no inline quote nesting
-    return'<tr'+bg+' data-id="'+e.id+'" class="tbl-row">'+
+    var rowStyle=e.confirmacion_llegada?' style="background:#ffedd5;border-left:3px solid #f97316"':(inc?' style="background:#fff8e1"':'');
+    return'<tr'+rowStyle+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="updateSel()"></label></td>'+
       '<td style="font-family:var(--mono);white-space:nowrap">'+formatAwb(e.awb||'—')+(e.awb?('<button class="awb-track-btn" data-awb="'+e.awb+'" style="background:var(--b100);border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:var(--b700);margin-left:4px" title="Rastrear AWB externo">✈️</button>'):'')+(e.id?('<button class="als-track-btn" data-id="'+e.id+'" style="background:#e0f2fe;border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:#0369a1;margin-left:3px" title="Tracking ALS">🔍</button>'):'')+'</td>'+
       '<td style="cursor:pointer;font-size:12px;color:var(--g500)">'+( e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--g400)">🏢 '+e.cliente+'</div>':'')+'</td>'+
@@ -981,6 +1104,9 @@ function renderRows(list){
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(ex?fn(ex):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(cc?fn(cc):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(ap?fn(ap):'—')+'</td>'+
+      '<td style="text-align:center;padding:4px"><label style="cursor:pointer" title="Confirmar llegada en aeropuerto" onclick="event.stopPropagation()">'+
+        '<input type="checkbox" class="llegada-chk" data-id="'+e.id+'" '+(e.confirmacion_llegada?'checked':'')+
+        ' style="accent-color:#f97316;width:18px;height:18px;cursor:pointer"></label></td>'+
       '<td class="col-sticky-r2" style="text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);background:var(--b50)">'+fc(tot)+'</td>'+
       '<td class="col-sticky-r" style="white-space:nowrap;background:var(--w);padding:6px 8px">'+
         '<button class="btn btn-sm btn-s" data-action="edit" data-id="'+e.id+'" title="Editar">✏️</button> '+
@@ -988,7 +1114,8 @@ function renderRows(list){
       '</td></tr>';
   }).join('');
   tbody.innerHTML = rows;
-  initResizableTable(tbody.closest('table'), 'ac_col_ent');
+  var key=(tbodyId||'tbody')==='tbody'?'ac_col_ent':'ac_col_fin';
+  initResizableTable(tbody.closest('table'),key);
 }
 
 
@@ -1503,10 +1630,17 @@ async function showForm(e){
   try{var er=await sb.from('empresas').select('id,nombre,email_confronta').order('nombre');empresas=er.data||[];}catch(ex){}
   var isEdit=!!e,h=e?e.handling||'':'',isAuto=hasH(h);
   document.getElementById('m-title').textContent=isEdit?'Editar — '+formatAwb(e.awb||'—'):'Nueva entrada Airport Cargo';
-  var handlerOpts=['<option value="" '+((!h)?'selected':'')+'>— Seleccionar —</option>',
-    '<option '+(h==='Swissport'?'selected':'')+'>Swissport</option>',
-    '<option '+(h==='Groundforce'?'selected':'')+'>Groundforce</option>',
-    '<option value="Otro" '+((h&&!hasH(h))?'selected':'')+'>Otro</option>'].join('');
+  // Load handling companies from empresas (rol Handling Aeropuerto) + hardcoded fallbacks
+  var handlingEmps=[];
+  try{
+    var hResp=await sb.from('empresas').select('nombre').contains('rol',['Handling Aeropuerto']).order('nombre');
+    handlingEmps=(hResp.data||[]).map(function(x){return x.nombre;});
+  }catch(ex){}
+  // Ensure Swissport/Groundforce always appear (backwards compat)
+  ['Swissport','Groundforce'].forEach(function(n){if(!handlingEmps.includes(n))handlingEmps.push(n);});
+  var handlerOpts=['<option value="" '+((!h)?'selected':'')+'>— Seleccionar —</option>'].concat(
+    handlingEmps.map(function(n){return'<option '+(h===n?'selected':'')+'>'+n+'</option>';})
+  ).concat(['<option value="Otro" '+((h&&!hasH(h)&&!handlingEmps.includes(h))?'selected':'')+'>Otro</option>']).join('');
   var statusOpts=['T1','DAE','Comunitario'].map(function(s){return'<option '+(((e?e.status:'')||'T1')===s?'selected':'')+'>'+s+'</option>';}).join('');
   var aptOpts=['AGP','SVQ','MAD'].map(function(a){return'<option '+((e?e.aeropuerto||'AGP':'AGP')===a?'selected':'')+'>'+a+'</option>';}).join('');
   document.getElementById('m-body').innerHTML=
@@ -1514,8 +1648,9 @@ async function showForm(e){
     '<div class="fr2">'+
     '<div class="fg"><label class="fl">AWB *</label><input id="f-awb" class="fi" value="'+(e?e.awb||'':'')+'" placeholder="123-12345678" style="font-family:var(--mono)"></div>'+
     '<div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="'+(e?e.consignatario||'':'')+'" placeholder="Escribe para filtrar..." list="cons-list" autocomplete="off" oninput="onConsInput()"></div>'+
-    '<div class="fg"><label class="fl">Cliente <span style="font-size:10px;color:var(--g400)">(si difiere del consignatario)</span></label><input id="f-cli" class="fi" value="'+(e?e.cliente||'':'')+'" placeholder="Empresa cliente..." list="cons-list" autocomplete="off"></div>'+
+    '<div class="fg"><label class="fl">Cliente <span style="font-size:10px;color:var(--g400)">(si difiere del consignatario)</span></label><input id="f-cli" class="fi" value="'+(e?e.cliente||'':'')+'" placeholder="Empresa cliente..." list="cli-list" autocomplete="off" oninput="onCliInput()"></div>'+
     '<datalist id="cons-list"></datalist>'+
+    '<datalist id="cli-list"></datalist>'+
     '<div id="cons-hint" style="font-size:11px;color:var(--b600);margin-top:3px;display:none">'+'<span>¿No está en la lista?</span> '+
     '<button type="button" class="btn btn-sm btn-s" style="padding:2px 8px;font-size:11px" id="btn-crear-emp">+ Crear empresa</button></div>'+
     '</div>'+
@@ -1675,7 +1810,8 @@ async function delEntrada(id){
 }
 function loadView(){
   if(CV==='dashboard')loadDashboard();
-  else if(CV==='entradas')renderRows(ALL);
+  else if(CV==='entradas'){var p=ALL.filter(function(e){return !e.fecha_retirada;});renderRows(p,'tbody');}
+  else if(CV==='finalizadas'){var f=ALL.filter(function(e){return !!e.fecha_retirada;}).sort(function(a,b){return new Date(b.fecha_retirada)-new Date(a.fecha_retirada);});renderRows(f,'tbody-fin');}
   else if(CV==='resumen')loadResumen();
 }
 
@@ -1707,14 +1843,18 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
   var detalle = Object.keys(byBuque).map(function(buque){
     var exps = byBuque[buque];
     var rows = exps.map(function(e){
+      var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
       return [
         formatAwb(e.awb||''), e.consignatario||'', e.handling||'',
         (e.bultos||'')+' btos', (e.kilos_tasables||'')+' kg',
-        fd(e.fecha_llegada), e.vuelo||'', e.status||'', e.observaciones||''
+        fd(e.fecha_llegada), e.vuelo||'', e.status||'',
+        fml?'<strong style="color:#dc2626">'+fd(fml)+'</strong>':'—',
+        e.eta_buque?fd(e.eta_buque):'—',
+        e.observaciones||''
       ];
     });
     return '<p style="font-size:13px;font-weight:700;margin:16px 0 6px;color:#1e3a5f">BUQUE: '+buque+'</p>'+
-      htmlTable(['AWB','Consignatario','Handler','Bultos','Kilos','Llegada','Vuelo','Status','Observaciones'], rows);
+      htmlTable(['AWB','Consignatario','Handler','Bultos','Kilos','Llegada','Vuelo','Status','Libre hasta','ETA Buque','Observaciones'], rows);
   }).join('');
 
   // Pendientes: NO retiradas, NO en selIds, fecha FUTURA, mismo consignatario/cliente
@@ -1751,15 +1891,17 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
 
   return '<div style="font-family:Arial,sans-serif;font-size:12px;max-width:900px;margin:0 auto">'+
     '<p>Estimados Sres. / Dear Sirs,</p>'+
-    '<p>Nos dirigimos a ustedes para informarles de la situacion actual de sus expediciones aereas en transito hacia <strong>'+apts+'</strong>.</p>'+
+    '<p>Nos complace comunicarles que las siguientes mercancías han <strong>confirmado su llegada al aeropuerto de '+apts+'</strong> y se encuentran en nuestras manos para iniciar los trámites de despacho aduanero. Quedamos pendientes de sus instrucciones para proceder.</p>'+
     '<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px">'+
     '<strong>'+(etiquetaNombre||'Cliente')+':</strong> '+clienteNombre+' &nbsp;&middot;&nbsp; '+
     '<strong>Expediciones:</strong> '+sel.length+' &nbsp;&middot;&nbsp; '+
     '<strong>Bultos:</strong> '+totalBlt+' &nbsp;&middot;&nbsp; '+
     '<strong>Kilos:</strong> '+totalKg.toLocaleString('es-ES')+' kg</div>'+
+    '<p style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;margin-bottom:12px">'+
+    '⚠️ <strong>Atención:</strong> La columna <em>Libre hasta</em> indica la fecha máxima de recogida sin incurrir en gastos de almacenaje. Pasada dicha fecha se generarán cargos adicionales.</p>'+
     detalle+
     '<div style="margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0">'+
-    '<p>Las mercancias se encuentran en proceso de gestion aduanera. Una vez concluido, coordinaremos la entrega conforme a sus instrucciones.</p>'+
+    '<p>Para cualquier duda o para darnos instrucciones, no dude en contactarnos. Quedamos a su entera disposición.</p>'+
     '<p>Atentamente / Kind regards,</p>'+
     '<p style="font-size:11px;color:#555"><strong>Departamento de Aduana &#8212; CUSTOMS-WAY SL</strong><br>T. 856 003 50 02 &nbsp;|&nbsp; aduana@customsway.eu</p>'+
     '<p style="font-size:11px;color:#888">'+hoy+'</p>'+
@@ -1915,62 +2057,83 @@ function buildInstrText(transpNombre, byH, todasLasExps, selIds){
 // Genera un .eml con HTML completo y lo descarga sin diálogo (el OS lo abre en Mail/Outlook)
 // La primera vez Chrome pregunta "¿Abrir siempre?"; si el usuario acepta, queda totalmente automático.
 function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
-  var from = 'aduana@customsway.eu';
-  var ccList = emailCC ? 'aduana@customsway.eu,'+emailCC : 'aduana@customsway.eu';
-  var subjectDecoded = '';
-  try{ subjectDecoded = decodeURIComponent(asunto); }catch(e){ subjectDecoded = asunto; }
+  var fromEmail = (CU&&CU.email)||'aduana@customsway.eu';
+  var fromName = (CU&&CU.nombre)?CU.nombre+' · Dpto. Aduana CUSTOMS-WAY':'Departamento Aduana CUSTOMS-WAY';
+  var subjectDecoded='';
+  try{subjectDecoded=decodeURIComponent(asunto);}catch(e){subjectDecoded=asunto;}
 
   function toB64(str){
     try{
-      var bytes = new TextEncoder().encode(str);
-      var chunks = [];
-      for(var i=0;i<bytes.length;i+=512){
-        chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i+512,bytes.length))));
-      }
+      var bytes=new TextEncoder().encode(str);
+      var chunks=[];
+      for(var i=0;i<bytes.length;i+=512){chunks.push(String.fromCharCode.apply(null,bytes.subarray(i,Math.min(i+512,bytes.length))));}
       return btoa(chunks.join(''));
-    }catch(ex){ return btoa(unescape(encodeURIComponent(str))); }
+    }catch(ex){return btoa(unescape(encodeURIComponent(str)));}
   }
 
-  var subjectMime = '=?UTF-8?B?'+toB64(subjectDecoded)+'?=';
-  var fullHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
-    +'<body style="margin:0;padding:0;font-family:Arial,sans-serif">'+htmlContent+'</body></html>';
+  function generarEml(){
+    var ccList=emailCC?fromEmail+','+emailCC:fromEmail;
+    var subjectMime='=?UTF-8?B?'+toB64(subjectDecoded)+'?=';
+    var fullHtml='<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;font-family:Arial,sans-serif">'+htmlContent+'</body></html>';
+    var eml='MIME-Version: 1.0\r\nFrom: '+fromName+' <'+fromEmail+'>\r\nTo: '+emailDest+'\r\nCc: '+ccList+'\r\nSubject: '+subjectMime+'\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n'+toB64(fullHtml);
+    var blob=new Blob([eml],{type:'message/rfc822'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;a.target='_blank';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},6000);
+    toast('📨 Archivo email generado — ábrelo en tu cliente de correo y pulsa Enviar');
+  }
 
-  var eml =
-    'MIME-Version: 1.0\r\n'+
-    'From: Departamento Aduana CUSTOMS-WAY <'+from+'>\r\n'+
-    'To: '+emailDest+'\r\n'+
-    'Cc: '+ccList+'\r\n'+
-    'Subject: '+subjectMime+'\r\n'+
-    'Content-Type: text/html; charset=UTF-8\r\n'+
-    'Content-Transfer-Encoding: base64\r\n'+
-    '\r\n'+
-    toB64(fullHtml);
+  // Show preview modal — user must explicitly click Send
+  var prev=document.getElementById('email-prev-modal');
+  if(prev)prev.remove();
+  var modal=document.createElement('div');
+  modal.id='email-prev-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML='<div style="background:#fff;border-radius:14px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.3)">'+
+    '<div style="padding:16px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:flex-start;gap:12px">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:11px;color:#6b7280;margin-bottom:2px">De:</div>'+
+        '<div style="font-size:13px;color:#111;margin-bottom:8px">'+fromName+' &lt;'+fromEmail+'&gt;</div>'+
+        '<div style="font-size:11px;color:#6b7280;margin-bottom:2px">Para:</div>'+
+        '<div style="font-size:13px;color:#111;margin-bottom:8px">'+emailDest+(emailCC?' · CC: '+emailCC:'')+'</div>'+
+        '<div style="font-size:11px;color:#6b7280;margin-bottom:2px">Asunto:</div>'+
+        '<div style="font-size:13px;font-weight:600;color:#111">'+subjectDecoded+'</div>'+
+      '</div>'+
+      '<button id="ep-close" style="background:#f3f4f6;border:none;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;color:#374151;flex-shrink:0">✕ Cerrar</button>'+
+    '</div>'+
+    '<div style="flex:1;overflow-y:auto;padding:0">'+
+      '<iframe id="ep-iframe" style="width:100%;height:500px;border:none;display:block"></iframe>'+
+    '</div>'+
+    '<div style="padding:14px 20px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;background:#f9fafb">'+
+      '<div style="font-size:12px;color:#6b7280">⚠️ Revisa el contenido antes de enviar. El email NO se enviará hasta que pulses el botón.</div>'+
+      '<button id="ep-send" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer">📨 Abrir en cliente de correo →</button>'+
+    '</div>'+
+  '</div>';
+  document.body.appendChild(modal);
 
-  var blob = new Blob([eml], {type:'message/rfc822'});
-  var url = URL.createObjectURL(blob);
-  // Sin atributo download → Chrome descarga silencioso a la barra inferior sin diálogo
-  // El OS abre Mail/Outlook automáticamente si el usuario marcó "Abrir siempre" la primera vez
-  var a = document.createElement('a');
-  a.href = url;
-  a.target = '_blank';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(function(){URL.revokeObjectURL(url);}, 6000);
-  toast('📨 Email generado — haz clic en el archivo de la barra de descargas');
+  // Fill iframe after append
+  var iframe=document.getElementById('ep-iframe');
+  iframe.srcdoc='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,sans-serif;padding:20px}</style></head><body>'+htmlContent+'</body></html>';
+
+  document.getElementById('ep-close').onclick=function(){modal.remove();};
+  document.getElementById('ep-send').onclick=function(){generarEml();modal.remove();};
+  modal.addEventListener('click',function(ev){if(ev.target===modal)modal.remove();});
 }
 
 async function abrirEmail(){
   var ids=getSelected();
-  var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL;
+  var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL.filter(function(e){return !e.fecha_retirada;});
   if(!sel.length){toast('Sin entradas. Selecciona una o varias en la tabla.');return;}
 
-  var clientes=Array.from(new Set(sel.map(function(e){
-    return (e.cliente||e.consignatario||'').trim().toLowerCase();
-  }).filter(Boolean)));
-  if(clientes.length>1){toast('Seleccion incompatible: '+clientes.length+' clientes distintos.');return;}
+  // Check all selected share the same consignatario
+  var consigs=Array.from(new Set(sel.map(function(e){return (e.consignatario||'').trim().toLowerCase();}).filter(Boolean)));
+  if(consigs.length>1){
+    toast('⚠️ Selección con '+consigs.length+' consignatarios distintos — selecciona solo registros del mismo consignatario.');
+    return;
+  }
 
-  // Destinatario: email de la empresa cuyo nombre coincide con el consignatario del registro
   var consigNombre=sel.map(function(e){return e.consignatario||'';}).filter(Boolean)[0]||'';
   if(!consigNombre){toast('Las entradas seleccionadas no tienen consignatario.');return;}
   var emailDest='';
@@ -2025,6 +2188,81 @@ async function abrirEmailCliente(){
   var htmlContent=buildEmailHtml(sel,clienteNombre,apts,totalBlt,totalKg,hoy,ALL,ids,{campo:'cliente',valor:cliNombre},'Cliente');
   abrirVentanaEmail(htmlContent,emailDest,asunto,null);
 }
+// ── Consulta llegada AWB al aeropuerto (handling) ───────────────────────────
+async function abrirEmailAeropuerto(){
+  var ids=getSelected();
+  var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL.filter(function(e){return !e.fecha_retirada;});
+  if(!sel.length){toast('Sin entradas. Selecciona una o varias en la tabla.');return;}
+
+  // Todos deben tener el mismo handling
+  var handlers=Array.from(new Set(sel.map(function(e){return (e.handling||'').trim();}).filter(Boolean)));
+  if(handlers.length>1){
+    toast('⚠️ Selección con '+handlers.length+' empresas handling distintas — selecciona solo registros del mismo handler.');
+    return;
+  }
+  var handlerNombre=handlers[0]||'';
+
+  // Buscar email de la empresa handling en Supabase
+  var emailDest='';
+  try{
+    var hr=await sb.from('empresas').select('nombre,email_confronta').contains('rol',['Handling Aeropuerto']).order('nombre');
+    var handlingEmps=hr.data||[];
+    var match=handlingEmps.filter(function(h){
+      return (h.nombre||'').toLowerCase().includes(handlerNombre.toLowerCase())||
+             handlerNombre.toLowerCase().includes((h.nombre||'').toLowerCase().substring(0,4));
+    })[0]||null;
+    if(match) emailDest=match.email_confronta||'';
+  }catch(ex){}
+
+  if(!emailDest){
+    toast('No se encontró email para "'+handlerNombre+'". Configúralo en Empresas → rol Handling Aeropuerto.');
+    return;
+  }
+
+  var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  var apts=Array.from(new Set(sel.map(function(e){return e.aeropuerto;}).filter(Boolean))).join(', ')||'aeropuerto';
+  var totalBlt=sel.reduce(function(a,e){return a+(e.bultos||0);},0);
+  var totalKg=sel.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
+
+  var TS='border:1px solid #999;padding:5px 7px;text-align:left;font-size:11px;';
+  var TH=TS+'background:#e5e7eb;font-weight:700;';
+  function htmlRow(cols){return '<tr>'+cols.map(function(c,i){return '<td style="'+TS+(i%2===0?'':'')+'">'+( c||'&#8212;')+'</td>';}).join('')+'</tr>';}
+  var detRows=sel.map(function(e){
+    return htmlRow([
+      '<span style="font-family:monospace">'+formatAwb(e.awb||'')+'</span>',
+      e.consignatario||e.cliente||'—',
+      (e.bultos||'—')+' btos / '+(e.kilos_tasables||'—')+' kg',
+      e.vuelo||'—',
+      e.fecha_llegada?new Date(e.fecha_llegada).toLocaleDateString('es-ES'):'Sin confirmar',
+      e.observaciones||''
+    ]);
+  }).join('');
+  var tablaAwbs='<table style="width:100%;border-collapse:collapse;margin:12px 0">'+
+    '<thead><tr>'+['AWB','Consignatario','Cantidad','Vuelo','ETA prevista','Observaciones'].map(function(h){return '<th style="'+TH+'">'+h+'</th>';}).join('')+'</tr></thead>'+
+    '<tbody>'+detRows+'</tbody></table>';
+
+  var fromEmail=(CU&&CU.email)||'aduana@customsway.eu';
+  var htmlContent='<div style="font-family:Arial,sans-serif;font-size:12px;max-width:800px;margin:0 auto">'+
+    '<p>Estimados Sres. / Dear Sirs,</p>'+
+    '<p>Nos ponemos en contacto con ustedes para solicitar confirmación sobre el estado de recepción en las instalaciones de <strong>'+handlerNombre+'</strong> ('+apts+') de las siguientes mercancías:</p>'+
+    tablaAwbs+
+    '<p><strong>¿Podrían confirmarnos:</strong></p>'+
+    '<ol style="font-size:12px;line-height:1.8">'+
+      '<li>Si los AWBs relacionados han llegado y están disponibles en sus instalaciones.</li>'+
+      '<li>Si existe alguna incidencia, retención o condición especial que debamos conocer.</li>'+
+      '<li>La fecha y hora en que quedará la mercancía lista para su gestión/retirada.</li>'+
+    '</ol>'+
+    '<p>En espera de su respuesta, y agradeciéndoles de antemano su colaboración.</p>'+
+    '<p>Atentamente / Kind regards,</p>'+
+    '<p style="font-size:11px;color:#555"><strong>Departamento de Aduana &#8212; CUSTOMS-WAY SL</strong><br>'+
+    'T. 856 003 50 02 &nbsp;|&nbsp; '+fromEmail+'</p>'+
+    '<p style="font-size:11px;color:#888">'+hoy+'</p>'+
+    '</div>';
+
+  var asunto=encodeURIComponent('Consulta confirmación llegada AWB — '+handlerNombre+' — '+new Date().toLocaleDateString('es-ES'));
+  abrirVentanaEmail(htmlContent,emailDest,asunto,null);
+}
+
 // ── Instrucciones para transportista ─────────────────────────────
 // Genera HTML de instrucciones para transportista (mismo estilo tabla que print/email)
 function buildInstrHtml(transpNombre, byH, todasLasExps, selIds){
@@ -2293,23 +2531,32 @@ function onConsInput(){
   var hint = document.getElementById('cons-hint');
   var dl = document.getElementById('cons-list');
   if(!dl) return;
-  // Filter empresas
   var matches = _empresas_cache.filter(function(e){
     return (e.nombre||'').toLowerCase().includes(val);
   });
   dl.innerHTML = matches.map(function(e){
     return '<option value="'+e.nombre.replace(/"/g,'&quot;')+'">';
   }).join('');
-  // Show "crear empresa" hint if typed something not in list
   if(hint){
     var exact = _empresas_cache.some(function(e){
       return (e.nombre||'').toLowerCase() === val;
     });
     hint.style.display = (val.length > 1 && !exact) ? '' : 'none';
   }
-  // Link "crear empresa" button
   var btn = document.getElementById('btn-crear-emp');
   if(btn) btn.onclick = crearEmpresaDesdeConsignatario;
+}
+
+function onCliInput(){
+  var val = (document.getElementById('f-cli')||{value:''}).value.trim().toLowerCase();
+  var dl = document.getElementById('cli-list');
+  if(!dl) return;
+  var matches = _empresas_cache.filter(function(e){
+    return (e.nombre||'').toLowerCase().includes(val);
+  });
+  dl.innerHTML = matches.map(function(e){
+    return '<option value="'+e.nombre.replace(/"/g,'&quot;')+'">';
+  }).join('');
 }
 
 async function loadEmpresasCache(){
@@ -2366,45 +2613,6 @@ async function crearEmpresaDesdeConsignatario(){
     }).join('');
     toast('Empresa creada ✅');
   };
-}
-
-// ── RESIZABLE COLUMNS ────────────────────────────────────
-function initResizableTable(tbl, key) {
-  if (!tbl) return;
-  var ths = Array.prototype.slice.call(tbl.querySelectorAll('thead th'));
-  if (!ths.length) return;
-  var saved = {};
-  try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch(e) {}
-  if (!Object.keys(saved).length) {
-    ths.forEach(function(th, i) { saved[i] = th.getBoundingClientRect().width || th.offsetWidth; });
-  }
-  tbl.style.tableLayout = 'fixed';
-  ths.forEach(function(th, i) {
-    if (saved[i]) th.style.width = saved[i] + 'px';
-    th.style.overflow = 'hidden';
-    th.style.position = 'relative';
-    if (i >= ths.length - 1) return;
-    if (th.querySelector('.col-rh')) return;
-    var rh = document.createElement('div');
-    rh.className = 'col-rh';
-    th.appendChild(rh);
-    var sx, sw;
-    rh.addEventListener('mousedown', function(ev) {
-      ev.preventDefault(); ev.stopPropagation();
-      sx = ev.pageX; sw = th.offsetWidth;
-      rh.classList.add('dragging');
-      function mv(e) { th.style.width = Math.max(40, sw + e.pageX - sx) + 'px'; }
-      function up() {
-        rh.classList.remove('dragging');
-        var ws = {}; ths.forEach(function(t, j) { ws[j] = t.offsetWidth; });
-        localStorage.setItem(key, JSON.stringify(ws));
-        document.removeEventListener('mousemove', mv);
-        document.removeEventListener('mouseup', up);
-      }
-      document.addEventListener('mousemove', mv);
-      document.addEventListener('mouseup', up);
-    });
-  });
 }
 
 </script>
