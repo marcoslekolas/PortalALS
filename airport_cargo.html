@@ -271,7 +271,9 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 :root.dark #ext { background:#1a1a2e !important; border-color:#1e1e3f !important; }
 :root.dark #mob-ov { background:rgba(0,0,0,.6) !important; }
 :root.dark #cons-list { background:#1a1a2e !important; border-color:#1e1e3f !important; }
-
+/* Resize handles */
+.col-rh{position:absolute;right:0;top:0;width:6px;height:100%;cursor:col-resize;user-select:none;z-index:2;transition:background .1s}
+.col-rh:hover,.col-rh.dragging{background:var(--b500);opacity:.4}
 
 </style>
 <script>
@@ -879,27 +881,6 @@ async function init(){
   checkUrl();
   // Event delegation — must be set up after DOM ready, avoids onclick quote issues
   document.addEventListener('click', function(ev){
-    // Confirmación llegada aeropuerto
-    var llegadaChk = ev.target.closest('input.llegada-chk');
-    if(llegadaChk){
-      ev.stopPropagation();
-      var lid = llegadaChk.dataset.id;
-      var checked = llegadaChk.checked;
-      sb.from('airport_cargo').update({confirmacion_llegada:checked}).eq('id',lid).then(function(r){
-        if(r.error){toast('Error al guardar: '+r.error.message);llegadaChk.checked=!checked;return;}
-        // Update in-memory
-        var entry=ALL.find(function(e){return String(e.id)===String(lid);});
-        if(entry) entry.confirmacion_llegada=checked;
-        // Update row style
-        var row=llegadaChk.closest('tr');
-        if(row){
-          if(checked){row.style.background='#ffedd5';row.style.borderLeft='3px solid #f97316';}
-          else{var inc=row.querySelector('td:nth-child(8)')&&!row.querySelector('td:nth-child(8)').textContent.trim().match(/\d/);row.style.background=inc?'#fff8e1':'';row.style.borderLeft='';}
-        }
-        toast(checked?'✈️ Llegada confirmada':'Confirmación retirada');
-      });
-      return;
-    }
     var chk = ev.target.closest('input[type=checkbox]');
     if(chk) return;
     // Botón de tracking AWB
@@ -1104,9 +1085,10 @@ function renderRows(list, tbodyId){
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(ex?fn(ex):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(cc?fn(cc):'—')+'</td>'+
       '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(ap?fn(ap):'—')+'</td>'+
-      '<td style="text-align:center;padding:4px"><label style="cursor:pointer" title="Confirmar llegada en aeropuerto" onclick="event.stopPropagation()">'+
+      '<td style="text-align:center;padding:4px" onclick="event.stopPropagation()">'+
         '<input type="checkbox" class="llegada-chk" data-id="'+e.id+'" '+(e.confirmacion_llegada?'checked':'')+
-        ' style="accent-color:#f97316;width:18px;height:18px;cursor:pointer"></label></td>'+
+        ' onchange="toggleLlegadaChk(this)"'+
+        ' style="accent-color:#f97316;width:20px;height:20px;cursor:pointer"></td>'+
       '<td class="col-sticky-r2" style="text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);background:var(--b50)">'+fc(tot)+'</td>'+
       '<td class="col-sticky-r" style="white-space:nowrap;background:var(--w);padding:6px 8px">'+
         '<button class="btn btn-sm btn-s" data-action="edit" data-id="'+e.id+'" title="Editar">✏️</button> '+
@@ -2613,6 +2595,79 @@ async function crearEmpresaDesdeConsignatario(){
     }).join('');
     toast('Empresa creada ✅');
   };
+}
+
+// ── Confirmación llegada aeropuerto ──────────────────────────────────────────
+async function toggleLlegadaChk(chk){
+  var lid = chk.dataset.id;
+  var checked = chk.checked;
+  var r = await sb.from('airport_cargo').update({confirmacion_llegada:checked}).eq('id',lid);
+  if(r.error){ toast('Error al guardar: '+r.error.message); chk.checked=!checked; return; }
+  // Update in-memory record
+  var entry = ALL.find(function(e){ return String(e.id)===String(lid); });
+  if(entry) entry.confirmacion_llegada = checked;
+  // Update row background immediately
+  var row = chk.closest('tr');
+  if(row){
+    if(checked){
+      row.style.background='#ffedd5';
+      row.style.borderLeft='3px solid #f97316';
+    } else {
+      // Restore original color: yellow if incomplete, else none
+      var hasRetirada = entry && entry.fecha_retirada;
+      var hasHandling = entry && entry.handling;
+      row.style.background = (!hasRetirada||!hasHandling) ? '#fff8e1' : '';
+      row.style.borderLeft = '';
+    }
+  }
+  toast(checked ? '✈️ Llegada confirmada en aeropuerto' : 'Confirmación de llegada retirada');
+}
+
+// ── Resizable columns ─────────────────────────────────────────────────────────
+function initResizableTable(tbl, key){
+  if(!tbl) return;
+  var ths = Array.prototype.slice.call(tbl.querySelectorAll('thead th'));
+  if(!ths.length) return;
+  // Load saved widths
+  var saved = {};
+  try{ saved = JSON.parse(localStorage.getItem(key)||'{}'); }catch(e){}
+  // Reset if column count changed (e.g. after adding new columns)
+  if(Object.keys(saved).length && Object.keys(saved).length !== ths.length){
+    saved = {};
+    localStorage.removeItem(key);
+  }
+  // Capture current rendered widths on first run
+  if(!Object.keys(saved).length){
+    ths.forEach(function(th,i){ saved[i] = th.getBoundingClientRect().width||th.offsetWidth; });
+  }
+  tbl.style.tableLayout = 'fixed';
+  ths.forEach(function(th,i){
+    if(saved[i]) th.style.width = saved[i]+'px';
+    th.style.overflow = 'hidden';
+    th.style.position = 'relative';
+    if(i >= ths.length-1) return; // skip last col
+    if(th.querySelector('.col-rh')) return; // already initialized
+    var rh = document.createElement('div');
+    rh.className = 'col-rh';
+    rh.title = 'Arrastrar para redimensionar';
+    th.appendChild(rh);
+    var sx, sw;
+    rh.addEventListener('mousedown', function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      sx=ev.pageX; sw=th.offsetWidth;
+      rh.classList.add('dragging');
+      function mv(e){ th.style.width=Math.max(32,sw+e.pageX-sx)+'px'; }
+      function up(){
+        rh.classList.remove('dragging');
+        var ws={}; ths.forEach(function(t,j){ ws[j]=t.offsetWidth; });
+        localStorage.setItem(key,JSON.stringify(ws));
+        document.removeEventListener('mousemove',mv);
+        document.removeEventListener('mouseup',up);
+      }
+      document.addEventListener('mousemove',mv);
+      document.addEventListener('mouseup',up);
+    });
+  });
 }
 
 </script>
