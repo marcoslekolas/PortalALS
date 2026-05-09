@@ -1020,15 +1020,22 @@ function formatAwb(awb){
   if(clean.length<8) return awb;
   return clean.substring(0,3)+'-'+clean.substring(3);
 }
-function trackAwb(evt,awb){
+async function trackAwb(evt,awb){
   if(evt) evt.stopPropagation();
   var fmt=formatAwb(awb);
   if(!fmt||fmt==='—') return;
   var clean=fmt.replace(/-/g,'');
-  // track-trace.com lee window.location.hash al montar el componente Vue y rellena el campo
-  window.open('https://www.track-trace.com/aircargo#'+clean,'_blank');
-  // Clipboard por si acaso
-  if(navigator.clipboard) navigator.clipboard.writeText(clean).catch(function(){});
+  toast('🔍 Consultando tracking...');
+  try{
+    var r=await fetch(
+      'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/track-awb?awb='+encodeURIComponent(clean),
+      {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}}
+    );
+    var d=await r.json();
+    window.open(d.url||('https://www.track-trace.com/aircargo#'+clean),'_blank');
+  }catch(e){
+    window.open('https://www.track-trace.com/aircargo#'+clean,'_blank');
+  }
 }
 
 
