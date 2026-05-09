@@ -935,16 +935,22 @@ async function loadDashboard(){
   if(!el) return;
   el.innerHTML='<div style="text-align:center;padding:40px;color:var(--g400);font-size:13px">⏳ Cargando dashboard...</div>';
 
-  var hoy=new Date(); hoy.setHours(0,0,0,0);
-  var hoyStr=hoy.toISOString().slice(0,10);
-  var manStr=new Date(hoy.getTime()+86400000).toISOString().slice(0,10);
-  var en3=new Date(hoy.getTime()+3*86400000);
+  // Fecha local (no UTC) para evitar desfase de zona horaria
+  var hoy=new Date();
+  function localDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  var hoyStr=localDate(hoy);
+  var manStr=localDate(new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()+1));
+  var en3=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()+3);
 
   var pendientes=ALL.filter(function(e){return !e.fecha_retirada;});
 
   // KPIs
-  var lleganHoy=pendientes.filter(function(e){return e.fecha_llegada===hoyStr;});
-  var sinConfirmar=pendientes.filter(function(e){return e.fecha_llegada&&e.fecha_llegada<=hoyStr&&!e.confirmacion_llegada;});
+  // Usar .slice(0,10) para comparar solo la fecha aunque Supabase devuelva timestamp completo
+  var lleganHoy=pendientes.filter(function(e){return e.fecha_llegada&&e.fecha_llegada.slice(0,10)===hoyStr;});
+  // Sin confirmar: han llegado (fecha_llegada <= hoy) pero confirmacion_llegada es false/null
+  var sinConfirmar=pendientes.filter(function(e){
+    return e.fecha_llegada&&e.fecha_llegada.slice(0,10)<=hoyStr&&!e.confirmacion_llegada;
+  });
   var alertas=getAlertas();
   var nAlertas=alertas.almacenajeVencido.length+alertas.almacenajeHoy.length+alertas.caducidadT1.length;
   var costoEstimado=pendientes.reduce(function(a,e){
