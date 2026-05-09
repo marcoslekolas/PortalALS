@@ -1706,7 +1706,8 @@ function onHC(){
 function liveCalc(){
   var h=gv('f-handler'),ll=gv('f-ll'),rt=gv('f-rt'),kg=parseFloat(gv('f-kg'))||0;
   var el=document.getElementById('lc-prev');if(!el)return;
-  if(!hasH(h)||!rt||!kg){el.innerHTML='';return;}
+  if(!h||!rt||!kg){el.innerHTML='';return;}
+  if(!hasH(h)){el.innerHTML='<div style="font-size:11px;color:var(--g400);padding:8px 0">Sin tarifa automática para este handler — introduce el coste manualmente.</div>';return;}
   var yr=new Date(rt).getFullYear();
   var tmpE={handling:h,fecha_llegada:ll,fecha_retirada:rt,kilos_tasables:kg,aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap')};
   var d=desglose(tmpE);if(!d){el.innerHTML='';return;}
@@ -1731,9 +1732,10 @@ function buildObj(){
   return{awb:gv('f-awb').trim(),consignatario:gv('f-cons').trim(),cliente:cli||null,buque:gv('f-buque').trim()||null,
     aeropuerto:gv('f-apto')||'AGP',handling:h||null,status:gv('f-status')||'T1',
     fecha_llegada:gv('f-ll')||null,fecha_retirada:rt,kilos_tasables:parseFloat(gv('f-kg'))||0,
-    bultos:parseInt(gv('f-blt'))||null,aplica_finde:isAuto?gc('f-fi'):false,
-    aplica_express:isAuto?gc('f-ex'):false,aplica_carga_camion:isAuto?gc('f-cc'):false,
-    aplica_apertura:isAuto?gc('f-ap'):false,coste_manual:(!isAuto&&h)?parseFloat(gv('f-man'))||null:null,
+    bultos:parseInt(gv('f-blt'))||null,
+    aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),
+    aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap'),
+    coste_manual:(!isAuto&&h)?parseFloat(gv('f-man'))||null:null,
     observaciones:gv('f-obs').trim()||null,mes_operacion:calcMes(rt),
     operation_year:rt?new Date(rt).getFullYear():null};
 }
