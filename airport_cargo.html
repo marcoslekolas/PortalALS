@@ -360,7 +360,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div class="fbar">
           <input class="fi" id="src" style="max-width:200px;padding:6px 10px;font-size:12px" placeholder="Buscar AWB, consignatario…" oninput="filtrar()">
           <select class="fi fs" id="fil-h" style="width:auto;padding:6px 26px 6px 10px;font-size:12px" onchange="filtrar()">
-            <option value="">Todos handlers</option><option>Swissport</option><option>Groundforce</option>
+            <option value="">Todos handlers</option><option>Swissport Cargo</option><option>Groundforce AGP</option>
           </select>
           <select class="fi fs" id="fil-y" style="width:auto;padding:6px 26px 6px 10px;font-size:12px" onchange="filtrar()">
             <option value="">Todos años</option><option value="2026">2026</option><option value="2025">2025</option>
@@ -396,7 +396,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div class="fbar">
           <input class="fi" id="src-fin" style="max-width:200px;padding:6px 10px;font-size:12px" placeholder="Buscar AWB, consignatario…" oninput="filtrarFin()">
           <select class="fi fs" id="fil-h-fin" style="width:auto;padding:6px 26px 6px 10px;font-size:12px" onchange="filtrarFin()">
-            <option value="">Todos handlers</option><option>Swissport</option><option>Groundforce</option>
+            <option value="">Todos handlers</option><option>Swissport Cargo</option><option>Groundforce AGP</option>
           </select>
           <select class="fi fs" id="fil-y-fin" style="width:auto;padding:6px 26px 6px 10px;font-size:12px" onchange="filtrarFin()">
             <option value="">Todos años</option><option value="2026">2026</option><option value="2025">2025</option>
@@ -445,8 +445,8 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
           </div>
         </div>
         <div class="tabs" id="tar-tabs">
-          <button class="tab-btn active" onclick="showTarifas('Swissport',this)">✈️ Swissport</button>
-          <button class="tab-btn" onclick="showTarifas('Groundforce',this)">✈️ Groundforce</button>
+          <button class="tab-btn active" onclick="showTarifas('Swissport Cargo',this)">✈️ Swissport Cargo</button>
+          <button class="tab-btn" onclick="showTarifas('Groundforce AGP',this)">✈️ Groundforce AGP</button>
         </div>
         <div id="tar-content"></div>
       </div>
@@ -602,7 +602,7 @@ function gc(id){var e=document.getElementById(id);return e?e.checked:false;}
 function calcMes(rt){if(!rt)return'';var d=new Date(rt);return d.getFullYear()+' | '+['01-Ene','02-Feb','03-Mar','04-Abr','05-May','06-Jun','07-Jul','08-Ago','09-Sep','10-Oct','11-Nov','12-Dic'][d.getMonth()];}
 
 // ── TARIFAS POR AÑO ──────────────────────────────────────
-// Tarifas Groundforce 2025 (valores anteriores — guardados como historial)
+// Tarifas Groundforce AGP 2025 (valores anteriores — guardados como historial)
 var TRF_GF_2025={
   alm:{dl:3,min:47.47,u:11.21},
   gd:{min:44.57,u:0},
@@ -614,7 +614,7 @@ var TRF_GF_2025={
   ap:{min:383.33,u:1.72,fijo:80.74}
 };
 
-// Tarifas Groundforce 2026 — THC válido desde 01.04.2026
+// Tarifas Groundforce AGP 2026 — THC válido desde 01.04.2026
 var TRF_GF_2026={
   alm:{dl:4,min:53.73,u:11.51},      // 4.1 Almacenaje general AGP (1er escalón)
   gd:{min:56.00,u:0},                 // 1.2 Gestión documental AGP/VLC
@@ -627,7 +627,7 @@ var TRF_GF_2026={
 };
 
 var TRF_DEFAULT={
-  Swissport:{
+  "Swissport Cargo":{
     alm:{dl:2,min:51.31,u:12.12},
     gd:{min:47.69,u:24.18},
     tr:{min:20.3,u:0.46},
@@ -637,9 +637,9 @@ var TRF_DEFAULT={
     cc:{min:71.9,u:0.11},
     ap:{min:0,u:150,fijo:0}
   },
-  Groundforce: TRF_GF_2026
+  "Groundforce AGP": TRF_GF_2026
 };
-var TRF_YEARS={2025:{Swissport:TRF_DEFAULT.Swissport,Groundforce:TRF_GF_2025},2026:TRF_DEFAULT};
+var TRF_YEARS={2025:{"Swissport Cargo":TRF_DEFAULT["Swissport Cargo"],"Groundforce AGP":TRF_GF_2025},2026:TRF_DEFAULT};
 
 function getTRF(year){
   var y=parseInt(year)||new Date().getFullYear();
@@ -693,12 +693,12 @@ function diasFact(ll,rt,h){
   // dnat = días naturales incluyendo día de llegada y día de retirada
   var dsig=Math.round((r-l)/86400000); // diferencia en días
   var dnat=dsig+1; // +1 porque contamos el día de llegada
-  if(h==='Swissport'){
+  if(h==='Swissport Cargo'){
     var dow=l.getDay();
     var fr=(dow===0||dow===6)?3:2; // fin de semana: 3 días libres
     return dnat<=fr?0:dsig;
   }
-  if(h==='Groundforce'){
+  if(h==='Groundforce AGP'){
     // THC 2026: 4 días libres desde día de llegada inclusive
     // Si excede: se cobra desde día de llegada (= dnat días completos)
     return dnat<=4?0:dnat;
@@ -1139,13 +1139,13 @@ async function loadResumen(){
   });
   var rows=Object.entries(byM).sort(function(a,b){return a[0].localeCompare(b[0]);});
   var grand=rows.reduce(function(a,r){return a+r[1].t;},0);
-  var trows=rows.map(function(r){var m=r[0],d=r[1];return'<tr><td class="fw">'+m+'</td><td>'+d.n+'</td><td>'+d.kg.toLocaleString('es-ES')+' kg</td><td>'+(d.h['Swissport']||0)+'</td><td>'+(d.h['Groundforce']||0)+'</td><td style="font-weight:700;color:var(--b700);font-family:var(--mono)">'+fc(d.t)+'</td></tr>';}).join('');
+  var trows=rows.map(function(r){var m=r[0],d=r[1];return'<tr><td class="fw">'+m+'</td><td>'+d.n+'</td><td>'+d.kg.toLocaleString('es-ES')+' kg</td><td>'+(d.h['Swissport Cargo']||0)+'</td><td>'+(d.h['Groundforce AGP']||0)+'</td><td style="font-weight:700;color:var(--b700);font-family:var(--mono)">'+fc(d.t)+'</td></tr>';}).join('');
   document.getElementById('res-content').innerHTML=
     '<div class="sum-grid">'+
     '<div class="sum-card"><div class="sum-card-title">Total '+year+'</div><div class="sum-card-val">'+fc(grand)+'</div></div>'+
     '<div class="sum-card"><div class="sum-card-title">Entradas '+year+'</div><div class="sum-card-val">'+yd.length+'</div></div>'+
     '</div>'+
-    '<div class="tc"><table class="tbl"><thead><tr><th>Mes</th><th>Entradas</th><th>Kilos</th><th>Swissport</th><th>Groundforce</th><th>Total</th></tr></thead><tbody>'+
+    '<div class="tc"><table class="tbl"><thead><tr><th>Mes</th><th>Entradas</th><th>Kilos</th><th>Swissport Cargo</th><th>Groundforce AGP</th><th>Total</th></tr></thead><tbody>'+
     trows+
     '<tr style="background:var(--b50);font-weight:700"><td>TOTAL '+year+'</td><td>'+yd.length+'</td><td>—</td><td>—</td><td>—</td><td style="color:var(--b700);font-family:var(--mono)">'+fc(grand)+'</td></tr>'+
     '</tbody></table></div>';
@@ -1155,7 +1155,7 @@ async function loadResumen(){
 function loadTarifasView(){
   var year=parseInt(document.getElementById('tar-year').value)||2026;
   document.querySelectorAll('#tar-tabs .tab-btn').forEach(function(b,i){b.classList.toggle('active',i===0);});
-  showTarifas('Swissport',null,year);
+  showTarifas('Swissport Cargo',null,year);
 }
 function showTarifas(prov,el,yearOv){
   if(el){document.querySelectorAll('#tar-tabs .tab-btn').forEach(function(b){b.classList.remove('active');});el.classList.add('active');}
@@ -1255,13 +1255,13 @@ function importarTarifasPDF(){
   document.getElementById('m-title').textContent = '📄 Importar tarifas desde PDF';
   document.getElementById('m-body').innerHTML = `
     <div class="info-box" style="margin-bottom:16px">
-      Sube el PDF de tarifas de Swissport o Groundforce. La IA extraerá automáticamente todos los conceptos, días libres, mínimos y precios.
+      Sube el PDF de tarifas de Swissport Cargo o Groundforce AGP. La IA extraerá automáticamente todos los conceptos, días libres, mínimos y precios.
     </div>
     <div style="margin-bottom:14px">
       <label class="fl2">Handler</label>
       <select id="imp-handler" class="fi fs">
-        <option value="Swissport">Swissport</option>
-        <option value="Groundforce">Groundforce</option>
+        <option value="Swissport Cargo">Swissport Cargo</option>
+        <option value="Groundforce AGP">Groundforce AGP</option>
       </select>
     </div>
     <div style="margin-bottom:14px">
@@ -1506,7 +1506,7 @@ async function crearNuevoAnio(){
     {k:'ap',lb:'Apertura Fuera Horario',base:'Servicio Fijo'}
   ];
   var rows=[];
-  ['Swissport','Groundforce'].forEach(function(prov){
+  ['Swissport Cargo','Groundforce AGP'].forEach(function(prov){
     var t=trf[prov]||{};
     CONC.forEach(function(row){
       var v=t[row.k]||{};
@@ -1529,9 +1529,9 @@ function fechaMaximaLibre(fecha_llegada, handling) {
   var l = new Date(fecha_llegada);
   var dow = l.getDay();
   var diasLibres;
-  if (handling === 'Swissport') {
+  if (handling === 'Swissport Cargo') {
     diasLibres = (dow === 0 || dow === 6) ? 2 : 1;
-  } else if (handling === 'Groundforce') {
+  } else if (handling === 'Groundforce AGP') {
     diasLibres = 3;
   } else {
     return null;
