@@ -626,9 +626,8 @@ textarea.fi{resize:vertical;min-height:72px}
   .fotos-tab{padding:12px 14px}
   /* Header: compact buttons, no text overlap */
   .hdr-top{padding:0 8px;gap:6px}
-  #btn-nb,#btn-ne{font-size:0 !important} /* hide text, show icon only */
-  #btn-nb::before{content:'＋🚢';font-size:13px}
-  #btn-ne::before{content:'＋📦';font-size:13px}
+  #btn-crear-main{font-size:0 !important}
+  #btn-crear-main::before{content:'＋';font-size:14px}
   .bc{font-size:11px;gap:4px}
   .app-mark{width:26px;height:26px;font-size:10px}
   .app-ltxt{display:none}
@@ -1239,9 +1238,16 @@ textarea.fi{resize:vertical;min-height:72px}
         <!-- Modo oscuro automático -->
         <button onclick="setDarkAuto()" title="Modo automático (sistema)" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--g400);padding:2px 4px" id="dark-auto-btn">🌗</button>
 
-        <!-- Acciones rápidas — solo en Operativa -->
-        <button class="btn btn-p btn-sm" id="btn-nb" onclick="openModal('nuevo-buque')" style="display:none">+ Buque</button>
-        <button class="btn btn-s btn-sm" id="btn-ne" onclick="openModal('nueva-expedicion')" style="display:none">+ Expedición</button>
+        <!-- Botón único de creación — Buque / Expedición / Evento -->
+        <div style="position:relative" id="btn-crear-wrap" style="display:none">
+          <button class="btn btn-p btn-sm" id="btn-crear-main" onclick="toggleCrearMenu(event)" style="display:none">+ Crear ▾</button>
+          <div id="crear-menu" style="display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--w);border:1px solid var(--g200);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:6px;min-width:180px;z-index:9000">
+            <div onclick="openModal('nuevo-buque');cerrarCrearMenu()" id="cmenu-buque" style="display:none;padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background='none'">🚢 Nuevo buque</div>
+            <div onclick="openModal('nueva-expedicion');cerrarCrearMenu()" id="cmenu-exp" style="display:none;padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background='none'">📦 Nueva expedición</div>
+            <div style="height:1px;background:var(--g100);margin:4px 6px"></div>
+            <div onclick="abrirNuevoEvento();cerrarCrearMenu()" style="padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background='none'">📅 Nuevo evento</div>
+          </div>
+        </div>
 
         <!-- Centro de notificaciones -->
         <button id="hdr-notif-btn" onclick="abrirCentroNotificaciones()" title="Notificaciones" style="position:relative;background:none;border:none;cursor:pointer;padding:4px 6px;font-size:20px;line-height:1;display:none">
@@ -3344,8 +3350,7 @@ function enterMod(mod){
     document.getElementById('sb-role').textContent='Administrador';
     document.getElementById('nav-op').style.display='none';
     document.getElementById('nav-alm').style.display='none';
-    document.getElementById('btn-nb').style.display='none';
-    document.getElementById('btn-ne').style.display='none';
+    document.getElementById('btn-crear-main').style.display='none';
     document.getElementById('bc-mod').textContent='Configuración';
     const navAdm=document.getElementById('nav-adm');
     if(navAdm) navAdm.style.display='flex';
@@ -3386,8 +3391,11 @@ function enterMod(mod){
     document.getElementById('nav-alm').style.display='none';
     document.getElementById('nav-adm').style.display='none';
     // Solo mostrar botones de crear si el rol tiene permiso
-    document.getElementById('btn-nb').style.display = puedeAcceder('buques','crear') ? '' : 'none';
-    document.getElementById('btn-ne').style.display = puedeAcceder('expediciones','crear') ? '' : 'none';
+    var puedeBuque=puedeAcceder('buques','crear');
+    var puedeExp=puedeAcceder('expediciones','crear');
+    document.getElementById('btn-crear-main').style.display=(puedeBuque||puedeExp)?'':'none';
+    document.getElementById('cmenu-buque').style.display=puedeBuque?'flex':'none';
+    document.getElementById('cmenu-exp').style.display=puedeExp?'flex':'none';
     document.getElementById('bc-mod').textContent='Operativa';
     if(btnAlmacen){btnAlmacen.style.display='';btnAlmacen.title='Almacén & Embarque';}
     if(btnAirport) btnAirport.style.display=puedeAirport?'':'none';
@@ -3402,8 +3410,7 @@ function enterMod(mod){
     document.getElementById('nav-op').style.display='none';
     document.getElementById('nav-alm').style.display='flex';
     document.getElementById('nav-adm').style.display='none';
-    document.getElementById('btn-nb').style.display='none';
-    document.getElementById('btn-ne').style.display='none';
+    document.getElementById('btn-crear-main').style.display='none';
     document.getElementById('bc-mod').textContent='Almacén & Embarque';
     if(btnAlmacen) btnAlmacen.style.display='none';
     if(btnAirport) btnAirport.style.display=(!esExclusivoAlmacen&&puedeAirport)?'':'none';
@@ -14439,6 +14446,318 @@ if(typeof sb!=="undefined"&&sb){loadEmailPlantillas();}else{setTimeout(()=>{if(s
   backdrop.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:24999';
   backdrop.onclick = cerrarCentroNotificaciones;
   document.body.appendChild(backdrop);
+})();
+
+// ═══════════════════════════════════════════════════════════════
+// SISTEMA DE EVENTOS Y ALARMAS
+// SQL a ejecutar en Supabase:
+// CREATE TABLE IF NOT EXISTS eventos (
+//   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+//   titulo text NOT NULL,
+//   descripcion text,
+//   fecha_inicio timestamptz NOT NULL,
+//   color text DEFAULT '#3b82f6',
+//   alarma1 integer,  -- minutos antes (null = sin alarma)
+//   alarma2 integer,  -- minutos antes (null = sin alarma)
+//   usuario_id uuid,
+//   usuario_nombre text,
+//   created_at timestamptz DEFAULT now()
+// );
+// ALTER TABLE eventos ENABLE ROW LEVEL SECURITY;
+// CREATE POLICY "Todos pueden ver y crear eventos" ON eventos FOR ALL USING (true);
+// ═══════════════════════════════════════════════════════════════
+
+// ── Dropdown de creación ────────────────────────────────────────
+function toggleCrearMenu(e){
+  e&&e.stopPropagation();
+  var m=document.getElementById('crear-menu');
+  if(!m) return;
+  var open=m.style.display!=='none';
+  m.style.display=open?'none':'block';
+  if(!open){
+    setTimeout(function(){
+      document.addEventListener('click',function h(){
+        cerrarCrearMenu();
+        document.removeEventListener('click',h);
+      });
+    },10);
+  }
+}
+function cerrarCrearMenu(){
+  var m=document.getElementById('crear-menu');
+  if(m) m.style.display='none';
+}
+
+// ── Colores disponibles para eventos ───────────────────────────
+var EVT_COLORS=[
+  {v:'#3b82f6',n:'Azul'},    {v:'#10b981',n:'Verde'},
+  {v:'#ef4444',n:'Rojo'},    {v:'#f97316',n:'Naranja'},
+  {v:'#8b5cf6',n:'Morado'},  {v:'#ec4899',n:'Rosa'},
+  {v:'#f59e0b',n:'Ámbar'},   {v:'#06b6d4',n:'Cyan'},
+  {v:'#64748b',n:'Gris'},    {v:'#6366f1',n:'Índigo'},
+];
+
+var _evtColorSel='#3b82f6';
+
+function selEvtColor(color){
+  _evtColorSel=color;
+  document.querySelectorAll('.evt-color-swatch').forEach(function(s){
+    s.style.outline=s.dataset.color===color?'3px solid #000':'none';
+    s.style.outlineOffset='2px';
+  });
+  var prev=document.getElementById('evt-color-prev');
+  if(prev) prev.style.background=color;
+}
+
+// ── Modal de nuevo evento ───────────────────────────────────────
+function abrirNuevoEvento(prefill){
+  _evtColorSel='#3b82f6';
+  var hoyStr=new Date().toISOString().slice(0,16);
+  var swatches=EVT_COLORS.map(function(c){
+    var sel=c.v===_evtColorSel;
+    return'<div class="evt-color-swatch" data-color="'+c.v+'" onclick="selEvtColor(\''+c.v+'\')" title="'+c.n+'" '+
+      'style="width:28px;height:28px;border-radius:50%;background:'+c.v+';cursor:pointer;'+
+      'outline:'+(sel?'3px solid #000':'none')+';outline-offset:2px;flex-shrink:0"></div>';
+  }).join('');
+
+  var alarmOpts='<option value="">Sin alarma</option>'+
+    '<option value="5">5 minutos antes</option>'+
+    '<option value="15">15 minutos antes</option>'+
+    '<option value="30">30 minutos antes</option>'+
+    '<option value="60">1 hora antes</option>'+
+    '<option value="120">2 horas antes</option>'+
+    '<option value="1440">1 día antes</option>'+
+    '<option value="2880">2 días antes</option>';
+
+  document.getElementById('m-title').textContent='📅 Nuevo evento';
+  document.getElementById('m-body').innerHTML=
+    '<div class="fg2"><label class="fl2">Título *</label>'+
+      '<input id="ev-titulo" class="fi" placeholder="Nombre del evento…" value="'+(prefill?.titulo||'')+'"></div>'+
+    '<div class="fg2"><label class="fl2">Descripción</label>'+
+      '<textarea id="ev-desc" class="fi" style="min-height:60px" placeholder="Notas opcionales…">'+(prefill?.desc||'')+'</textarea></div>'+
+    '<div class="fr2">'+
+      '<div class="fg2"><label class="fl2">Fecha y hora *</label>'+
+        '<input id="ev-fecha" class="fi" type="datetime-local" value="'+(prefill?.fecha||hoyStr)+'"></div>'+
+    '</div>'+
+    '<div class="fg2"><label class="fl2">Color</label>'+
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px">'+
+        swatches+
+        '<div id="evt-color-prev" style="width:32px;height:32px;border-radius:8px;background:'+_evtColorSel+';border:2px solid var(--g200);margin-left:8px;flex-shrink:0"></div>'+
+      '</div></div>'+
+    '<div class="fr2">'+
+      '<div class="fg2"><label class="fl2">⏰ Alarma 1</label>'+
+        '<select id="ev-al1" class="fi fs">'+alarmOpts+'<option value="30" selected>30 minutos antes</option></select></div>'+
+      '<div class="fg2"><label class="fl2">⏰ Alarma 2</label>'+
+        '<select id="ev-al2" class="fi fs">'+alarmOpts+'</select></div>'+
+    '</div>';
+
+  document.getElementById('m-foot').innerHTML=
+    '<button class="btn btn-s" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-p" onclick="guardarEvento()">📅 Crear evento</button>';
+
+  document.getElementById('mo').style.display='flex';
+}
+
+async function guardarEvento(){
+  var titulo=(document.getElementById('ev-titulo').value||'').trim();
+  var fecha=document.getElementById('ev-fecha').value;
+  if(!titulo){alert('El título es obligatorio');return;}
+  if(!fecha){alert('La fecha y hora son obligatorias');return;}
+  var al1=document.getElementById('ev-al1').value||null;
+  var al2=document.getElementById('ev-al2').value||null;
+  var obj={
+    titulo:titulo,
+    descripcion:document.getElementById('ev-desc').value.trim()||null,
+    fecha_inicio:new Date(fecha).toISOString(),
+    color:_evtColorSel,
+    alarma1:al1?parseInt(al1):null,
+    alarma2:al2?parseInt(al2):null,
+    usuario_id:CU?.id||null,
+    usuario_nombre:CU?.nombre||null,
+  };
+  var {error}=await sb.from('eventos').insert(obj);
+  if(error){showToast('Error al crear evento: '+error.message);return;}
+  showToast('📅 Evento creado');
+  closeModal();
+  // Solicitar permiso de notificaciones del navegador si no se ha dado
+  if(Notification&&Notification.permission==='default'){
+    Notification.requestPermission();
+  }
+  // Actualizar badge si existe
+  actualizarBadgeEventos();
+}
+
+// ── Motor de alarmas ────────────────────────────────────────────
+var _alarmasComprobadas={};
+
+async function comprobarAlarmas(){
+  try{
+    var ahora=new Date();
+    var {data}=await sb.from('eventos').select('*')
+      .gte('fecha_inicio',new Date(ahora.getTime()-7*24*60*60*1000).toISOString())
+      .order('fecha_inicio');
+    if(!data||!data.length) return;
+    data.forEach(function(ev){
+      [ev.alarma1,ev.alarma2].forEach(function(mins,idx){
+        if(!mins) return;
+        var key=ev.id+'_a'+(idx+1);
+        if(_alarmasComprobadas[key]) return;
+        var triggerTime=new Date(ev.fecha_inicio).getTime()-(mins*60*1000);
+        var ahoraMs=ahora.getTime();
+        if(ahoraMs>=triggerTime&&ahoraMs<triggerTime+120000){
+          _alarmasComprobadas[key]=true;
+          mostrarNotificacionEvento(ev,mins);
+        }
+      });
+    });
+  }catch(e){}
+}
+
+function mostrarNotificacionEvento(ev,mins){
+  var label=mins>=1440?(mins/1440)+' día'+(mins>=2880?'s':''):
+            mins>=60?(mins/60)+' hora'+(mins>=120?'s':''):
+            mins+' min';
+  var msg='⏰ '+ev.titulo+' — en '+label;
+
+  // Notificación del navegador
+  if(Notification&&Notification.permission==='granted'){
+    new Notification('📅 Recordatorio',{body:msg,icon:'/favicon.ico'});
+  }
+
+  // Notificación visual en pantalla
+  var prev=document.getElementById('ev-notif-banner');
+  if(prev) prev.remove();
+  var banner=document.createElement('div');
+  banner.id='ev-notif-banner';
+  banner.style.cssText=
+    'position:fixed;top:72px;right:16px;z-index:99999;'+
+    'background:'+ev.color+';color:#fff;border-radius:14px;'+
+    'padding:14px 18px;max-width:320px;box-shadow:0 8px 32px rgba(0,0,0,.3);'+
+    'display:flex;flex-direction:column;gap:6px;'+
+    'animation:evSlideIn .35s cubic-bezier(.175,.885,.32,1.275)';
+  banner.innerHTML=
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">'+
+      '<div>'+
+        '<div style="font-size:11px;opacity:.85;margin-bottom:3px">📅 Recordatorio · '+label+' antes</div>'+
+        '<div style="font-size:15px;font-weight:700;line-height:1.3">'+ev.titulo+'</div>'+
+        (ev.descripcion?'<div style="font-size:12px;opacity:.85;margin-top:4px">'+ev.descripcion+'</div>':'')+
+        '<div style="font-size:11px;opacity:.75;margin-top:6px">'+
+          new Date(ev.fecha_inicio).toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})+
+        '</div>'+
+      '</div>'+
+      '<button onclick="this.closest(\'#ev-notif-banner\').remove()" '+
+        'style="background:rgba(255,255,255,.25);border:none;border-radius:50%;width:24px;height:24px;'+
+        'cursor:pointer;color:#fff;font-size:14px;line-height:1;flex-shrink:0;padding:0">×</button>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;margin-top:4px">'+
+      '<button onclick="document.getElementById(\'ev-notif-banner\').remove()" '+
+        'style="background:rgba(255,255,255,.2);border:none;border-radius:7px;padding:5px 12px;'+
+        'color:#fff;font-size:12px;cursor:pointer;flex:1">Descartar</button>'+
+      '<button onclick="mostrarEventosHoy();document.getElementById(\'ev-notif-banner\').remove()" '+
+        'style="background:rgba(255,255,255,.35);border:none;border-radius:7px;padding:5px 12px;'+
+        'color:#fff;font-size:12px;font-weight:700;cursor:pointer;flex:1">Ver evento</button>'+
+    '</div>';
+  document.body.appendChild(banner);
+  // Auto-dismiss en 12 segundos
+  setTimeout(function(){if(banner.parentNode)banner.remove();},12000);
+
+  // Inyectar animación CSS si no existe
+  if(!document.getElementById('ev-anim-css')){
+    var st=document.createElement('style');
+    st.id='ev-anim-css';
+    st.textContent='@keyframes evSlideIn{from{opacity:0;transform:translateX(20px) scale(.95)}to{opacity:1;transform:none}}';
+    document.head.appendChild(st);
+  }
+}
+
+// ── Badge de eventos hoy ────────────────────────────────────────
+async function actualizarBadgeEventos(){
+  try{
+    var hoy=new Date().toISOString().slice(0,10);
+    var {data}=await sb.from('eventos').select('id,titulo,color,fecha_inicio')
+      .gte('fecha_inicio',hoy+'T00:00:00')
+      .lte('fecha_inicio',hoy+'T23:59:59')
+      .order('fecha_inicio');
+    var btn=document.getElementById('btn-eventos-hoy');
+    if(!btn) return;
+    if(!data||!data.length){btn.style.display='none';return;}
+    btn.style.display='flex';
+    btn.title=data.map(function(e){return e.titulo;}).join('\n');
+    var badge=document.getElementById('ev-badge-n');
+    if(badge) badge.textContent=data.length;
+  }catch(e){}
+}
+
+async function mostrarEventosHoy(){
+  var hoy=new Date().toISOString().slice(0,10);
+  var {data}=await sb.from('eventos').select('*')
+    .gte('fecha_inicio',hoy+'T00:00:00')
+    .lte('fecha_inicio',hoy+'T23:59:59')
+    .order('fecha_inicio');
+  if(!data||!data.length){showToast('Sin eventos para hoy');return;}
+
+  var prev=document.getElementById('ev-hoy-panel');
+  if(prev){prev.remove();return;}
+
+  var panel=document.createElement('div');
+  panel.id='ev-hoy-panel';
+  panel.style.cssText=
+    'position:fixed;top:72px;right:16px;z-index:99998;'+
+    'background:var(--w);border:1px solid var(--g200);border-radius:14px;'+
+    'box-shadow:0 8px 32px rgba(0,0,0,.15);min-width:280px;max-width:340px;overflow:hidden';
+  panel.innerHTML=
+    '<div style="padding:12px 16px;border-bottom:1px solid var(--g100);display:flex;justify-content:space-between;align-items:center">'+
+      '<strong style="font-size:13px">📅 Eventos de hoy</strong>'+
+      '<button onclick="document.getElementById(\'ev-hoy-panel\').remove()" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--g400)">×</button>'+
+    '</div>'+
+    data.map(function(ev){
+      return'<div style="padding:12px 16px;display:flex;align-items:flex-start;gap:10px;border-bottom:1px solid var(--g50)">'+
+        '<div style="width:4px;min-height:36px;border-radius:4px;background:'+ev.color+';flex-shrink:0;margin-top:2px"></div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:600;color:var(--g900)">'+ev.titulo+'</div>'+
+          '<div style="font-size:11px;color:var(--g500);margin-top:2px">'+
+            new Date(ev.fecha_inicio).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})+
+          '</div>'+
+          (ev.descripcion?'<div style="font-size:11px;color:var(--g600);margin-top:3px">'+ev.descripcion+'</div>':'')+
+        '</div>'+
+      '</div>';
+    }).join('')+
+    '<div style="padding:10px 12px">'+
+      '<button onclick="abrirNuevoEvento();document.getElementById(\'ev-hoy-panel\').remove()" '+
+        'style="width:100%;background:var(--b600);color:#fff;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer">+ Nuevo evento</button>'+
+    '</div>';
+  document.body.appendChild(panel);
+  // Click fuera = cerrar
+  setTimeout(function(){
+    document.addEventListener('click',function h(e){
+      if(!panel.contains(e.target)){panel.remove();document.removeEventListener('click',h);}
+    });
+  },50);
+}
+
+// ── Inicialización ──────────────────────────────────────────────
+(function initEventos(){
+  // Botón de eventos hoy en el header
+  var headerRight=document.querySelector('.hdr-right')||document.getElementById('hdr');
+  if(headerRight){
+    var evBtn=document.createElement('button');
+    evBtn.id='btn-eventos-hoy';
+    evBtn.onclick=mostrarEventosHoy;
+    evBtn.title='Eventos de hoy';
+    evBtn.style.cssText='display:none;align-items:center;gap:5px;background:none;border:none;cursor:pointer;font-size:18px;padding:4px 6px;position:relative';
+    evBtn.innerHTML='📅<span id="ev-badge-n" style="position:absolute;top:0;right:0;background:#ef4444;color:#fff;font-size:9px;font-weight:800;border-radius:50%;min-width:14px;height:14px;line-height:14px;text-align:center;display:block">0</span>';
+    // Insert before the notification bell
+    var bell=document.getElementById('hdr-notif-btn');
+    if(bell) bell.parentNode.insertBefore(evBtn,bell);
+    else headerRight.appendChild(evBtn);
+  }
+
+  // Comprobar alarmas cada 30 segundos
+  comprobarAlarmas();
+  setInterval(comprobarAlarmas,30000);
+
+  // Actualizar badge de eventos al cargar
+  setTimeout(actualizarBadgeEventos,3000);
 })();
 </script>
 
