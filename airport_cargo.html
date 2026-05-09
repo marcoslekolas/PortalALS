@@ -71,7 +71,8 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
   box-shadow:-2px 0 5px rgba(0,0,0,.06);
 }
 .tbl th.col-sticky-r2, .tbl td.col-sticky-r2 {
-  position:sticky;right:72px;z-index:2;background:var(--b50);
+  background:var(--b50);
+}
   box-shadow:-2px 0 4px rgba(0,0,0,.04);
 }
 .tbl{width:100%;border-collapse:collapse;min-width:500px}
@@ -2645,9 +2646,11 @@ async function toggleLlegadaChk(chk){
 
 // ── Colapsar/expandir columnas de coste ──────────────────────────────────────
 function toggleCosts(){
-  var tbls=document.querySelectorAll('.tbl');
-  var nowHidden=tbls[0]&&tbls[0].classList.contains('costs-hidden');
-  tbls.forEach(function(t){t.classList.toggle('costs-hidden',!nowHidden);});
+  var ref=document.getElementById('tbody');
+  if(!ref) return;
+  var mainTbl=ref.closest('table');
+  var nowHidden=mainTbl.classList.contains('costs-hidden');
+  document.querySelectorAll('.tbl').forEach(function(t){t.classList.toggle('costs-hidden',!nowHidden);});
   var btn=document.getElementById('btn-costs');
   if(btn) btn.textContent=nowHidden?'📊 Ocultar desglose':'📊 Ver desglose';
   localStorage.setItem('ac_costs_hidden',nowHidden?'0':'1');
