@@ -274,6 +274,13 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 /* Resize handles */
 .col-rh{position:absolute;right:0;top:0;width:6px;height:100%;cursor:col-resize;user-select:none;z-index:2;transition:background .1s}
 .col-rh:hover,.col-rh.dragging{background:var(--b500);opacity:.4}
+/* Columnas de coste colapsables */
+.tbl.costs-hidden .cost-col{display:none}
+/* Total provisional sin fecha de retirada */
+.tot-prov{color:var(--am600)!important;font-style:italic}
+/* Shift+scroll hint */
+.tc{position:relative}
+.tc:hover::after{content:'Shift + scroll = desplazamiento horizontal';position:absolute;bottom:4px;right:8px;font-size:10px;color:var(--g400);pointer-events:none;opacity:.6}
 
 </style>
 <script>
@@ -372,15 +379,16 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
             <option value="07-Jul">Jul</option><option value="08-Ago">Ago</option><option value="09-Sep">Sep</option>
             <option value="10-Oct">Oct</option><option value="11-Nov">Nov</option><option value="12-Dic">Dic</option>
           </select>
+          <button id="btn-costs" class="btn btn-s btn-sm" onclick="toggleCosts()" style="white-space:nowrap">📊 Ver desglose</button>
         </div>
         <div id="sel-info" style="font-size:12px;color:var(--b600);margin-bottom:8px;min-height:18px"></div>
-        <div class="tc"><table class="tbl">
+        <div class="tc"><table class="tbl costs-hidden">
           <thead><tr>
             <th style="width:44px;padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:44px;cursor:pointer;padding:8px"><input type="checkbox" id="chk-all" onchange="toggleAll(this)" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer"></label></th>
             <th>AWB</th><th>Consignatario / Cliente</th><th>Buque</th><th>Handler</th><th>Apto</th>
             <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th><th>Despacho</th><th>ETA Buque</th><th>T1 Cad.</th><th>Libre hasta</th>
-            <th>Almacenaje</th><th>Gest.Doc.</th><th>T.Recinto</th><th>T.Mant.</th>
-            <th>Finde</th><th>Express</th><th>C.Camión</th><th>Apertura</th>
+            <th class="cost-col">Almacenaje</th><th class="cost-col">Gest.Doc.</th><th class="cost-col">T.Recinto</th><th class="cost-col">T.Mant.</th>
+            <th class="cost-col">Finde</th><th class="cost-col">Express</th><th class="cost-col">C.Camión</th><th class="cost-col">Apertura</th>
             <th style="background:var(--b50);color:var(--b700)" class="col-sticky-r2">TOTAL €</th>
             <th class="col-sticky-r" style="width:72px"></th>
           </tr></thead>
@@ -409,13 +417,13 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
             <option value="10-Oct">Oct</option><option value="11-Nov">Nov</option><option value="12-Dic">Dic</option>
           </select>
         </div>
-        <div class="tc"><table class="tbl">
+        <div class="tc"><table class="tbl costs-hidden">
           <thead><tr>
             <th style="width:44px;padding:0"></th>
             <th>AWB</th><th>Consignatario / Cliente</th><th>Buque</th><th>Handler</th><th>Apto</th>
             <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th><th>Despacho</th><th>ETA Buque</th><th>T1 Cad.</th><th>Libre hasta</th>
-            <th>Almacenaje</th><th>Gest.Doc.</th><th>T.Recinto</th><th>T.Mant.</th>
-            <th>Finde</th><th>Express</th><th>C.Camión</th><th>Apertura</th>
+            <th class="cost-col">Almacenaje</th><th class="cost-col">Gest.Doc.</th><th class="cost-col">T.Recinto</th><th class="cost-col">T.Mant.</th>
+            <th class="cost-col">Finde</th><th class="cost-col">Express</th><th class="cost-col">C.Camión</th><th class="cost-col">Apertura</th>
             <th style="background:var(--b50);color:var(--b700)" class="col-sticky-r2">TOTAL €</th>
             <th class="col-sticky-r" style="width:72px"></th>
           </tr></thead>
@@ -1045,8 +1053,12 @@ function renderRows(list, tbodyId){
   var rows=list.map(function(e){
     var isAuto=hasH(e.handling);
     var kg=parseFloat(e.kilos_tasables)||0;
-    var yr=e.fecha_retirada?new Date(e.fecha_retirada).getFullYear():2026;
-    var d=isAuto?diasFact(e.fecha_llegada,e.fecha_retirada,e.handling):0;
+    // Usar fecha de hoy como estimación cuando no hay fecha de retirada
+    var hoy=new Date().toISOString().slice(0,10);
+    var isProvisional=isAuto&&!e.fecha_retirada&&!!e.fecha_llegada;
+    var rtEfectivo=e.fecha_retirada||(isProvisional?hoy:null);
+    var yr=rtEfectivo?new Date(rtEfectivo).getFullYear():new Date().getFullYear();
+    var d=isAuto&&rtEfectivo?diasFact(e.fecha_llegada,rtEfectivo,e.handling):0;
     var alm=isAuto?calcAlm(kg,d,e.handling,yr):0;
     var gd=isAuto?calcGD(e.handling,yr):0;
     var tr=isAuto?calcTR(kg,e.handling,yr):0;
@@ -1055,7 +1067,7 @@ function renderRows(list, tbodyId){
     var ex=isAuto?calcEx(e.aplica_express,kg,e.handling,yr):0;
     var cc=isAuto?calcCC(e.aplica_carga_camion,kg,e.handling,yr):0;
     var ap=isAuto?calcAp(e.aplica_apertura,kg,e.handling,yr):0;
-    var tot=calcTotal(e);
+    var tot=isAuto?(alm+gd+tr+tm+fi+ex+cc+ap):(parseFloat(e.coste_manual)||0);
     var rowStyle=e.confirmacion_llegada?' style="background:#ffedd5;border-left:3px solid #f97316"':'';
     return'<tr'+rowStyle+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="updateSel()"></label></td>'+
@@ -1074,15 +1086,15 @@ function renderRows(list, tbodyId){
       '<td class="sm">'+(e.eta_buque?fd(e.eta_buque):'—')+'</td>'+
       '<td class="sm">'+(e.fecha_caducidad_t1?fd(e.fecha_caducidad_t1):'—')+'</td>'+
       (function(){var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);var hoy=new Date();hoy.setHours(0,0,0,0);var vencido=fml&&fml<hoy;return'<td class="sm" style="'+(vencido?'color:var(--rd600);font-weight:600':fml?'color:var(--gr600)':'')+'">'+( fml?fd(fml):'—')+'</td>';})() +
-      '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(alm):'—')+'</td>'+
-      '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(gd):'—')+'</td>'+
-      '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(tr):'—')+'</td>'+
-      '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(tm):'—')+'</td>'+
-      '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(fi?fn(fi):'—')+'</td>'+
-      '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(ex?fn(ex):'—')+'</td>'+
-      '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(cc?fn(cc):'—')+'</td>'+
-      '<td style="text-align:right;font-family:var(--mono);font-size:11px">'+(ap?fn(ap):'—')+'</td>'+
-      '<td class="col-sticky-r2" style="text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);background:var(--b50)">'+fc(tot)+'</td>'+
+      '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(alm):'—')+'</td>'+
+      '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(gd):'—')+'</td>'+
+      '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(tr):'—')+'</td>'+
+      '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(tm):'—')+'</td>'+
+      '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(fi?fn(fi):'—')+'</td>'+
+      '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(ex?fn(ex):'—')+'</td>'+
+      '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(cc?fn(cc):'—')+'</td>'+
+      '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(ap?fn(ap):'—')+'</td>'+
+      '<td class="col-sticky-r2'+(isProvisional?' tot-prov':'')+'" style="text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);background:var(--b50)">'+(isProvisional?'~':'')+fc(tot)+'</td>'+
       '<td class="col-sticky-r" style="white-space:nowrap;background:var(--w);padding:6px 8px">'+
         '<button class="btn btn-sm btn-s" data-action="edit" data-id="'+e.id+'" title="Editar">✏️</button> '+
         '<button class="btn btn-sm btn-d" data-action="del" data-id="'+e.id+'" title="Eliminar">🗑️</button>'+
@@ -2630,6 +2642,25 @@ async function toggleLlegadaChk(chk){
   }
   toast(checked ? '✈️ Llegada confirmada en aeropuerto' : 'Confirmación de llegada retirada');
 }
+
+// ── Colapsar/expandir columnas de coste ──────────────────────────────────────
+function toggleCosts(){
+  var tbls=document.querySelectorAll('.tbl');
+  var nowHidden=tbls[0]&&tbls[0].classList.contains('costs-hidden');
+  tbls.forEach(function(t){t.classList.toggle('costs-hidden',!nowHidden);});
+  var btn=document.getElementById('btn-costs');
+  if(btn) btn.textContent=nowHidden?'📊 Ocultar desglose':'📊 Ver desglose';
+  localStorage.setItem('ac_costs_hidden',nowHidden?'0':'1');
+}
+
+// Shift + rueda = scroll horizontal (evita bajar hasta la barra inferior)
+document.addEventListener('wheel',function(e){
+  if(!e.shiftKey) return;
+  var tc=e.target.closest('.tc');
+  if(!tc) return;
+  e.preventDefault();
+  tc.scrollLeft+=(e.deltaY||e.deltaX)*1.5;
+},{passive:false});
 
 // ── Resizable columns ─────────────────────────────────────────────────────────
 function initResizableTable(tbl, key){
