@@ -1025,19 +1025,23 @@ async function trackAwb(evt,awb){
   var fmt=formatAwb(awb);
   if(!fmt||fmt==='—') return;
   var clean=fmt.replace(/-/g,'');
-  toast('🔍 Consultando tracking...');
+  toast('🔍 Localizando tracking...');
   try{
+    // Edge function: POST a track-trace.com/aircargo/track_form y devuelve la URL directa de resultado
     var r=await fetch(
       'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/track-awb?awb='+encodeURIComponent(clean),
       {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}}
     );
     var d=await r.json();
-    window.open(d.url||('https://www.track-trace.com/aircargo#'+clean),'_blank');
+    if(d.url && d.url.startsWith('http')){
+      window.open(d.url,'_blank');
+    } else {
+      window.open('https://www.track-trace.com/aircargo#'+clean,'_blank');
+    }
   }catch(e){
     window.open('https://www.track-trace.com/aircargo#'+clean,'_blank');
   }
 }
-
 
 function renderRows(list, tbodyId){
   var tbody=document.getElementById(tbodyId||'tbody');
