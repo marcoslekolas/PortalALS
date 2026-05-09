@@ -71,7 +71,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
   box-shadow:-2px 0 5px rgba(0,0,0,.06);
 }
 .tbl th.col-sticky-r2, .tbl td.col-sticky-r2 {
-  background:var(--b50);
+  position:sticky;right:72px;z-index:2;background:var(--b50);
 }
   box-shadow:-2px 0 4px rgba(0,0,0,.04);
 }
@@ -1095,7 +1095,7 @@ function renderRows(list, tbodyId){
       '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(ex?fn(ex):'—')+'</td>'+
       '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(cc?fn(cc):'—')+'</td>'+
       '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(ap?fn(ap):'—')+'</td>'+
-      '<td class="col-sticky-r2'+(isProvisional?' tot-prov':'')+'" style="text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);background:var(--b50)">'+(isProvisional?'~':'')+fc(tot)+'</td>'+
+      '<td class="col-sticky-r2'+(isProvisional?' tot-prov':'')+'" style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--b700);background:var(--b50)">'+(isProvisional?'~':'')+fn(tot)+'</td>'+
       '<td class="col-sticky-r" style="white-space:nowrap;background:var(--w);padding:6px 8px">'+
         '<button class="btn btn-sm btn-s" data-action="edit" data-id="'+e.id+'" title="Editar">✏️</button> '+
         '<button class="btn btn-sm btn-d" data-action="del" data-id="'+e.id+'" title="Eliminar">🗑️</button>'+
@@ -2673,21 +2673,26 @@ function initResizableTable(tbl, key){
   // Load saved widths
   var saved = {};
   try{ saved = JSON.parse(localStorage.getItem(key)||'{}'); }catch(e){}
-  // Reset if column count changed (e.g. after adding new columns)
+  // Reset saved widths if column count changed (e.g. after adding/removing cols)
   if(Object.keys(saved).length && Object.keys(saved).length !== ths.length){
     saved = {};
     localStorage.removeItem(key);
   }
-  // Capture current rendered widths on first run
+  // Capture current rendered widths on first run (skip sticky cols)
   if(!Object.keys(saved).length){
-    ths.forEach(function(th,i){ saved[i] = th.getBoundingClientRect().width||th.offsetWidth; });
+    ths.forEach(function(th,i){
+      var isSticky=th.classList.contains('col-sticky-r')||th.classList.contains('col-sticky-r2');
+      if(!isSticky) saved[i]=th.getBoundingClientRect().width||th.offsetWidth;
+    });
   }
   tbl.style.tableLayout = 'fixed';
   ths.forEach(function(th,i){
-    if(saved[i]) th.style.width = saved[i]+'px';
+    // No asignar ancho explícito a columnas sticky — su posición la maneja CSS
+    var isSticky = th.classList.contains('col-sticky-r') || th.classList.contains('col-sticky-r2');
+    if(!isSticky && saved[i]) th.style.width = saved[i]+'px';
     th.style.overflow = 'hidden';
     th.style.position = 'relative';
-    if(i >= ths.length-1) return; // skip last col
+    if(i >= ths.length-1 || isSticky) return; // no resize handle en columnas sticky ni última
     if(th.querySelector('.col-rh')) return; // already initialized
     var rh = document.createElement('div');
     rh.className = 'col-rh';
