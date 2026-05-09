@@ -1020,27 +1020,23 @@ function formatAwb(awb){
   if(clean.length<8) return awb;
   return clean.substring(0,3)+'-'+clean.substring(3);
 }
-async function trackAwb(evt,awb){
+function trackAwb(evt,awb){
   if(evt) evt.stopPropagation();
   var fmt=formatAwb(awb);
   if(!fmt||fmt==='—') return;
   var clean=fmt.replace(/-/g,'');
-  toast('🔍 Localizando tracking...');
-  try{
-    // Edge function: POST a track-trace.com/aircargo/track_form y devuelve la URL directa de resultado
-    var r=await fetch(
-      'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/track-awb?awb='+encodeURIComponent(clean),
-      {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}}
-    );
-    var d=await r.json();
-    if(d.url && d.url.startsWith('http')){
-      window.open(d.url,'_blank');
-    } else {
-      window.open('https://www.track-trace.com/aircargo#'+clean,'_blank');
+  // Abrir pestaña SÍNCRONAMENTE dentro del gesto de usuario — popup blocker lo permite
+  var w=window.open('https://www.track-trace.com/aircargo#'+clean,'_blank');
+  // En paralelo, pedir a la edge function la URL directa de resultado
+  fetch(
+    'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/track-awb?awb='+encodeURIComponent(clean),
+    {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}}
+  ).then(function(r){return r.json();}).then(function(d){
+    if(d.url&&d.url.startsWith('http')&&d.url.indexOf('track-trace')===-1&&w&&!w.closed){
+      // Navegar la pestaña ya abierta a la URL directa del resultado
+      w.location.href=d.url;
     }
-  }catch(e){
-    window.open('https://www.track-trace.com/aircargo#'+clean,'_blank');
-  }
+  }).catch(function(){});
 }
 
 function renderRows(list, tbodyId){
@@ -1704,7 +1700,7 @@ async function showForm(e){
 function onHC(){
   var h=gv('f-handler'),isAuto=hasH(h);
   var ex=document.getElementById('ext'),mn=document.getElementById('man');
-  if(ex)ex.style.display=isAuto?'':'none';
+  if(ex)ex.style.display=''; // siempre visible
   if(mn)mn.style.display=(h&&!isAuto)?'':'none';
 }
 function liveCalc(){
