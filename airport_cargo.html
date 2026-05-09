@@ -100,7 +100,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .btn-s{background:var(--w);color:var(--g700);border-color:var(--g300)}.btn-s:hover{background:var(--g50)}
 .btn-d{background:var(--rd50);color:var(--rd600);border-color:#fecaca}
 .btn-sm{padding:5px 10px;font-size:12px}
-.col-sticky-r button{padding:3px 5px;font-size:12px;line-height:1}
+.tbl .col-sticky-r button{padding:3px 5px;font-size:12px;line-height:1}
 .alert-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;background:var(--rd500);color:#fff;border-radius:20px;font-size:10px;font-weight:700;margin-left:auto;flex-shrink:0}
 @keyframes badge-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.75;transform:scale(1.15)}}
 .alert-badge.pulse{animation:badge-pulse 1.6s ease-in-out infinite}
@@ -346,16 +346,11 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
     <div id="content">
       <!-- DASHBOARD -->
       <div class="view active" id="view-dashboard">
-        <div id="dash-alert" style="display:none"></div>
         <div class="ph">
-          <div class="pt">✈️ Dashboard Airport Cargo</div>
-          <select id="dash-year" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadDashboard()">
-            <option value="2026">2026</option><option value="2025">2025</option>
-          </select>
+          <div class="pt">✈️ Dashboard Operativo</div>
+          <button class="btn btn-s btn-sm" onclick="loadDashboard()">↻ Actualizar</button>
         </div>
-        <div class="kpi-grid" id="dash-kpis"></div>
-        <div class="ph" style="margin-top:8px"><div class="pt" style="font-size:15px">📦 Entradas recientes</div></div>
-        <div class="tc" id="dash-recent"></div>
+        <div id="dash-content" style="display:flex;flex-direction:column;gap:16px"></div>
       </div>
       <!-- ENTRADAS -->
       <div class="view" id="view-entradas">
@@ -935,45 +930,208 @@ function checkUrl(){
 
 // ── DASHBOARD ────────────────────────────────────────────
 async function loadDashboard(){
-  var year=parseInt(document.getElementById('dash-year').value)||2026;
-  if(!ALL.length)await loadAll();
-  var yd=ALL.filter(function(e){return e.fecha_retirada&&new Date(e.fecha_retirada).getFullYear()===year;});
-  var tot=yd.reduce(function(a,e){return a+calcTotal(e);},0);
-  var kg=yd.reduce(function(a,e){return a+(parseFloat(e.kilos_tasables)||0);},0);
-  var hc={};
-  yd.forEach(function(e){if(e.handling)hc[e.handling]=(hc[e.handling]||0)+1;});
-  var pendRet=ALL.filter(function(e){return !e.fecha_retirada;}).length;
-  var pendComp=ALL.filter(function(e){return !e.fecha_retirada||!e.handling;}).length;
-  var totalBultos=yd.reduce(function(a,e){return a+(e.bultos||0);},0);
-  var mesActual=new Date().toISOString().slice(0,7);
-  var ydMes=yd.filter(function(e){return e.fecha_retirada&&e.fecha_retirada.startsWith(mesActual);});
-  var totMes=ydMes.reduce(function(a,e){return a+calcTotal(e);},0);
-  document.getElementById('dash-kpis').innerHTML=
-    '<div class="kpi bl"><div class="kpi-lbl">Entradas '+year+'</div><div class="kpi-val">'+yd.length+'</div>'+
-    (pendComp?'<div class="kpi-sub" style="color:var(--am600)">⚠️ '+pendComp+' sin completar</div>':'<div class="kpi-sub" style="color:var(--gr600)">✓ Todas completas</div>')+'</div>'+
-    '<div class="kpi pu"><div class="kpi-lbl">Total facturado '+year+'</div><div class="kpi-val" style="font-size:18px">'+fc(tot)+'</div></div>'+
-    '<div class="kpi am"><div class="kpi-lbl">Facturado este mes</div><div class="kpi-val" style="font-size:18px">'+fc(totMes)+'</div><div class="kpi-sub">'+ydMes.length+' entradas</div></div>'+
-    '<div class="kpi gr"><div class="kpi-lbl">Kg · Bultos '+year+'</div><div class="kpi-val">'+kg.toLocaleString('es-ES')+'</div><div class="kpi-sub">'+totalBultos.toLocaleString('es-ES')+' bultos</div></div>'+
-    (pendRet?'<div class="kpi" style="border-left:3px solid var(--rd500);background:var(--rd50)"><div class="kpi-lbl" style="color:var(--rd600)">⚠️ Sin fecha retirada</div><div class="kpi-val" style="color:var(--rd600)">'+pendRet+'</div></div>':'');
-  var alertEl=document.getElementById('dash-alert');
-  if(alertEl&&pendRet){
-    alertEl.innerHTML='<div style="background:var(--am50);border:1px solid #fde68a;border-radius:var(--rl);padding:10px 14px;font-size:12px;color:var(--am600)">'+
-      '<strong>⚠️ '+pendRet+' entrada'+(pendRet>1?'s':'')+' sin fecha de retirada</strong> — los costes no se calcularán hasta completarlas.</div>';
-    alertEl.style.display='';
-  } else if(alertEl){ alertEl.style.display='none'; }
-  document.getElementById('dash-recent').innerHTML=miniTable(ALL.slice(0,8));
+  if(!ALL.length) await loadAll();
+  var el=document.getElementById('dash-content');
+  if(!el) return;
+  el.innerHTML='<div style="text-align:center;padding:40px;color:var(--g400);font-size:13px">⏳ Cargando dashboard...</div>';
+
+  var hoy=new Date(); hoy.setHours(0,0,0,0);
+  var hoyStr=hoy.toISOString().slice(0,10);
+  var manStr=new Date(hoy.getTime()+86400000).toISOString().slice(0,10);
+  var en3=new Date(hoy.getTime()+3*86400000);
+
+  var pendientes=ALL.filter(function(e){return !e.fecha_retirada;});
+
+  // KPIs
+  var lleganHoy=pendientes.filter(function(e){return e.fecha_llegada===hoyStr;});
+  var sinConfirmar=pendientes.filter(function(e){return e.fecha_llegada&&e.fecha_llegada<=hoyStr&&!e.confirmacion_llegada;});
+  var alertas=getAlertas();
+  var nAlertas=alertas.almacenajeVencido.length+alertas.almacenajeHoy.length+alertas.caducidadT1.length;
+  var costoEstimado=pendientes.reduce(function(a,e){
+    var hoyBase=e.fecha_retirada||hoyStr;
+    var isAuto=hasH(e.handling);var kg=parseFloat(e.kilos_tasables)||0;
+    var yr=new Date(hoyBase).getFullYear();
+    var d=isAuto?diasFact(e.fecha_llegada,hoyBase,e.handling):0;
+    var t=isAuto?(calcAlm(kg,d,e.handling,yr)+calcGD(e.handling,yr)+calcTR(kg,e.handling,yr)+calcTM(e.handling,yr)+
+      calcFi(e.aplica_finde,e.handling,yr)+calcEx(e.aplica_express,kg,e.handling,yr)+
+      calcCC(e.aplica_carga_camion,kg,e.handling,yr)+calcAp(e.aplica_apertura,kg,e.handling,yr)):(parseFloat(e.coste_manual)||0);
+    return a+t;
+  },0);
+
+  // Panel urgentes: periodo libre vence en ≤3 días (o ya vencido)
+  var urgentes=pendientes.filter(function(e){
+    var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
+    return fml&&fml<=en3;
+  }).sort(function(a,b){
+    return fechaMaximaLibre(a.fecha_llegada,a.handling)-fechaMaximaLibre(b.fecha_llegada,b.handling);
+  });
+
+  // Handler distribution
+  var hCount={};
+  pendientes.forEach(function(e){if(e.handling)hCount[e.handling]=(hCount[e.handling]||0)+1;});
+  var hMax=Math.max.apply(null,Object.values(hCount).concat([1]));
+
+  // Últimas 5 entradas recibidas
+  var ultimas=ALL.slice().sort(function(a,b){
+    return new Date(b.created_at||0)-new Date(a.created_at||0);
+  }).slice(0,5);
+
+  // ── KPI row ──────────────────────────────────────────────────────
+  function kpi(icon,val,lbl,sub,color){
+    var c=color||'var(--b600)';
+    return'<div style="background:var(--w);border-radius:var(--rl);padding:14px 16px;border-left:4px solid '+c+';box-shadow:var(--sh0);min-width:0">'+
+      '<div style="font-size:11px;color:var(--g500);margin-bottom:4px">'+icon+' '+lbl+'</div>'+
+      '<div style="font-size:22px;font-weight:800;color:'+c+'">'+val+'</div>'+
+      (sub?'<div style="font-size:11px;color:var(--g400);margin-top:3px">'+sub+'</div>':'')+'</div>';
+  }
+
+  var kpiHtml='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">'+
+    kpi('📦',pendientes.length,'Pendientes','sin fecha retirada','var(--b600)')+
+    kpi('✈️',lleganHoy.length,'Llegan hoy',lleganHoy.length?lleganHoy.map(function(e){return formatAwb(e.awb||'');}).join(', ').substring(0,40):'Sin llegadas previstas','var(--gr600)')+
+    kpi('⚠️',sinConfirmar.length,'Sin confirmar llegada',sinConfirmar.length?'Requieren confirmación':'Al día',sinConfirmar.length?'var(--am600)':'var(--gr600)')+
+    kpi('🚨',nAlertas,'Alertas activas',nAlertas?'Ver panel de alertas':'Sin alertas activas',nAlertas?'var(--rd600)':'var(--gr600)')+
+    kpi('💰',fn(costoEstimado)+' €','Coste estimado','gastos acumulados pendientes','var(--pu600,#7c3aed)')+
+  '</div>';
+
+  // ── Panel helper ─────────────────────────────────────────────────
+  function panel(title,content,borderColor){
+    return'<div style="background:var(--w);border-radius:var(--rl);overflow:hidden;box-shadow:var(--sh0)">'+
+      '<div style="padding:10px 14px;border-bottom:1px solid var(--g100);font-size:13px;font-weight:700;color:var(--g800);border-left:4px solid '+(borderColor||'var(--b500)')+'">'+title+'</div>'+
+      '<div style="padding:0">'+content+'</div></div>';
+  }
+
+  function tableRow(cells){
+    return'<tr>'+cells.map(function(c){return'<td style="padding:7px 10px;font-size:11px;border-bottom:1px solid var(--g100);vertical-align:middle">'+c+'</td>';}).join('')+'</tr>';
+  }
+  function simpleTable(headers,rows,empty){
+    if(!rows.length) return'<div style="padding:16px;text-align:center;font-size:12px;color:var(--g400)">'+empty+'</div>';
+    return'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+
+      '<thead><tr>'+headers.map(function(h){return'<th style="padding:7px 10px;font-size:10px;font-weight:700;color:var(--g500);text-align:left;border-bottom:2px solid var(--g100);white-space:nowrap">'+h+'</th>';}).join('')+'</tr></thead>'+
+      '<tbody>'+rows.join('')+'</tbody></table></div>';
+  }
+
+  // ── Panel 1: Urgentes ────────────────────────────────────────────
+  var urRows=urgentes.slice(0,8).map(function(e){
+    var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
+    var dias=fml?Math.ceil((fml-hoy)/(1000*60*60*24)):null;
+    var col=dias<0?'var(--rd600)':dias===0?'var(--am600)':'var(--am500)';
+    var badge=dias<0?'⛔ VENCIDO (+'+Math.abs(dias)+'d)':dias===0?'⚠️ Vence HOY':'⏰ '+dias+'d restantes';
+    return tableRow([
+      '<span style="font-family:var(--mono);font-size:10px">'+formatAwb(e.awb||'')+'</span>',
+      '<span style="font-size:11px;color:var(--g600)">'+( e.consignatario||'—')+'</span>',
+      '<strong style="font-size:12px">'+( e.buque||'—')+'</strong>',
+      fd(e.fecha_llegada),
+      '<span style="color:'+col+';font-weight:700;font-size:11px;white-space:nowrap">'+badge+'</span>'
+    ]);
+  });
+  var pUrgentes=panel(
+    '🔥 Almacenaje urgente — período libre próximo a vencer <span style="background:var(--rd100,#fee2e2);color:var(--rd600);border-radius:20px;padding:1px 8px;font-size:10px;margin-left:6px">'+urgentes.length+'</span>',
+    simpleTable(['AWB','Consignatario','Buque','Llegada','Estado'],urRows,urgentes.length?'':'✅ Sin vencimientos inminentes'),
+    'var(--rd500)'
+  );
+
+  // ── Panel 2: Sin confirmar llegada ───────────────────────────────
+  var scRows=sinConfirmar.slice(0,8).map(function(e){
+    var diasEsp=e.fecha_llegada?Math.floor((hoy-new Date(e.fecha_llegada))/(1000*60*60*24)):0;
+    return tableRow([
+      '<span style="font-family:var(--mono);font-size:10px">'+formatAwb(e.awb||'')+'</span>',
+      '<strong style="font-size:12px">'+( e.buque||'—')+'</strong>',
+      '<span style="font-size:11px">'+fd(e.fecha_llegada)+'</span>',
+      '<span style="color:var(--am600);font-size:11px">Hace '+diasEsp+'d</span>',
+      '<button onclick="confirmarLlegadaDesde(\''+e.id+'\')" style="background:var(--am500);color:#fff;border:none;border-radius:5px;padding:3px 8px;font-size:10px;cursor:pointer;white-space:nowrap">✈️ Confirmar</button>'
+    ]);
+  });
+  var pSinConfirmar=panel(
+    '✈️ Sin confirmar llegada <span style="background:var(--am100,#fef3c7);color:var(--am600);border-radius:20px;padding:1px 8px;font-size:10px;margin-left:6px">'+sinConfirmar.length+'</span>',
+    simpleTable(['AWB','Buque','Llegada','Antigüedad','Acción'],scRows,'✅ Todas las llegadas confirmadas'),
+    'var(--am500)'
+  );
+
+  // ── Panel 3: T1 por caducar ──────────────────────────────────────
+  var t1Rows=alertas.caducidadT1.slice(0,8).map(function(e){
+    var esHoy=e.fecha_caducidad_t1===hoyStr;
+    return tableRow([
+      '<span style="font-family:var(--mono);font-size:10px">'+formatAwb(e.awb||'')+'</span>',
+      '<span style="font-size:11px;color:var(--g600)">'+( e.consignatario||'—')+'</span>',
+      '<strong style="font-size:12px">'+( e.buque||'—')+'</strong>',
+      '<span style="color:'+(esHoy?'var(--rd600)':'var(--am600)')+';font-weight:700;font-size:11px">'+(esHoy?'⛔ HOY':'⚠️ Mañana')+'</span>'
+    ]);
+  });
+  var pT1=panel(
+    '🔏 T1 por caducar <span style="background:var(--rd100,#fee2e2);color:var(--rd600);border-radius:20px;padding:1px 8px;font-size:10px;margin-left:6px">'+alertas.caducidadT1.length+'</span>',
+    simpleTable(['AWB','Consignatario','Buque','Caducidad'],t1Rows,'✅ Sin T1 próximos a caducar'),
+    'var(--rd500)'
+  );
+
+  // ── Handler distribution ─────────────────────────────────────────
+  var handlerBars=Object.keys(hCount).sort(function(a,b){return hCount[b]-hCount[a];}).map(function(h){
+    var pct=Math.round(hCount[h]/hMax*100);
+    return'<div style="margin-bottom:8px">'+
+      '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">'+
+        '<span style="color:var(--g700);font-weight:600">'+h+'</span>'+
+        '<span style="color:var(--g500)">'+hCount[h]+' exp.</span>'+
+      '</div>'+
+      '<div style="background:var(--g100);border-radius:4px;height:8px">'+
+        '<div style="background:var(--b500);height:8px;border-radius:4px;width:'+pct+'%;transition:width .4s"></div>'+
+      '</div></div>';
+  }).join('')||'<div style="font-size:12px;color:var(--g400);padding:8px 0">Sin datos</div>';
+
+  var pHandlers=panel('📊 Distribución por handler',
+    '<div style="padding:14px">'+handlerBars+'</div>',
+    'var(--b400)'
+  );
+
+  // ── Últimas entradas ─────────────────────────────────────────────
+  var ultRows=ultimas.map(function(e){
+    return tableRow([
+      '<span style="font-family:var(--mono);font-size:10px">'+formatAwb(e.awb||'')+'</span>',
+      '<span style="font-size:11px;font-weight:700;color:var(--g900)">'+( e.buque||'—')+'</span>',
+      '<span class="badge bb" style="font-size:9px">'+( e.handling||'—')+'</span>',
+      '<span style="font-size:11px">'+fd(e.fecha_llegada)+'</span>',
+      '<span style="font-family:var(--mono);font-size:11px;color:var(--b700);font-weight:700">'+(e.confirmacion_llegada?'<span title="Llegada confirmada">✈️</span> ':'')+(e.fecha_retirada?'':'<span style="color:var(--am600)">~</span>')+fn(e.fecha_retirada?calcTotal(e):costoEstimado/Math.max(pendientes.length,1))+'</span>'
+    ]);
+  });
+  var pUltimas=panel('📋 Últimas entradas registradas',
+    simpleTable(['AWB','Buque','Handler','Llegada','Coste'],ultRows,'Sin entradas'),
+    'var(--b400)'
+  );
+
+  // ── Assemble ─────────────────────────────────────────────────────
+  el.innerHTML=kpiHtml+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+pUrgentes+pSinConfirmar+'</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+pT1+
+      '<div style="display:grid;grid-template-rows:auto auto;gap:12px">'+pHandlers+'</div>'+
+    '</div>'+
+    pUltimas;
+
+  // Responsive: colapsar a 1 columna en móvil
+  if(window.innerWidth<700){
+    el.querySelectorAll('[style*="grid-template-columns:1fr 1fr"]').forEach(function(d){d.style.gridTemplateColumns='1fr';});
+  }
+}
+
+// Confirmar llegada desde el dashboard sin abrir el formulario
+async function confirmarLlegadaDesde(id){
+  var e=ALL.find(function(x){return String(x.id)===String(id);});
+  if(!e) return;
+  var r=await sb.from('airport_cargo').update({confirmacion_llegada:true}).eq('id',id);
+  if(r.error){toast('Error: '+r.error.message);return;}
+  if(e) e.confirmacion_llegada=true;
+  toast('✈️ Llegada confirmada');
+  loadDashboard();
 }
 
 function miniTable(list){
   if(!list.length)return'<div class="empty">Sin entradas</div>';
   var rows=list.map(function(e){
     return'<tr class="tbl-row" data-id="'+e.id+'" style="cursor:pointer"><td style="font-family:var(--mono)">'+
-      formatAwb(e.awb||'—')+' </td><td>'+(e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--b600)">🏢 '+e.cliente+'</div>':'')+'</td><td class="sm">'+(e.buque||'—')+'</td>'+
+      formatAwb(e.awb||'—')+'</td><td><span style="font-size:12px;color:var(--g500)">'+( e.consignatario||'—')+'</span></td>'+
+      '<td style="font-size:13px;font-weight:700;color:var(--g900)">'+( e.buque||'—')+'</td>'+
       '<td><span class="badge bb">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+fd(e.fecha_llegada)+'</td><td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
-      '<td style="font-weight:700;color:var(--b700)">'+fc(calcTotal(e))+'</td></tr>';
+      '<td style="font-weight:700;color:var(--b700);font-family:var(--mono);font-size:11px">'+fn(calcTotal(e))+'</td></tr>';
   }).join('');
-  return'<table class="tbl"><thead><tr><th>AWB</th><th>Consignatario / Cliente</th><th>Buque</th><th>Handler</th><th>Llegada</th><th>Retirada</th><th>Total</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  return'<table class="tbl"><thead><tr><th>AWB</th><th>Consignatario</th><th>Buque</th><th>Handler</th><th>Llegada</th><th>Retirada</th><th>Total</th></tr></thead><tbody>'+rows+'</tbody></table>';
 }
 
 // ── ENTRADAS ─────────────────────────────────────────────
