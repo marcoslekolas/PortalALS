@@ -933,186 +933,164 @@ async function loadDashboard(){
   if(!ALL.length) await loadAll();
   var el=document.getElementById('dash-content');
   if(!el) return;
-  el.innerHTML='<div style="text-align:center;padding:40px;color:var(--g400);font-size:13px">⏳ Cargando dashboard...</div>';
+  el.innerHTML='<div style="text-align:center;padding:40px;color:var(--g400);font-size:13px">⏳ Cargando...</div>';
 
-  // Fecha local (no UTC) para evitar desfase de zona horaria
+  // Fecha local (no UTC)
   var hoy=new Date();
   function localDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
   var hoyStr=localDate(hoy);
   var manStr=localDate(new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()+1));
   var en3=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()+3);
+  var en7=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()+7);
 
   var pendientes=ALL.filter(function(e){return !e.fecha_retirada;});
 
-  // KPIs
-  // Usar .slice(0,10) para comparar solo la fecha aunque Supabase devuelva timestamp completo
-  var lleganHoy=pendientes.filter(function(e){return e.fecha_llegada&&e.fecha_llegada.slice(0,10)===hoyStr;});
-  // Sin confirmar: han llegado (fecha_llegada <= hoy) pero confirmacion_llegada es false/null
-  var sinConfirmar=pendientes.filter(function(e){
-    return e.fecha_llegada&&e.fecha_llegada.slice(0,10)<=hoyStr&&!e.confirmacion_llegada;
-  });
+  // ── Datos ─────────────────────────────────────────────────────
+  // Llegadas: agrupadas por cuando llegan
+  var llegadas={
+    pasadas:  pendientes.filter(function(e){return e.fecha_llegada&&e.fecha_llegada.slice(0,10)<hoyStr;}),
+    hoy:      pendientes.filter(function(e){return e.fecha_llegada&&e.fecha_llegada.slice(0,10)===hoyStr;}),
+    manana:   pendientes.filter(function(e){return e.fecha_llegada&&e.fecha_llegada.slice(0,10)===manStr;}),
+    semana:   pendientes.filter(function(e){var f=e.fecha_llegada&&e.fecha_llegada.slice(0,10);return f&&f>manStr&&f<=localDate(en7);}),
+    masSemana:pendientes.filter(function(e){var f=e.fecha_llegada&&e.fecha_llegada.slice(0,10);return f&&f>localDate(en7);}),
+    sinFecha: pendientes.filter(function(e){return !e.fecha_llegada;})
+  };
+  // Sin confirmar: TODAS las pendientes sin confirmacion, sin límite de fecha
+  var sinConfirmar=pendientes.filter(function(e){return !e.confirmacion_llegada;});
+  var confirmadas=pendientes.filter(function(e){return e.confirmacion_llegada;});
+
+  // Alertas
   var alertas=getAlertas();
   var nAlertas=alertas.almacenajeVencido.length+alertas.almacenajeHoy.length+alertas.caducidadT1.length;
+
+  // Coste estimado
   var costoEstimado=pendientes.reduce(function(a,e){
-    var hoyBase=e.fecha_retirada||hoyStr;
     var isAuto=hasH(e.handling);var kg=parseFloat(e.kilos_tasables)||0;
-    var yr=new Date(hoyBase).getFullYear();
-    var d=isAuto?diasFact(e.fecha_llegada,hoyBase,e.handling):0;
+    var hoyBase=e.fecha_retirada||hoyStr;var yr=new Date(hoyBase).getFullYear();
+    var d=isAuto&&e.fecha_llegada?diasFact(e.fecha_llegada,hoyBase,e.handling):0;
     var t=isAuto?(calcAlm(kg,d,e.handling,yr)+calcGD(e.handling,yr)+calcTR(kg,e.handling,yr)+calcTM(e.handling,yr)+
       calcFi(e.aplica_finde,e.handling,yr)+calcEx(e.aplica_express,kg,e.handling,yr)+
       calcCC(e.aplica_carga_camion,kg,e.handling,yr)+calcAp(e.aplica_apertura,kg,e.handling,yr)):(parseFloat(e.coste_manual)||0);
     return a+t;
   },0);
 
-  // Panel urgentes: periodo libre vence en ≤3 días (o ya vencido)
-  var urgentes=pendientes.filter(function(e){
-    var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
-    return fml&&fml<=en3;
-  }).sort(function(a,b){
-    return fechaMaximaLibre(a.fecha_llegada,a.handling)-fechaMaximaLibre(b.fecha_llegada,b.handling);
-  });
-
   // Handler distribution
   var hCount={};
   pendientes.forEach(function(e){if(e.handling)hCount[e.handling]=(hCount[e.handling]||0)+1;});
   var hMax=Math.max.apply(null,Object.values(hCount).concat([1]));
 
-  // Últimas 5 entradas recibidas
-  var ultimas=ALL.slice().sort(function(a,b){
-    return new Date(b.created_at||0)-new Date(a.created_at||0);
-  }).slice(0,5);
+  // Status distribution
+  var sCount={};
+  pendientes.forEach(function(e){var s=e.status||'Sin status';sCount[s]=(sCount[s]||0)+1;});
 
-  // ── KPI row ──────────────────────────────────────────────────────
-  function kpi(icon,val,lbl,sub,color){
+  // Urgentes almacenaje
+  var urgentes=pendientes.filter(function(e){
+    var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);return fml&&fml<=en3;
+  });
+  var vencidos=alertas.almacenajeVencido.length;
+
+  // ── Helpers visuales ──────────────────────────────────────────
+  function kpi(icon,val,lbl,sub,color,clickFn){
     var c=color||'var(--b600)';
-    return'<div style="background:var(--w);border-radius:var(--rl);padding:14px 16px;border-left:4px solid '+c+';box-shadow:var(--sh0);min-width:0">'+
+    var cursor=clickFn?'cursor:pointer':'';
+    return'<div onclick="'+(clickFn||'')+'" style="background:var(--w);border-radius:var(--rl);padding:16px;border-left:4px solid '+c+';box-shadow:var(--sh0);min-width:0;'+cursor+'">'+
       '<div style="font-size:11px;color:var(--g500);margin-bottom:4px">'+icon+' '+lbl+'</div>'+
-      '<div style="font-size:22px;font-weight:800;color:'+c+'">'+val+'</div>'+
-      (sub?'<div style="font-size:11px;color:var(--g400);margin-top:3px">'+sub+'</div>':'')+'</div>';
+      '<div style="font-size:26px;font-weight:800;color:'+c+';line-height:1">'+val+'</div>'+
+      (sub?'<div style="font-size:11px;color:var(--g400);margin-top:4px">'+sub+'</div>':'')+'</div>';
   }
 
-  var kpiHtml='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">'+
-    kpi('📦',pendientes.length,'Pendientes','sin fecha retirada','var(--b600)')+
-    kpi('✈️',lleganHoy.length,'Llegan hoy',lleganHoy.length?lleganHoy.map(function(e){return formatAwb(e.awb||'');}).join(', ').substring(0,40):'Sin llegadas previstas','var(--gr600)')+
-    kpi('⚠️',sinConfirmar.length,'Sin confirmar llegada',sinConfirmar.length?'Requieren confirmación':'Al día',sinConfirmar.length?'var(--am600)':'var(--gr600)')+
-    kpi('🚨',nAlertas,'Alertas activas',nAlertas?'Ver panel de alertas':'Sin alertas activas',nAlertas?'var(--rd600)':'var(--gr600)')+
-    kpi('💰',fn(costoEstimado)+' €','Coste estimado','gastos acumulados pendientes','var(--pu600,#7c3aed)')+
-  '</div>';
-
-  // ── Panel helper ─────────────────────────────────────────────────
   function panel(title,content,borderColor){
     return'<div style="background:var(--w);border-radius:var(--rl);overflow:hidden;box-shadow:var(--sh0)">'+
-      '<div style="padding:10px 14px;border-bottom:1px solid var(--g100);font-size:13px;font-weight:700;color:var(--g800);border-left:4px solid '+(borderColor||'var(--b500)')+'">'+title+'</div>'+
-      '<div style="padding:0">'+content+'</div></div>';
+      '<div style="padding:11px 14px;border-bottom:1px solid var(--g100);font-size:13px;font-weight:700;color:var(--g800);border-left:4px solid '+(borderColor||'var(--b500)')+'">'+title+'</div>'+
+      '<div>'+content+'</div></div>';
   }
 
-  function tableRow(cells){
-    return'<tr>'+cells.map(function(c){return'<td style="padding:7px 10px;font-size:11px;border-bottom:1px solid var(--g100);vertical-align:middle">'+c+'</td>';}).join('')+'</tr>';
-  }
-  function simpleTable(headers,rows,empty){
-    if(!rows.length) return'<div style="padding:16px;text-align:center;font-size:12px;color:var(--g400)">'+empty+'</div>';
-    return'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+
-      '<thead><tr>'+headers.map(function(h){return'<th style="padding:7px 10px;font-size:10px;font-weight:700;color:var(--g500);text-align:left;border-bottom:2px solid var(--g100);white-space:nowrap">'+h+'</th>';}).join('')+'</tr></thead>'+
-      '<tbody>'+rows.join('')+'</tbody></table></div>';
-  }
-
-  // ── Panel 1: Urgentes ────────────────────────────────────────────
-  var urRows=urgentes.slice(0,8).map(function(e){
-    var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
-    var dias=fml?Math.ceil((fml-hoy)/(1000*60*60*24)):null;
-    var col=dias<0?'var(--rd600)':dias===0?'var(--am600)':'var(--am500)';
-    var badge=dias<0?'⛔ VENCIDO (+'+Math.abs(dias)+'d)':dias===0?'⚠️ Vence HOY':'⏰ '+dias+'d restantes';
-    return tableRow([
-      '<span style="font-family:var(--mono);font-size:10px">'+formatAwb(e.awb||'')+'</span>',
-      '<span style="font-size:11px;color:var(--g600)">'+( e.consignatario||'—')+'</span>',
-      '<strong style="font-size:12px">'+( e.buque||'—')+'</strong>',
-      fd(e.fecha_llegada),
-      '<span style="color:'+col+';font-weight:700;font-size:11px;white-space:nowrap">'+badge+'</span>'
-    ]);
-  });
-  var pUrgentes=panel(
-    '🔥 Almacenaje urgente — período libre próximo a vencer <span style="background:var(--rd100,#fee2e2);color:var(--rd600);border-radius:20px;padding:1px 8px;font-size:10px;margin-left:6px">'+urgentes.length+'</span>',
-    simpleTable(['AWB','Consignatario','Buque','Llegada','Estado'],urRows,urgentes.length?'':'✅ Sin vencimientos inminentes'),
-    'var(--rd500)'
-  );
-
-  // ── Panel 2: Sin confirmar llegada ───────────────────────────────
-  var scRows=sinConfirmar.slice(0,8).map(function(e){
-    var diasEsp=e.fecha_llegada?Math.floor((hoy-new Date(e.fecha_llegada))/(1000*60*60*24)):0;
-    return tableRow([
-      '<span style="font-family:var(--mono);font-size:10px">'+formatAwb(e.awb||'')+'</span>',
-      '<strong style="font-size:12px">'+( e.buque||'—')+'</strong>',
-      '<span style="font-size:11px">'+fd(e.fecha_llegada)+'</span>',
-      '<span style="color:var(--am600);font-size:11px">Hace '+diasEsp+'d</span>',
-      '<button onclick="confirmarLlegadaDesde(\''+e.id+'\')" style="background:var(--am500);color:#fff;border:none;border-radius:5px;padding:3px 8px;font-size:10px;cursor:pointer;white-space:nowrap">✈️ Confirmar</button>'
-    ]);
-  });
-  var pSinConfirmar=panel(
-    '✈️ Sin confirmar llegada <span style="background:var(--am100,#fef3c7);color:var(--am600);border-radius:20px;padding:1px 8px;font-size:10px;margin-left:6px">'+sinConfirmar.length+'</span>',
-    simpleTable(['AWB','Buque','Llegada','Antigüedad','Acción'],scRows,'✅ Todas las llegadas confirmadas'),
-    'var(--am500)'
-  );
-
-  // ── Panel 3: T1 por caducar ──────────────────────────────────────
-  var t1Rows=alertas.caducidadT1.slice(0,8).map(function(e){
-    var esHoy=e.fecha_caducidad_t1===hoyStr;
-    return tableRow([
-      '<span style="font-family:var(--mono);font-size:10px">'+formatAwb(e.awb||'')+'</span>',
-      '<span style="font-size:11px;color:var(--g600)">'+( e.consignatario||'—')+'</span>',
-      '<strong style="font-size:12px">'+( e.buque||'—')+'</strong>',
-      '<span style="color:'+(esHoy?'var(--rd600)':'var(--am600)')+';font-weight:700;font-size:11px">'+(esHoy?'⛔ HOY':'⚠️ Mañana')+'</span>'
-    ]);
-  });
-  var pT1=panel(
-    '🔏 T1 por caducar <span style="background:var(--rd100,#fee2e2);color:var(--rd600);border-radius:20px;padding:1px 8px;font-size:10px;margin-left:6px">'+alertas.caducidadT1.length+'</span>',
-    simpleTable(['AWB','Consignatario','Buque','Caducidad'],t1Rows,'✅ Sin T1 próximos a caducar'),
-    'var(--rd500)'
-  );
-
-  // ── Handler distribution ─────────────────────────────────────────
-  var handlerBars=Object.keys(hCount).sort(function(a,b){return hCount[b]-hCount[a];}).map(function(h){
-    var pct=Math.round(hCount[h]/hMax*100);
-    return'<div style="margin-bottom:8px">'+
-      '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">'+
-        '<span style="color:var(--g700);font-weight:600">'+h+'</span>'+
-        '<span style="color:var(--g500)">'+hCount[h]+' exp.</span>'+
-      '</div>'+
-      '<div style="background:var(--g100);border-radius:4px;height:8px">'+
-        '<div style="background:var(--b500);height:8px;border-radius:4px;width:'+pct+'%;transition:width .4s"></div>'+
+  function stat(label,val,color,pct){
+    var c=color||'var(--b500)';
+    return'<div style="padding:9px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--g50)">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'+
+          '<span style="color:var(--g700);font-weight:500">'+label+'</span>'+
+          '<span style="color:'+c+';font-weight:700">'+val+'</span>'+
+        '</div>'+
+        (pct!==undefined?'<div style="background:var(--g100);border-radius:3px;height:5px"><div style="background:'+c+';height:5px;border-radius:3px;width:'+Math.round(pct)+'%"></div></div>':'')+
       '</div></div>';
-  }).join('')||'<div style="font-size:12px;color:var(--g400);padding:8px 0">Sin datos</div>';
+  }
 
-  var pHandlers=panel('📊 Distribución por handler',
-    '<div style="padding:14px">'+handlerBars+'</div>',
-    'var(--b400)'
-  );
+  // ── KPIs principales ──────────────────────────────────────────
+  var kpiHtml='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">'+
+    kpi('📦',pendientes.length,'Total pendientes','expediciones en gestión','var(--b600)')+
+    kpi('✈️',sinConfirmar.length,'Sin confirmar llegada',
+      confirmadas.length+' de '+(pendientes.length)+' confirmadas',
+      sinConfirmar.length?'var(--am600)':'var(--gr600)')+
+    kpi('🚨',nAlertas,'Alertas activas',
+      vencidos?vencidos+' almacenaje vencido':'almacenaje + T1',
+      nAlertas?'var(--rd600)':'var(--gr600)','nav(\'alertas\',this)')+
+    kpi('💰',fn(costoEstimado)+' €','Coste estimado',pendientes.length+' exp. × coste prov. a hoy','#7c3aed')+
+  '</div>';
 
-  // ── Últimas entradas ─────────────────────────────────────────────
-  var ultRows=ultimas.map(function(e){
-    return tableRow([
-      '<span style="font-family:var(--mono);font-size:10px">'+formatAwb(e.awb||'')+'</span>',
-      '<span style="font-size:11px;font-weight:700;color:var(--g900)">'+( e.buque||'—')+'</span>',
-      '<span class="badge bb" style="font-size:9px">'+( e.handling||'—')+'</span>',
-      '<span style="font-size:11px">'+fd(e.fecha_llegada)+'</span>',
-      '<span style="font-family:var(--mono);font-size:11px;color:var(--b700);font-weight:700">'+(e.confirmacion_llegada?'<span title="Llegada confirmada">✈️</span> ':'')+(e.fecha_retirada?'':'<span style="color:var(--am600)">~</span>')+fn(e.fecha_retirada?calcTotal(e):costoEstimado/Math.max(pendientes.length,1))+'</span>'
-    ]);
-  });
-  var pUltimas=panel('📋 Últimas entradas registradas',
-    simpleTable(['AWB','Buque','Handler','Llegada','Coste'],ultRows,'Sin entradas'),
-    'var(--b400)'
-  );
+  // ── Panel: Llegadas previstas ─────────────────────────────────
+  var totalLlegadas=pendientes.length;
+  function pctOf(n){return totalLlegadas?n/totalLlegadas*100:0;}
+  var llegadasContent=
+    (llegadas.pasadas.length?stat('📅 Ya llegadas (sin confirmar/retirar)',llegadas.pasadas.length,'var(--am600)',pctOf(llegadas.pasadas.length)):'')+ 
+    stat('🟢 Llegan hoy',llegadas.hoy.length,llegadas.hoy.length?'var(--gr600)':'var(--g400)',pctOf(llegadas.hoy.length))+
+    stat('🔵 Llegan mañana',llegadas.manana.length,'var(--b600)',pctOf(llegadas.manana.length))+
+    stat('📆 Esta semana (2-7 días)',llegadas.semana.length,'var(--b500)',pctOf(llegadas.semana.length))+
+    stat('🗓 Más de 7 días',llegadas.masSemana.length,'var(--g500)',pctOf(llegadas.masSemana.length))+
+    (llegadas.sinFecha.length?stat('❓ Sin fecha prevista',llegadas.sinFecha.length,'var(--g400)',pctOf(llegadas.sinFecha.length)):'');
+  var pLlegadas=panel('📈 Llegadas previstas — distribución temporal',llegadasContent,'var(--b500)');
 
-  // ── Assemble ─────────────────────────────────────────────────────
-  el.innerHTML=kpiHtml+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+pUrgentes+pSinConfirmar+'</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+pT1+
-      '<div style="display:grid;grid-template-rows:auto auto;gap:12px">'+pHandlers+'</div>'+
+  // ── Panel: Estado de confirmaciones ──────────────────────────
+  var pctConf=pendientes.length?Math.round(confirmadas.length/pendientes.length*100):0;
+  var confirmContent=
+    '<div style="padding:14px;text-align:center">'+
+      '<div style="font-size:36px;font-weight:800;color:'+(pctConf===100?'var(--gr600)':pctConf>50?'var(--am600)':'var(--rd600)')+'">'+pctConf+'%</div>'+
+      '<div style="font-size:12px;color:var(--g500);margin-bottom:12px">confirmadas</div>'+
+      '<div style="background:var(--g100);border-radius:6px;height:10px;margin-bottom:12px">'+
+        '<div style="background:'+(pctConf===100?'var(--gr500)':'var(--am500)')+';height:10px;border-radius:6px;width:'+pctConf+'%;transition:width .6s"></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:16px;justify-content:center;font-size:12px">'+
+        '<div><strong style="color:var(--gr600);font-size:16px">'+confirmadas.length+'</strong><br><span style="color:var(--g500)">Confirmadas</span></div>'+
+        '<div style="color:var(--g200)">|</div>'+
+        '<div><strong style="color:var(--am600);font-size:16px">'+sinConfirmar.length+'</strong><br><span style="color:var(--g500)">Pendientes</span></div>'+
+      '</div>'+
+    '</div>';
+  var pConfirm=panel('✈️ Estado de confirmaciones de llegada',confirmContent,'var(--am500)');
+
+  // ── Panel: Handler + Status ───────────────────────────────────
+  var handlerContent=Object.keys(hCount).sort(function(a,b){return hCount[b]-hCount[a];}).map(function(h){
+    return stat(h,hCount[h]+' exp.','var(--b500)',hCount[h]/hMax*100);
+  }).join('')||'<div style="padding:14px;font-size:12px;color:var(--g400)">Sin datos</div>';
+  var pHandlers=panel('📊 Por handler',handlerContent,'var(--b400)');
+
+  var statusColors={'T1':'var(--am600)','Comunitario':'var(--gr600)','ATA':'var(--b600)'};
+  var sMax=Math.max.apply(null,Object.values(sCount).concat([1]));
+  var statusContent=Object.keys(sCount).sort(function(a,b){return sCount[b]-sCount[a];}).map(function(s){
+    return stat(s,sCount[s]+' exp.',statusColors[s]||'var(--g500)',sCount[s]/sMax*100);
+  }).join('')||'<div style="padding:14px;font-size:12px;color:var(--g400)">Sin datos</div>';
+  var pStatus=panel('📋 Por régimen aduanero',statusContent,'var(--b400)');
+
+  // ── Panel: Alertas resumen ────────────────────────────────────
+  var alertasContent=
+    stat('🚨 Almacenaje vencido (generando costes)',alertas.almacenajeVencido.length,alertas.almacenajeVencido.length?'var(--rd600)':'var(--gr600)')+
+    stat('⚠️ Almacenaje vence HOY',alertas.almacenajeHoy.length,alertas.almacenajeHoy.length?'var(--am600)':'var(--gr600)')+
+    stat('🔥 Período libre ≤ 3 días',urgentes.length-alertas.almacenajeHoy.length-alertas.almacenajeVencido.length,urgentes.length?'var(--am500)':'var(--gr600)')+
+    stat('🔏 T1 caduca hoy o mañana',alertas.caducidadT1.length,alertas.caducidadT1.length?'var(--rd600)':'var(--gr600)');
+  var pAlertas=panel('🚨 Resumen de alertas',alertasContent,'var(--rd500)');
+
+  // ── Ensamblar ─────────────────────────────────────────────────
+  el.innerHTML=
+    kpiHtml+
+    '<div style="display:grid;grid-template-columns:2fr 1fr;gap:12px">'+
+      pLlegadas+pConfirm+
     '</div>'+
-    pUltimas;
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">'+
+      pHandlers+pStatus+pAlertas+
+    '</div>';
 
-  // Responsive: colapsar a 1 columna en móvil
   if(window.innerWidth<700){
-    el.querySelectorAll('[style*="grid-template-columns:1fr 1fr"]').forEach(function(d){d.style.gridTemplateColumns='1fr';});
+    el.querySelectorAll('[style*="grid-template-columns"]').forEach(function(d){d.style.gridTemplateColumns='1fr';});
   }
 }
 
