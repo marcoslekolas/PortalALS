@@ -771,10 +771,34 @@ function getAlertas(){
   var caducidadT1=(ALL||[]).filter(function(e){
     if(e.fecha_retirada) return false;
     if(!e.fecha_caducidad_t1) return false;
-    return e.fecha_caducidad_t1===hoyStr || e.fecha_caducidad_t1===mananaStr;
+    if(e.t1_ultimado) return false; // ya ultimado: fuera de alertas
+    var f=e.fecha_caducidad_t1.slice(0,10);
+    return f===hoyStr || f===mananaStr; // solo hoy y mañana, no pasado
   });
 
   return {almacenajeVencido:almacenajeVencido, almacenajeHoy:almacenajeHoy, caducidadT1:caducidadT1};
+}
+
+function onT1UltimadoChk(chk){
+  var row=document.getElementById('f-t1-ult-date-row');
+  if(!row) return;
+  row.style.display=chk.checked?'':'none';
+  if(chk.checked){
+    var fi=document.getElementById('f-t1-ult-date');
+    if(fi&&!fi.value) fi.value=new Date().toISOString().slice(0,16);
+  }
+}
+
+async function ultimarT1(id){
+  var ahora=new Date().toISOString();
+  var r=await sb.from('airport_cargo').update({t1_ultimado:true,t1_fecha_ultimado:ahora}).eq('id',id);
+  if(r.error){toast('Error: '+r.error.message);return;}
+  var e=ALL.find(function(x){return String(x.id)===String(id);});
+  if(e){e.t1_ultimado=true;e.t1_fecha_ultimado=ahora;}
+  toast('✅ T1 marcado como ultimado');
+  renderAlertas();
+  actualizarBadgeAlertas();
+  if(CV==='dashboard') loadDashboard();
 }
 
 function actualizarBadgeAlertas(){
@@ -855,19 +879,19 @@ function loadAlertas(){
   // — Caducidad T1 hoy / mañana —
   html+='<div class="alerta-card">';
   html+='<div class="alerta-card-hd am">🕒 Caducidad T1 — vence hoy o mañana'+(a.caducidadT1.length?' <span style="margin-left:6px;background:var(--am500);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px">'+a.caducidadT1.length+'</span>':'')+'</div>';
-  var hoyStr=new Date().toISOString().slice(0,10);
+  var hoyStr2=new Date().toISOString().slice(0,10);
   html+=mkTable(
-    ['AWB','Consignatario','Handler','Status','Caducidad T1','T1 sellado','Obs.'],
+    ['AWB','Consignatario','Handler','Caducidad T1','T1 sellado','Obs.',''],
     a.caducidadT1.map(function(e){
-      var esHoy=e.fecha_caducidad_t1===hoyStr;
+      var esHoy=e.fecha_caducidad_t1&&e.fecha_caducidad_t1.slice(0,10)===hoyStr2;
       return[
         '<span style="font-family:var(--mono);font-size:11px">'+formatAwb(e.awb||'')+'</span>',
         e.consignatario||e.cliente||'—',
         e.handling||'—',
-        e.status||'—',
         '<strong style="color:'+(esHoy?'var(--rd600)':'var(--am600)')+'">'+fd(e.fecha_caducidad_t1)+(esHoy?' ⚠️':'')+'</strong>',
         e.t1_sellado?'<span style="color:var(--gr600)">✓ Sí</span>':'<span style="color:var(--rd500)">✗ No</span>',
-        e.observaciones||''
+        e.observaciones||'',
+        '<button onclick="ultimarT1(\''+e.id+'\')" style="background:var(--gr600);color:#fff;border:none;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✅ Ultimado</button>'
       ];
     }),
     'Sin caducidades de T1 próximas ✓'
@@ -886,6 +910,7 @@ async function init(){
   actualizarBadgeAlertas();
   loadDashboard();
   checkUrl();
+  initRealtime();
   // Event delegation — must be set up after DOM ready, avoids onclick quote issues
   document.addEventListener('click', function(ev){
     var chk = ev.target.closest('input[type=checkbox]');
@@ -926,6 +951,91 @@ function checkUrl(){
   var p=new URLSearchParams(window.location.search);
   if(p.get('new')==='1')setTimeout(openNueva,400);
   else if(p.get('edit'))setTimeout(function(){editEntrada(p.get('edit'));},600);
+}
+
+// ── REALTIME PUSH ─────────────────────────────────────────────────────────────
+var _rtChannel=null;
+var _pollInterval=null;
+var _lastPollHash='';
+
+function initRealtime(){
+  // ── Indicador visual ────────────────────────────────────────
+  var hdr=document.getElementById('hdr');
+  if(hdr&&!document.getElementById('rt-dot')){
+    var dot=document.createElement('span');
+    dot.id='rt-dot';
+    dot.title='Sincronización activa';
+    dot.style.cssText='width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block;margin-left:6px;flex-shrink:0;transition:background .5s';
+    hdr.appendChild(dot);
+  }
+  function setRTStatus(color,title){
+    var d=document.getElementById('rt-dot');
+    if(d){d.style.background=color;d.title=title;}
+  }
+
+  // ── Polling cada 30 s (base garantizada) ───────────────────
+  // Compara un hash de los datos para detectar cambios reales
+  function applyUpdates(newData){
+    var newHash=newData.map(function(e){return e.id+'_'+(e.updated_at||'');}).join('|');
+    if(newHash===_lastPollHash) return; // sin cambios
+    _lastPollHash=newHash;
+    ALL=newData;
+    loadView();
+    actualizarBadgeAlertas();
+    if(CV==='dashboard') loadDashboard();
+  }
+
+  async function poll(){
+    try{
+      var res=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:true,nullsFirst:false});
+      if(!res.error) applyUpdates(res.data||[]);
+      setRTStatus('#22c55e','Datos actualizados · cada 30 s');
+    }catch(e){
+      setRTStatus('#ef4444','Error de conexión');
+    }
+  }
+
+  if(_pollInterval) clearInterval(_pollInterval);
+  _pollInterval=setInterval(poll,30000);
+  setRTStatus('#22c55e','Sincronización activa');
+
+  // ── Realtime Supabase (push instantáneo cuando funciona) ────
+  // Necesita: ALTER PUBLICATION supabase_realtime ADD TABLE airport_cargo;
+  // + política RLS: CREATE POLICY "realtime" ON airport_cargo FOR SELECT USING (true);
+  try{
+    if(_rtChannel) sb.removeChannel(_rtChannel);
+    _rtChannel=sb.channel('ac_push',{config:{broadcast:{self:true}}})
+      .on('postgres_changes',{event:'*',schema:'public',table:'airport_cargo'},function(p){
+        var ev=p.eventType;
+        if(ev==='INSERT'){
+          if(!ALL.find(function(e){return String(e.id)===String(p.new.id);})){
+            ALL.push(p.new);
+            ALL.sort(function(a,b){return(a.fecha_llegada||'9999')<(b.fecha_llegada||'9999')?-1:1;});
+            toast('⚡ Nueva entrada');
+          }
+        }else if(ev==='UPDATE'){
+          var idx=ALL.findIndex(function(e){return String(e.id)===String(p.new.id);});
+          if(idx>=0) ALL[idx]=p.new; else ALL.push(p.new);
+        }else if(ev==='DELETE'){
+          ALL=ALL.filter(function(e){return String(e.id)!==String((p.old||{}).id);});
+        }
+        _lastPollHash=''; // forzar applyUpdates en próximo poll
+        loadView();
+        actualizarBadgeAlertas();
+        if(CV==='dashboard') loadDashboard();
+        setRTStatus('#3b82f6','Push en tiempo real activo');
+      })
+      .subscribe(function(status,err){
+        if(status==='SUBSCRIBED'){
+          setRTStatus('#3b82f6','Push en tiempo real activo');
+        }else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
+          // Fallo de push — el polling cubre la actualización
+          setRTStatus('#22c55e','Modo polling 30 s (push no disponible)');
+        }
+      });
+  }catch(e){
+    setRTStatus('#22c55e','Modo polling 30 s');
+  }
 }
 
 // ── DASHBOARD ────────────────────────────────────────────
@@ -1228,7 +1338,7 @@ function renderRows(list, tbodyId){
       '<td><span class="badge '+(e.status==='T1'?'ba':e.status==='Comunitario'?'bg':'bgr')+'" style="font-size:10px">'+(e.status||'—')+'</span></td>'+
       '<td><span class="badge '+(e.despachado?'bg':'ba')+'" style="font-size:10px">'+(e.despachado?'✅ Despachado':'⏳ Pendiente')+'</span></td>'+
       '<td class="sm">'+(e.eta_buque?fd(e.eta_buque):'—')+'</td>'+
-      '<td class="sm">'+(e.fecha_caducidad_t1?fd(e.fecha_caducidad_t1):'—')+'</td>'+
+      '<td class="sm">'+(e.t1_ultimado?'<span title="T1 ultimado el '+fd(e.t1_fecha_ultimado||'')+'" style="color:var(--gr600)">✅</span>':e.fecha_caducidad_t1?fd(e.fecha_caducidad_t1):'—')+'</td>'+
       (function(){var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);var hoy=new Date();hoy.setHours(0,0,0,0);var vencido=fml&&fml<hoy;return'<td class="sm" style="'+(vencido?'color:var(--rd600);font-weight:600':fml?'color:var(--gr600)':'')+'">'+( fml?fd(fml):'—')+'</td>';})() +
       '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(alm):'—')+'</td>'+
       '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(gd):'—')+'</td>'+
@@ -1810,6 +1920,11 @@ async function showForm(e){
     '</div>'+
     '<label class="toggle-row"><input type="checkbox" id="f-despachado" '+(e&&e.despachado?'checked':'')+'>  ✅ Mercancía despachada</label>'+
     '<label class="toggle-row"><input type="checkbox" id="f-t1-sellado" '+(e&&e.t1_sellado?'checked':'')+'>  🔏 T1 para sellado</label>'+
+    '<label class="toggle-row"><input type="checkbox" id="f-t1-ultimado" '+(e&&e.t1_ultimado?'checked':'')+' onchange="onT1UltimadoChk(this)">  ✅ T1 ultimado</label>'+
+    '<div id="f-t1-ult-date-row" style="'+(e&&e.t1_ultimado?'':'display:none')+';padding:6px 12px;background:var(--g50);border-radius:6px;margin:2px 0">'+
+      '<label class="fl" style="font-size:11px;color:var(--g500)">Fecha ultimación</label>'+
+      '<input id="f-t1-ult-date" class="fi" type="datetime-local" value="'+(e&&e.t1_fecha_ultimado?new Date(e.t1_fecha_ultimado).toISOString().slice(0,16):'')+'" style="font-size:11px">'+
+    '</div>'+
     '<label class="toggle-row" style="background:var(--am50);border-color:var(--am500)"><input type="checkbox" id="f-conf-llegada" '+(e&&e.confirmacion_llegada?'checked':'')+'>  ✈️ <strong>Llegada confirmada en aeropuerto</strong></label>'+
     '<div id="ext">'+
     '<div class="sect">Cargos opcionales</div>'+
@@ -1911,6 +2026,8 @@ function buildObjExtended(){
     despachado:gc('f-despachado'),
     fecha_caducidad_t1:gv('f-cad-t1')||null,
     t1_sellado:gc('f-t1-sellado'),
+    t1_ultimado:gc('f-t1-ultimado'),
+    t1_fecha_ultimado:gc('f-t1-ultimado')?(gv('f-t1-ult-date')?new Date(gv('f-t1-ult-date')).toISOString():new Date().toISOString()):null,
     fecha_bandeja_t1:gv('f-bandeja-t1')||null,
     confirmacion_llegada:gc('f-conf-llegada')};
 }
