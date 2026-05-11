@@ -2023,23 +2023,25 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
       return d >= hoyDate;
     });
     if(pendExps.length){
-      // Segunda tabla: ordenada exclusivamente por fecha_llegada + hora_llegada ascendente
+      // Ordenar por campo de previsión (fecha_llegada si existe, si no eta_buque) + hora ascendente
       pendExps.sort(function(a,b){
-        var fa=(a.fecha_llegada||a.eta_buque||'9999').slice(0,10);
-        var fb=(b.fecha_llegada||b.eta_buque||'9999').slice(0,10);
+        var fa=((a.fecha_llegada||a.eta_buque||'9999')).slice(0,10);
+        var fb=((b.fecha_llegada||b.eta_buque||'9999')).slice(0,10);
         if(fa!==fb) return fa<fb?-1:1;
         return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;
       });
       var pendRows = pendExps.map(function(e){
+        var prevision=e.fecha_llegada?fd(e.fecha_llegada):(e.eta_buque?fd(e.eta_buque):'—');
+        var horaCell=prevision+(e.hora_llegada?' <strong>'+e.hora_llegada+'</strong>':'');
         return [
           formatAwb(e.awb||''), e.consignatario||e.cliente||'', e.buque||'', e.handling||'',
-          e.eta_buque?fd(e.eta_buque):(e.fecha_llegada?fd(e.fecha_llegada):''),
+          horaCell, e.vuelo||'—',
           (e.bultos||'')+' btos / '+(e.kilos_tasables||'')+' kg', e.observaciones||''
         ];
       });
       pendHtml = '<div style="margin-top:30px;border-top:2px solid #e5e7eb;padding-top:16px">'+
         '<p style="font-size:13px;font-weight:700;color:#1e3a5f;margin:0 0 8px">EXPEDICIONES CON LLEGADAS / RECOGIDAS PENDIENTES</p>'+
-        htmlTable(['AWB','Consignatario','Buque','Handler','Prevision','Cantidad','Observaciones'], pendRows)+
+        htmlTable(['AWB','Consignatario','Buque','Handler','Llegada / Hora','Vuelo','Cantidad','Observaciones'], pendRows)+
         '</div>';
     }
   }
