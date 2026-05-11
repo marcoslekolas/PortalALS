@@ -1969,36 +1969,38 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
     return '<table style="width:100%;border-collapse:collapse;margin-bottom:16px"><thead><tr>'+ths+'</tr></thead><tbody>'+trs+'</tbody></table>';
   }
 
-  // Tabla plana ordenada por fecha_llegada + hora_llegada ascendente (sin agrupado por buque)
-  var selOrdenado = sel.slice().sort(function(a,b){
-    var fa=(a.fecha_llegada||'9999').slice(0,10);
-    var fb=(b.fecha_llegada||'9999').slice(0,10);
-    if(fa!==fb) return fa<fb?-1:1;
-    return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;
+  // Primera tabla: agrupada por buque, ordenada por fecha dentro de cada grupo
+  var byBuque = {};
+  var buqueOrder = [];
+  sel.forEach(function(e){
+    var bk=e.buque||'(Sin buque)';
+    if(!byBuque[bk]){byBuque[bk]=[];buqueOrder.push(bk);}
+    byBuque[bk].push(e);
+  });
+  // Ordenar expediciones dentro de cada buque por fecha_llegada + hora_llegada asc
+  buqueOrder.forEach(function(bk){
+    byBuque[bk].sort(function(a,b){
+      var fa=(a.fecha_llegada||'9999').slice(0,10), fb=(b.fecha_llegada||'9999').slice(0,10);
+      if(fa!==fb) return fa<fb?-1:1;
+      return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;
+    });
   });
 
-  var detalleRows = selOrdenado.map(function(e){
-    var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
-    return [
-      formatAwb(e.awb||''),
-      e.consignatario||'',
-      e.buque||'—',
-      e.handling||'',
-      (e.bultos||'')+' btos',
-      (e.kilos_tasables||'')+' kg',
-      fd(e.fecha_llegada)+(e.hora_llegada?' <strong>'+e.hora_llegada+'</strong>':''),
-      e.vuelo||'—',
-      e.status||'',
-      fml?'<strong style="color:#dc2626">'+fd(fml)+'</strong>':'—',
-      e.eta_buque?fd(e.eta_buque):'—',
-      e.observaciones||''
-    ];
-  });
-
-  var detalle = htmlTable(
-    ['AWB','Consignatario','Buque','Handler','Bultos','Kilos','Llegada / Hora','Vuelo','Status','Libre hasta','ETA Buque','Observaciones'],
-    detalleRows
-  );
+  var detalle = buqueOrder.map(function(buque){
+    var rows=byBuque[buque].map(function(e){
+      var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
+      return [
+        formatAwb(e.awb||''), e.consignatario||'', e.handling||'',
+        (e.bultos||'')+' btos', (e.kilos_tasables||'')+' kg',
+        fd(e.fecha_llegada)+(e.hora_llegada?' <strong>'+e.hora_llegada+'</strong>':''),
+        e.vuelo||'—', e.status||'',
+        fml?'<strong style="color:#dc2626">'+fd(fml)+'</strong>':'—',
+        e.eta_buque?fd(e.eta_buque):'—', e.observaciones||''
+      ];
+    });
+    return '<p style="font-size:13px;font-weight:700;margin:16px 0 6px;color:#1e3a5f">BUQUE: '+buque+'</p>'+
+      htmlTable(['AWB','Consignatario','Handler','Bultos','Kilos','Llegada / Hora','Vuelo','Status','Libre hasta','ETA Buque','Observaciones'],rows);
+  }).join('');
 
   var haySeleccion = selIds && selIds.length > 0;
 
@@ -2021,6 +2023,13 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
       return d >= hoyDate;
     });
     if(pendExps.length){
+      // Segunda tabla: ordenada exclusivamente por fecha_llegada + hora_llegada ascendente
+      pendExps.sort(function(a,b){
+        var fa=(a.fecha_llegada||a.eta_buque||'9999').slice(0,10);
+        var fb=(b.fecha_llegada||b.eta_buque||'9999').slice(0,10);
+        if(fa!==fb) return fa<fb?-1:1;
+        return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;
+      });
       var pendRows = pendExps.map(function(e){
         return [
           formatAwb(e.awb||''), e.consignatario||e.cliente||'', e.buque||'', e.handling||'',
