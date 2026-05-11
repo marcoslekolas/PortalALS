@@ -1969,18 +1969,30 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
     return '<table style="width:100%;border-collapse:collapse;margin-bottom:16px"><thead><tr>'+ths+'</tr></thead><tbody>'+trs+'</tbody></table>';
   }
 
-  // Agrupar por buque
-  var byBuque = {};
-  sel.forEach(function(e){ var bk = e.buque||'(Sin buque)'; if(!byBuque[bk]) byBuque[bk]=[]; byBuque[bk].push(e); });
+  // Ordenar por fecha_llegada ascendente antes de agrupar
+  var selOrdenado = sel.slice().sort(function(a,b){
+    var fa=a.fecha_llegada||'9999', fb=b.fecha_llegada||'9999';
+    if(fa!==fb) return fa<fb?-1:1;
+    return (a.hora_llegada||'')<(b.hora_llegada||'')?-1:1;
+  });
 
-  var detalle = Object.keys(byBuque).map(function(buque){
+  // Agrupar por buque, respetando el orden cronológico
+  var byBuque = {};
+  var buqueOrder = [];
+  selOrdenado.forEach(function(e){
+    var bk = e.buque||'(Sin buque)';
+    if(!byBuque[bk]){byBuque[bk]=[];buqueOrder.push(bk);}
+    byBuque[bk].push(e);
+  });
+
+  var detalle = buqueOrder.map(function(buque){
     var exps = byBuque[buque];
     var rows = exps.map(function(e){
       var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
       return [
         formatAwb(e.awb||''), e.consignatario||'', e.handling||'',
         (e.bultos||'')+' btos', (e.kilos_tasables||'')+' kg',
-        fd(e.fecha_llegada),
+        fd(e.fecha_llegada)+(e.hora_llegada?' &nbsp;·&nbsp; <strong>'+e.hora_llegada+'</strong>':''),
         (e.vuelo||'—')+(e.hora_llegada?' &nbsp;·&nbsp; <strong>'+e.hora_llegada+'</strong>':''),
         e.status||'',
         fml?'<strong style="color:#dc2626">'+fd(fml)+'</strong>':'—',
@@ -1989,7 +2001,7 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
       ];
     });
     return '<p style="font-size:13px;font-weight:700;margin:16px 0 6px;color:#1e3a5f">BUQUE: '+buque+'</p>'+
-      htmlTable(['AWB','Consignatario','Handler','Bultos','Kilos','Llegada','Vuelo / Hora','Status','Libre hasta','ETA Buque','Observaciones'], rows);
+      htmlTable(['AWB','Consignatario','Handler','Bultos','Kilos','Llegada / Hora','Vuelo / Hora','Status','Libre hasta','ETA Buque','Observaciones'], rows);
   }).join('');
 
   var haySeleccion = selIds && selIds.length > 0;
