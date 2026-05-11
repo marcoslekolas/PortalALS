@@ -1990,45 +1990,55 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
       htmlTable(['AWB','Consignatario','Handler','Bultos','Kilos','Llegada','Vuelo','Status','Libre hasta','ETA Buque','Observaciones'], rows);
   }).join('');
 
-  // Pendientes: NO retiradas, NO en selIds, fecha FUTURA, mismo consignatario/cliente
-  var hoyDate = new Date(); hoyDate.setHours(0,0,0,0);
-  var selSet = new Set((selIds||[]).map(String));
-  var pendExps = (todasLasExps||[]).filter(function(e){
-    if(selSet.has(String(e.id))) return false;
-    if(e.fecha_retirada) return false;
-    // Filtrar por consignatario o cliente según contexto
-    if(pendFiltro && pendFiltro.campo && pendFiltro.valor){
-      var val = (e[pendFiltro.campo]||'').trim().toLowerCase();
-      var ref = pendFiltro.valor.trim().toLowerCase();
-      if(val !== ref) return false;
-    }
-    var d = e.fecha_llegada ? new Date(e.fecha_llegada) : (e.eta_buque ? new Date(e.eta_buque) : null);
-    if(!d) return false;   // solo fechas confirmadas
-    return d >= hoyDate;
-  });
+  var haySeleccion = selIds && selIds.length > 0;
 
+  // Pendientes debajo de la firma: SOLO cuando hay selección manual
+  // (cuando no hay selección, todos los registros ya aparecen arriba)
   var pendHtml = '';
-  if(pendExps.length){
-    var pendRows = pendExps.map(function(e){
-      return [
-        formatAwb(e.awb||''), e.consignatario||e.cliente||'', e.buque||'', e.handling||'',
-        e.eta_buque?fd(e.eta_buque):(e.fecha_llegada?fd(e.fecha_llegada):''),
-        (e.bultos||'')+' btos / '+(e.kilos_tasables||'')+' kg', e.observaciones||''
-      ];
+  if(haySeleccion){
+    var hoyDate = new Date(); hoyDate.setHours(0,0,0,0);
+    var selSet = new Set((selIds||[]).map(String));
+    var pendExps = (todasLasExps||[]).filter(function(e){
+      if(selSet.has(String(e.id))) return false;
+      if(e.fecha_retirada) return false;
+      if(pendFiltro && pendFiltro.campo && pendFiltro.valor){
+        var val = (e[pendFiltro.campo]||'').trim().toLowerCase();
+        var ref = pendFiltro.valor.trim().toLowerCase();
+        if(val !== ref) return false;
+      }
+      var d = e.fecha_llegada ? new Date(e.fecha_llegada) : (e.eta_buque ? new Date(e.eta_buque) : null);
+      if(!d) return false;
+      return d >= hoyDate;
     });
-    pendHtml = '<div style="margin-top:30px;border-top:2px solid #e5e7eb;padding-top:16px">'+
-      '<p style="font-size:13px;font-weight:700;color:#1e3a5f;margin:0 0 8px">EXPEDICIONES CON LLEGADAS / RECOGIDAS PENDIENTES</p>'+
-      htmlTable(['AWB','Consignatario','Buque','Handler','Prevision','Cantidad','Observaciones'], pendRows)+
-      '</div>';
+    if(pendExps.length){
+      var pendRows = pendExps.map(function(e){
+        return [
+          formatAwb(e.awb||''), e.consignatario||e.cliente||'', e.buque||'', e.handling||'',
+          e.eta_buque?fd(e.eta_buque):(e.fecha_llegada?fd(e.fecha_llegada):''),
+          (e.bultos||'')+' btos / '+(e.kilos_tasables||'')+' kg', e.observaciones||''
+        ];
+      });
+      pendHtml = '<div style="margin-top:30px;border-top:2px solid #e5e7eb;padding-top:16px">'+
+        '<p style="font-size:13px;font-weight:700;color:#1e3a5f;margin:0 0 8px">EXPEDICIONES CON LLEGADAS / RECOGIDAS PENDIENTES</p>'+
+        htmlTable(['AWB','Consignatario','Buque','Handler','Prevision','Cantidad','Observaciones'], pendRows)+
+        '</div>';
+    }
   }
+
+  // Texto de apertura según si hay selección (llegada confirmada) o no (situación general)
+  var textoApertura = haySeleccion
+    ? 'Nos complace comunicarles que las siguientes mercancías han <strong>confirmado su llegada al aeropuerto de '+apts+'</strong>. '+
+      (etiquetaNombre==='Consignatario'
+        ? 'Procedemos con los trámites de despacho aduanero conforme a sus instrucciones y encargo, manteniéndoles informados de cualquier novedad que pudiera surgir en el proceso.'
+        : 'Les solicitamos sus instrucciones para proceder con los trámites de despacho aduanero de las expediciones relacionadas a continuación.')
+    : 'Les informamos del estado actual de las siguientes expediciones que se encuentran en gestión en el aeropuerto de '+apts+'. '+
+      (etiquetaNombre==='Consignatario'
+        ? 'Procedemos con los trámites de despacho aduanero conforme a sus instrucciones y encargo, manteniéndoles informados de cualquier novedad que pudiera surgir en el proceso.'
+        : 'Les solicitamos sus instrucciones para proceder con los trámites de despacho aduanero de las expediciones relacionadas a continuación.');
 
   return '<div style="font-family:Arial,sans-serif;font-size:12px;max-width:900px;margin:0 auto">'+
     '<p style="margin-bottom:20px">Estimados Sres. / Dear Sirs,</p>'+
-    '<p style="margin-bottom:24px;line-height:1.7">Nos complace comunicarles que las siguientes mercancías han <strong>confirmado su llegada al aeropuerto de '+apts+'</strong>. '+
-    (etiquetaNombre==='Consignatario'
-      ? 'Procedemos con los trámites de despacho aduanero conforme a sus instrucciones y encargo, manteniéndoles informados de cualquier novedad que pudiera surgir en el proceso.'
-      : 'Les solicitamos sus instrucciones para proceder con los trámites de despacho aduanero de las expediciones relacionadas a continuación.'
-    )+'</p>'+
+    '<p style="margin-bottom:24px;line-height:1.7">'+textoApertura+'</p>'+
     '<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:10px 14px;margin-bottom:20px;font-size:12px">'+
     '<strong>'+(etiquetaNombre||'Cliente')+':</strong> '+clienteNombre+' &nbsp;&middot;&nbsp; '+
     '<strong>Expediciones:</strong> '+sel.length+' &nbsp;&middot;&nbsp; '+
