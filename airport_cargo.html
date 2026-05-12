@@ -86,6 +86,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .bb{background:var(--b50);color:var(--b700);border-color:var(--b100)}
 .ba{background:var(--am50);color:var(--am600);border-color:#fde68a}
 .br{background:var(--rd50);color:var(--rd600);border-color:#fecaca}
+.bp{background:#f3e8ff;color:#7c3aed;border-color:#d8b4fe}
 .bgr{background:var(--g100);color:var(--g600);border-color:var(--g200)}
 .fg{margin-bottom:12px}
 .fl{display:block;font-size:12px;font-weight:600;color:var(--g700);margin-bottom:4px}
@@ -1174,7 +1175,7 @@ async function loadDashboard(){
   }).join('')||'<div style="padding:14px;font-size:12px;color:var(--g400)">Sin datos</div>';
   var pHandlers=panel('📊 Por handler',handlerContent,'var(--b400)');
 
-  var statusColors={'T1':'var(--am600)','Comunitario':'var(--gr600)','ATA':'var(--b600)'};
+  var statusColors={'T1':'var(--am600)','Comunitario':'var(--gr600)','ATA':'var(--b600)','DAE':'var(--pu600,#7c3aed)','X':'var(--rd600)'};
   var sMax=Math.max.apply(null,Object.values(sCount).concat([1]));
   var statusContent=Object.keys(sCount).sort(function(a,b){return sCount[b]-sCount[a];}).map(function(s){
     return stat(s,sCount[s]+' exp.',statusColors[s]||'var(--g500)',sCount[s]/sMax*100);
@@ -1335,7 +1336,7 @@ function renderRows(list, tbodyId){
       '<td style="text-align:center;font-size:12px">'+(isAuto&&e.fecha_retirada?d:'—')+'</td>'+
       '<td style="text-align:right;font-size:12px">'+kg+'</td>'+
       '<td style="text-align:right;font-size:12px">'+(e.bultos||'—')+'</td>'+
-      '<td><span class="badge '+(e.status==='T1'?'ba':e.status==='Comunitario'?'bg':'bgr')+'" style="font-size:10px">'+(e.status||'—')+'</span></td>'+
+      '<td><span class="badge '+(e.status==='T1'?'ba':e.status==='Comunitario'?'bg':e.status==='X'?'br':e.status==='DAE'?'bp':'bgr')+'" style="font-size:10px">'+(e.status||'—')+'</span></td>'+
       '<td><span class="badge '+(e.despachado?'bg':'ba')+'" style="font-size:10px">'+(e.despachado?'✅ Despachado':'⏳ Pendiente')+'</span></td>'+
       '<td class="sm">'+(e.eta_buque?fd(e.eta_buque):'—')+'</td>'+
       '<td class="sm">'+(e.t1_ultimado?'<span title="T1 ultimado el '+fd(e.t1_fecha_ultimado||'')+'" style="color:var(--gr600)">✅</span>':e.fecha_caducidad_t1?fd(e.fecha_caducidad_t1):'—')+'</td>'+
@@ -1838,7 +1839,7 @@ function openDetalle(id){
     '<div><div class="sm">Buque</div><div class="fw">'+( e.buque||'—')+'</div></div>'+
     '<div><div class="sm">Handler</div><span class="badge bb">'+( e.handling||'—')+'</span></div>'+
     '<div><div class="sm">Aeropuerto</div><div class="fw">'+( e.aeropuerto||'—')+'</div></div>'+
-    '<div><div class="sm">Status</div><span class="badge '+(e.status==='T1'?'ba':'bg')+'">'+( e.status||'—')+'</span></div>'+
+    '<div><div class="sm">Status</div><span class="badge '+(e.status==='T1'?'ba':e.status==='Comunitario'?'bg':e.status==='X'?'br':e.status==='DAE'?'bp':'bgr')+'">'+( e.status||'—')+'</span></div>'+
     '<div><div class="sm">Fecha llegada</div><div class="fw">'+fd(e.fecha_llegada)+'</div></div>'+
     '<div><div class="sm">Fecha retirada</div><div class="fw">'+( fd(e.fecha_retirada)||'⚠️ pendiente')+'</div></div>'+
     '<div><div class="sm">Kg tasables</div><div class="fw">'+kg+' kg</div></div>'+
@@ -1880,7 +1881,7 @@ async function showForm(e){
   var handlerOpts=['<option value="" '+((!h)?'selected':'')+'>— Seleccionar —</option>'].concat(
     handlingEmps.map(function(n){return'<option '+(h===n?'selected':'')+'>'+n+'</option>';})
   ).join('');
-  var statusOpts=['T1','DAE','Comunitario'].map(function(s){return'<option '+(((e?e.status:'')||'T1')===s?'selected':'')+'>'+s+'</option>';}).join('');
+  var statusOpts=['T1','DAE','Comunitario','X'].map(function(s){return'<option '+(((e?e.status:'')||'T1')===s?'selected':'')+'>'+s+'</option>';}).join('');
   var aptOpts=['AGP','SVQ','MAD'].map(function(a){return'<option '+((e?e.aeropuerto||'AGP':'AGP')===a?'selected':'')+'>'+a+'</option>';}).join('');
   document.getElementById('m-body').innerHTML=
     (isEdit&&!e.fecha_retirada?'<div class="warn-box">⚠️ Sin fecha de retirada — rellénala para calcular los costes.</div>':'')+
