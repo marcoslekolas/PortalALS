@@ -743,7 +743,7 @@ function desglose(e){
 var ALL=[];
 async function loadAll(){
   try{
-    var res=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:true,nullsFirst:false});
+    var res=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:true,nullsFirst:false}).order('hora_llegada',{ascending:true,nullsFirst:false});
     if(res.error){console.error('loadAll:',res.error.message);ALL=[];}
     else ALL=res.data||[];
   }catch(e){console.error('loadAll exception:',e.message);ALL=[];}
@@ -1019,7 +1019,7 @@ function initRealtime(){
         if(ev==='INSERT'){
           if(!ALL.find(function(e){return String(e.id)===String(p.new.id);})){
             ALL.push(p.new);
-            ALL.sort(function(a,b){var fa=(a.fecha_llegada||'9999').slice(0,10),fb=(b.fecha_llegada||'9999').slice(0,10);if(fa!==fb)return fa<fb?-1:1;return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;});
+            ALL.sort(function(a,b){var fa=(a.fecha_llegada||'9999').slice(0,10),fb=(b.fecha_llegada||'9999').slice(0,10);if(fa!==fb)return fa<fb?-1:1;function nt(t){if(!t)return'99:99';var s=String(t).trim();return s.indexOf(':')==1?'0'+s:s;}var ha=nt(a.hora_llegada),hb=nt(b.hora_llegada);if(ha!==hb)return ha<hb?-1:1;return String(a.id)<String(b.id)?-1:1;});
             toast('⚡ Nueva entrada');
           }
         }else if(ev==='UPDATE'){
@@ -1281,11 +1281,14 @@ function filtrar(){
     if(y||m){var mo=calcMes(e.fecha_llegada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
     return true;
   });
-  // Orden permanente: fecha_llegada asc, hora_llegada asc como desempate
+  // Orden estable: fecha_llegada → hora_llegada (normalizada HH:MM) → id
+  function normT(t){if(!t)return'99:99';var s=String(t).trim();return s.indexOf(':')===1?'0'+s:s;}
   f.sort(function(a,b){
-    var fa=(a.fecha_llegada||'9999').slice(0,10), fb=(b.fecha_llegada||'9999').slice(0,10);
-    if(fa!==fb) return fa<fb?-1:1;
-    return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;
+    var fa=(a.fecha_llegada||'9999').slice(0,10),fb=(b.fecha_llegada||'9999').slice(0,10);
+    if(fa!==fb)return fa<fb?-1:1;
+    var ha=normT(a.hora_llegada),hb=normT(b.hora_llegada);
+    if(ha!==hb)return ha<hb?-1:1;
+    return String(a.id)<String(b.id)?-1:1;
   });
   renderRows(f,'tbody');
   checkMobileView();
