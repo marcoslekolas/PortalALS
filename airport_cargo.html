@@ -380,11 +380,12 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
           <button id="btn-costs" class="btn btn-s btn-sm" onclick="toggleCosts()" style="white-space:nowrap">📊 Ver desglose</button>
         </div>
         <div id="sel-info" style="font-size:12px;color:var(--b600);margin-bottom:8px;min-height:18px"></div>
+        <div id="mobile-cards" style="display:none;padding:0 4px"></div>
         <div class="tc"><table class="tbl costs-hidden">
           <thead><tr>
             <th style="width:44px;padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:44px;cursor:pointer;padding:8px"><input type="checkbox" id="chk-all" onchange="toggleAll(this)" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer"></label></th>
             <th>AWB</th><th>Consignatario / Cliente</th><th>Buque</th><th>Handler</th><th>Apto</th>
-            <th>Llegada</th><th>Retirada</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th><th>Despacho</th><th>ETA Buque</th><th>T1 Cad.</th><th>Libre hasta</th>
+            <th>Llegada</th><th>Vuelo / Hora</th><th>Días</th><th>Kg</th><th>Bultos</th><th>Status</th><th>Despacho</th><th>ETA Buque</th><th>Libre hasta</th>
             <th class="cost-col">Almacenaje</th><th class="cost-col">Gest.Doc.</th><th class="cost-col">T.Recinto</th><th class="cost-col">T.Mant.</th>
             <th class="cost-col">Finde</th><th class="cost-col">Express</th><th class="cost-col">C.Camión</th><th class="cost-col">Apertura</th>
             <th class="col-sticky-r" style="width:44px"></th>
@@ -432,9 +433,12 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
       <div class="view" id="view-resumen">
         <div class="ph">
           <div class="pt">📊 Resumen mensual</div>
-          <select id="res-y" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadResumen()">
-            <option value="2026">2026</option><option value="2025">2025</option>
-          </select>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="res-y" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadResumen()">
+              <option value="2026">2026</option><option value="2025">2025</option>
+            </select>
+            <button class="btn btn-s btn-sm" onclick="exportResumenPDF()" title="Exportar a PDF">📄 PDF</button>
+          </div>
         </div>
         <div id="res-content"></div>
       </div>
@@ -912,6 +916,7 @@ async function init(){
   loadDashboard();
   checkUrl();
   initRealtime();
+  window.addEventListener('resize',function(){if(CV==='entradas') checkMobileView();});
   // Event delegation — must be set up after DOM ready, avoids onclick quote issues
   document.addEventListener('click', function(ev){
     var chk = ev.target.closest('input[type=checkbox]');
@@ -936,6 +941,7 @@ async function init(){
       var action = btn.getAttribute('data-action');
       if(action==='edit') editEntrada(aid);
       else if(action==='del') delEntrada(aid);
+      else if(action==='dup') duplicarEntrada(aid);
       
       return;
     }
@@ -1274,6 +1280,7 @@ function filtrar(){
     return true;
   });
   renderRows(f,'tbody');
+  checkMobileView();
 }
 
 // ── AWB TRACKING ─────────────────────────────────────────────
@@ -1303,6 +1310,7 @@ function trackAwb(evt,awb){
 
 function renderRows(list, tbodyId){
   var tbody=document.getElementById(tbodyId||'tbody');
+  var isEntradas=(tbodyId||'tbody')==='tbody'; // entradas=true, finalizadas=false
   if(!tbody) return;
   if(!list.length){tbody.innerHTML='<tr><td colspan="26"><div class="empty">Sin entradas</div></td></tr>';return;}
   var rows=list.map(function(e){
@@ -1331,15 +1339,27 @@ function renderRows(list, tbodyId){
       '<td style="cursor:pointer;font-size:13px;font-weight:700;color:var(--g900)">'+( e.buque||'—')+'</td>'+
       '<td><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
       '<td class="sm">'+( e.aeropuerto||'—')+'</td>'+
-      '<td class="sm">'+fd(e.fecha_llegada)+'</td>'+
-      '<td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>'+
+      (function(){
+        var hoyStr2=new Date().toISOString().slice(0,10);
+        var fl=e.fecha_llegada?e.fecha_llegada.slice(0,10):'';
+        var llegado=fl&&fl<=hoyStr2;
+        var conf=e.confirmacion_llegada;
+        var btnConf=(!conf&&llegado)?'<button onclick="confirmarLlegadaDesde(\''+e.id+'\')" data-id="'+e.id+'" style="display:block;margin-top:3px;background:var(--am500);color:#fff;border:none;border-radius:5px;padding:2px 7px;font-size:9px;cursor:pointer;white-space:nowrap">✈️ Confirmar</button>':'';
+        var confBadge=conf?'<span style="display:block;font-size:9px;color:var(--gr600);margin-top:2px">✈️ Confirmada</span>':'';
+        return'<td class="sm" style="'+(conf?'background:#f0fdf4':!conf&&llegado?'background:#fffbeb':'')+'">'+fd(e.fecha_llegada)+confBadge+btnConf+'</td>';
+      })()+
+      // Columna variable: Vuelo/Hora en entradas, Retirada en finalizadas
+      (isEntradas
+        ? '<td class="sm" style="font-size:11px">'+( e.vuelo||'—')+(e.hora_llegada?'<br><span style="color:var(--b600);font-weight:600">'+e.hora_llegada+'</span>':'')+'</td>'
+        : '<td class="sm">'+(fd(e.fecha_retirada)||'⚠️')+'</td>')+
       '<td style="text-align:center;font-size:12px">'+(isAuto&&e.fecha_retirada?d:'—')+'</td>'+
       '<td style="text-align:right;font-size:12px">'+kg+'</td>'+
       '<td style="text-align:right;font-size:12px">'+(e.bultos||'—')+'</td>'+
       '<td><span class="badge '+(e.status==='T1'?'ba':e.status==='Comunitario'?'bg':e.status==='X'?'br':e.status==='DAE'?'bp':'bgr')+'" style="font-size:10px">'+(e.status||'—')+'</span></td>'+
       '<td><span class="badge '+(e.despachado?'bg':'ba')+'" style="font-size:10px">'+(e.despachado?'✅ Despachado':'⏳ Pendiente')+'</span></td>'+
       '<td class="sm">'+(e.eta_buque?fd(e.eta_buque):'—')+'</td>'+
-      '<td class="sm">'+(e.t1_ultimado?'<span title="T1 ultimado el '+fd(e.t1_fecha_ultimado||'')+'" style="color:var(--gr600)">✅</span>':e.fecha_caducidad_t1?fd(e.fecha_caducidad_t1):'—')+'</td>'+
+      // T1 Cad. solo en finalizadas
+      (!isEntradas?'<td class="sm">'+(e.t1_ultimado?'<span title="T1 ultimado el '+fd(e.t1_fecha_ultimado||'')+'" style="color:var(--gr600)">✅</span>':e.fecha_caducidad_t1?fd(e.fecha_caducidad_t1):'—')+'</td>':'')+
       (function(){var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);var hoy=new Date();hoy.setHours(0,0,0,0);var vencido=fml&&fml<hoy;return'<td class="sm" style="'+(vencido?'color:var(--rd600);font-weight:600':fml?'color:var(--gr600)':'')+'">'+( fml?fd(fml):'—')+'</td>';})() +
       '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(alm):'—')+'</td>'+
       '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(isAuto?fn(gd):'—')+'</td>'+
@@ -1351,6 +1371,7 @@ function renderRows(list, tbodyId){
       '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(ap?fn(ap):'—')+'</td>'+
       '<td class="col-sticky-r" style="white-space:nowrap;background:var(--w);padding:3px 4px;text-align:center">'+
         '<button class="btn btn-sm btn-s" data-action="edit" data-id="'+e.id+'" title="Editar">✏️</button>'+
+        '<button class="btn btn-sm" data-action="dup" data-id="'+e.id+'" title="Duplicar expedición" style="margin-left:2px;background:var(--g100);color:var(--g600);border:1px solid var(--g200)">📋</button>'+
         '<button class="btn btn-sm btn-d" data-action="del" data-id="'+e.id+'" title="Eliminar" style="margin-left:2px">🗑️</button>'+
       '</td>'+
       '<td class="col-sticky-r2'+(isProvisional?' tot-prov':'')+'" style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--b700);background:var(--b50)">'+(isProvisional?'~':'')+fn(tot)+'</td></tr>';
@@ -1860,18 +1881,19 @@ function openDetalle(id){
 }
 
 // ── FORMULARIO ───────────────────────────────────────────
-function openNueva(){showForm(null);}
+function openNueva(prefill){showForm(null,prefill);}
 async function editEntrada(id){
   var e=ALL.filter(function(x){return String(x.id)===String(id);})[0];
   if(!e){var r=await sb.from('airport_cargo').select('*').eq('id',id).single();if(!r.data){alert('No encontrado');return;}e=r.data;ALL.push(e);}
   showForm(e);
 }
-async function showForm(e){
+async function showForm(e, prefill){
   // Cargar empresas para datalist
   var empresas=[];
   try{var er=await sb.from('empresas').select('id,nombre,email_confronta').order('nombre');empresas=er.data||[];}catch(ex){}
-  var isEdit=!!e,h=e?e.handling||'':'',isAuto=hasH(h);
-  document.getElementById('m-title').textContent=isEdit?'Editar — '+formatAwb(e.awb||'—'):'Nueva entrada Airport Cargo';
+  var pf=prefill||{};
+  var isEdit=!!e,h=e?e.handling||'':pf.handling||'',isAuto=hasH(h);
+  document.getElementById('m-title').textContent=isEdit?'Editar — '+formatAwb(e.awb||'—'):(prefill?'📋 Duplicar — Nueva entrada':'Nueva entrada Airport Cargo');
   // Load handling companies ONLY from empresas with rol Handling Aeropuerto
   var handlingEmps=[];
   try{
@@ -1886,9 +1908,9 @@ async function showForm(e){
   document.getElementById('m-body').innerHTML=
     (isEdit&&!e.fecha_retirada?'<div class="warn-box">⚠️ Sin fecha de retirada — rellénala para calcular los costes.</div>':'')+
     '<div class="fr2">'+
-    '<div class="fg"><label class="fl">AWB *</label><input id="f-awb" class="fi" value="'+(e?e.awb||'':'')+'" placeholder="123-12345678" style="font-family:var(--mono)"></div>'+
-    '<div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="'+(e?e.consignatario||'':'')+'" placeholder="Escribe para filtrar..." list="cons-list" autocomplete="off" oninput="onConsInput()"></div>'+
-    '<div class="fg"><label class="fl">Cliente <span style="font-size:10px;color:var(--g400)">(si difiere del consignatario)</span></label><input id="f-cli" class="fi" value="'+(e?e.cliente||'':'')+'" placeholder="Empresa cliente..." list="cli-list" autocomplete="off" oninput="onCliInput()"></div>'+
+    '<div class="fg"><label class="fl">AWB *</label><input id="f-awb" class="fi" value="" placeholder="123-12345678" style="font-family:var(--mono)"></div>'+
+    '<div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="'+(e?e.consignatario||'':pf.consignatario||'')+'" placeholder="Escribe para filtrar..." list="cons-list" autocomplete="off" oninput="onConsInput()"></div>'+
+    '<div class="fg"><label class="fl">Cliente <span style="font-size:10px;color:var(--g400)">(si difiere del consignatario)</span></label><input id="f-cli" class="fi" value="'+(e?e.cliente||'':pf.cliente||'')+'" placeholder="Empresa cliente..." list="cli-list" autocomplete="off" oninput="onCliInput()"></div>'+
     '<datalist id="cons-list"></datalist>'+
     '<datalist id="cli-list"></datalist>'+
     '<div id="cons-hint" style="font-size:11px;color:var(--b600);margin-top:3px;display:none">'+'<span>¿No está en la lista?</span> '+
@@ -1938,13 +1960,21 @@ async function showForm(e){
     '<div class="fg" style="margin-top:10px"><label class="fl">Coste total manual €</label>'+
     '<input id="f-man" class="fi" type="number" min="0" step="0.01" value="'+(e?e.coste_manual||'':'')+'" style="max-width:160px"></div>'+
     '</div>'+
-    '<div class="fg" style="margin-top:10px"><label class="fl">Observaciones</label><textarea id="f-obs" class="fi" style="min-height:50px">'+(e?e.observaciones||'':'')+' </textarea></div>'+
-    '<div id="lc-prev" style="margin-top:12px"></div>';
+    '<div class="fg" style="margin-top:10px"><label class="fl">Observaciones</label><textarea id="f-obs" class="fi" style="min-height:50px">'+(e?e.observaciones||'':pf.observaciones||'')+' </textarea></div>'+
+    '<div id="lc-prev" style="margin-top:12px"></div>'+
+    (isEdit?'<details style="margin-top:14px"><summary style="font-size:12px;font-weight:600;color:var(--g600);cursor:pointer;user-select:none">📋 Historial de cambios</summary><div id="hist-content" style="margin-top:6px;border:1px solid var(--g100);border-radius:8px;overflow:hidden"><div style="padding:10px;font-size:11px;color:var(--g400)">Cargando...</div></div></details>':'');
   document.getElementById('m-foot').innerHTML='<button class="btn btn-s" onclick="closeModal()">Cancelar</button>'+
     '<button class="btn btn-p" onclick="'+(isEdit?'saveEntrada(\''+e.id+'\')':'crearEntrada()')+'">💾 '+(isEdit?'Guardar cambios':'Crear entrada')+'</button>';
   openModal();
   onHC();
-  if(isEdit)setTimeout(liveCalc,50);
+  if(isEdit){
+    setTimeout(liveCalc,50);
+    // Cargar historial de cambios en diferido
+    cargarHistorial(e.id).then(function(logs){
+      var hc=document.getElementById('hist-content');
+      if(hc) hc.innerHTML=renderHistorial(logs);
+    });
+  }
   // Populate datalist with empresas
   _empresas_cache = empresas;
   var dlEl=document.getElementById('cons-list');
@@ -2048,10 +2078,15 @@ async function crearEntrada(){
 async function saveEntrada(id){
   var o=buildObj();
   if(!o.awb){alert('AWB obligatorio');return;}
+  // Capturar estado anterior para el historial
+  var antes=ALL.find(function(e){return String(e.id)===String(id);})||{};
   var r=await sb.from('airport_cargo').update(o).eq('id',id);
   if(r.error){alert('Error: '+r.error.message);return;}
-  // Intentar guardar campos extendidos si las columnas existen en Supabase
-  try{await sb.from('airport_cargo').update(buildObjExtended()).eq('id',id);}catch(ex){}
+  // Guardar campos extendidos
+  var oExt=buildObjExtended();
+  try{await sb.from('airport_cargo').update(oExt).eq('id',id);}catch(ex){}
+  // Registrar cambios en el historial
+  try{await logCambios(id,antes,Object.assign({},o,oExt));}catch(ex){}
   toast('Guardado ✅');closeModal();await loadAll();loadView();
 }
 async function delEntrada(id){
@@ -2059,6 +2094,179 @@ async function delEntrada(id){
   await sb.from('airport_cargo').delete().eq('id',id);
   toast('Eliminado 🗑️');ALL=ALL.filter(function(e){return String(e.id)!==String(id);});loadView();
 }
+
+// ── FEATURE 9: Duplicar expedición ──────────────────────────────────────────
+function duplicarEntrada(id){
+  var src=ALL.find(function(e){return String(e.id)===String(id);});
+  if(!src){toast('Registro no encontrado');return;}
+  // Campos que se copian (se excluyen: awb, fechas, confirmacion, t1_ultimado, costes)
+  var prefill={
+    consignatario:src.consignatario||'',
+    cliente:src.cliente||'',
+    buque:src.buque||'',
+    handling:src.handling||'',
+    aeropuerto:src.aeropuerto||'AGP',
+    status:src.status||'T1',
+    kilos_tasables:src.kilos_tasables||'',
+    bultos:src.bultos||'',
+    eta_buque:src.eta_buque||'',
+    observaciones:src.observaciones||'',
+    aplica_finde:src.aplica_finde||false,
+    aplica_express:src.aplica_express||false,
+    aplica_carga_camion:src.aplica_carga_camion||false,
+    aplica_apertura:src.aplica_apertura||false,
+    coste_manual:src.coste_manual||null,
+  };
+  openNueva(prefill);
+  toast('📋 Expedición duplicada — revisa y ajusta los datos');
+}
+
+// ── FEATURE 5: Exportar resumen mensual a PDF ────────────────────────────────
+function exportResumenPDF(){
+  var cont=document.getElementById('res-content');
+  var yr=document.getElementById('res-y').value||'2026';
+  if(!cont||!cont.innerHTML.trim()){toast('Carga primero el resumen');return;}
+  var w=window.open('','_blank','width=900,height=700');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">'+
+    '<title>Resumen Mensual Airport Cargo '+yr+'</title>'+
+    '<style>'+
+      'body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#111}'+
+      'h1{font-size:15px;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:6px;margin-bottom:16px}'+
+      'table{border-collapse:collapse;width:100%;margin-bottom:16px}'+
+      'th{background:#1e3a5f;color:#fff;padding:5px 8px;text-align:left;font-size:10px}'+
+      'td{border:1px solid #ddd;padding:4px 8px;font-size:10px}'+
+      'tr:nth-child(even) td{background:#f5f5f5}'+
+      '.badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600}'+
+      '@media print{body{margin:10px}button{display:none!important}}'+
+    '</style></head><body>'+
+    '<h1>📊 Resumen Mensual Airport Cargo — '+yr+'</h1>'+
+    '<p style="font-size:10px;color:#666;margin-bottom:12px">Generado el '+new Date().toLocaleString('es-ES')+' · CUSTOMS-WAY SL</p>'+
+    cont.innerHTML+
+    '</body></html>');
+  w.document.close();
+  setTimeout(function(){w.print();},500);
+}
+
+// ── FEATURE 7: Historial de cambios ──────────────────────────────────────────
+// SQL a ejecutar en Supabase:
+// CREATE TABLE IF NOT EXISTS airport_cargo_log (
+//   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+//   registro_id uuid,
+//   usuario text, campo text,
+//   valor_anterior text, valor_nuevo text,
+//   created_at timestamptz DEFAULT now()
+// );
+// ALTER TABLE airport_cargo_log ENABLE ROW LEVEL SECURITY;
+// CREATE POLICY "Acceso total log" ON airport_cargo_log FOR ALL USING (true);
+
+async function logCambios(id, antes, despues){
+  var usuario=(CU&&CU.nombre)||'desconocido';
+  var campos=['consignatario','cliente','buque','handling','status','fecha_llegada','fecha_retirada',
+    'kilos_tasables','bultos','eta_buque','vuelo','hora_llegada','confirmacion_llegada',
+    'despachado','t1_sellado','t1_ultimado','aplica_finde','aplica_express','aplica_carga_camion','aplica_apertura','observaciones'];
+  var logs=[];
+  campos.forEach(function(c){
+    var va=String(antes[c]??''), vn=String(despues[c]??'');
+    if(va!==vn) logs.push({registro_id:id,usuario:usuario,campo:c,valor_anterior:va||null,valor_nuevo:vn||null});
+  });
+  if(logs.length) await sb.from('airport_cargo_log').insert(logs);
+}
+
+async function cargarHistorial(id){
+  var {data}=await sb.from('airport_cargo_log')
+    .select('*').eq('registro_id',id)
+    .order('created_at',{ascending:false}).limit(30);
+  return data||[];
+}
+
+function renderHistorial(logs){
+  if(!logs.length) return '<div style="padding:12px;font-size:12px;color:var(--g400);text-align:center">Sin cambios registrados</div>';
+  var LABELS={consignatario:'Consignatario',cliente:'Cliente',buque:'Buque',handling:'Handler',
+    status:'Status',fecha_llegada:'Llegada',fecha_retirada:'Retirada',kilos_tasables:'Kilos',
+    bultos:'Bultos',eta_buque:'ETA Buque',vuelo:'Vuelo',hora_llegada:'Hora llegada',
+    confirmacion_llegada:'Confirmación llegada',despachado:'Despachado',t1_sellado:'T1 sellado',
+    t1_ultimado:'T1 ultimado',aplica_finde:'Finde/festivo',aplica_express:'Express',
+    aplica_carga_camion:'Carga camión',aplica_apertura:'Apertura',observaciones:'Observaciones'};
+  return'<div style="max-height:220px;overflow-y:auto">'+
+    logs.map(function(l){
+      var dt=new Date(l.created_at).toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+      var lbl=LABELS[l.campo]||l.campo;
+      return'<div style="padding:7px 12px;border-bottom:1px solid var(--g100);font-size:11px;display:flex;gap:8px;align-items:flex-start">'+
+        '<div style="flex:0 0 auto;color:var(--g400);white-space:nowrap">'+dt+'</div>'+
+        '<div style="flex:0 0 auto;color:var(--b600);font-weight:600;white-space:nowrap">'+l.usuario+'</div>'+
+        '<div style="flex:1;min-width:0;color:var(--g700)">'+
+          '<strong>'+lbl+'</strong>: '+
+          (l.valor_anterior?'<span style="color:var(--rd600);text-decoration:line-through">'+l.valor_anterior+'</span> → ':'(vacío) → ')+
+          '<span style="color:var(--gr600)">'+(l.valor_nuevo||'(vacío)')+'</span>'+
+        '</div>'+
+      '</div>';
+    }).join('')+
+  '</div>';
+}
+
+// ── FEATURE 3: Vista móvil compacta ─────────────────────────────────────────
+function renderMobileCards(list){
+  var cont=document.getElementById('mobile-cards');
+  if(!cont) return;
+  if(!list||!list.length){cont.innerHTML='<div style="text-align:center;padding:40px;color:var(--g400)">Sin expediciones pendientes</div>';return;}
+  var hoy=new Date().toISOString().slice(0,10);
+  cont.innerHTML=list.map(function(e){
+    var isAuto=hasH(e.handling);var kg=parseFloat(e.kilos_tasables)||0;
+    var hoyBase=e.fecha_retirada||hoy;var yr=new Date(hoyBase).getFullYear();
+    var d=isAuto&&e.fecha_llegada?diasFact(e.fecha_llegada,hoyBase,e.handling):0;
+    var tot=isAuto?(calcAlm(kg,d,e.handling,yr)+calcGD(e.handling,yr)+calcTR(kg,e.handling,yr)+calcTM(e.handling,yr)):parseFloat(e.coste_manual)||0;
+    var isProvisional=isAuto&&!e.fecha_retirada&&!!e.fecha_llegada;
+    var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
+    var fmlVence=fml&&(fml-new Date())/(1000*60*60*24)<=3;
+    var conf=e.confirmacion_llegada;
+    var llegado=e.fecha_llegada&&e.fecha_llegada.slice(0,10)<=hoy;
+    return'<div style="background:var(--w);border-radius:12px;padding:14px;margin-bottom:10px;box-shadow:var(--sh0);'+
+      (e.confirmacion_llegada?'border-left:3px solid var(--gr500)':'')+
+      (fmlVence&&!e.fecha_retirada?'border-left:3px solid var(--rd500)':'')+
+      '">'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">'+
+        '<div>'+
+          '<div style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--b700)">'+formatAwb(e.awb||'')+'</div>'+
+          '<div style="font-size:13px;font-weight:700;color:var(--g900);margin-top:2px">'+( e.buque||'—')+'</div>'+
+          '<div style="font-size:11px;color:var(--g500)">'+( e.consignatario||'—')+'</div>'+
+        '</div>'+
+        '<div style="text-align:right">'+
+          '<div style="font-size:14px;font-weight:800;color:'+(isProvisional?'var(--am600)':'var(--b700)')+'">'+
+            (isProvisional?'~':'')+fn(tot)+(isProvisional?' €':' €')+'</div>'+
+          '<span class="badge '+(e.status==='T1'?'ba':e.status==='Comunitario'?'bg':e.status==='X'?'br':'bgr')+'" style="font-size:9px;margin-top:4px">'+( e.status||'—')+'</span>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:var(--g600);margin-bottom:10px">'+
+        '<div>✈️ <strong>Handler:</strong> '+(e.handling||'—')+'</div>'+
+        '<div>📅 <strong>Llegada:</strong> '+fd(e.fecha_llegada)+'</div>'+
+        '<div>⚖️ <strong>Kilos:</strong> '+kg+'</div>'+
+        '<div>📦 <strong>Bultos:</strong> '+(e.bultos||'—')+'</div>'+
+        (fml?'<div style="color:'+(fmlVence?'var(--rd600)':'var(--gr600)')+'">🏪 <strong>Libre hasta:</strong> '+fd(fml)+'</div>':'<div></div>')+
+        '<div>'+( e.vouelo||'')+'</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+        (!conf&&llegado?'<button onclick="confirmarLlegadaDesde(\''+e.id+'\')" style="flex:1;background:var(--am500);color:#fff;border:none;border-radius:8px;padding:7px;font-size:11px;font-weight:700;cursor:pointer">✈️ Confirmar llegada</button>':
+          conf?'<div style="flex:1;text-align:center;font-size:11px;color:var(--gr600);padding:7px;background:var(--gr50);border-radius:8px">✈️ Llegada confirmada</div>':'')+
+        '<button onclick="editEntrada(\''+e.id+'\')" style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer">✏️</button>'+
+        '<button onclick="duplicarEntrada(\''+e.id+'\')" style="background:var(--g100);color:var(--g600);border:1px solid var(--g200);border-radius:8px;padding:7px 12px;font-size:11px;cursor:pointer">📋</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+function checkMobileView(){
+  var isMobile=window.innerWidth<700;
+  var tableWrap=document.querySelector('#view-entradas .tc');
+  var mobileWrap=document.getElementById('mobile-cards');
+  if(!tableWrap||!mobileWrap) return;
+  tableWrap.style.display=isMobile?'none':'';
+  mobileWrap.style.display=isMobile?'block':'none';
+  if(isMobile){
+    var pending=ALL.filter(function(e){return !e.fecha_retirada;});
+    renderMobileCards(pending);
+  }
+}
+
 function loadView(){
   if(CV==='dashboard') loadDashboard();
   else if(CV==='entradas') filtrar();
