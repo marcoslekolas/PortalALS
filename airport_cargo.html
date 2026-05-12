@@ -994,7 +994,9 @@ function initRealtime(){
 
   async function poll(){
     try{
-      var res=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:true,nullsFirst:false});
+      var res=await sb.from('airport_cargo').select('*')
+        .order('fecha_llegada',{ascending:true,nullsFirst:false})
+        .order('hora_llegada',{ascending:true,nullsFirst:false});
       if(!res.error) applyUpdates(res.data||[]);
       setRTStatus('#22c55e','Datos actualizados · cada 30 s');
     }catch(e){
@@ -1017,7 +1019,7 @@ function initRealtime(){
         if(ev==='INSERT'){
           if(!ALL.find(function(e){return String(e.id)===String(p.new.id);})){
             ALL.push(p.new);
-            ALL.sort(function(a,b){return(a.fecha_llegada||'9999')<(b.fecha_llegada||'9999')?-1:1;});
+            ALL.sort(function(a,b){var fa=(a.fecha_llegada||'9999').slice(0,10),fb=(b.fecha_llegada||'9999').slice(0,10);if(fa!==fb)return fa<fb?-1:1;return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;});
             toast('⚡ Nueva entrada');
           }
         }else if(ev==='UPDATE'){
@@ -1273,11 +1275,17 @@ function filtrar(){
   var y=document.getElementById('fil-y').value||'';
   var m=document.getElementById('fil-m').value||'';
   var f=ALL.filter(function(e){
-    if(e.fecha_retirada) return false; // solo pendientes en esta vista
+    if(e.fecha_retirada) return false;
     if(q&&!((e.awb||'')+(e.consignatario||'')+(e.buque||'')).toLowerCase().includes(q))return false;
     if(h&&e.handling!==h)return false;
     if(y||m){var mo=calcMes(e.fecha_llegada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
     return true;
+  });
+  // Orden permanente: fecha_llegada asc, hora_llegada asc como desempate
+  f.sort(function(a,b){
+    var fa=(a.fecha_llegada||'9999').slice(0,10), fb=(b.fecha_llegada||'9999').slice(0,10);
+    if(fa!==fb) return fa<fb?-1:1;
+    return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;
   });
   renderRows(f,'tbody');
   checkMobileView();
@@ -1908,7 +1916,7 @@ async function showForm(e, prefill){
   document.getElementById('m-body').innerHTML=
     (isEdit&&!e.fecha_retirada?'<div class="warn-box">⚠️ Sin fecha de retirada — rellénala para calcular los costes.</div>':'')+
     '<div class="fr2">'+
-    '<div class="fg"><label class="fl">AWB *</label><input id="f-awb" class="fi" value="" placeholder="123-12345678" style="font-family:var(--mono)"></div>'+
+    '<div class="fg"><label class="fl">AWB *</label><input id="f-awb" class="fi" value="'+(e?e.awb||'':'')+'" placeholder="123-12345678" style="font-family:var(--mono)"></div>'+
     '<div class="fg"><label class="fl">Consignatario *</label><input id="f-cons" class="fi" value="'+(e?e.consignatario||'':pf.consignatario||'')+'" placeholder="Escribe para filtrar..." list="cons-list" autocomplete="off" oninput="onConsInput()"></div>'+
     '<div class="fg"><label class="fl">Cliente <span style="font-size:10px;color:var(--g400)">(si difiere del consignatario)</span></label><input id="f-cli" class="fi" value="'+(e?e.cliente||'':pf.cliente||'')+'" placeholder="Empresa cliente..." list="cli-list" autocomplete="off" oninput="onCliInput()"></div>'+
     '<datalist id="cons-list"></datalist>'+
