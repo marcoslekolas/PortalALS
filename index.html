@@ -465,6 +465,9 @@ body{
 .cal-ev.st-aplazado{background:var(--st-aplazado-bg);color:var(--st-aplazado-c);border-left-color:var(--st-aplazado-bar)}
 .cal-ev.st-noiniciado{background:var(--st-noiniciado-bg);color:var(--st-noiniciado-c);border-left-color:var(--st-noiniciado-bar)}
 .cal-ev:hover{filter:brightness(.96)}
+.cal-user-ev{font-size:10px;padding:4px 6px;border-radius:5px;margin-bottom:2px;line-height:1.35;display:block;color:#fff;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.cal-user-ev:hover{filter:brightness(.94)}
+.cal-user-ev small{display:block;font-size:9px;opacity:.82;margin-top:1px}
 
 /* ── TIMELINE ── */
 .tl-wrap{overflow-x:auto;background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px;box-shadow:var(--sh0)}
@@ -7591,16 +7594,25 @@ async function renderCal(){
     }
   }
 
-  const {data:bqs} = await sb.from('buques')
-    .select('id,nombre,eta_buque,ref_visual_trans,puerto_terminal,place,estado_operacion')
-    .not('eta_buque','is',null);
+  const [{data:bqs},{data:eventos,error:eventosError}] = await Promise.all([
+    sb.from('buques')
+      .select('id,nombre,eta_buque,ref_visual_trans,puerto_terminal,place,estado_operacion')
+      .not('eta_buque','is',null),
+    sb.from('eventos')
+      .select('id,titulo,descripcion,fecha_inicio,color,usuario_nombre')
+      .order('fecha_inicio')
+  ]);
+  if(eventosError && !window._calEventosWarned){
+    window._calEventosWarned = true;
+    console.warn('Eventos no disponibles en calendario:', eventosError.message);
+  }
 
   const calBody   = document.getElementById('cal-body');
   const calTitle  = document.getElementById('cal-m');
   const calHeader = document.getElementById('cal-dheader');
 
   // Helper: build a single day cell
-  function buildDayCell(ds, dayNum, isToday, isOtherMonth, buquesOfDay){
+  function buildDayCell(ds, dayNum, isToday, isOtherMonth, buquesOfDay, eventosOfDay){
     const cell = document.createElement('div');
     cell.className = 'cal-day' + (isToday ? ' today' : '') + (isOtherMonth ? ' om' : '');
     cell.dataset.date = ds;
@@ -7623,6 +7635,18 @@ async function renderCal(){
       ev.addEventListener('click', e => { e.stopPropagation(); openBuque(b.id); });
       ev.addEventListener('dragstart', e => { calDragId = b.id; ev.style.opacity = '0.5'; e.dataTransfer.effectAllowed = 'move'; });
       ev.addEventListener('dragend', () => { ev.style.opacity = '1'; });
+      cell.appendChild(ev);
+    });
+
+    (eventosOfDay||[]).forEach(evt => {
+      const ev = document.createElement('div');
+      ev.className = 'cal-user-ev';
+      ev.style.background = evt.color || '#3b82f6';
+      ev.title = evt.descripcion || evt.titulo || 'Evento';
+      const dt = new Date(evt.fecha_inicio);
+      const hora = isNaN(dt) ? '' : dt.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+      ev.innerHTML = `📅 <strong>${evt.titulo || 'Evento'}</strong>${hora ? `<small>${hora}${evt.usuario_nombre ? ' · '+evt.usuario_nombre : ''}</small>` : ''}`;
+      ev.addEventListener('click', e => { e.stopPropagation(); mostrarDetalleEvento(evt); });
       cell.appendChild(ev);
     });
 
@@ -7656,7 +7680,8 @@ async function renderCal(){
       const ds = `${calY}-${String(calM+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
       const isT = d === now.getDate() && calM === now.getMonth() && calY === now.getFullYear();
       const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
-      calBody.appendChild(buildDayCell(ds, d, isT, false, bq));
+      const evs = (eventos||[]).filter(e => e.fecha_inicio && e.fecha_inicio.startsWith(ds));
+      calBody.appendChild(buildDayCell(ds, d, isT, false, bq, evs));
     }
     // Rellenar días del mes siguiente hasta completar la última fila (7 columnas)
     const totalCells = dow + days;
@@ -7666,8 +7691,9 @@ async function renderCal(){
     for(let d = 1; d <= trailing; d++){
       const ds = `${nextY}-${String(nextM+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
       const bq = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
+      const evs = (eventos||[]).filter(e => e.fecha_inicio && e.fecha_inicio.startsWith(ds));
       // Días del mes siguiente: visibles y con drag-drop activo pero estilo tenue
-      const cell = buildDayCell(ds, d, false, true, bq);
+      const cell = buildDayCell(ds, d, false, true, bq, evs);
       // Al soltar en día del mes siguiente, navegar automáticamente
       cell.addEventListener('drop', async e => {
         e.preventDefault(); cell.classList.remove('drag-over');
@@ -7706,7 +7732,8 @@ async function renderCal(){
       const ds  = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
       const isT = ds === todayLocal;
       const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
-      calBody.appendChild(buildDayCell(ds, cur.getDate(), isT, false, bq));
+      const evs = (eventos||[]).filter(e => e.fecha_inicio && e.fecha_inicio.startsWith(ds));
+      calBody.appendChild(buildDayCell(ds, cur.getDate(), isT, false, bq, evs));
     }
   }
 
@@ -7728,8 +7755,9 @@ async function renderCal(){
       const ds  = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
       const isT = ds === todayLocal;
       const bq  = (bqs||[]).filter(b => b.eta_buque && b.eta_buque.startsWith(ds));
+      const evs = (eventos||[]).filter(e => e.fecha_inicio && e.fecha_inicio.startsWith(ds));
       // In week view use taller cells
-      const cell = buildDayCell(ds, cur.getDate(), isT, false, bq);
+      const cell = buildDayCell(ds, cur.getDate(), isT, false, bq, evs);
       cell.style.minHeight = '160px';
       calBody.appendChild(cell);
     }
@@ -7770,6 +7798,26 @@ function calH(){
   calY = now.getFullYear(); calM = now.getMonth();
   calAnchor = new Date(now);
   renderCal();
+}
+
+function mostrarDetalleEvento(ev){
+  document.getElementById('m-title').textContent='📅 '+(ev.titulo||'Evento');
+  const fecha = ev.fecha_inicio
+    ? new Date(ev.fecha_inicio).toLocaleString('es-ES',{weekday:'long',day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})
+    : 'Sin fecha';
+  document.getElementById('m-body').innerHTML=
+    '<div style="display:flex;gap:12px;align-items:flex-start">'+
+      '<div style="width:6px;align-self:stretch;border-radius:8px;background:'+(ev.color||'#3b82f6')+'"></div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div class="dl">Fecha</div><div class="dv" style="margin-bottom:12px">'+fecha+'</div>'+
+        (ev.usuario_nombre?'<div class="dl">Creado por</div><div class="dv" style="margin-bottom:12px">'+ev.usuario_nombre+'</div>':'')+
+        '<div class="dl">Descripción</div><div class="dv" style="white-space:pre-wrap;line-height:1.5">'+(ev.descripcion||'Sin descripción')+'</div>'+
+      '</div>'+
+    '</div>';
+  document.getElementById('m-foot').innerHTML=
+    '<button class="btn btn-s" onclick="closeModal()">Cerrar</button>'+
+    '<button class="btn btn-p" onclick="editarEventoDesdeDetalle(\''+ev.id+'\')">Editar evento</button>';
+  document.getElementById('mo').classList.add('open');
 }
 
 // ── Global drag: allow dragging buque cards from any view to change ETA ──
@@ -14783,6 +14831,92 @@ function abrirNuevoEvento(prefill){
   document.getElementById('mo').classList.add('open');
 }
 
+async function editarEventoDesdeDetalle(id){
+  var {data,error}=await sb.from('eventos').select('*').eq('id',id).single();
+  if(error||!data){showToast('No se pudo cargar el evento');return;}
+  abrirEditarEvento(data);
+}
+
+function _evtLocalDateTime(iso){
+  if(!iso) return '';
+  var d=new Date(iso);
+  if(isNaN(d)) return '';
+  d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+  return d.toISOString().slice(0,16);
+}
+
+function abrirEditarEvento(ev){
+  _evtColorSel=ev.color||'#3b82f6';
+  var swatches=EVT_COLORS.map(function(c){
+    var sel=c.v===_evtColorSel;
+    return'<div class="evt-color-swatch" data-color="'+c.v+'" onclick="selEvtColor(\''+c.v+'\')" title="'+c.n+'" '+
+      'style="width:28px;height:28px;border-radius:50%;background:'+c.v+';cursor:pointer;'+
+      'outline:'+(sel?'3px solid #000':'none')+';outline-offset:2px;flex-shrink:0"></div>';
+  }).join('');
+  var alarmOpts=function(selected){
+    return [
+      ['','Sin alarma'],['5','5 minutos antes'],['15','15 minutos antes'],['30','30 minutos antes'],
+      ['60','1 hora antes'],['120','2 horas antes'],['1440','1 día antes'],['2880','2 días antes']
+    ].map(function(o){return '<option value="'+o[0]+'" '+(String(selected||'')===o[0]?'selected':'')+'>'+o[1]+'</option>';}).join('');
+  };
+  document.getElementById('m-title').textContent='Editar evento';
+  document.getElementById('m-body').innerHTML=
+    '<div class="fg2"><label class="fl2">Título *</label>'+
+      '<input id="ev-edit-titulo" class="fi" placeholder="Nombre del evento…" value="'+(ev.titulo||'').replace(/"/g,'&quot;')+'"></div>'+
+    '<div class="fg2"><label class="fl2">Descripción</label>'+
+      '<textarea id="ev-edit-desc" class="fi" style="min-height:72px" placeholder="Notas opcionales…">'+(ev.descripcion||'')+'</textarea></div>'+
+    '<div class="fr2">'+
+      '<div class="fg2"><label class="fl2">Fecha y hora *</label>'+
+        '<input id="ev-edit-fecha" class="fi" type="datetime-local" value="'+_evtLocalDateTime(ev.fecha_inicio)+'"></div>'+
+    '</div>'+
+    '<div class="fg2"><label class="fl2">Color</label>'+
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px">'+swatches+
+        '<div id="evt-color-prev" style="width:32px;height:32px;border-radius:8px;background:'+_evtColorSel+';border:2px solid var(--g200);margin-left:8px;flex-shrink:0"></div>'+
+      '</div></div>'+
+    '<div class="fr2">'+
+      '<div class="fg2"><label class="fl2">Alarma 1</label><select id="ev-edit-al1" class="fi fs">'+alarmOpts(ev.alarma1)+'</select></div>'+
+      '<div class="fg2"><label class="fl2">Alarma 2</label><select id="ev-edit-al2" class="fi fs">'+alarmOpts(ev.alarma2)+'</select></div>'+
+    '</div>';
+  document.getElementById('m-foot').innerHTML=
+    '<button class="btn btn-d" onclick="eliminarEvento(\''+ev.id+'\')">Eliminar</button>'+
+    '<button class="btn btn-s" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-p" onclick="guardarEventoEditado(\''+ev.id+'\')">Guardar cambios</button>';
+  document.getElementById('mo').classList.add('open');
+}
+
+async function guardarEventoEditado(id){
+  var titulo=(document.getElementById('ev-edit-titulo').value||'').trim();
+  var fecha=document.getElementById('ev-edit-fecha').value;
+  if(!titulo){alert('El título es obligatorio');return;}
+  if(!fecha){alert('La fecha y hora son obligatorias');return;}
+  var al1=document.getElementById('ev-edit-al1').value||null;
+  var al2=document.getElementById('ev-edit-al2').value||null;
+  var obj={
+    titulo:titulo,
+    descripcion:document.getElementById('ev-edit-desc').value.trim()||null,
+    fecha_inicio:new Date(fecha).toISOString(),
+    color:_evtColorSel,
+    alarma1:al1?parseInt(al1):null,
+    alarma2:al2?parseInt(al2):null
+  };
+  var {error}=await sb.from('eventos').update(obj).eq('id',id);
+  if(error){showToast('Error al guardar evento: '+error.message);return;}
+  showToast('Evento actualizado');
+  closeModal();
+  if(typeof CV !== 'undefined' && CV === 'calendario') renderCal();
+  actualizarBadgeEventos();
+}
+
+async function eliminarEvento(id){
+  if(!confirm('¿Eliminar este evento?')) return;
+  var {error}=await sb.from('eventos').delete().eq('id',id);
+  if(error){showToast('Error al eliminar evento: '+error.message);return;}
+  showToast('Evento eliminado');
+  closeModal();
+  if(typeof CV !== 'undefined' && CV === 'calendario') renderCal();
+  actualizarBadgeEventos();
+}
+
 async function guardarEvento(){
   var titulo=(document.getElementById('ev-titulo').value||'').trim();
   var fecha=document.getElementById('ev-fecha').value;
@@ -14804,6 +14938,7 @@ async function guardarEvento(){
   if(error){showToast('Error al crear evento: '+error.message);return;}
   showToast('📅 Evento creado');
   closeModal();
+  if(typeof CV !== 'undefined' && CV === 'calendario') renderCal();
   // Solicitar permiso de notificaciones del navegador si no se ha dado
   if(Notification&&Notification.permission==='default'){
     Notification.requestPermission();
