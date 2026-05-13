@@ -7561,6 +7561,7 @@ let calY, calM;
 let calView = 'mes';       // 'mes' | '15d' | 'semana'
 let calAnchor = null;      // fecha base para 15d/semana (Date)
 window.calDragId = null;
+window.calDragEventoId = null;
 
 function calSetView(v){
   calView = v;
@@ -7611,6 +7612,38 @@ async function renderCal(){
   const calTitle  = document.getElementById('cal-m');
   const calHeader = document.getElementById('cal-dheader');
 
+  async function moverElementoCalendario(ds, navegarMes){
+    if(calDragEventoId){
+      const evt = (eventos||[]).find(e => e.id === calDragEventoId);
+      const old = evt?.fecha_inicio ? new Date(evt.fecha_inicio) : new Date(ds+'T09:00:00');
+      const next = new Date(ds+'T00:00:00');
+      next.setHours(old.getHours(), old.getMinutes(), 0, 0);
+      const {error} = await sb.from('eventos').update({fecha_inicio: next.toISOString()}).eq('id', calDragEventoId);
+      if(!error){
+        showToast('Evento → ' + ds);
+        if(navegarMes){
+          calM = next.getMonth(); calY = next.getFullYear(); calAnchor = new Date(calY, calM, 1);
+        }
+        await renderCal();
+        actualizarBadgeEventos();
+      } else { mostrarBanner('Error al mover evento','red'); }
+      calDragEventoId = null;
+      return;
+    }
+    if(calDragId){
+      const {error} = await sb.from('buques').update({eta_buque: ds + 'T12:00:00'}).eq('id', calDragId);
+      if(!error){
+        showToast('ETA → ' + ds);
+        if(navegarMes){
+          const d = new Date(ds+'T12:00:00');
+          calM = d.getMonth(); calY = d.getFullYear(); calAnchor = new Date(calY, calM, 1);
+        }
+        await renderCal();
+      } else { mostrarBanner('Error al mover','red'); }
+      calDragId = null;
+    }
+  }
+
   // Helper: build a single day cell
   function buildDayCell(ds, dayNum, isToday, isOtherMonth, buquesOfDay, eventosOfDay){
     const cell = document.createElement('div');
@@ -7645,8 +7678,20 @@ async function renderCal(){
       ev.title = evt.descripcion || evt.titulo || 'Evento';
       const dt = new Date(evt.fecha_inicio);
       const hora = isNaN(dt) ? '' : dt.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+      ev.draggable = true;
+      ev.dataset.eid = evt.id;
       ev.innerHTML = `📅 <strong>${evt.titulo || 'Evento'}</strong>${hora ? `<small>${hora}${evt.usuario_nombre ? ' · '+evt.usuario_nombre : ''}</small>` : ''}`;
       ev.addEventListener('click', e => { e.stopPropagation(); mostrarDetalleEvento(evt); });
+      ev.addEventListener('dragstart', e => {
+        calDragEventoId = evt.id;
+        calDragId = null;
+        ev.style.opacity = '0.55';
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      ev.addEventListener('dragend', () => {
+        ev.style.opacity = '1';
+        calDragEventoId = null;
+      });
       cell.appendChild(ev);
     });
 
@@ -7654,10 +7699,8 @@ async function renderCal(){
     cell.addEventListener('dragleave', ()  => cell.classList.remove('drag-over'));
     cell.addEventListener('drop', async e => {
       e.preventDefault(); cell.classList.remove('drag-over');
-      if(!calDragId) return;
-      const {error} = await sb.from('buques').update({eta_buque: ds + 'T12:00:00'}).eq('id', calDragId);
-      if(!error){ showToast('ETA → ' + ds); await renderCal(); } else { mostrarBanner('Error al mover','red'); }
-      calDragId = null;
+      if(!calDragId && !calDragEventoId) return;
+      await moverElementoCalendario(ds, false);
     });
     return cell;
   }
@@ -7697,15 +7740,8 @@ async function renderCal(){
       // Al soltar en día del mes siguiente, navegar automáticamente
       cell.addEventListener('drop', async e => {
         e.preventDefault(); cell.classList.remove('drag-over');
-        if(!calDragId) return;
-        const {error} = await sb.from('buques').update({eta_buque: ds+'T12:00:00'}).eq('id',calDragId);
-        if(!error){
-          showToast('ETA → '+ds+' · Navegando al mes siguiente');
-          calM = nextM; calY = nextY;
-          calAnchor = new Date(nextY, nextM, 1);
-          await renderCal();
-        } else { mostrarBanner('Error al mover','red'); }
-        calDragId = null;
+        if(!calDragId && !calDragEventoId) return;
+        await moverElementoCalendario(ds, true);
       }, true); // useCapture para sobreescribir el listener de buildDayCell
       calBody.appendChild(cell);
     }
