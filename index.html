@@ -5476,15 +5476,19 @@ async function abrirAsignarExpCamion(camionId, camionRef){
   document.getElementById('mo').classList.add('open');
 
   // Cargar expediciones activas y las ya asignadas a este camión
-  // Mostramos todas EXCEPTO las embarcadas — usamos or() para incluir también NULLs
+  // Filtramos en JS (no en PostgREST) para evitar problemas de codificación con emojis
   const [expRes, asigRes] = await Promise.all([
     sb.from('expediciones')
       .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,empresas(nombre),buques(nombre,eta_buque)')
-      .or('estado_semaforo.is.null,estado_semaforo.neq.🚢 EMBARCADO')
-      .order('buques(nombre)',{ascending:true}),
+      .order('created_at',{ascending:false})
+      .limit(500),
     sb.from('camiones_expediciones').select('expedicion_id').eq('camion_id',camionId)
   ]);
-  const exps = (expRes.data||[]);
+  if(expRes.error){ console.error('expediciones query error:',expRes.error); }
+  // Excluir embarcadas (comparación JS evita problemas de encoding con emojis en PostgREST)
+  const exps = (expRes.data||[]).filter(e =>
+    !(e.estado_semaforo||'').includes('EMBARCADO')
+  );
   const asignadas = new Set((asigRes.data||[]).map(r=>r.expedicion_id));
 
   // Agrupar por buque
@@ -6466,15 +6470,13 @@ async function loadDash(){
   // ── Pipeline operativo ──────────────────────────────────────────
   const pipelineEl = document.getElementById('dash-pipeline');
   if(pipelineEl){
-    // Buques cerrados esta semana (estado_operacion = 'Embarcado' o 'Finalizado' con ETA esta semana)
-    let cerradosSem = 0;
-    try{
-      const {data:cer} = await sb.from('buques')
-        .select('id,eta_buque,estado_operacion')
-        .in('estado_operacion',['Embarcado','Finalizado'])
-        .gte('eta_buque', localDate(lunesEstaSem));
-      cerradosSem = (cer||[]).length;
-    }catch(ex){}
+    // Buques cerrados esta semana — usar allBuques ya cargado (evita query extra con .in() que falla)
+    const cerradosSem = allBuques.filter(b => {
+      const est = (b.estado_operacion||'').toLowerCase();
+      if(!est.includes('embarcado') && !est.includes('finalizado')) return false;
+      if(!b.eta_buque) return false;
+      return new Date(b.eta_buque) >= lunesEstaSem;
+    }).length;
     pipelineEl.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <div style="font-size:13px;font-weight:600">🚢 Pipeline operativo</div>
