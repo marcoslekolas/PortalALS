@@ -410,6 +410,7 @@ if('serviceWorker' in navigator){
         <button type="button" class="nav-item" onclick="nav('kanban',this)"><span class="ni">🎛</span><span class="nav-item-txt">Panel Kanban</span></button>
         <div class="sb-sec">Gestión operativa</div>
         <button type="button" class="nav-item" onclick="nav('buques',this)"><span class="ni">⚓</span><span class="nav-item-txt">Buques</span></button>
+        <button type="button" class="nav-item" onclick="nav('camiones',this)"><span class="ni">🚛</span><span class="nav-item-txt">Camiones consolidados</span></button>
         <button type="button" class="nav-item" onclick="nav('expediciones',this)"><span class="ni">📦</span><span class="nav-item-txt">Expediciones</span></button>
         <button type="button" class="nav-item" id="nav-al" onclick="nav('alertas',this)"><span class="ni">🔔</span><span class="nav-item-txt">Alertas<span class="nb" id="badge-al" style="display:none">0</span></span></button>
         <button type="button" class="nav-item" onclick="nav('incidencias',this)"><span class="ni">⚠️</span><span class="nav-item-txt">Incidencias</span></button>
@@ -609,7 +610,13 @@ if('serviceWorker' in navigator){
 
         <div id="buques-list" class="buque-list"></div>
       </div>
-      <div class="view" id="view-expediciones">
+      <div class="view" id="view-camiones">
+        <div class="ph">
+          <div class="pt">🚛 Camiones consolidados</div>
+          <button class="btn btn-p btn-sm" onclick="abrirNuevoCamion()">+ Nuevo camión</button>
+        </div>
+        <div id="camiones-list" class="buque-list"></div>
+      </div>
         <!-- Filtros multi-campo -->
         <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <div class="sbar" style="flex:2;min-width:180px;margin-bottom:0"><span style="color:var(--g400)">🔍</span><input type="text" id="fil-q" placeholder="Referencia, MRN, ubicación…" oninput="filtrarExp()"></div>
@@ -3878,7 +3885,7 @@ async function logActMod(tabla, rid, rnom, accion, campo, vant, vnew, modulo){
   } catch(e){ console.warn('logActMod error:', e.message); }
 }
 
-const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas',rendimiento:'Rendimiento del equipo',ejecutivo:'Estadísticas'};
+const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',camiones:'Camiones consolidados',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas',rendimiento:'Rendimiento del equipo',ejecutivo:'Estadísticas'};
 let CV='dashboard';
 function nav(view,el){
   // Fade suave en cambio de vista
@@ -5300,6 +5307,7 @@ async function loadView(view){
     case 'dashboard':await loadDash();break;
     case 'flota':await loadFlota();break;
     case 'buques':await loadBuques();break;
+    case 'camiones':await loadCamiones();break;
     case 'expediciones':await loadExp();break;
     case 'kanban':await loadKanban();break;
     case 'calendario':await renderCal();break;
@@ -5322,6 +5330,317 @@ async function loadView(view){
     case 'informe':break;
   }
 }
+
+// ══════════════════════════════════════════════════════════════════
+// MÓDULO: CAMIONES CONSOLIDADOS
+// ══════════════════════════════════════════════════════════════════
+
+const FIRMA_ALS_CAM =
+  'Atentamente,\n\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n📞 +34 956 58 13 16 · als@alsalgeciras.com\nOPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40';
+
+const ESTADO_CAM_COLS = {
+  'Pendiente': {bg:'var(--am50)',color:'var(--am600)',border:'var(--am200)'},
+  'En tránsito': {bg:'var(--b50)',color:'var(--b700)',border:'var(--b200)'},
+  'Entregado': {bg:'var(--gr50)',color:'var(--gr700)',border:'var(--gr200)'}
+};
+
+async function loadCamiones(){
+  const el=document.getElementById('camiones-list');
+  if(!el) return;
+  el.innerHTML='<div class="empty"><div class="empty-icon">⏳</div><div class="empty-txt">Cargando...</div></div>';
+
+  const [camRes, expRes] = await Promise.all([
+    sb.from('camiones_consolidados')
+      .select('*,transportista:transportista_id(id,nombre,email_confronta),almacenista:almacenista_id(id,nombre,email_almacenista,email_confronta)')
+      .order('created_at',{ascending:false}),
+    sb.from('camiones_expediciones').select('camion_id')
+  ]);
+
+  const camiones = camRes.data||[];
+  const expCount = {};
+  (expRes.data||[]).forEach(ce=>{ expCount[ce.camion_id]=(expCount[ce.camion_id]||0)+1; });
+
+  if(!camiones.length){
+    el.innerHTML='<div class="empty"><div class="empty-icon">🚛</div><div class="empty-txt">Sin camiones consolidados. Crea uno con el botón + Nuevo camión.</div></div>';
+    return;
+  }
+  el.innerHTML = camiones.map(c=>renderCamionCard(c, expCount[c.id]||0)).join('');
+}
+
+function renderCamionCard(c, nExps){
+  const est = c.estado||'Pendiente';
+  const col = ESTADO_CAM_COLS[est]||ESTADO_CAM_COLS['Pendiente'];
+  const fecha = c.fecha_prevista ? new Date(c.fecha_prevista).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  return `<div class="buque-card" style="border-left:3px solid ${col.border}">
+    <div class="buque-icon" style="background:${col.bg};color:${col.color};font-size:22px">🚛</div>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+        <div style="font-size:14px;font-weight:700;color:var(--g900)">${c.referencia||'Sin referencia'}</div>
+        <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:${col.bg};color:${col.color};border:1px solid ${col.border}">${est}</span>
+        ${nExps ? `<span style="font-size:11px;color:var(--g500)">${nExps} expedición${nExps!==1?'es':''}</span>` : ''}
+      </div>
+      <div style="font-size:12px;color:var(--g600);display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px">
+        <span>🚛 <strong>Transportista:</strong> ${c.transportista?.nombre||'—'}</span>
+        <span>🏭 <strong>Almacenista:</strong> ${c.almacenista?.nombre||'—'}</span>
+        <span>📅 <strong>Entrega:</strong> ${fecha}</span>
+      </div>
+      ${c.notas?`<div style="font-size:11px;color:var(--g500);margin-bottom:8px">${c.notas}</div>`:''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-s btn-sm" onclick="abrirAsignarExpCamion('${c.id}','${(c.referencia||'').replace(/'/g,"\\'")}')">📦 Expediciones</button>
+        <button class="btn btn-s btn-sm" onclick="notifTransportistaCamion('${c.id}')" ${c.notif_transportista_sent?'style="color:var(--gr600)"':''}>🚛 Notif. transportista${c.notif_transportista_sent?' ✓':''}</button>
+        <button class="btn btn-s btn-sm" onclick="notifAlmacenistaCamion('${c.id}')" ${c.notif_almacenista_sent?'style="color:var(--gr600)"':''}>🏭 Notif. almacenista${c.notif_almacenista_sent?' ✓':''}</button>
+        <select class="fi" style="font-size:11px;height:28px;padding:2px 6px;width:auto" onchange="cambiarEstadoCamion('${c.id}',this.value)">
+          <option ${est==='Pendiente'?'selected':''}>Pendiente</option>
+          <option ${est==='En tránsito'?'selected':''}>En tránsito</option>
+          <option ${est==='Entregado'?'selected':''}>Entregado</option>
+        </select>
+        <button class="btn btn-sm" style="color:var(--rd500);background:var(--rd50);border-color:var(--rd200)" onclick="deleteCamion('${c.id}')">🗑️</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function abrirNuevoCamion(){
+  // Cargar transportistas y almacenistas
+  const {data:emps} = await sb.from('empresas').select('id,nombre,email_confronta,email_almacenista,es_almacenista,roles').order('nombre');
+  const transportistas = (emps||[]).filter(e=>(e.roles||[]).includes('transportista')||(e.roles||[]).includes('Transportista'));
+  const almacenistas = (emps||[]).filter(e=>e.es_almacenista);
+
+  const hoy = new Date().toISOString().slice(0,10);
+  const ref = 'CAM-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*9000)+1000);
+
+  document.getElementById('m-title').textContent='🚛 Nuevo camión consolidado';
+  document.getElementById('m-body').innerHTML=`
+    <div style="display:flex;flex-direction:column;gap:14px;padding:4px 0">
+      <div class="fg"><label class="fl">Referencia</label><input id="cc-ref" class="fi" value="${ref}" placeholder="CAM-2026-XXXX"></div>
+      <div class="fr2">
+        <div class="fg"><label class="fl">Transportista</label>
+          <select id="cc-transp" class="fi fs">
+            <option value="">Seleccionar transportista…</option>
+            ${transportistas.map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('')}
+            ${!transportistas.length?`<option disabled>Sin empresas con rol transportista</option>`:''}
+          </select>
+        </div>
+        <div class="fg"><label class="fl">Almacenista / Receptor</label>
+          <select id="cc-alm" class="fi fs">
+            <option value="">Seleccionar almacenista…</option>
+            ${almacenistas.map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('')}
+            ${!almacenistas.length?`<option disabled>Sin empresas marcadas como almacenista (ver Empresas)</option>`:''}
+          </select>
+        </div>
+      </div>
+      <div class="fg"><label class="fl">Fecha de entrega prevista</label><input id="cc-fecha" class="fi" type="date" value="${hoy}"></div>
+      <div class="fg"><label class="fl">Notas / instrucciones</label><textarea id="cc-notas" class="fi" style="min-height:60px" placeholder="Instrucciones de carga, horario de acceso, referencia del almacén..."></textarea></div>
+      ${!transportistas.length||!almacenistas.length?`<div style="font-size:12px;color:var(--am600);background:var(--am50);padding:10px 14px;border-radius:var(--r)">⚠️ ${!transportistas.length?'Sin transportistas configurados. Ve a Empresas y asigna el rol «transportista». ':''} ${!almacenistas.length?'Sin almacenistas configurados. Ve a Empresas y activa la opción «Es almacenista».':''}</div>`:''}
+    </div>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-p" onclick="crearCamion()">Crear camión</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+async function crearCamion(){
+  const ref = document.getElementById('cc-ref').value.trim();
+  const transpId = document.getElementById('cc-transp').value;
+  const almId = document.getElementById('cc-alm').value;
+  const fecha = document.getElementById('cc-fecha').value;
+  const notas = document.getElementById('cc-notas').value.trim();
+  if(!ref){ showToast('⚠️ Introduce una referencia'); return; }
+  if(!transpId){ showToast('⚠️ Selecciona un transportista'); return; }
+  if(!almId){ showToast('⚠️ Selecciona un almacenista destino'); return; }
+
+  const {data,error} = await sb.from('camiones_consolidados').insert({
+    referencia:ref, transportista_id:transpId, almacenista_id:almId,
+    fecha_prevista:fecha||null, notas:notas||null,
+    estado:'Pendiente', created_by:CU?.nombre||CU?.email
+  }).select().single();
+  if(error){ showToast('Error: '+error.message); return; }
+  showToast('🚛 Camión creado');
+  closeModal();
+  await loadCamiones();
+  // Abrir directamente el selector de expediciones
+  setTimeout(()=>abrirAsignarExpCamion(data.id, ref), 300);
+}
+
+async function abrirAsignarExpCamion(camionId, camionRef){
+  document.getElementById('m-title').textContent='📦 Expediciones — '+camionRef;
+  document.getElementById('m-body').innerHTML='<div class="empty"><div class="empty-icon">⏳</div><div class="empty-txt">Cargando expediciones...</div></div>';
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-p" onclick="guardarExpCamion('${camionId}')">💾 Guardar selección</button>`;
+  document.getElementById('mo').classList.add('open');
+
+  // Cargar expediciones activas y las ya asignadas a este camión
+  const [expRes, asigRes] = await Promise.all([
+    sb.from('expediciones')
+      .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,empresas(nombre),buques(nombre,eta_buque)')
+      .neq('estado_semaforo','🚢 EMBARCADO'),
+    sb.from('camiones_expediciones').select('expedicion_id').eq('camion_id',camionId)
+  ]);
+  const exps = expRes.data||[];
+  const asignadas = new Set((asigRes.data||[]).map(r=>r.expedicion_id));
+
+  // Agrupar por buque
+  const porBuque = {};
+  exps.forEach(e=>{
+    const bn = e.buques?.nombre||'Sin buque';
+    if(!porBuque[bn]) porBuque[bn]=[];
+    porBuque[bn].push(e);
+  });
+
+  if(!exps.length){
+    document.getElementById('m-body').innerHTML='<div class="empty"><div class="empty-txt">Sin expediciones activas disponibles</div></div>';
+    return;
+  }
+
+  document.getElementById('m-body').innerHTML=`
+    <div style="font-size:12px;color:var(--g500);margin-bottom:12px">Selecciona las expediciones que irán en este camión. Están agrupadas por buque.</div>
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <button class="btn btn-s btn-sm" onclick="selAllExpCamion(true)">Seleccionar todo</button>
+      <button class="btn btn-s btn-sm" onclick="selAllExpCamion(false)">Deseleccionar todo</button>
+    </div>
+    ${Object.entries(porBuque).map(([buque,bExps])=>`
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:700;color:var(--b700);padding:6px 0;border-bottom:2px solid var(--b100);margin-bottom:8px">🚢 ${buque}</div>
+        ${bExps.map(e=>`
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:8px;border-radius:8px;cursor:pointer;transition:background .1s;margin-bottom:4px" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background=''">
+            <input type="checkbox" class="cc-exp-chk" value="${e.id}" ${asignadas.has(e.id)?'checked':''} style="margin-top:2px;flex-shrink:0">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:600">${e.nº_expedicion||'—'} <span style="color:var(--g500);font-weight:400">· ${e.empresas?.nombre||'—'}</span></div>
+              <div style="font-size:11px;color:var(--g500)">${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg · ${e.ubicacion||'—'} · ${e.status_aduanero||'—'}</div>
+            </div>
+          </label>
+        `).join('')}
+      </div>
+    `).join('')}`;
+}
+
+function selAllExpCamion(checked){
+  document.querySelectorAll('.cc-exp-chk').forEach(c=>c.checked=checked);
+}
+
+async function guardarExpCamion(camionId){
+  const selIds = [...document.querySelectorAll('.cc-exp-chk:checked')].map(c=>c.value);
+  // Reemplazar todas las asignaciones existentes
+  await sb.from('camiones_expediciones').delete().eq('camion_id',camionId);
+  if(selIds.length){
+    await sb.from('camiones_expediciones').insert(selIds.map(id=>({camion_id:camionId,expedicion_id:id})));
+  }
+  showToast('✅ Expediciones guardadas ('+selIds.length+')');
+  closeModal();
+  await loadCamiones();
+}
+
+async function cambiarEstadoCamion(id, estado){
+  await sb.from('camiones_consolidados').update({estado}).eq('id',id);
+  showToast('Estado actualizado: '+estado);
+}
+
+async function deleteCamion(id){
+  if(!confirm('¿Eliminar este camión consolidado y sus asignaciones?')) return;
+  await sb.from('camiones_expediciones').delete().eq('camion_id',id);
+  await sb.from('camiones_consolidados').delete().eq('id',id);
+  showToast('🗑️ Camión eliminado');
+  await loadCamiones();
+}
+
+// ── Generación de emails ──────────────────────────────────────
+async function _loadDatosCamion(camionId){
+  const {data:c} = await sb.from('camiones_consolidados')
+    .select('*,transportista:transportista_id(nombre,email_confronta,otros_emails),almacenista:almacenista_id(nombre,email_almacenista,email_confronta)')
+    .eq('id',camionId).single();
+  if(!c) return null;
+  const {data:links} = await sb.from('camiones_expediciones').select('expedicion_id').eq('camion_id',camionId);
+  const expIds = (links||[]).map(l=>l.expedicion_id);
+  let exps = [];
+  if(expIds.length){
+    const {data:eData} = await sb.from('expediciones')
+      .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,nº_mrn,empresas(nombre),buques(nombre,eta_buque)')
+      .in('id',expIds);
+    exps = eData||[];
+  }
+  // Agrupar por buque, ordenado
+  const porBuque = {};
+  exps.forEach(e=>{
+    const bn = e.buques?.nombre||'Sin buque';
+    if(!porBuque[bn]) porBuque[bn]=[];
+    porBuque[bn].push(e);
+  });
+  return {c, exps, porBuque};
+}
+
+function _buildCuerpoEmailCamion(c, porBuque, esTransportista){
+  const fecha = c.fecha_prevista ? new Date(c.fecha_prevista).toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}) : 'por confirmar';
+  const sep = '═'.repeat(52);
+  const sub = '─'.repeat(52);
+  let totalBlt=0, totalKg=0, totalExps=0;
+  const bloquesBuque = Object.entries(porBuque).map(([buque,bExps])=>{
+    const bBlt = bExps.reduce((a,e)=>a+(e.bultos||0),0);
+    const bKg  = bExps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+    totalBlt+=bBlt; totalKg+=bKg; totalExps+=bExps.length;
+    const lineas = bExps.map((e,i)=>
+      '  '+(i+1)+'. '+e.nº_expedicion+
+      '\n     • Empresa:   '+(e.empresas?.nombre||'—')+
+      '\n     • Bultos:    '+(e.bultos||0)+' btos · '+(parseFloat(e.kilos)||0)+' kg'+
+      '\n     • Ubicación: '+(e.ubicacion||'—')+
+      '\n     • Status:    '+(e.status_aduanero||'—')+
+      (e.nº_mrn?'\n     • MRN:      '+e.nº_mrn:'')
+    ).join('\n\n');
+    return 'BUQUE: '+buque+'\n'+sub+'\n'+lineas+'\n\nSubtotal: '+bBlt+' bultos · '+bKg+' kg';
+  }).join('\n\n'+sep+'\n');
+
+  const intro = esTransportista
+    ? 'Les comunicamos los detalles de la carga del siguiente camión:'
+    : 'Les comunicamos la llegada prevista de mercancía consolidada:';
+  const destino = esTransportista
+    ? '\nDESTINO: '+(c.almacenista?.nombre||'—')
+    : '';
+  const transp = !esTransportista
+    ? '\nTRANSPORTISTA: '+(c.transportista?.nombre||'—')
+    : '';
+
+  return (
+    'Estimados señores,\n\n'+intro+
+    '\n\nREFERENCIA: '+c.referencia+
+    '\nFECHA ENTREGA: '+fecha+
+    destino+transp+
+    (c.notas?'\nNOTAS: '+c.notas:'')+
+    '\n\n'+sep+'\nEXPEDICIONES ('+totalExps+') · '+totalBlt+' bultos · '+totalKg+' kg\n'+sep+'\n\n'+
+    bloquesBuque+
+    '\n\n'+sep+
+    '\nTOTAL: '+totalExps+' expediciones · '+totalBlt+' bultos · '+totalKg+' kg\n'+sep+
+    '\n\n'+FIRMA_ALS_CAM
+  );
+}
+
+async function notifTransportistaCamion(camionId){
+  const datos = await _loadDatosCamion(camionId);
+  if(!datos){ showToast('Error cargando datos'); return; }
+  const {c, porBuque} = datos;
+  if(!c.transportista?.email_confronta){ showToast('⚠️ El transportista no tiene email configurado'); return; }
+  const asunto = encodeURIComponent('Notificación de carga — '+c.referencia+' · '+(c.fecha_prevista||'sin fecha'));
+  const cuerpo = encodeURIComponent(_buildCuerpoEmailCamion(c, porBuque, true));
+  const bcc = encodeURIComponent('als@alsalgeciras.com,aduana@customsway.eu');
+  const mailtoUrl = 'mailto:'+c.transportista.email_confronta+'?subject='+asunto+'&body='+cuerpo+'&bcc='+bcc;
+  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
+  await sb.from('camiones_consolidados').update({notif_transportista_sent:true}).eq('id',camionId);
+  showToast('📧 Abriendo email para transportista…');
+  await loadCamiones();
+}
+
+async function notifAlmacenistaCamion(camionId){
+  const datos = await _loadDatosCamion(camionId);
+  if(!datos){ showToast('Error cargando datos'); return; }
+  const {c, porBuque} = datos;
+  const emailAlm = c.almacenista?.email_almacenista || c.almacenista?.email_confronta;
+  if(!emailAlm){ showToast('⚠️ El almacenista no tiene email configurado'); return; }
+  const asunto = encodeURIComponent('Aviso de entrega — '+c.referencia+' · '+(c.fecha_prevista||'sin fecha'));
+  const cuerpo = encodeURIComponent(_buildCuerpoEmailCamion(c, porBuque, false));
+  const bcc = encodeURIComponent('als@alsalgeciras.com,aduana@customsway.eu');
+  const mailtoUrl = 'mailto:'+emailAlm+'?subject='+asunto+'&body='+cuerpo+'&bcc='+bcc;
+  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
+  await sb.from('camiones_consolidados').update({notif_almacenista_sent:true}).eq('id',camionId);
+  showToast('📧 Abriendo email para almacenista…');
+  await loadCamiones();
+}
+
+// FIN MÓDULO CAMIONES CONSOLIDADOS
 
 function buqueCard(b,listo){
   const ec=b.ec?.nombre||b.en?.nombre||'—';
@@ -6629,8 +6948,11 @@ async function loteNotifCliente(){
         sepLineaL+'\nTOTALES: '+totBlt+' bultos · '+totKg+' kg\n'+sepLineaL+'\n\n'+
         'Quedamos a su disposición para cualquier consulta.\n\n'+firmaL;
       let mailto = 'mailto:'+toEmail+'?subject='+encodeURIComponent(asunto)+'&body='+encodeURIComponent(cuerpo);
-      if(ccEmails.length) mailto += '&cc='+encodeURIComponent(['als@alsalgeciras.com',...ccEmails].join(','));
-      else mailto += '&cc='+encodeURIComponent('als@alsalgeciras.com');
+      // CC: email confronta consignatario + otros
+      const ccFinal = [empresa?.email_confronta, ...ccEmails].filter(Boolean);
+      if(ccFinal.length) mailto += '&cc='+encodeURIComponent(ccFinal.join(','));
+      // BCC: als + aduana (siempre)
+      mailto += '&bcc='+encodeURIComponent('als@alsalgeciras.com,aduana@customsway.eu');
       const a = document.createElement('a'); a.href=mailto; a.target='_blank';
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
     }, idx * 800); // delay entre emails para que el cliente de correo los procese
@@ -6645,7 +6967,7 @@ async function loteNotifCliente(){
      • Ubicación:   ${e.ubicacion||'—'}
      • Estado:      ${e.estado_semaforo||'—'}
      • Trámite:     ${e.tramite_aduanero||'—'}
-     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}\n     🔍 Seguimiento: https://marcoslekolas.github.io/PortalALS/tracking.html?exp=${e.id}`
+     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}\n     🔍 Seguimiento: https://portal.alsalgeciras.com/tracking.html?exp=${e.id}`
   ).join('\n\n');
 
   // Cuerpo completo con firma de la plantilla
@@ -9441,6 +9763,7 @@ async function openEmpD(id){
   document.getElementById('m-body').innerHTML=`
     <div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="ep-n" class="fi" value="${e.nombre||''}"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="ep-p" class="fi" value="${e.persona_contacto||''}"></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="ep-e" class="fi" value="${e.email_confronta||''}"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="ep-t" class="fi" value="${e.telefono||''}"></div></div>
+    <div class="fr2"><div class="fg2"><label class="fl2">Email almacenista / receptor</label><input id="ep-ealm" class="fi" placeholder="email para avisos de entrega" value="${e.email_almacenista||''}"></div><div class="fg2"><label class="fl2" style="display:flex;align-items:center;gap:8px;margin-top:20px"><input type="checkbox" id="ep-esalm" ${e.es_almacenista?'checked':''}> Es almacenista / receptor de mercancías</label></div></div>
     <div class="fg2"><label class="fl2">Otros emails</label><input id="ep-o" class="fi" value="${(e.otros_emails||[]).join(', ')}"></div>
     <div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista','Handling Aeropuerto'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="ep-r-${r.replace(/ /g,'-')}" ${(e.rol||[]).includes(r)?'checked':''} style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>
 
@@ -9487,7 +9810,7 @@ async function openEmpD(id){
   document.getElementById('mo').classList.add('open');
 }
 async function saveEmp(id){
-  if(!puedeAcceder('empresas','editar')){ showToast('⛔ Sin permisos para editar empresas'); return; }const roles=['Cliente','Consignatario','Transportista','Handling Aeropuerto'].filter(r=>document.getElementById('ep-r-'+r.replace(/ /g,'-'))?.checked);const otros=gv('ep-o').split(',').map(s=>s.trim()).filter(Boolean);await sb.from('empresas').update({nombre:gv('ep-n'),persona_contacto:gv('ep-p')||null,email_confronta:gv('ep-e')||null,telefono:gv('ep-t')||null,otros_emails:otros,rol:roles}).eq('id',id);await logAct('empresas',id,gv('ep-n'),'editar','datos',null,'actualizado');showToast('Empresa guardada');closeModal();loadView(CV);}
+  if(!puedeAcceder('empresas','editar')){ showToast('⛔ Sin permisos para editar empresas'); return; }const roles=['Cliente','Consignatario','Transportista','Handling Aeropuerto'].filter(r=>document.getElementById('ep-r-'+r.replace(/ /g,'-'))?.checked);const otros=gv('ep-o').split(',').map(s=>s.trim()).filter(Boolean);await sb.from('empresas').update({nombre:gv('ep-n'),persona_contacto:gv('ep-p')||null,email_confronta:gv('ep-e')||null,email_almacenista:gv('ep-ealm')||null,es_almacenista:document.getElementById('ep-esalm')?.checked||false,telefono:gv('ep-t')||null,otros_emails:otros,rol:roles}).eq('id',id);await logAct('empresas',id,gv('ep-n'),'editar','datos',null,'actualizado');showToast('Empresa guardada');closeModal();loadView(CV);}
 
 async function abrirTimelineEmpresa(empId, empNombre){
   closeModal();
@@ -12488,12 +12811,11 @@ async function notifAduana(id,ref){
   const vNombreB=e.buques?.nombre||'Sin Buque',vRefB=e.buques?.ref_visual_trans||'Sin Ref.',vTerminal=e.buques?.puerto_terminal||e.buques?.place||'No especificada',vExp=e.nº_expedicion||'-',vBultos=e.bultos||0,vKilos=e.kilos||0,vUbi=e.ubicacion||'No definida',vStatus=e.status_aduanero||'Pendiente';
   const listaInc=(incs||[]).map(i=>'❌ '+i.nombre+': '+i.descripcion).join('\n');
   const bloqueAviso=listaInc?'🚨 --- ADVERTENCIA IMPORTANTE: INCIDENCIAS ---\n'+listaInc:'ℹ️ ESTADO: Mercancía recibida / Pendiente de revisar.';
-  const destinatario=e.empresas?.email_confronta||'marcosvalenciamancilla@gmail.com';
-  const otrosEmails=(e.empresas?.otros_emails||[]).filter(Boolean);
-  const todosDestinatarios=[destinatario,...otrosEmails].join(',');
-  const cc=encodeURIComponent('marcosvalenciamancilla@gmail.com');
+  const destinatario='aduana@customsway.eu'; // default fijo para notif aduana
+  const todosDestinatarios=destinatario;
+  const cc=encodeURIComponent('als@alsalgeciras.com');
   const asunto=encodeURIComponent('Nueva Expedición Buque '+vNombreB+' // Expediente '+vRefB);
-  const cuerpo=encodeURIComponent('Hola,\n\nuna expedición para el buque '+vNombreB+' requiere de vuestra atención.\n\n📍 Terminal: '+vTerminal+'\n🏢 Ubicación actual: '+vUbi+'\n\n🆔 Nº Expedición: '+vExp+'\n📦 Bultos: '+vBultos+'\n⚖️ Kilos: '+vKilos+' kg\n🚦 Status: '+vStatus+'\n\n'+bloqueAviso+'\n\nAtentamente,\nDepartamento de Operaciones');
+  const cuerpo=encodeURIComponent('Hola,\n\nuna expedición para el buque '+vNombreB+' requiere de vuestra atención.\n\n📍 Terminal: '+vTerminal+'\n🏢 Ubicación actual: '+vUbi+'\n\n🆔 Nº Expedición: '+vExp+'\n📦 Bultos: '+vBultos+'\n⚖️ Kilos: '+vKilos+' kg\n🚦 Status: '+vStatus+'\n\n'+bloqueAviso+'\n\nAtentamente,\n\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n📞 +34 956 58 13 16 · als@alsalgeciras.com\nOPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40');
   await sb.from('expediciones').update({notif_aduanas_sent:true,fecha_aviso_aduanas:new Date().toISOString()}).eq('id',id);
   await logAct('expediciones',id,ref,'email_aduanas','notif_aduanas_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
   // Abrir cliente de correo en nueva pestaña para no cerrar la app
@@ -12510,12 +12832,12 @@ async function notifCliente(id,emailDest,ref){
   const bloqueAviso=listaInc?'🚨 INCIDENCIAS:\n'+listaInc:'ℹ️ Mercancía recibida correctamente.';
   const todosEmails=[emailDest,...(e.empresas?.otros_emails||[])].filter(Boolean).join(',');
   const asunto=encodeURIComponent('Recepción: '+e.buques?.nombre+' // Exp: '+e.nº_expedicion);
-  const trackingUrl='https://marcoslekolas.github.io/PortalALS/tracking.html?exp='+id;
+  const trackingUrl='https://portal.alsalgeciras.com/tracking.html?exp='+id;
   const cuerpo=encodeURIComponent('Estimado cliente,\n\nLe informamos que su mercancía ha sido recibida.\n\n🚢 Buque: '+e.buques?.nombre+'\n🆔 Expedición: '+e.nº_expedicion+'\n📦 Bultos: '+e.bultos+'\n⚖️ Kilos: '+e.kilos+' kg\n📍 Ubicación: '+e.ubicacion+'\n🚦 Status: '+e.status_aduanero+'\n\n'+bloqueAviso+'\n\n──────────────────────────────\n🔍 SEGUIMIENTO EN TIEMPO REAL:\n'+trackingUrl+'\n──────────────────────────────\n\nAcceda al enlace en cualquier momento para consultar el estado actualizado de su expedición.\n\nAtentamente,\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n📞 +34 956 58 13 16 · als@alsalgeciras.com');
-  const cc=encodeURIComponent('marcosvalenciamancilla@gmail.com');
+  // Sin CC en email cliente
   await sb.from('expediciones').update({notif_cliente_sent:true,fecha_aviso_cliente:new Date().toISOString()}).eq('id',id);
   await logAct('expediciones',id,e.nº_expedicion,'email_cliente','notif_cliente_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
-  const mailtoUrl=`mailto:${todosEmails}?cc=${cc}&subject=${asunto}&body=${cuerpo}`;
+  const mailtoUrl=`mailto:${todosEmails}?subject=${asunto}&body=${cuerpo}`;
   const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
   showToast('📧 Abriendo cliente de correo...');
   closeModal();loadView(CV);
@@ -12532,7 +12854,7 @@ async function sendConfronta(buqueId){
   const mrns=expsConMRN.map(e=>e.nº_mrn).filter(Boolean);
   const destinatario='ca-pif-algeciras-confronta@guardiacivil.org';
   const emailCC=b.en?.email_confronta||'';
-  const emailBCC='als@alsalgeciras.com,aduanas@alsalgeciras.com';
+  const emailBCC='als@alsalgeciras.com,aduana@customsway.eu';
   const asunto=encodeURIComponent('Avituallamiento: '+b.nombre+' // ETA: '+(b.eta_buque?fdl(b.eta_buque):'Sin Fecha'));
   const cuerpo=encodeURIComponent('Buenos días,\n\nAdjuntamos documentación para el suministro a bordo del buque:\n\n🚢 Buque: '+b.nombre+'\n🆔 Escala: '+(b.nº_escala||'Sin Escala')+'\n🏢 Consignatario: '+(b.en?.nombre||'Sin especificar')+'\n📍 Terminal: '+(b.puerto_terminal||b.place||'No especificada')+'\n📅 ETA: '+(b.eta_buque?fdl(b.eta_buque):'Sin Fecha')+'\n\n📦 Total Bultos: '+totalBultos+'\n⚖️ Peso Total: '+totalPeso+' kg\n\n--- MRNs ---\n'+(mrns.length?mrns.join('\n'):'Ninguno')+'\n\nAtentamente,\n\nDepartamento de Operaciones\nAlgeciras Logistic Solutions\nOPERATIONS 24/7 +34 956 58 13 16\nBOARDINGS 24/7 +34 664 07 49 40');
   let mailto=`mailto:${destinatario}?subject=${asunto}&body=${cuerpo}`;
