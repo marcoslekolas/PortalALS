@@ -606,8 +606,10 @@ if('serviceWorker' in navigator){
       </div>
       <div class="view" id="view-flota"><div class="fg" id="flota-grid"></div></div>
       <div class="view" id="view-buques">
-        <div class="sbar"><span style="color:var(--g400)">🔍</span><input type="text" placeholder="Buscar buque, IMO, escala..." oninput="filtrarB(this.value)"></div>
-
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+          <div class="sbar" style="flex:1;margin:0"><span style="color:var(--g400)">🔍</span><input type="text" placeholder="Buscar buque, IMO, escala..." oninput="filtrarB(this.value)"></div>
+          <button class="btn btn-s btn-sm" onclick="abrirImprimirDia()" title="Imprimir todos los buques previstos para un día seleccionado">🖨️ Imprimir día</button>
+        </div>
         <div id="buques-list" class="buque-list"></div>
       </div>
       <div class="view" id="view-camiones">
@@ -8060,7 +8062,7 @@ Devuelve ÚNICAMENTE un JSON sin texto adicional ni markdown:
       if(sel){ const q=(parsed.buque_vuelo||'').toLowerCase().slice(0,7); const opt=Array.from(sel.options).find(o=>o.text.toLowerCase().includes(q)); if(opt){sel.value=opt.value;n++;} }
     }
     if(parsed.consignatario){
-      const sel=document.getElementById('ne-emp');
+      const sel=null; // ne-emp replaced by ne-rem (remitente free text)
       if(sel){ const q=(parsed.consignatario||'').toLowerCase().slice(0,8); const opt=Array.from(sel.options).find(o=>o.text.toLowerCase().includes(q)); if(opt){sel.value=opt.value;n++;} }
     }
     if(parsed.destino){
@@ -10962,7 +10964,7 @@ const MODALS={
       <div class="fr2"><div class="fg2"><label class="fl2">ETA buque</label><input id="nb-eta" class="fi" type="datetime-local"></div><div class="fg2"><label class="fl2">Puerto / Terminal</label><input id="nb-pto" class="fi" placeholder="Algeciras / T. Ro-Ro"></div></div>
       <div class="fr2"><div class="fg2"><label class="fl2">Cliente</label><select id="nb-cli" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div><div class="fg2"><label class="fl2">Estado operación</label><select id="nb-est" class="fi fs"><option>Sin comenzar</option><option selected>En proceso</option><option>Embarcado</option><option>Cancelado</option><option>Aplazado</option></select></div></div>
       <div class="fg2"><label class="fl2">Consignatario</label><select id="nb-con" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div>
-      <div style="font-size:12px;color:var(--g400);text-align:center">¿Empresa no existe? <span style="color:var(--b600);cursor:pointer" onclick="document.getElementById('mbox').dataset.fromBuque='1';closeModal();openModal('nueva-empresa')">Crear empresa →</span></div>
+      <div style="font-size:12px;color:var(--g400);text-align:center">¿Empresa no existe? <span style="color:var(--b600);cursor:pointer" onclick="_guardarEstadoNuevoBuque();document.getElementById('mbox').dataset.fromBuque='1';closeModal();openModal('nueva-empresa')">Crear empresa →</span></div>
     </div>`;
   },
   action:async()=>{
@@ -10977,22 +10979,16 @@ const MODALS={
 },
 'nueva-expedicion':{t:'📦 Nueva expedición',btn:'📦 Crear expedición',
   body:async(buqueIdPresel)=>{
-    const [{data:bqs},{data:emps}]=await Promise.all([
-      // Incluir buques activos: sin estado, o con estado distinto de Embarcado/Finalizado
-      // .or() evita el problema de NULL NOT IN que excluye buques sin estado asignado
-      sb.from('buques').select('id,nombre,estado_operacion,eta_buque')
-        .or('estado_operacion.is.null,estado_operacion.neq.Finalizado')
-        .order('eta_buque',{ascending:true,nullsFirst:false}),
-      sb.from('empresas').select('id,nombre').order('nombre')
-    ]);
+    const {data:bqs}=await sb.from('buques').select('id,nombre,estado_operacion,eta_buque')
+      .or('estado_operacion.is.null,estado_operacion.neq.Finalizado')
+      .order('eta_buque',{ascending:true,nullsFirst:false});
     const bO=(bqs||[]).map(b=>{
       const eta = b.eta_buque ? ` · ETA ${new Date(b.eta_buque).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'})}` : '';
       return `<option value="${b.id}" ${String(b.id)===String(buqueIdPresel)?'selected':''}>${b.nombre}${eta}</option>`;
     }).join('');
-    const eO=(emps||[]).map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('');
     const buqueLocked=!!buqueIdPresel;
     return`<div class="fr2"><div class="fg2"><label class="fl2">Nº Expedición / Referencia *</label><input id="ne-ref" class="fi" placeholder="AWB, DHL, SEUR, TNT…"></div><div class="fg2"><label class="fl2">Buque</label><select id="ne-bq" class="fi fs" ${buqueLocked?'disabled style="opacity:.7;background:var(--g50)"':''}><option value="">— Seleccionar —</option>${bO}</select>${buqueLocked?`<input type="hidden" id="ne-bq-hidden" value="${buqueIdPresel}">`:''}</div></div>
-    <div class="fr2"><div class="fg2"><label class="fl2">Empresa</label><select id="ne-emp" class="fi fs"><option value="">— Seleccionar —</option>${eO}</select></div><div class="fg2"><label class="fl2">Status aduanero</label><select id="ne-sta" class="fi fs"><option>Comunitario</option><option>DAE</option><option>T1</option><option>Terceros</option><option>X</option></select></div></div>
+    <div class="fr2"><div class="fg2"><label class="fl2">Remitente <span style="font-size:10px;color:var(--g400);font-weight:400">(nombre del remitente / shipper)</span></label><input id="ne-rem" class="fi" placeholder="Nombre del remitente o shipper..." autocomplete="off"></div><div class="fg2"><label class="fl2">Status aduanero</label><select id="ne-sta" class="fi fs"><option>Comunitario</option><option>DAE</option><option>T1</option><option>Terceros</option><option>X</option></select></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Bultos</label><input id="ne-bul" class="fi" type="number" min="0" value="1"></div><div class="fg2"><label class="fl2">Kilos</label><input id="ne-kg" class="fi" type="number" min="0" step="0.01" value="0"></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Nº MRN</label><input id="ne-mrn" class="fi" placeholder="26ES…"><div style="font-size:10px;color:var(--g400);margin-top:3px">💡 Si empieza por <code style="background:var(--g100);padding:1px 4px;border-radius:3px;font-size:10px">-</code> no se incluye en el email de confronta</div></div><div class="fg2"><label class="fl2">Trámite aduanero</label><select id="ne-tra" class="fi fs"><option>Pendiente despachar</option><option>Despachado</option></select></div></div>
     <div class="fr2"><div class="fg2"><label class="fl2">Fecha máx. despacho</label><input id="ne-fmax" class="fi" type="date"></div><div class="fg2"><label class="fl2">Ubicación inicial</label><select id="ne-ubic" class="fi fs" onchange="onNeUbicChange(this)">${optsUbic()}</select></div></div>
@@ -11003,14 +10999,17 @@ const MODALS={
     // Si el buque estaba bloqueado (hidden input), usar ese valor
     const buqueHidden=document.getElementById('ne-bq-hidden');
     const buqueId=buqueHidden?buqueHidden.value:gv('ne-bq');
-    const obj={nº_expedicion:gv('ne-ref'),buque_id:buqueId||null,empresa_id:gv('ne-emp')||null,status_aduanero:gv('ne-sta'),tramite_aduanero:gv('ne-tra'),bultos:parseInt(gv('ne-bul'))||0,kilos:parseFloat(gv('ne-kg'))||0,nº_mrn:gv('ne-mrn')||null,fecha_max_despacho:gv('ne-fmax')||null,ubicacion:gv('ne-ubic'),tarifa_calculada:parseFloat(gv('ne-tar'))||null,notif_aduanas_sent:gc('ne-na'),notif_cliente_sent:gc('ne-nc'),fecha_aviso_aduanas:gc('ne-na')?new Date().toISOString():null,fecha_aviso_cliente:gc('ne-nc')?new Date().toISOString():null,created_by:CU?.id,created_by_nombre:CU?.nombre};
+    const obj={nº_expedicion:gv('ne-ref'),buque_id:buqueId||null,remitente:gv('ne-rem')||null,empresa_id:null,status_aduanero:gv('ne-sta'),tramite_aduanero:gv('ne-tra'),bultos:parseInt(gv('ne-bul'))||0,kilos:parseFloat(gv('ne-kg'))||0,nº_mrn:gv('ne-mrn')||null,fecha_max_despacho:gv('ne-fmax')||null,ubicacion:gv('ne-ubic'),tarifa_calculada:parseFloat(gv('ne-tar'))||null,notif_aduanas_sent:gc('ne-na'),notif_cliente_sent:gc('ne-nc'),fecha_aviso_aduanas:gc('ne-na')?new Date().toISOString():null,fecha_aviso_cliente:gc('ne-nc')?new Date().toISOString():null,created_by:CU?.id,created_by_nombre:CU?.nombre};
     if(!obj.nº_expedicion){alert('La referencia es obligatoria');return;}
     const {data,error}=await sb.from('expediciones').insert(obj).select().single();
     if(error){alert('Error: '+error.message);return;}
     await logAct('expediciones',data?.id,obj.nº_expedicion,'crear',null,null,obj.nº_expedicion);
     showToast('Expedición creada');
+    // Si venía desde ficha buque, reabrir la ficha buque con la expedición ya creada
+    const parentB=document.getElementById('mbox')?.dataset?.parentBuque;
     closeModal();
-    loadView(CV);
+    if(parentB){setTimeout(()=>openBuqueD(parentB),200);}
+    else{loadView(CV);}
     // Si la ubicación es de aeropuerto → crear entrada en airport_cargo y ofrecer completarla
     if((obj.ubicacion||'').includes('Aeropuerto')){
       await crearAirportCargoDesdeExpedicion(data, obj);
@@ -11097,7 +11096,26 @@ const MODALS={
   body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre *</label><input id="nmp-n" class="fi" placeholder="Nombre empresa"></div><div class="fg2"><label class="fl2">Persona contacto</label><input id="nmp-p" class="fi" placeholder="Nombre o email"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Email confronta</label><input id="nmp-e" class="fi" type="email" placeholder="email@empresa.com"></div><div class="fg2"><label class="fl2">Teléfono</label><input id="nmp-t" class="fi" placeholder="+34 956…"></div></div><div class="fg2"><label class="fl2">Otros emails <span style="color:var(--g400);font-weight:400">(separados por coma)</span></label><input id="nmp-o" class="fi" placeholder="email2@, email3@…"></div><div class="fr2"><div class="fg2"><label class="fl2">Email almacenista / receptor</label><input id="nmp-ealm" class="fi" type="email" placeholder="email para avisos de entrega"></div><div class="fg2"><label class="fl2" style="display:flex;align-items:center;gap:8px;margin-top:20px"><input type="checkbox" id="nmp-esalm" style="accent-color:var(--b600)"> Es almacenista / receptor de mercancías</label></div></div><div class="fg2"><label class="fl2">Rol</label><div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">${['Cliente','Consignatario','Transportista','Handling Aeropuerto'].map(r=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="nmp-r-${r.replace(/ /g,'-')}" style="accent-color:var(--b600)"> ${r}</label>`).join('')}</div></div>`,
   action:async()=>{const nombre=gv('nmp-n');if(!nombre){alert('El nombre es obligatorio');return;}const roles=['Cliente','Consignatario','Transportista','Handling Aeropuerto'].filter(r=>document.getElementById('nmp-r-'+r.replace(/ /g,'-'))?.checked);const otros=gv('nmp-o').split(',').map(s=>s.trim()).filter(Boolean);const {error}=await sb.from('empresas').insert({nombre,persona_contacto:gv('nmp-p')||null,email_confronta:gv('nmp-e')||null,email_almacenista:gv('nmp-ealm')||null,es_almacenista:document.getElementById('nmp-esalm')?.checked||false,telefono:gv('nmp-t')||null,otros_emails:otros,rol:roles});if(error){alert('Error: '+error.message);return;}showToast('Empresa creada');closeModal();
     // Si venía desde nuevo-buque, volver a esa modal
-    if(document.getElementById('mbox').dataset.fromBuque==='1'){delete document.getElementById('mbox').dataset.fromBuque;setTimeout(()=>openModal('nuevo-buque'),60);}else{loadView(CV);}}
+    const fb=document.getElementById('mbox').dataset.fromBuque;
+    delete document.getElementById('mbox').dataset.fromBuque;
+    delete document.getElementById('mbox').dataset.fromBuqueId;
+    if(fb==='1'){
+      setTimeout(async()=>{
+        await openModal('nuevo-buque');
+        // Restaurar datos del formulario y añadir la nueva empresa al selector
+        setTimeout(()=>{
+          _restaurarEstadoNuevoBuque();
+          // Añadir la nueva empresa al selector y seleccionarla
+          const empSel=document.getElementById('nb-cli')||document.getElementById('nb-con');
+          if(empSel&&empresa){
+            const opt=document.createElement('option');
+            opt.value=empresa.id;opt.text=empresa.nombre;opt.selected=true;
+            empSel.appendChild(opt);
+          }
+        },200);
+      },60);
+    }
+    else{loadView(CV);}}
 },
 'cambiar-password':{t:'🔑 Cambiar contraseña',btn:'💾 Guardar contraseña',
   body:async()=>`<div class="fg2"><label class="fl2">Contraseña actual</label><input id="cp-old" class="fi" type="password" placeholder="Tu contraseña actual"></div><div class="fg2"><label class="fl2">Nueva contraseña</label><input id="cp-new" class="fi" type="password" placeholder="Nueva contraseña"></div><div class="fg2"><label class="fl2">Confirmar nueva contraseña</label><input id="cp-conf" class="fi" type="password" placeholder="Repite la nueva contraseña"></div>`,
@@ -11138,11 +11156,16 @@ function buscarIMOporNombre(){
   const nom=document.getElementById('nb-n')?.value||'';
   if(!nom||nom.length<2){alert('Escribe primero el nombre del buque');return;}
   const enc=encodeURIComponent(nom);
-  const w1=window.open('https://www.vesselfinder.com/?name='+enc,'_blank');
-  const w2=window.open('https://www.marinetraffic.com/en/ais/index/ships/all/shipname:'+enc,'_blank');
-  if(!w1||!w2)alert('Permite ventanas emergentes para abrir la búsqueda de IMO.');
+  const d=document.getElementById('nombre-search');
+  if(d) d.innerHTML=`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+    <a class="ext-link" href="https://www.marinetraffic.com/en/ais/index/ships/all/shipname:${enc}" target="_blank">🌍 MarineTraffic</a>
+    <a class="ext-link" href="https://www.vesselfinder.com/?name=${enc}" target="_blank">🎯 VesselFinder</a>
+    <a class="ext-link" href="https://www.fleetmon.com/vessels/?search=${enc}" target="_blank">📡 FleetMon</a>
+    <a class="ext-link" href="https://www.myshiptracking.com/?search=${enc}" target="_blank">🔍 MyShipTracking</a>
+  </div>`;
 }
 function prevIMO(imo){
+  try{
   const d=document.getElementById('imo-prev');if(!d)return;
   if(!imo||imo.length<5){d.innerHTML='';return;}
   const nom=document.getElementById('nb-n')?.value||'';
@@ -11150,6 +11173,7 @@ function prevIMO(imo){
   d.innerHTML=`<a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic</a>`;
   const nsDiv=document.getElementById('nombre-search');
   if(nsDiv&&nom.length>2){nsDiv.innerHTML=`<div style="margin-top:6px;font-size:11px;color:var(--g500)">Buscar por nombre: <a class="ext-link" href="https://www.marinetraffic.com/en/ais/index/ships/all/shipname:${encNom}" target="_blank">🌍 MT por nombre</a> <a class="ext-link" href="https://www.vesselfinder.com/?name=${encNom}" target="_blank">🎯 VF por nombre</a></div>`;}
+  }catch(ex){console.warn('prevIMO err:',ex);}
 }
 
 // ── DETALLE BUQUE (totalmente editable) ────────────────────
@@ -11428,7 +11452,7 @@ async function openExpD(id, forceOpen=false){
     <div id="exp-presencia" style="display:none;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
     <div class="dg">
       <div class="df"><div class="dl">Buque</div><div class="dv" style="padding:0"><select id="buq-sel" class="fi fs" style="border:none;background:transparent;font-weight:500;padding:4px 0;color:var(--g900)"><option value="${e.buque_id||''}">${e.buques?.nombre||'Cargando…'}</option></select></div></div>
-      <div class="df"><div class="dl">Empresa</div><div class="dv">${e.empresas?.nombre||'—'}</div></div>
+      <div class="df"><div class="dl">Remitente</div><div class="dv">${e.remitente||e.empresas?.nombre||'—'}</div></div>
       <div class="df" id="exp-cli-override-row" style="${e.cliente_override_id?'':'display:none'}">
         <div class="dl" style="color:var(--am600)">⚠️ Cliente facturación</div>
         <div class="dv" style="color:var(--am600);font-weight:600" id="exp-cli-override-val">${e.cliente_override?.nombre||e.cliente_override_nombre||'—'}</div>
@@ -11448,6 +11472,7 @@ async function openExpD(id, forceOpen=false){
     <hr class="fdiv">
     <div class="fg2"><label class="fl2">Nº MRN</label><input id="mrn-inp" class="fi" value="${e.nº_mrn||''}" placeholder="26ES…"><div style="font-size:10px;color:var(--g400);margin-top:3px">💡 Si empieza por <code style="background:var(--g100);padding:1px 4px;border-radius:3px;font-size:10px">-</code> no se incluye en el email de confronta</div></div>
     <div class="fg2"><label class="fl2">Referencia / Nº expedición</label><input id="ref-inp" class="fi" value="${(e.nº_expedicion||'').replace(/"/g,'&quot;')}" placeholder="Referencia de la expedición"></div>
+    <div class="fg2"><label class="fl2">Remitente / Shipper</label><input id="rem-inp" class="fi" value="${(e.remitente||e.empresas?.nombre||'').replace(/"/g,'&quot;')}" placeholder="Nombre del remitente o shipper..."></div>
     <div class="fr2">
       <div class="fg2"><label class="fl2">Trámite aduanero</label><select id="tra-sel" class="fi fs" onchange="saveTra('${e.id}',this.value)"><option ${e.tramite_aduanero==='Pendiente despachar'?'selected':''}>Pendiente despachar</option><option ${e.tramite_aduanero==='Despachado'?'selected':''}>Despachado</option></select></div>
       <div class="fg2"><label class="fl2">Docs. Puerto</label><select id="docs-sel" class="fi fs" onchange="saveDocs('${e.id}',this.value)">${(()=>{const dv=Array.isArray(e.docs_puerto)?e.docs_puerto[0]:e.docs_puerto;return['No requiere','Pendiente','En progreso','Sellada'].map(o=>`<option ${(dv||'No requiere')===o?'selected':''}>${o}</option>`).join('');})()}</select></div>
@@ -12743,6 +12768,7 @@ function semaforoDeUbicacion(ubic){
 async function guardarExpedicion(id){if(!checkOnline())return;
   const mrn=(document.getElementById('mrn-inp')?.value||'').trim()||null;
   const ref=(document.getElementById('ref-inp')?.value||'').trim()||null;
+  const rem=(document.getElementById('rem-inp')?.value||'').trim()||null;
   const status=document.getElementById('sta-sel')?.value||null;
   const fmax=document.getElementById('fmax-inp')?.value||null;
   const tra=document.getElementById('tra-sel')?.value||null;
@@ -12751,6 +12777,7 @@ async function guardarExpedicion(id){if(!checkOnline())return;
   const obj={};
   if(mrn!==undefined) obj['nº_mrn']=mrn;
   if(ref) obj['nº_expedicion']=ref;
+  if(rem!==null) obj.remitente=rem||null;
   if(status) obj.status_aduanero=status;
   obj.fecha_max_despacho=fmax||null;
   if(tra) obj.tramite_aduanero=tra;
@@ -13050,6 +13077,206 @@ function htmlAlb(b, exps, expsLanded, qrBase64=''){
   </div>
   <p style="margin-top:18px;font-size:9px;color:#aaa;text-align:center">Generado el ${new Date().toLocaleString('es-ES')} · ALS Portal Operativo · Algeciras Logistic Solutions</p>
   </body></html>`;
+}
+
+// ── Estado temporal de nuevo-buque para volver tras crear empresa ────────
+var _nbTemp = {};
+function _guardarEstadoNuevoBuque(){
+  const ids=['nb-n','nb-imo','nb-vt','nb-esc','nb-eta','nb-pto','nb-cli','nb-con','nb-est'];
+  ids.forEach(id=>{ const el=document.getElementById(id); if(el) _nbTemp[id]=el.value; });
+}
+function _restaurarEstadoNuevoBuque(){
+  Object.entries(_nbTemp).forEach(([id,val])=>{
+    const el=document.getElementById(id);
+    if(el) el.value=val;
+  });
+  _nbTemp={};
+}
+
+// ── Imprimir todos los buques de un día ─────────────────────────────────
+async function abrirImprimirDia(){
+  const hoy=new Date().toISOString().slice(0,10);
+  document.getElementById('m-title').textContent='🖨️ Imprimir buques del día';
+  document.getElementById('m-body').innerHTML=`
+    <div class="fg"><label class="fl">Selecciona la fecha</label>
+      <input id="print-fecha" class="fi" type="date" value="${hoy}">
+    </div>
+    <div style="font-size:12px;color:var(--g500);margin-top:8px">Se imprimirán todos los buques con ETA en la fecha seleccionada, con el detalle de sus expediciones.</div>`;
+  document.getElementById('m-foot').innerHTML=`
+    <button class="btn btn-s" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-p" onclick="imprimirDia(document.getElementById('print-fecha').value)">🖨️ Generar informe</button>`;
+  document.getElementById('mo').classList.add('open');
+}
+
+async function imprimirDia(fecha){
+  if(!fecha){showToast('⚠️ Selecciona una fecha');return;}
+  closeModal();
+  // Cargar buques con ETA en la fecha seleccionada
+  const {data:buques} = await sb.from('buques')
+    .select('*')
+    .gte('eta_buque', fecha)
+    .lt('eta_buque', new Date(new Date(fecha+'T12:00').getTime()+86400000).toISOString().slice(0,10))
+    .order('nombre',{ascending:true});
+
+  if(!buques||!buques.length){
+    showToast('Sin buques previstos para '+new Date(fecha+'T12:00').toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}));
+    return;
+  }
+
+  // Cargar expediciones de todos esos buques
+  const buqueIds=buques.map(b=>b.id);
+  const {data:expsAll}=await sb.from('expediciones')
+    .select('id,buque_id,nº_expedicion,remitente,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,tramite_aduanero,nº_mrn,fecha_max_despacho,docs_puerto,empresas!empresa_id(nombre)')
+    .in('buque_id',buqueIds)
+    .order('nº_expedicion',{ascending:true});
+
+  const expPorBuque={};
+  (expsAll||[]).forEach(e=>{ if(!expPorBuque[e.buque_id]) expPorBuque[e.buque_id]=[]; expPorBuque[e.buque_id].push(e); });
+
+  const fechaStr=new Date(fecha+'T12:00').toLocaleDateString('es-ES',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const hoyPrint=new Date().toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+
+  const bloquesBuque=buques.map(b=>{
+    const exps=expPorBuque[b.id]||[];
+    const totalBlt=exps.reduce((a,e)=>a+(e.bultos||0),0);
+    const totalKg=exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+    const filas=exps.map((e,i)=>`<tr style="background:${i%2===0?'#f9f9f9':'#fff'}">
+      <td style="font-size:10px">${e.nº_expedicion||'—'}</td>
+      <td style="font-size:10px">${e.remitente||e.empresas?.nombre||'—'}</td>
+      <td style="text-align:center;font-size:10px">${e.bultos||0}</td>
+      <td style="text-align:right;font-size:10px">${parseFloat(e.kilos)||0} kg</td>
+      <td style="font-size:10px">${e.ubicacion||'—'}</td>
+      <td style="font-size:10px">${e.status_aduanero||'—'}</td>
+      <td style="font-size:10px">${e.tramite_aduanero||'—'}</td>
+      <td style="font-family:monospace;font-size:9px">${e.nº_mrn||'—'}</td>
+      <td style="font-size:10px">${e.fecha_max_despacho?new Date(e.fecha_max_despacho).toLocaleDateString('es-ES'):'—'}</td>
+    </tr>`).join('');
+    return `<div style="margin-bottom:24px;page-break-inside:avoid">
+      <div style="background:#1e3a5f;color:#fff;padding:7px 12px;border-radius:4px 4px 0 0;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:13px;font-weight:700">🚢 ${b.nombre}</div>
+        <div style="font-size:10px;opacity:.8">IMO: ${b.imo||'—'} · Escala: ${b.nº_escala||'—'} · Terminal: ${b.puerto_terminal||'—'} · Estado: ${b.estado_operacion||'—'}</div>
+      </div>
+      ${exps.length?`<table style="border-collapse:collapse;width:100%;font-size:10px;border:1px solid #ddd">
+        <thead><tr style="background:#e8eff8">
+          <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;font-size:9px">Referencia</th>
+          <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;font-size:9px">Remitente</th>
+          <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Btos</th>
+          <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Kilos</th>
+          <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Ubicación</th>
+          <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Status</th>
+          <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Trámite</th>
+          <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">MRN</th>
+          <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">F.Máx.Desp.</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+        <tfoot><tr style="background:#f0f4ff;font-weight:700">
+          <td colspan="2" style="padding:5px 8px;border:1px solid #ddd;font-size:10px">TOTAL — ${exps.length} expedición${exps.length!==1?'es':''}</td>
+          <td style="padding:5px 8px;border:1px solid #ddd;text-align:center;font-size:10px">${totalBlt}</td>
+          <td style="padding:5px 8px;border:1px solid #ddd;text-align:right;font-size:10px">${totalKg} kg</td>
+          <td colspan="5" style="border:1px solid #ddd"></td>
+        </tfoot>
+      </table>`:'<div style="padding:8px 12px;font-size:11px;color:#888;border:1px solid #ddd;border-top:none">Sin expediciones registradas</div>'}
+    </div>`;
+  }).join('');
+
+  const w=window.open('','_blank','width=1200,height=900');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Buques del día — ${fechaStr}</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:20px;color:#111}
+    h1{font-size:17px;color:#1e3a5f;border-bottom:3px solid #1e3a5f;padding-bottom:8px;margin:0 0 4px}
+    .meta{font-size:11px;color:#666;margin-bottom:20px}
+    .footer{margin-top:24px;font-size:9px;color:#999;border-top:1px solid #ddd;padding-top:8px;display:flex;justify-content:space-between}
+    @media print{.no-print{display:none}body{margin:10px}}
+  </style></head><body>
+  <div class="no-print" style="margin-bottom:16px">
+    <button onclick="window.print()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:12px;cursor:pointer;margin-right:8px">🖨️ Imprimir / Guardar PDF</button>
+    <button onclick="window.close()" style="background:#eee;border:1px solid #ccc;border-radius:6px;padding:8px 18px;font-size:12px;cursor:pointer">Cerrar</button>
+  </div>
+  <h1>🚢 Buques previstos — ${fechaStr}</h1>
+  <div class="meta">${buques.length} buque${buques.length!==1?'s':''} con ETA el ${fechaStr} · Impreso: ${hoyPrint} · ALGECIRAS LOGISTIC SOLUTIONS (ALS)</div>
+  ${bloquesBuque}
+  <div class="footer">
+    <span>ALGECIRAS LOGISTIC SOLUTIONS (ALS) · Departamento de Operaciones · +34 956 58 13 16</span>
+    <span>${hoyPrint}</span>
+  </div>
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>w.print(),700);
+}
+
+async function imprimirDetalleBuque(buqueId){
+  const [{data:b},{data:exps}] = await Promise.all([
+    sb.from('buques').select('*').eq('id',buqueId).single(),
+    sb.from('expediciones')
+      .select('id,nº_expedicion,remitente,bultos,kilos,ubicacion,estado_semaforo,estado_carga,status_aduanero,tramite_aduanero,nº_mrn,fecha_max_despacho,docs_puerto,empresas!empresa_id(nombre)')
+      .eq('buque_id',buqueId)
+      .order('nº_expedicion',{ascending:true})
+  ]);
+  const hoy = new Date().toLocaleDateString('es-ES',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const eta = b?.eta_buque ? new Date(b.eta_buque).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  const totalBlt = (exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
+  const totalKg  = (exps||[]).reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+  const filas = (exps||[]).map((e,i)=>`<tr style="background:${i%2===0?'#f9f9f9':'#fff'}">
+    <td>${e.nº_expedicion||'—'}</td>
+    <td>${e.remitente||e.empresas?.nombre||'—'}</td>
+    <td style="text-align:center">${e.bultos||0}</td>
+    <td style="text-align:right">${parseFloat(e.kilos)||0} kg</td>
+    <td>${e.ubicacion||'—'}</td>
+    <td>${e.status_aduanero||'—'}</td>
+    <td>${e.tramite_aduanero||'—'}</td>
+    <td>${e.nº_mrn||'—'}</td>
+    <td>${e.fecha_max_despacho?new Date(e.fecha_max_despacho).toLocaleDateString('es-ES'):'—'}</td>
+    <td style="text-align:center">${e.docs_puerto?Array.isArray(e.docs_puerto)?e.docs_puerto[0]:e.docs_puerto:'—'}</td>
+  </tr>`).join('');
+  const w=window.open('','_blank','width=1100,height=800');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Detalle ${buqueNombre||'Buque'}</title><style>
+    body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#111}
+    h1{font-size:16px;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:6px;margin:0 0 4px}
+    .meta{font-size:11px;color:#666;margin-bottom:16px}
+    table{border-collapse:collapse;width:100%;font-size:10px}
+    th{background:#1e3a5f;color:#fff;padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.5px}
+    td{border:1px solid #ddd;padding:5px 8px;vertical-align:top}
+    .total{font-weight:700;background:#e8f0fe!important}
+    .footer{margin-top:20px;font-size:9px;color:#999;border-top:1px solid #ddd;padding-top:8px;display:flex;justify-content:space-between}
+    @media print{body{margin:10px}button{display:none!important}.no-print{display:none}}
+  </style></head><body>
+  <div class="no-print" style="margin-bottom:12px">
+    <button onclick="window.print()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:12px;cursor:pointer;margin-right:8px">🖨️ Imprimir / PDF</button>
+    <button onclick="window.close()" style="background:#eee;border:1px solid #ccc;border-radius:6px;padding:8px 18px;font-size:12px;cursor:pointer">Cerrar</button>
+  </div>
+  <h1>🚢 ${b?.nombre||buqueNombre||'—'}</h1>
+  <div class="meta">
+    IMO: <strong>${b?.imo||'—'}</strong> &nbsp;·&nbsp;
+    Escala APBA: <strong>${b?.nº_escala||'—'}</strong> &nbsp;·&nbsp;
+    ETA: <strong>${eta}</strong> &nbsp;·&nbsp;
+    Terminal: <strong>${b?.puerto_terminal||'—'}</strong> &nbsp;·&nbsp;
+    Estado: <strong>${b?.estado_operacion||'—'}</strong> &nbsp;·&nbsp;
+    Impreso: <strong>${hoy}</strong>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Referencia</th><th>Remitente</th><th>Btos</th><th>Kilos</th>
+      <th>Ubicación</th><th>Status Adua.</th><th>Trámite</th>
+      <th>MRN</th><th>F. Máx. Desp.</th><th>Docs Puerto</th>
+    </tr></thead>
+    <tbody>
+      ${filas}
+      <tr class="total">
+        <td colspan="2"><strong>TOTAL — ${(exps||[]).length} expediciones</strong></td>
+        <td style="text-align:center"><strong>${totalBlt}</strong></td>
+        <td style="text-align:right"><strong>${totalKg} kg</strong></td>
+        <td colspan="6"></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="footer">
+    <span>ALGECIRAS LOGISTIC SOLUTIONS (ALS) · Departamento de Operaciones</span>
+    <span>${hoy}</span>
+  </div>
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>w.print(),600);
 }
 
 async function impAlb(buqueId){

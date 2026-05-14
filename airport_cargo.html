@@ -529,6 +529,23 @@ function initDarkMode(){
 }
 
 function goTo(mod){
+  // Si fue abierto desde una ficha buque, volver a ella
+  if(FROM_BUQUE_ID){
+    try{
+      if(window.opener && !window.opener.closed){
+        if(typeof window.opener.openBuqueFromAirport==='function'){
+          window.opener.openBuqueFromAirport(FROM_BUQUE_ID);
+          window.opener.focus();
+          window.close();
+          return;
+        }
+      }
+      // Fallback: navegar con parámetro URL
+      var base = window.location.href.replace(/\/airport_cargo\.html.*$/, '');
+      window.location.href = base + '/index.html?go=operativa&open_buque=' + FROM_BUQUE_ID;
+      return;
+    }catch(e){}
+  }
   // Navegar al Portal ALS — funciona siempre
   try {
     var base = window.location.href.replace(/\/airport_cargo\.html.*$/, '');
@@ -639,7 +656,8 @@ var TRF_GF_2026={
 var TRF_DEFAULT={
   "Swissport Cargo":{
     alm:{dl:2,min:51.31,u:12.12},
-    gd:{min:47.69,u:24.18},
+    gd:{min:50.05,u:0},          // 3.1.1 Gestión documental import (base)
+    md:{u:24.18},                 // 3.1.1 Entrega mismo día AGP (+24,18€ opcional),
     tr:{min:20.3,u:0.46},
     tm:{min:0,u:38.07},
     fi:{min:0,u:148.63},
@@ -717,6 +735,7 @@ function diasFact(ll,rt,h){
 }
 function calcAlm(kg,d,h,yr){var t=getH(h,yr);if(!d||!t||!t.alm)return 0;return Math.max(Math.ceil(kg/100)*t.alm.u*d,t.alm.min);}
 function calcGD(h,yr){var t=getH(h,yr);if(!t||!t.gd)return 0;return Math.max(t.gd.u,t.gd.min);}
+function calcMD(md,h,yr){if(!md)return 0;var t=getH(h,yr);if(!t||!t.md)return 0;return t.md.u||0;}
 function calcTR(kg,h,yr){var t=getH(h,yr);if(!t||!t.tr)return 0;return Math.max(kg*t.tr.u,t.tr.min);}
 function calcTM(h,yr){var t=getH(h,yr);if(!t||!t.tm)return 0;return Math.max(t.tm.u,t.tm.min);}
 function calcFi(ap,h,yr){var t=getH(h,yr);if(!ap||!t||!t.fi)return 0;return Math.max(t.fi.u,t.fi.min);}
@@ -729,21 +748,21 @@ function calcTotal(e){
   var yr=new Date(e.fecha_retirada).getFullYear();
   var kg=parseFloat(e.kilos_tasables)||0;
   var d=diasFact(e.fecha_llegada,e.fecha_retirada,e.handling);
-  return calcAlm(kg,d,e.handling,yr)+calcGD(e.handling,yr)+calcTR(kg,e.handling,yr)+calcTM(e.handling,yr)+calcFi(e.aplica_finde,e.handling,yr)+calcEx(e.aplica_express,kg,e.handling,yr)+calcCC(e.aplica_carga_camion,kg,e.handling,yr)+calcAp(e.aplica_apertura,kg,e.handling,yr);
+  return calcAlm(kg,d,e.handling,yr)+calcGD(e.handling,yr)+calcMD(e.aplica_mismo_dia,e.handling,yr)+calcTR(kg,e.handling,yr)+calcTM(e.handling,yr)+calcFi(e.aplica_finde,e.handling,yr)+calcEx(e.aplica_express,kg,e.handling,yr)+calcCC(e.aplica_carga_camion,kg,e.handling,yr)+calcAp(e.aplica_apertura,kg,e.handling,yr);
 }
 function desglose(e){
   if(!e.handling||!hasH(e.handling)||!e.fecha_retirada)return null;
   var kg=parseFloat(e.kilos_tasables)||0,h=e.handling;
   var yr=new Date(e.fecha_retirada).getFullYear();
   var d=diasFact(e.fecha_llegada,e.fecha_retirada,h);
-  return{yr:yr,dias:d,alm:calcAlm(kg,d,h,yr),gd:calcGD(h,yr),tr:calcTR(kg,h,yr),tm:calcTM(h,yr),fi:calcFi(e.aplica_finde,h,yr),ex:calcEx(e.aplica_express,kg,h,yr),cc:calcCC(e.aplica_carga_camion,kg,h,yr),ap:calcAp(e.aplica_apertura,kg,h,yr),total:calcTotal(e)};
+  return{yr:yr,dias:d,alm:calcAlm(kg,d,h,yr),gd:calcGD(h,yr),md:calcMD(e.aplica_mismo_dia,h,yr),tr:calcTR(kg,h,yr),tm:calcTM(h,yr),fi:calcFi(e.aplica_finde,h,yr),ex:calcEx(e.aplica_express,kg,h,yr),cc:calcCC(e.aplica_carga_camion,kg,h,yr),ap:calcAp(e.aplica_apertura,kg,h,yr),total:calcTotal(e)};
 }
 
 // ── DATOS ────────────────────────────────────────────────
 var ALL=[];
 async function loadAll(){
   try{
-    var res=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:true,nullsFirst:false});
+    var res=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:true,nullsFirst:false}).order('hora_llegada',{ascending:true,nullsFirst:false});
     if(res.error){console.error('loadAll:',res.error.message);ALL=[];}
     else ALL=res.data||[];
   }catch(e){console.error('loadAll exception:',e.message);ALL=[];}
@@ -954,8 +973,12 @@ async function init(){
   });
 }
 
+var FROM_BUQUE_ID = null;
+
 function checkUrl(){
   var p=new URLSearchParams(window.location.search);
+  FROM_BUQUE_ID = p.get('from_buque') || null;
+  if(FROM_BUQUE_ID) console.log('[AirportCargo] Abierto desde buque:', FROM_BUQUE_ID);
   if(p.get('new')==='1')setTimeout(openNueva,400);
   else if(p.get('edit'))setTimeout(function(){editEntrada(p.get('edit'));},600);
 }
@@ -1019,7 +1042,7 @@ function initRealtime(){
         if(ev==='INSERT'){
           if(!ALL.find(function(e){return String(e.id)===String(p.new.id);})){
             ALL.push(p.new);
-            ALL.sort(function(a,b){var fa=(a.fecha_llegada||'9999').slice(0,10),fb=(b.fecha_llegada||'9999').slice(0,10);if(fa!==fb)return fa<fb?-1:1;return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;});
+            ALL.sort(function(a,b){var fa=(a.fecha_llegada||'9999').slice(0,10),fb=(b.fecha_llegada||'9999').slice(0,10);if(fa!==fb)return fa<fb?-1:1;function nt(t){if(!t)return'99:99';var s=String(t).trim();return s.indexOf(':')==1?'0'+s:s;}var ha=nt(a.hora_llegada),hb=nt(b.hora_llegada);if(ha!==hb)return ha<hb?-1:1;return String(a.id)<String(b.id)?-1:1;});
             toast('⚡ Nueva entrada');
           }
         }else if(ev==='UPDATE'){
@@ -1281,11 +1304,14 @@ function filtrar(){
     if(y||m){var mo=calcMes(e.fecha_llegada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
     return true;
   });
-  // Orden permanente: fecha_llegada asc, hora_llegada asc como desempate
+  // Orden estable: fecha_llegada → hora_llegada (normalizada HH:MM) → id
+  function normT(t){if(!t)return'99:99';var s=String(t).trim();return s.indexOf(':')===1?'0'+s:s;}
   f.sort(function(a,b){
-    var fa=(a.fecha_llegada||'9999').slice(0,10), fb=(b.fecha_llegada||'9999').slice(0,10);
-    if(fa!==fb) return fa<fb?-1:1;
-    return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;
+    var fa=(a.fecha_llegada||'9999').slice(0,10),fb=(b.fecha_llegada||'9999').slice(0,10);
+    if(fa!==fb)return fa<fb?-1:1;
+    var ha=normT(a.hora_llegada),hb=normT(b.hora_llegada);
+    if(ha!==hb)return ha<hb?-1:1;
+    return String(a.id)<String(b.id)?-1:1;
   });
   renderRows(f,'tbody');
   checkMobileView();
@@ -1332,13 +1358,14 @@ function renderRows(list, tbodyId){
     var d=isAuto&&rtEfectivo?diasFact(e.fecha_llegada,rtEfectivo,e.handling):0;
     var alm=isAuto?calcAlm(kg,d,e.handling,yr):0;
     var gd=isAuto?calcGD(e.handling,yr):0;
+    var md=isAuto?calcMD(e.aplica_mismo_dia,e.handling,yr):0;
     var tr=isAuto?calcTR(kg,e.handling,yr):0;
     var tm=isAuto?calcTM(e.handling,yr):0;
     var fi=isAuto?calcFi(e.aplica_finde,e.handling,yr):0;
     var ex=isAuto?calcEx(e.aplica_express,kg,e.handling,yr):0;
     var cc=isAuto?calcCC(e.aplica_carga_camion,kg,e.handling,yr):0;
     var ap=isAuto?calcAp(e.aplica_apertura,kg,e.handling,yr):0;
-    var tot=isAuto?(alm+gd+tr+tm+fi+ex+cc+ap):(parseFloat(e.coste_manual)||0);
+    var tot=isAuto?(alm+gd+md+tr+tm+fi+ex+cc+ap):(parseFloat(e.coste_manual)||0);
     var rowStyle=e.confirmacion_llegada?' style="background:#ffedd5;border-left:3px solid #f97316"':'';
     return'<tr'+rowStyle+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="updateSel()"></label></td>'+
@@ -1959,6 +1986,7 @@ async function showForm(e, prefill){
     '<label class="toggle-row" style="background:var(--am50);border-color:var(--am500)"><input type="checkbox" id="f-conf-llegada" '+(e&&e.confirmacion_llegada?'checked':'')+'>  ✈️ <strong>Llegada confirmada en aeropuerto</strong></label>'+
     '<div id="ext">'+
     '<div class="sect">Cargos opcionales</div>'+
+    '<label class="toggle-row"><input type="checkbox" id="f-md" '+(e&&e.aplica_mismo_dia?'checked':pf&&pf.aplica_mismo_dia?'checked':'')+' onchange="liveCalc()"> 🕐 <strong>Entrega mismo día</strong> <span style="font-size:10px;color:var(--g500)">(+24,18 € AGP)</span></label>'+
     '<label class="toggle-row"><input type="checkbox" id="f-fi" '+(e&&e.aplica_finde?'checked':'')+' onchange="liveCalc()"> 📅 Fin de semana / festivos</label>'+
     '<label class="toggle-row"><input type="checkbox" id="f-ex" '+(e&&e.aplica_express?'checked':'')+' onchange="liveCalc()"> ⚡ Handling Express</label>'+
     '<label class="toggle-row"><input type="checkbox" id="f-cc" '+(e&&e.aplica_carga_camion?'checked':'')+' onchange="liveCalc()"> 🚛 Carga Camión</label>'+
@@ -2018,7 +2046,7 @@ function liveCalc(){
   if(!h||!rt||!kg){el.innerHTML='';return;}
   if(!hasH(h)){el.innerHTML='<div style="font-size:11px;color:var(--g400);padding:8px 0">Sin tarifa automática para este handler — introduce el coste manualmente.</div>';return;}
   var yr=new Date(rt).getFullYear();
-  var tmpE={handling:h,fecha_llegada:ll,fecha_retirada:rt,kilos_tasables:kg,aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap')};
+  var tmpE={handling:h,fecha_llegada:ll,fecha_retirada:rt,kilos_tasables:kg,aplica_mismo_dia:gc('f-md'),aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap')};
   var d=desglose(tmpE);if(!d){el.innerHTML='';return;}
   el.innerHTML='<div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:12px">'+
     '<div class="sect" style="margin-top:0;color:var(--b600)">Vista previa — '+h+' '+yr+'</div>'+
@@ -2042,7 +2070,7 @@ function buildObj(){
     aeropuerto:gv('f-apto')||'AGP',handling:h||null,status:gv('f-status')||'T1',
     fecha_llegada:gv('f-ll')||null,fecha_retirada:rt,kilos_tasables:parseFloat(gv('f-kg'))||0,
     bultos:parseInt(gv('f-blt'))||null,
-    aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),
+    aplica_mismo_dia:gc('f-md'),aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),
     aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap'),
     coste_manual:(!isAuto&&h)?parseFloat(gv('f-man'))||null:null,
     observaciones:gv('f-obs').trim()||null,mes_operacion:calcMes(rt),
