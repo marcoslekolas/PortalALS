@@ -5476,13 +5476,15 @@ async function abrirAsignarExpCamion(camionId, camionRef){
   document.getElementById('mo').classList.add('open');
 
   // Cargar expediciones activas y las ya asignadas a este camión
+  // Mostramos todas EXCEPTO las embarcadas — usamos or() para incluir también NULLs
   const [expRes, asigRes] = await Promise.all([
     sb.from('expediciones')
       .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,empresas(nombre),buques(nombre,eta_buque)')
-      .neq('estado_semaforo','🚢 EMBARCADO'),
+      .or('estado_semaforo.is.null,estado_semaforo.neq.🚢 EMBARCADO')
+      .order('buques(nombre)',{ascending:true}),
     sb.from('camiones_expediciones').select('expedicion_id').eq('camion_id',camionId)
   ]);
-  const exps = expRes.data||[];
+  const exps = (expRes.data||[]);
   const asignadas = new Set((asigRes.data||[]).map(r=>r.expedicion_id));
 
   // Agrupar por buque
