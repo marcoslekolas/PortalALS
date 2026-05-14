@@ -5476,18 +5476,18 @@ async function abrirAsignarExpCamion(camionId, camionRef){
   document.getElementById('mo').classList.add('open');
 
   // Cargar expediciones activas y las ya asignadas a este camión
-  // Filtramos en JS (no en PostgREST) para evitar problemas de codificación con emojis
+  // Join syntax exacta: empresas!empresa_id(nombre) — hint FK necesario
   const [expRes, asigRes] = await Promise.all([
     sb.from('expediciones')
-      .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,empresas(nombre),buques(nombre,eta_buque)')
+      .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,empresas!empresa_id(nombre),buques(nombre,eta_buque)')
       .order('created_at',{ascending:false})
       .limit(500),
     sb.from('camiones_expediciones').select('expedicion_id').eq('camion_id',camionId)
   ]);
-  if(expRes.error){ console.error('expediciones query error:',expRes.error); }
-  // Excluir embarcadas (comparación JS evita problemas de encoding con emojis en PostgREST)
+  if(expRes.error){ console.error('expediciones error:',expRes.error.message,expRes.error); }
+  // Filtrar embarcadas en JS (evita problemas encoding emoji en PostgREST)
   const exps = (expRes.data||[]).filter(e =>
-    !(e.estado_semaforo||'').includes('EMBARCADO')
+    !(e.estado_semaforo||'').toUpperCase().includes('EMBARCADO')
   );
   const asignadas = new Set((asigRes.data||[]).map(r=>r.expedicion_id));
 
@@ -5566,7 +5566,7 @@ async function _loadDatosCamion(camionId){
   let exps = [];
   if(expIds.length){
     const {data:eData} = await sb.from('expediciones')
-      .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,nº_mrn,empresas(nombre),buques(nombre,eta_buque)')
+      .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,nº_mrn,empresas!empresa_id(nombre),buques(nombre,eta_buque)')
       .in('id',expIds);
     exps = eData||[];
   }
