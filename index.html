@@ -5402,10 +5402,17 @@ function renderCamionCard(c, nExps){
 }
 
 async function abrirNuevoCamion(){
-  // Cargar transportistas y almacenistas
-  const {data:emps} = await sb.from('empresas').select('id,nombre,email_confronta,email_almacenista,es_almacenista,roles').order('nombre');
-  const transportistas = (emps||[]).filter(e=>(e.roles||[]).includes('transportista')||(e.roles||[]).includes('Transportista'));
-  const almacenistas = (emps||[]).filter(e=>e.es_almacenista);
+  // Cargar transportistas y almacenistas — campo es 'rol' (no 'roles')
+  let emps=[];
+  try{
+    const r=await sb.from('empresas').select('id,nombre,email_confronta,email_almacenista,es_almacenista,rol').order('nombre');
+    emps=r.data||[];
+  }catch(ex){console.warn('empresas query:',ex);}
+
+  const transportistas=(emps).filter(e=>(e.rol||[]).map(r=>r.toLowerCase()).includes('transportista'));
+  // Almacenistas: primero los marcados como es_almacenista, si no hay ninguno mostrar todos
+  let almacenistas=emps.filter(e=>e.es_almacenista);
+  const sinAlmacenistas=almacenistas.length===0;
 
   const hoy = new Date().toISOString().slice(0,10);
   const ref = 'CAM-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*9000)+1000);
@@ -5418,21 +5425,22 @@ async function abrirNuevoCamion(){
         <div class="fg"><label class="fl">Transportista</label>
           <select id="cc-transp" class="fi fs">
             <option value="">Seleccionar transportista…</option>
-            ${transportistas.map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('')}
-            ${!transportistas.length?`<option disabled>Sin empresas con rol transportista</option>`:''}
+            ${transportistas.length
+              ? transportistas.map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('')
+              : emps.map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('')}
           </select>
+          ${!transportistas.length?`<div style="font-size:11px;color:var(--am600);margin-top:4px">⚠ Ninguna empresa con rol Transportista — se muestran todas. Configúralo en Empresas.</div>`:''}
         </div>
         <div class="fg"><label class="fl">Almacenista / Receptor</label>
           <select id="cc-alm" class="fi fs">
             <option value="">Seleccionar almacenista…</option>
-            ${almacenistas.map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('')}
-            ${!almacenistas.length?`<option disabled>Sin empresas marcadas como almacenista (ver Empresas)</option>`:''}
+            ${(sinAlmacenistas ? emps : almacenistas).map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('')}
           </select>
+          ${sinAlmacenistas?`<div style="font-size:11px;color:var(--am600);margin-top:4px">⚠ Ninguna empresa tiene «Es almacenista» activo — se muestran todas. Configúralo en Empresas.</div>`:''}
         </div>
       </div>
       <div class="fg"><label class="fl">Fecha de entrega prevista</label><input id="cc-fecha" class="fi" type="date" value="${hoy}"></div>
       <div class="fg"><label class="fl">Notas / instrucciones</label><textarea id="cc-notas" class="fi" style="min-height:60px" placeholder="Instrucciones de carga, horario de acceso, referencia del almacén..."></textarea></div>
-      ${!transportistas.length||!almacenistas.length?`<div style="font-size:12px;color:var(--am600);background:var(--am50);padding:10px 14px;border-radius:var(--r)">⚠️ ${!transportistas.length?'Sin transportistas configurados. Ve a Empresas y asigna el rol «transportista». ':''} ${!almacenistas.length?'Sin almacenistas configurados. Ve a Empresas y activa la opción «Es almacenista».':''}</div>`:''}
     </div>`;
   document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-p" onclick="crearCamion()">Crear camión</button>`;
   document.getElementById('mo').classList.add('open');
