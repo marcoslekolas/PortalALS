@@ -974,11 +974,14 @@ async function init(){
 }
 
 var FROM_BUQUE_ID = null;
+var LINKED_EXPEDICION_ID = null;
 
 function checkUrl(){
   var p=new URLSearchParams(window.location.search);
   FROM_BUQUE_ID = p.get('from_buque') || null;
+  LINKED_EXPEDICION_ID = p.get('expedicion_id') || null;
   if(FROM_BUQUE_ID) console.log('[AirportCargo] Abierto desde buque:', FROM_BUQUE_ID);
+  if(LINKED_EXPEDICION_ID) console.log('[AirportCargo] Vinculado a expedicion:', LINKED_EXPEDICION_ID);
   if(p.get('new')==='1')setTimeout(openNueva,400);
   else if(p.get('edit'))setTimeout(function(){editEntrada(p.get('edit'));},600);
 }
@@ -1048,6 +1051,8 @@ function initRealtime(){
         }else if(ev==='UPDATE'){
           var idx=ALL.findIndex(function(e){return String(e.id)===String(p.new.id);});
           if(idx>=0) ALL[idx]=p.new; else ALL.push(p.new);
+          // Sincronizar automáticamente con expedición vinculada
+          try{sincronizarExpedicion(p.new.id, p.new);}catch(ex){};
         }else if(ev==='DELETE'){
           ALL=ALL.filter(function(e){return String(e.id)!==String((p.old||{}).id);});
         }
@@ -1243,6 +1248,8 @@ async function confirmarLlegadaDesde(id){
   var r=await sb.from('airport_cargo').update({confirmacion_llegada:true}).eq('id',id);
   if(r.error){toast('Error: '+r.error.message);return;}
   if(e) e.confirmacion_llegada=true;
+  // Sincronizar confirmación con expedición vinculada
+  try{await sincronizarExpedicion(id,{confirmacion_llegada:true});}catch(ex){}
   toast('✈️ Llegada confirmada');
   loadDashboard();
 }
@@ -2123,7 +2130,27 @@ async function saveEntrada(id){
   try{await sb.from('airport_cargo').update(oExt).eq('id',id);}catch(ex){}
   // Registrar cambios en el historial
   try{await logCambios(id,antes,Object.assign({},o,oExt));}catch(ex){}
+  // Sincronizar con expedición vinculada si hay vuelo/fecha/hora
+  try{await sincronizarExpedicion(id, Object.assign({},o,oExt));}catch(ex){}
   toast('Guardado ✅');closeModal();await loadAll();loadView();
+}
+
+// ── Sincronizar campos de airport_cargo → expediciones ─────────────────────
+async function sincronizarExpedicion(acId, datos){
+  // Obtener el expedicion_id del registro (puede estar en datos o en ALL)
+  var entrada=ALL.find(function(e){return String(e.id)===String(acId);})||{};
+  var expId = entrada.expedicion_id || LINKED_EXPEDICION_ID || null;
+  if(!expId) return; // no hay expedición vinculada
+  // Solo sincronizar si hay datos de vuelo/llegada
+  if(!datos.vuelo && !datos.fecha_llegada && !datos.hora_llegada) return;
+  var sync={};
+  if(datos.vuelo!==undefined) sync.ac_vuelo = datos.vuelo||null;
+  if(datos.fecha_llegada!==undefined) sync.ac_fecha_llegada = datos.fecha_llegada||null;
+  if(datos.hora_llegada!==undefined) sync.ac_hora_llegada = datos.hora_llegada||null;
+  if(datos.confirmacion_llegada!==undefined) sync.ac_confirmacion = datos.confirmacion_llegada||false;
+  if(Object.keys(sync).length){
+    await sb.from('expediciones').update(sync).eq('id',expId);
+  }
 }
 async function delEntrada(id){
   if(!confirm('¿Eliminar esta entrada?'))return;

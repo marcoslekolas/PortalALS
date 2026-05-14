@@ -1917,6 +1917,7 @@ function checkSession(){
   }
   
   const destMod=params.get('go')||'home';
+  const openBuqueId=params.get('open_buque')||null;
   if(window.history&&window.history.replaceState) window.history.replaceState({},'',window.location.pathname);
   
   // Si sb ya está listo, navegar ahora; si no, guardar destino para cuando cargue el SDK
@@ -1924,6 +1925,7 @@ function checkSession(){
     if(destMod==='operativa') enterMod('operativa');
     else if(destMod==='almacen') enterMod('almacen');
     else showHome();
+    if(openBuqueId) setTimeout(function(){nav('buques',null);setTimeout(function(){openBuque(openBuqueId);},400);},600);
     iniciarRealtime();
     iniciarPresenciaGlobal();
   } else {
@@ -11177,6 +11179,175 @@ function prevIMO(imo){
 }
 
 // ── DETALLE BUQUE (totalmente editable) ────────────────────
+// Helper: render Airport Cargo sync data in expedition detail
+function _renderAcSync(e){
+  if(!e.ac_vuelo&&!e.ac_fecha_llegada) return '';
+  var p=[];
+  if(e.ac_vuelo) p.push('<span><span style="color:var(--g500)">Vuelo:</span> <strong>'+e.ac_vuelo+'</strong></span>');
+  if(e.ac_fecha_llegada) p.push('<span><span style="color:var(--g500)">Llegada:</span> <strong>'+(e.ac_fecha_llegada||'').slice(0,10)+'</strong></span>');
+  if(e.ac_hora_llegada) p.push('<span><span style="color:var(--g500)">Hora:</span> <strong>'+e.ac_hora_llegada+'</strong></span>');
+  if(e.ac_confirmacion) p.push('<span class="badge bg" style="font-size:10px">✈️ Llegada confirmada</span>');
+  return '<div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--r);padding:10px 14px;margin-bottom:10px">'
+    +'<div style="font-size:11px;font-weight:700;color:var(--b700);margin-bottom:6px">✈️ Airport Cargo — datos sincronizados</div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px">'+p.join('')+'</div></div>';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MÓDULO: DOCUMENTOS PDF POR EXPEDICIÓN
+// Storage bucket: 'expedition-docs' (privado)
+// ══════════════════════════════════════════════════════════════════
+
+const MAX_PDF_MB = 20;
+const DOCS_BUCKET = 'expedition-docs';
+
+async function abrirDocsExpedicion(expId){
+  // Look up reference from current expediciones data or query
+  let expRef = expId;
+  try{
+    const {data:eq} = await sb.from('expediciones').select('nº_expedicion').eq('id',expId).single();
+    if(eq?.nº_expedicion) expRef = eq.nº_expedicion;
+  }catch(ex){}
+  document.getElementById('m-title').textContent = '📄 Documentos — '+(expRef||expId);
+  document.getElementById('m-body').innerHTML = '<div class="empty"><div class="empty-icon">⏳</div><div class="empty-txt">Cargando documentos...</div></div>';
+  document.getElementById('m-foot').innerHTML = '<button class="btn btn-s" onclick="closeModal()">Cerrar</button>';
+  document.getElementById('mo').classList.add('open');
+  await renderDocsList(expId, expRef);
+}
+
+async function renderDocsList(expId, expRef){
+  const {data:docs, error} = await sb.from('expedicion_docs')
+    .select('*').eq('expedicion_id',expId).order('created_at',{ascending:false});
+
+  const fmt = n => n>=1024*1024 ? (n/1024/1024).toFixed(1)+' MB' : Math.round(n/1024)+' KB';
+
+  const uploadZone = `
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:var(--g500);margin-bottom:8px">
+        Formatos: PDF · Máx. ${MAX_PDF_MB} MB por archivo · Para reducir tamaño usa
+        <a href="https://www.ilovepdf.com/compress_pdf" target="_blank" style="color:var(--b600)">iLovePDF</a> o
+        <a href="https://smallpdf.com/compress-pdf" target="_blank" style="color:var(--b600)">SmallPDF</a> antes de subir.
+      </div>
+      <label style="display:block;border:2px dashed var(--b300);border-radius:var(--rl);padding:20px;text-align:center;cursor:pointer;background:var(--b50);transition:background .15s" 
+        id="pdf-drop-zone" onmouseover="this.style.background='var(--b100)'" onmouseout="this.style.background='var(--b50)'">
+        <input type="file" id="pdf-file-input" accept=".pdf,application/pdf" multiple style="display:none" 
+          onchange="subirDocsPDF('${expId}','${expRef}',this.files)">
+        <div style="font-size:24px;margin-bottom:6px">📄</div>
+        <div style="font-size:13px;font-weight:600;color:var(--b700)">Seleccionar PDFs o arrastrar aquí</div>
+        <div style="font-size:11px;color:var(--g400);margin-top:4px">Varios archivos a la vez</div>
+      </label>
+      <div id="pdf-upload-progress" style="margin-top:8px"></div>
+    </div>`;
+
+  const docsList = (docs||[]).length ? `
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${(docs||[]).map(d=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--g50);border-radius:var(--r);border:1px solid var(--g200)">
+          <span style="font-size:20px;flex-shrink:0">📄</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${d.nombre_original||d.file_path}">${d.nombre_original||d.file_path.split('/').pop()}</div>
+            <div style="font-size:11px;color:var(--g400)">${d.paginas?d.paginas+' pág. · ':''}${d.tamaño_bytes?fmt(d.tamaño_bytes)+' · ':''}${new Date(d.created_at).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button class="btn btn-s btn-sm" onclick="verDocPDF('${d.id}','${d.file_path}')" title="Ver">👁️</button>
+            <button class="btn btn-s btn-sm" onclick="descargarDocPDF('${d.id}','${d.file_path}')" title="Descargar">⬇️</button>
+            <button class="btn btn-sm" style="color:var(--rd500);background:var(--rd50);border-color:var(--rd200)" onclick="eliminarDocPDF('${d.id}','${d.file_path}','${expId}','${expRef}')" title="Eliminar">🗑️</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>` : '<div style="text-align:center;padding:20px;color:var(--g400);font-size:13px">Sin documentos adjuntos</div>';
+
+  document.getElementById('m-title').textContent = `📄 Documentos — ${expRef}`;
+  document.getElementById('m-body').innerHTML = uploadZone + docsList;
+  document.getElementById('m-foot').innerHTML = `<button class="btn btn-s" onclick="closeModal()">Cerrar</button>`;
+
+  // Drag & drop
+  const zone = document.getElementById('pdf-drop-zone');
+  if(zone){
+    zone.addEventListener('dragover', e=>{ e.preventDefault(); zone.style.background='var(--b100)'; });
+    zone.addEventListener('dragleave', ()=>{ zone.style.background='var(--b50)'; });
+    zone.addEventListener('drop', e=>{ e.preventDefault(); zone.style.background='var(--b50)'; subirDocsPDF(expId, expRef, e.dataTransfer.files); });
+    zone.addEventListener('click', ()=>document.getElementById('pdf-file-input')?.click());
+  }
+}
+
+async function subirDocsPDF(expId, expRef, files){
+  if(!files||!files.length) return;
+  const prog = document.getElementById('pdf-upload-progress');
+  const fileArr = Array.from(files).filter(f=>f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf'));
+  if(!fileArr.length){ showToast('⚠️ Selecciona archivos PDF'); return; }
+
+  let errores = 0, subidos = 0;
+  for(let i=0;i<fileArr.length;i++){
+    const f = fileArr[i];
+    if(prog) prog.innerHTML = `<div style="font-size:12px;color:var(--b600);padding:6px 0">⬆️ Subiendo ${i+1}/${fileArr.length}: ${f.name}...</div>`;
+
+    if(f.size > MAX_PDF_MB * 1024 * 1024){
+      showToast(`⚠️ ${f.name}: excede ${MAX_PDF_MB} MB — comprime antes de subir`);
+      errores++;
+      continue;
+    }
+
+    const ts = Date.now();
+    const path = `${expId}/${ts}_${f.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+
+    const {error:upErr} = await sb.storage.from(DOCS_BUCKET).upload(path, f, {
+      contentType:'application/pdf',
+      upsert:false
+    });
+
+    if(upErr){ showToast(`Error subiendo ${f.name}: ${upErr.message}`); errores++; continue; }
+
+    await sb.from('expedicion_docs').insert({
+      expedicion_id: expId,
+      file_path: path,
+      nombre_original: f.name,
+      tamaño_bytes: f.size,
+      subido_por: CU?.nombre||CU?.email||'—'
+    });
+    subidos++;
+  }
+
+  if(prog) prog.innerHTML = '';
+  showToast(errores ? `${subidos} subido(s), ${errores} error(es)` : `✅ ${subidos} documento(s) adjuntado(s)`);
+  await renderDocsList(expId, expRef);
+}
+
+async function verDocPDF(docId, filePath){
+  const {data, error} = await sb.storage.from(DOCS_BUCKET).createSignedUrl(filePath, 3600);
+  if(error||!data?.signedUrl){ showToast('Error al abrir: '+( error?.message||'URL no disponible')); return; }
+  window.open(data.signedUrl, '_blank');
+}
+
+async function descargarDocPDF(docId, filePath){
+  const {data, error} = await sb.storage.from(DOCS_BUCKET).createSignedUrl(filePath, 3600);
+  if(error||!data?.signedUrl){ showToast('Error al descargar'); return; }
+  const a = document.createElement('a');
+  a.href = data.signedUrl;
+  a.download = filePath.split('/').pop().replace(/^\d+_/,''); // remove timestamp prefix
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+async function eliminarDocPDF(docId, filePath, expId, expRef){
+  if(!confirm('¿Eliminar este documento? Esta acción no se puede deshacer.')) return;
+  await sb.storage.from(DOCS_BUCKET).remove([filePath]);
+  await sb.from('expedicion_docs').delete().eq('id',docId);
+  showToast('🗑️ Documento eliminado');
+  await renderDocsList(expId, expRef);
+}
+
+// FIN MÓDULO DOCUMENTOS PDF
+
+function openBuqueFromAirport(buqueId){
+  try{
+    // Asegurarse de estar en la vista correcta y abrir la ficha
+    if(typeof enterMod==='function') enterMod('operativa');
+    setTimeout(function(){
+      nav('buques',null);
+      setTimeout(function(){ openBuque(buqueId); },400);
+    },200);
+  }catch(e){ console.warn('openBuqueFromAirport:',e); }
+}
+
 async function openBuque(id){
   // Bloquear solo en vistas informativas del módulo almacén
   if(MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
@@ -11469,6 +11640,7 @@ async function openExpD(id, forceOpen=false){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 8px" data-exp-badges>${bdg(e.estado_semaforo)}<span class="badge ${e.estado_carga==='✅ AUTORIZADO'?'bg':'br'}">${e.estado_carga}</span></div>
     <div id="exp-mini-feed" style="margin-bottom:12px;padding:8px;background:var(--g50);border-radius:var(--r);border:1px solid var(--g100)"></div>
     ${e.created_by_nombre?`<div style="font-size:11px;color:var(--g400);margin-bottom:12px">Creado por <strong>${e.created_by_nombre}</strong>${e.updated_at?` · Última edición: ${fdt(e.updated_at)}`:''}</div>`:''}
+    ${_renderAcSync(e)}
     <hr class="fdiv">
     <div class="fg2"><label class="fl2">Nº MRN</label><input id="mrn-inp" class="fi" value="${e.nº_mrn||''}" placeholder="26ES…"><div style="font-size:10px;color:var(--g400);margin-top:3px">💡 Si empieza por <code style="background:var(--g100);padding:1px 4px;border-radius:3px;font-size:10px">-</code> no se incluye en el email de confronta</div></div>
     <div class="fg2"><label class="fl2">Referencia / Nº expedición</label><input id="ref-inp" class="fi" value="${(e.nº_expedicion||'').replace(/"/g,'&quot;')}" placeholder="Referencia de la expedición"></div>
@@ -11509,7 +11681,7 @@ async function openExpD(id, forceOpen=false){
     </div>
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-s btn-sm" onclick="abrirDocsExpedicion('${e.id}')" title="Documentos PDF">📄 Docs</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   // ── Poblar select de buques ────────────────────────────────────────
   (async()=>{
     const sel = document.getElementById('buq-sel');
@@ -12978,7 +13150,9 @@ async function crearAirportCargoDesdeExpedicion(expData, obj){
 
   // Modal de confirmación
   const acId = acData?.id || null;
-  const acUrl = 'airport_cargo.html' + (acId ? `?edit=${acId}` : '?new=1');
+  const fromBuqueParam = obj.buque_id ? `&from_buque=${obj.buque_id}` : '';
+  const expIdParam = expId ? `&expedicion_id=${expId}` : '';
+  const acUrl = 'airport_cargo.html' + (acId ? `?edit=${acId}${fromBuqueParam}${expIdParam}` : `?new=1${fromBuqueParam}${expIdParam}`);
 
   document.getElementById('m-title').textContent='✈️ Expedición de aeropuerto registrada';
   document.getElementById('m-body').innerHTML=`
