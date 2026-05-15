@@ -7118,6 +7118,15 @@ async function loadKanban(){
   const allBuques=(buques||[]).filter(b=>b.estado_operacion!=='Finalizado');
   const allExps=exps||[];
 
+  // Cargar indicadores de docs para el clip 📎 en ficha buque
+  try{
+    const expIds=allExps.map(e=>e.id);
+    if(expIds.length){
+      const {data:docsData}=await sb.from('expedicion_docs').select('expedicion_id').in('expedicion_id',expIds);
+      (docsData||[]).forEach(d=>_expIdsConDocs.add(d.expedicion_id));
+    }
+  }catch(ex){}
+
   if(!allExps.length){
     kb.innerHTML='<div class="empty" style="padding:60px 0"><div class="empty-icon">🎛</div><div class="empty-txt">No hay expediciones activas</div></div>';
     return;
@@ -7237,7 +7246,7 @@ function renderKanban(lista){
             const sinU=e.ubicacion==='Almacén-Sin Ubicar';
             const landed=e.ubicacion==='Landed';
             return`<tr onclick="openExpD('${e.id}')" style="${sinU?'background:#fff8e1':landed?'background:#fffbeb':''}">
-              <td class="fw">${e.nº_expedicion}</td>
+              <td class="fw">${e.nº_expedicion}${_expIdsConDocs.has(e.id)?'<span title="Documentos adjuntos" style="margin-left:3px;font-size:11px;color:var(--g500)">📎</span>':''}</td>
               <td>${bdg(e.estado_semaforo)}</td>
               <td style="font-family:var(--mono);font-size:10px;color:var(--g500)">${e.nº_mrn||'—'}</td>
               <td class="sm" style="${sinU?'color:var(--am600);font-weight:700':landed?'color:var(--am600)':''}">${sinU?'⚠️ ':landed?'⚓ ':''} ${e.ubicacion||'—'}</td>
