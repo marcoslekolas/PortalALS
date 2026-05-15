@@ -6722,9 +6722,18 @@ function renderB(list){document.getElementById('buques-list').innerHTML=list.map
 function filtrarB(q){const s=q.toLowerCase();renderB(allB.filter(b=>(b.nombre||'').toLowerCase().includes(s)||(b.imo||'').includes(s)||(b.nº_escala||'').toLowerCase().includes(s)));}
 
 let allE=[];
+let _expIdsConDocs=new Set(); // expedicion IDs que tienen documentos PDF adjuntos
 async function loadExp(){
   const {data}=await sb.from('expediciones').select('*,buques(nombre),empresas!empresa_id(nombre),cliente_override:cliente_override_id(nombre)').order('created_at',{ascending:false});
   allE=data||[];
+  // Cargar qué expediciones tienen docs adjuntos (en paralelo)
+  try{
+    const expIds=allE.map(e=>e.id);
+    if(expIds.length){
+      const {data:docsData}=await sb.from('expedicion_docs').select('expedicion_id').in('expedicion_id',expIds);
+      _expIdsConDocs=new Set((docsData||[]).map(d=>d.expedicion_id));
+    }else{_expIdsConDocs=new Set();}
+  }catch(ex){_expIdsConDocs=new Set();}
   _poblarFiltrosExp();
   renderE(allE);
   _expFiltradas=[...allE];
@@ -6808,7 +6817,7 @@ function renderE(list){
       <td class="sm">${e.buques?.nombre||'—'}</td>
       <td class="sm">${e.empresas?.nombre||'—'}</td>
       <td class="sm">${e.bultos}b·${e.kilos}kg</td>
-      <td>${bdg(semDisplay)}${hasFoto?'<span title="Tiene fotos" style="margin-left:3px;font-size:11px">📸</span>':''}</td>
+      <td>${bdg(semDisplay)}${hasFoto?'<span title="Tiene fotos" style="margin-left:3px;font-size:11px">📸</span>':''}${_expIdsConDocs.has(e.id)?'<span title="Tiene documentos adjuntos" style="margin-left:3px;font-size:12px;color:var(--g500)">📎</span>':''}</td>
       <td><span class="badge bgr" style="font-size:10px">${e.status_aduanero||'—'}</span></td>
       <td class="sm">${e.tramite_aduanero||'—'}</td>
       <td class="sm">${e.ubicacion||'—'}</td>
@@ -11309,6 +11318,8 @@ async function subirDocsPDF(expId, expRef, files){
 
   if(prog) prog.innerHTML = '';
   showToast(errores ? `${subidos} subido(s), ${errores} error(es)` : `✅ ${subidos} documento(s) adjuntado(s)`);
+  // Actualizar indicador en lista de expediciones
+  if(subidos>0){ _expIdsConDocs.add(expId); renderE(_expFiltradas); }
   await renderDocsList(expId, expRef);
 }
 
@@ -11332,6 +11343,9 @@ async function eliminarDocPDF(docId, filePath, expId, expRef){
   await sb.storage.from(DOCS_BUCKET).remove([filePath]);
   await sb.from('expedicion_docs').delete().eq('id',docId);
   showToast('🗑️ Documento eliminado');
+  // Si ya no quedan docs, quitar el clip del listado
+  const {data:rem}=await sb.from('expedicion_docs').select('id').eq('expedicion_id',expId).limit(1);
+  if(!rem||!rem.length){ _expIdsConDocs.delete(expId); renderE(_expFiltradas); }
   await renderDocsList(expId, expRef);
 }
 
