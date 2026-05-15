@@ -2007,6 +2007,8 @@ async function showForm(e, prefill){
     '<div id="lc-prev" style="margin-top:12px"></div>'+
     (isEdit?'<details style="margin-top:14px"><summary style="font-size:12px;font-weight:600;color:var(--g600);cursor:pointer;user-select:none">📋 Historial de cambios</summary><div id="hist-content" style="margin-top:6px;border:1px solid var(--g100);border-radius:8px;overflow:hidden"><div style="padding:10px;font-size:11px;color:var(--g400)">Cargando...</div></div></details>':'');
   document.getElementById('m-foot').innerHTML='<button class="btn btn-s" onclick="closeModal()">Cancelar</button>'+
+    (isEdit && !e.expedicion_id ? '<button class="btn btn-s" onclick="crearExpedicionDesdeAC(\''+e.id+'\')" title="Crear expedición vinculada en Operativas" style="color:var(--b600)">📦 Crear en Operativas</button>' : '')+
+    (isEdit && e.expedicion_id  ? '<span style="font-size:11px;color:var(--gr600);padding:0 8px;align-self:center">✅ Expedición vinculada</span>' : '')+
     '<button class="btn btn-p" onclick="'+(isEdit?'saveEntrada(\''+e.id+'\')':'crearEntrada()')+'">💾 '+(isEdit?'Guardar cambios':'Crear entrada')+'</button>';
   openModal();
   onHC();
@@ -2138,21 +2140,184 @@ async function saveEntrada(id){
 
 // ── Sincronizar campos de airport_cargo → expediciones ─────────────────────
 async function sincronizarExpedicion(acId, datos){
-  // Obtener el expedicion_id del registro (puede estar en datos o en ALL)
   var entrada=ALL.find(function(e){return String(e.id)===String(acId);})||{};
   var expId = entrada.expedicion_id || LINKED_EXPEDICION_ID || null;
-  if(!expId) return; // no hay expedición vinculada
-  // Solo sincronizar si hay datos de vuelo/llegada
-  if(!datos.vuelo && !datos.fecha_llegada && !datos.hora_llegada) return;
-  var sync={};
-  if(datos.vuelo!==undefined) sync.ac_vuelo = datos.vuelo||null;
-  if(datos.fecha_llegada!==undefined) sync.ac_fecha_llegada = datos.fecha_llegada||null;
-  if(datos.hora_llegada!==undefined) sync.ac_hora_llegada = datos.hora_llegada||null;
-  if(datos.confirmacion_llegada!==undefined) sync.ac_confirmacion = datos.confirmacion_llegada||false;
-  if(Object.keys(sync).length){
-    await sb.from('expediciones').update(sync).eq('id',expId);
+  if(!expId) return;
+  var d = Object.assign({}, entrada, datos);
+
+  // ── Bloque 1: campos que siempre existen (ac_vuelo, ac_fecha_llegada, ac_hora_llegada, ac_confirmacion)
+  var syncBase={};
+  if(d.vuelo         !==undefined) syncBase.ac_vuelo         = d.vuelo||null;
+  if(d.fecha_llegada !==undefined) syncBase.ac_fecha_llegada = d.fecha_llegada||null;
+  if(d.hora_llegada  !==undefined) syncBase.ac_hora_llegada  = d.hora_llegada||null;
+  if(d.confirmacion_llegada!==undefined) syncBase.ac_confirmacion = !!d.confirmacion_llegada;
+  if(Object.keys(syncBase).length){
+    try{ await sb.from('expediciones').update(syncBase).eq('id',expId); }catch(ex){}
+  }
+
+  // ── Bloque 2: campos nuevos — probe única para evitar 400s repetidos
+  if(window._acColsOK===undefined){
+    try{
+      var probe=await sb.from('expediciones').select('ac_status').limit(1);
+      window._acColsOK = !probe.error;
+    }catch(ex){ window._acColsOK=false; }
+    if(!window._acColsOK) console.debug('[ALS] Columnas ac_* no existen en expediciones. Ejecuta el ALTER TABLE y recarga el schema cache.');
+  }
+  if(window._acColsOK){
+    var syncExt={};
+    if(d.status        !==undefined) syncExt.ac_status     = d.status||null;
+    if(d.despachado    !==undefined) syncExt.ac_despachado = !!d.despachado;
+    if(d.docs_puerto   !==undefined) syncExt.ac_docs_puerto= d.docs_puerto||null;
+    if(d.ubicacion     !==undefined) syncExt.ac_ubicacion  = d.ubicacion||null;
+    if(d.consignatario !==undefined) syncExt.ac_remitente  = d.consignatario||null;
+    if(Object.keys(syncExt).length){
+      try{ await sb.from('expediciones').update(syncExt).eq('id',expId); }catch(ex){ window._acColsOK=false; }
+    }
   }
 }
+// ══════════════════════════════════════════════════════════════════
+// CREAR EXPEDICIÓN EN OPERATIVAS DESDE AIRPORT CARGO
+// ══════════════════════════════════════════════════════════════════
+async function crearExpedicionDesdeAC(acId){
+  var e=ALL.find(function(x){return String(x.id)===String(acId);});
+  if(!e){toast('Registro no encontrado');return;}
+  if(e.expedicion_id){toast('Ya tiene una expedición vinculada en Operativas');return;}
+
+  toast('Buscando buque...');
+
+  // 1. Cargar buques activos
+  var {data:buques}=await sb.from('buques')
+    .select('id,nombre,eta_buque,estado_operacion,cliente_id,ec:cliente_id(nombre)')
+    .not('estado_operacion','eq','Finalizado')
+    .order('eta_buque',{ascending:true});
+  buques=buques||[];
+
+  // 2. Intentar autodetectar el buque por nombre
+  var buqueNomAC=(e.buque||'').trim().toLowerCase();
+  var candidatos=buques.filter(function(b){
+    var bn=b.nombre.toLowerCase();
+    return bn===buqueNomAC||bn.includes(buqueNomAC)||buqueNomAC.includes(bn);
+  });
+
+  // 3. Mostrar modal de confirmación/selección
+  var buqueOpts=buques.map(function(b){
+    var eta=b.eta_buque?b.eta_buque.slice(0,10):'';
+    var sel=(candidatos.length===1&&b.id===candidatos[0].id)?'selected':'';
+    return '<option value="'+b.id+'" '+sel+'>'+b.nombre+(eta?' · '+eta:'')+'</option>';
+  }).join('');
+
+  var aviso=candidatos.length===1
+    ?'<div style="font-size:12px;padding:8px 12px;background:var(--gr50);border-radius:8px;color:var(--gr700);margin-bottom:10px">✅ Buque detectado automáticamente por nombre</div>'
+    :candidatos.length>1
+    ?'<div style="font-size:12px;padding:8px 12px;background:var(--am50);border-radius:8px;color:var(--am700);margin-bottom:10px">⚠️ Varios buques coinciden. Selecciona el correcto.</div>'
+    :'<div style="font-size:12px;padding:8px 12px;background:var(--am50);border-radius:8px;color:var(--am700);margin-bottom:10px">⚠️ No se detectó el buque automáticamente. Selecciona uno.</div>';
+
+  // Campos que se trasladarán a la expedición
+  var previewRows=[
+    ['Nº Expedición / AWB',e.awb||'—'],
+    ['Remitente',e.consignatario||'—'],
+    ['Bultos',e.bultos||'—'],
+    ['Kilos',e.kilos_tasables||'—'],
+    ['Status aduanero',e.status||'—'],
+    ['Ubicación',e.ubicacion||'Aeropuerto'],
+    ['Vuelo',e.vuelo||'—'],
+    ['Hora llegada',e.hora_llegada||'—'],
+    ['Fecha llegada',e.fecha_llegada||'—'],
+  ].map(function(r){
+    return '<div style="display:flex;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px solid var(--g100)">'
+      +'<span style="color:var(--g500);min-width:140px">'+r[0]+'</span>'
+      +'<strong>'+r[1]+'</strong></div>';
+  }).join('');
+
+  document.getElementById('m-title').textContent='📦 Crear expedición en Operativas';
+  document.getElementById('m-body').innerHTML=
+    aviso+
+    '<div class="fg" style="margin-bottom:14px"><label class="fl">Buque de destino *</label>'+
+    '<select id="ac-buque-sel" class="fi fs"><option value="">— Seleccionar buque —</option>'+buqueOpts+'</select></div>'+
+    '<div style="font-size:12px;font-weight:600;color:var(--g600);margin-bottom:6px">Datos que se trasladarán a la expedición:</div>'+
+    '<div style="background:var(--g50);border-radius:8px;padding:10px 14px">'+previewRows+'</div>';
+
+  document.getElementById('m-foot').innerHTML=
+    '<button class="btn btn-s" onclick="editEntrada(\''+e.id+'\')">← Volver</button>'+
+    '<button class="btn btn-p" onclick="confirmarCrearExpedicionAC(\''+e.id+'\')">✅ Crear expedición</button>';
+
+  openModal();
+}
+
+async function confirmarCrearExpedicionAC(acId){
+  var buqueId=document.getElementById('ac-buque-sel')?.value;
+  if(!buqueId){toast('⚠️ Selecciona un buque');return;}
+
+  var e=ALL.find(function(x){return String(x.id)===String(acId);});
+  if(!e){toast('Registro no encontrado');return;}
+
+  toast('Creando expedición...');
+
+  // Objeto base — solo columnas que siempre existen en expediciones
+  var expCore={
+    buque_id:buqueId,
+    nº_expedicion:e.awb||null,
+    remitente:e.consignatario||null,
+    bultos:e.bultos||null,
+    kilos:e.kilos_tasables||null,
+    status_aduanero:e.status||null,
+    ubicacion:e.ubicacion||'Aeropuerto AGP',
+    estado_semaforo:'⏳ EN TRÁNSITO',
+  };
+
+  // Intentar añadir campos ac_* (requieren ALTER TABLE previo)
+  // Si no existen se sincronizan igualmente vía sincronizarExpedicion después
+  var expAC={
+    ac_vuelo:e.vuelo||null,
+    ac_fecha_llegada:e.fecha_llegada||null,
+    ac_hora_llegada:e.hora_llegada||null,
+    ac_confirmacion:e.confirmacion_llegada||false,
+    ac_status:e.status||null,
+    ac_despachado:e.despachado||false,
+    ac_docs_puerto:e.docs_puerto||null,
+    ac_ubicacion:e.ubicacion||null,
+    ac_remitente:e.consignatario||null,
+  };
+
+  // Primer intento: insertar con todos los campos
+  var insertObj=Object.assign({},expCore,expAC);
+  var {data:newExp,error}=await sb.from('expediciones').insert(insertObj).select().single();
+
+  // Si falla (columnas ac_* no existen aún), reintentar solo con campos base
+  if(error&&(error.code==='42703'||error.message?.includes('column'))){
+    console.warn('ac_* columns not yet created, inserting base fields only');
+    var r2=await sb.from('expediciones').insert(expCore).select().single();
+    newExp=r2.data; error=r2.error;
+  }
+
+  if(error||!newExp){
+    toast('Error al crear: '+(error?.message||'desconocido'));
+    return;
+  }
+
+  // Vincular airport_cargo con la nueva expedición
+  await sb.from('airport_cargo').update({expedicion_id:newExp.id}).eq('id',acId);
+
+  // Actualizar el registro local
+  if(e) e.expedicion_id=newExp.id;
+
+  // Sincronizar todos los campos (por si hay más datos en el registro completo)
+  LINKED_EXPEDICION_ID=newExp.id;
+  try{await sincronizarExpedicion(acId,e);}catch(ex){}
+
+  toast('✅ Expedición creada y vinculada en Operativas');
+  closeModal();
+  await loadAll();
+  loadView();
+
+  // Si index.html está abierto en otra pestaña, actualizar desde allí
+  try{
+    if(window.opener&&!window.opener.closed&&typeof window.opener.loadKanban==='function'){
+      window.opener.loadKanban();
+    }
+  }catch(ex){}
+}
+
 async function delEntrada(id){
   if(!confirm('¿Eliminar esta entrada?'))return;
   await sb.from('airport_cargo').delete().eq('id',id);
@@ -2212,7 +2377,41 @@ function exportResumenPDF(){
 }
 
 // ── FEATURE 7: Historial de cambios ──────────────────────────────────────────
-// SQL a ejecutar en Supabase:
+// Probe única: si la tabla no existe o no es accesible, deshabilitar log sin más 400s
+var _logTablaOK = null; // null=no probado, true=ok, false=no disponible
+async function _probarLogTabla(){
+  if(_logTablaOK!==null) return _logTablaOK;
+  try{
+    var r=await sb.from('airport_cargo_log').select('id').limit(1);
+    _logTablaOK = !r.error;
+  }catch(ex){ _logTablaOK=false; }
+  if(!_logTablaOK) console.debug('[ALS] airport_cargo_log no disponible — historial desactivado. Ejecuta el SQL de creación y recarga el schema cache en Supabase → Settings → API.');
+  return _logTablaOK;
+}
+
+async function logCambios(id, antes, despues){
+  if(!(await _probarLogTabla())) return; // tabla no disponible, silencio total
+  var usuario=(CU&&CU.nombre)||'desconocido';
+  var campos=['consignatario','cliente','buque','handling','status','fecha_llegada','fecha_retirada',
+    'kilos_tasables','bultos','eta_buque','vuelo','hora_llegada','confirmacion_llegada',
+    'despachado','t1_sellado','t1_ultimado','aplica_finde','aplica_express','aplica_carga_camion','aplica_apertura','observaciones'];
+  var logs=[];
+  campos.forEach(function(c){
+    var va=String(antes[c]??''), vn=String(despues[c]??'');
+    if(va!==vn) logs.push({registro_id:id,usuario:usuario,campo:c,valor_anterior:va||null,valor_nuevo:vn||null});
+  });
+  if(!logs.length) return;
+  try{ await sb.from('airport_cargo_log').insert(logs); }catch(ex){}
+}
+
+async function cargarHistorial(id){
+  if(!(await _probarLogTabla())) return [];
+  try{
+    var r=await sb.from('airport_cargo_log').select('*')
+      .eq('registro_id',id).order('created_at',{ascending:false}).limit(30);
+    return r.error?[]:r.data||[];
+  }catch(ex){ return []; }
+}
 // CREATE TABLE IF NOT EXISTS airport_cargo_log (
 //   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
 //   registro_id uuid,
@@ -2233,14 +2432,18 @@ async function logCambios(id, antes, despues){
     var va=String(antes[c]??''), vn=String(despues[c]??'');
     if(va!==vn) logs.push({registro_id:id,usuario:usuario,campo:c,valor_anterior:va||null,valor_nuevo:vn||null});
   });
-  if(logs.length) await sb.from('airport_cargo_log').insert(logs);
+  if(!logs.length) return;
+  // Silencioso si la tabla no existe aún
+  try{ var r=await sb.from('airport_cargo_log').insert(logs); if(r.error) console.debug('log skipped:',r.error.code); }catch(ex){}
 }
 
 async function cargarHistorial(id){
-  var {data}=await sb.from('airport_cargo_log')
-    .select('*').eq('registro_id',id)
-    .order('created_at',{ascending:false}).limit(30);
-  return data||[];
+  try{
+    var r=await sb.from('airport_cargo_log').select('*')
+      .eq('registro_id',id).order('created_at',{ascending:false}).limit(30);
+    if(r.error) return []; // tabla no existe aún o sin permisos
+    return r.data||[];
+  }catch(ex){ return []; }
 }
 
 function renderHistorial(logs){
