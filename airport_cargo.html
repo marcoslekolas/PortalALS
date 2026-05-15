@@ -2077,7 +2077,7 @@ function buildObj(){
     aeropuerto:gv('f-apto')||'AGP',handling:h||null,status:gv('f-status')||'T1',
     fecha_llegada:gv('f-ll')||null,fecha_retirada:rt,kilos_tasables:parseFloat(gv('f-kg'))||0,
     bultos:parseInt(gv('f-blt'))||null,
-    aplica_mismo_dia:gc('f-md'),aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),
+    aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),
     aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap'),
     coste_manual:(!isAuto&&h)?parseFloat(gv('f-man'))||null:null,
     observaciones:gv('f-obs').trim()||null,mes_operacion:calcMes(rt),
@@ -2091,9 +2091,10 @@ function buildObj(){
 //   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS despachado boolean DEFAULT false;
 //   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS fecha_caducidad_t1 date;
 //   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS t1_sellado boolean DEFAULT false;
-//   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS fecha_bandeja_t1 date;
+//   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS aplica_mismo_dia boolean DEFAULT false;
 function buildObjExtended(){
   return{
+    aplica_mismo_dia:gc('f-md'),
     vuelo:gv('f-vuelo').trim()||null,
     hora_llegada:gv('f-hora')||null,
     eta_buque:gv('f-eta-buque')||null,
@@ -2358,38 +2359,85 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
     return '<table style="width:100%;border-collapse:collapse;margin-bottom:16px"><thead><tr>'+ths+'</tr></thead><tbody>'+trs+'</tbody></table>';
   }
 
-  // Primera tabla: agrupada por buque, ordenada por fecha dentro de cada grupo
-  var byBuque = {};
-  var buqueOrder = [];
-  sel.forEach(function(e){
-    var bk=e.buque||'(Sin buque)';
-    if(!byBuque[bk]){byBuque[bk]=[];buqueOrder.push(bk);}
-    byBuque[bk].push(e);
-  });
-  // Ordenar expediciones dentro de cada buque por fecha_llegada + hora_llegada asc
-  buqueOrder.forEach(function(bk){
-    byBuque[bk].sort(function(a,b){
-      var fa=(a.fecha_llegada||'9999').slice(0,10), fb=(b.fecha_llegada||'9999').slice(0,10);
-      if(fa!==fb) return fa<fb?-1:1;
-      return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;
-    });
-  });
+  // ── Primera tabla ────────────────────────────────────────────────
+  // Cliente: tabla plana, columnas específicas, ordenada fecha→hora
+  // Consignatario: agrupada por buque (comportamiento original)
+  var detalle;
 
-  var detalle = buqueOrder.map(function(buque){
-    var rows=byBuque[buque].map(function(e){
+  if(etiquetaNombre==='Cliente'){
+    // Ordenar flat: fecha_llegada ASC → hora_llegada ASC
+    function normT2(t){if(!t)return'99:99';var s=String(t).trim();return s.indexOf(':')==1?'0'+s:s;}
+    var selOrdenadoCli=sel.slice().sort(function(a,b){
+      var fa=(a.fecha_llegada||'9999').slice(0,10),fb=(b.fecha_llegada||'9999').slice(0,10);
+      if(fa!==fb)return fa<fb?-1:1;
+      var ha=normT2(a.hora_llegada),hb=normT2(b.hora_llegada);
+      if(ha!==hb)return ha<hb?-1:1;
+      return String(a.id)<String(b.id)?-1:1;
+    });
+    var rowsCli=selOrdenadoCli.map(function(e){
       var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
+      var llegadaHora='<strong>'+fd(e.fecha_llegada)+(e.hora_llegada?' '+e.hora_llegada:'')+'</strong>';
+      var confBadge=e.confirmacion_llegada
+        ?'<span style="color:#16a34a;font-weight:600">✈️ Confirmada</span>'
+        :'<span style="color:#b45309">⏳ Pendiente</span>';
+      var desBadge=e.despachado
+        ?'<span style="color:#16a34a;font-weight:600">✅ Sí</span>'
+        :'<span style="color:#9ca3af">—</span>';
+      var obs=e.observaciones?'<strong>'+e.observaciones+'</strong>':'';
       return [
-        formatAwb(e.awb||''), e.consignatario||'', e.handling||'',
-        (e.bultos||'')+' btos', (e.kilos_tasables||'')+' kg',
-        fd(e.fecha_llegada)+(e.hora_llegada?' <strong>'+e.hora_llegada+'</strong>':''),
-        e.vuelo||'—', e.status||'',
+        formatAwb(e.awb||''),
+        e.handling||'—',
+        (e.bultos||'—')+' btos',
+        (e.kilos_tasables||'—')+' kg',
+        llegadaHora,
+        e.status||'—',
         fml?'<strong style="color:#dc2626">'+fd(fml)+'</strong>':'—',
-        e.eta_buque?fd(e.eta_buque):'—', e.observaciones||''
+        confBadge,
+        desBadge,
+        e.eta_buque?fd(e.eta_buque):'—',
+        e.buque||'—',
+        obs
       ];
     });
-    return '<p style="font-size:13px;font-weight:700;margin:16px 0 6px;color:#1e3a5f">BUQUE: '+buque+'</p>'+
-      htmlTable(['AWB','Consignatario','Handler','Bultos','Kilos','Llegada / Hora','Vuelo','Status','Libre hasta','ETA Buque','Observaciones'],rows);
-  }).join('');
+    detalle=htmlTable([
+      'AWB','Handler','Bultos','Kilos',
+      'Llegada / Hora','Status','Libre hasta',
+      'Confirmación llegada','Despachada',
+      'ETA Buque','Buque','Observaciones'
+    ],rowsCli);
+
+  } else {
+    // Consignatario: agrupada por buque, ordenada por fecha dentro de cada grupo
+    var byBuque = {};
+    var buqueOrder = [];
+    sel.forEach(function(e){
+      var bk=e.buque||'(Sin buque)';
+      if(!byBuque[bk]){byBuque[bk]=[];buqueOrder.push(bk);}
+      byBuque[bk].push(e);
+    });
+    buqueOrder.forEach(function(bk){
+      byBuque[bk].sort(function(a,b){
+        var fa=(a.fecha_llegada||'9999').slice(0,10), fb=(b.fecha_llegada||'9999').slice(0,10);
+        if(fa!==fb) return fa<fb?-1:1;
+        return (a.hora_llegada||'99:99')<(b.hora_llegada||'99:99')?-1:1;
+      });
+    });
+    detalle=buqueOrder.map(function(buque){
+      var rows=byBuque[buque].map(function(e){
+        var fml=fechaMaximaLibre(e.fecha_llegada,e.handling);
+        return [
+          formatAwb(e.awb||''), e.consignatario||'', e.handling||'',
+          (e.bultos||'')+' btos', (e.kilos_tasables||'')+' kg',
+          fd(e.fecha_llegada)+(e.hora_llegada?' <strong>'+e.hora_llegada+'</strong>':''),
+          e.vuelo||'—', e.status||'',
+          fml?'<strong style="color:#dc2626">'+fd(fml)+'</strong>':'—',
+          e.eta_buque?fd(e.eta_buque):'—', e.observaciones||''
+        ];
+      });
+      return '<p style="font-size:13px;font-weight:700;margin:16px 0 6px;color:#1e3a5f">BUQUE: '+buque+'</p>'+
+        htmlTable(['AWB','Consignatario','Handler','Bultos','Kilos','Llegada / Hora','Vuelo','Status','Libre hasta','ETA Buque','Observaciones'],rows);
+    }).join('');
+  }
 
   var haySeleccion = selIds && selIds.length > 0;
 
@@ -2751,7 +2799,7 @@ async function abrirEmail(){
 
 async function abrirEmailCliente(){
   var ids=getSelected();
-  var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL;
+  var sel=ids.length>0?ALL.filter(function(e){return ids.includes(String(e.id));}):ALL.filter(function(e){return !e.fecha_retirada;});
   if(!sel.length){toast('Sin entradas. Selecciona una o varias en la tabla.');return;}
 
   var clienteNombre=sel.map(function(e){return e.cliente||e.consignatario||'';}).filter(Boolean)[0]||'';
