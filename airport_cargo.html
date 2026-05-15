@@ -2155,13 +2155,18 @@ async function sincronizarExpedicion(acId, datos){
     try{ await sb.from('expediciones').update(syncBase).eq('id',expId); }catch(ex){}
   }
 
-  // ── Bloque 2: campos nuevos — probe única para evitar 400s repetidos
+  // ── Bloque 2: campos nuevos — probe via information_schema (nunca da 400)
   if(window._acColsOK===undefined){
     try{
-      var probe=await sb.from('expediciones').select('ac_status').limit(1);
-      window._acColsOK = !probe.error;
+      var pr=await sb.from('information_schema.columns')
+        .select('column_name')
+        .eq('table_name','expediciones')
+        .eq('column_name','ac_status')
+        .eq('table_schema','public')
+        .limit(1);
+      window._acColsOK = !pr.error && (pr.data||[]).length>0;
     }catch(ex){ window._acColsOK=false; }
-    if(!window._acColsOK) console.debug('[ALS] Columnas ac_* no existen en expediciones. Ejecuta el ALTER TABLE y recarga el schema cache.');
+    if(!window._acColsOK) console.debug('[ALS] Columnas ac_* no existen aún en expediciones. Ejecuta el ALTER TABLE.');
   }
   if(window._acColsOK){
     var syncExt={};
@@ -2253,7 +2258,7 @@ async function confirmarCrearExpedicionAC(acId){
 
   toast('Creando expedición...');
 
-  // Objeto base — solo columnas que siempre existen en expediciones
+  // Insertar solo campos base garantizados — ac_* se sincronizan después via sincronizarExpedicion
   var expCore={
     buque_id:buqueId,
     nº_expedicion:e.awb||null,
@@ -2265,31 +2270,7 @@ async function confirmarCrearExpedicionAC(acId){
     estado_semaforo:'⏳ EN TRÁNSITO',
   };
 
-  // Intentar añadir campos ac_* (requieren ALTER TABLE previo)
-  // Si no existen se sincronizan igualmente vía sincronizarExpedicion después
-  var expAC={
-    ac_vuelo:e.vuelo||null,
-    ac_fecha_llegada:e.fecha_llegada||null,
-    ac_hora_llegada:e.hora_llegada||null,
-    ac_confirmacion:e.confirmacion_llegada||false,
-    ac_status:e.status||null,
-    ac_despachado:e.despachado||false,
-    ac_docs_puerto:e.docs_puerto||null,
-    ac_ubicacion:e.ubicacion||null,
-    ac_remitente:e.consignatario||null,
-  };
-
-  // Primer intento: insertar con todos los campos
-  var insertObj=Object.assign({},expCore,expAC);
-  var {data:newExp,error}=await sb.from('expediciones').insert(insertObj).select().single();
-
-  // Si falla (columnas ac_* no existen aún), reintentar solo con campos base
-  if(error&&(error.code==='42703'||error.message?.includes('column'))){
-    console.warn('ac_* columns not yet created, inserting base fields only');
-    var r2=await sb.from('expediciones').insert(expCore).select().single();
-    newExp=r2.data; error=r2.error;
-  }
-
+  var {data:newExp,error}=await sb.from('expediciones').insert(expCore).select('id,nº_expedicion').single();
   if(error||!newExp){
     toast('Error al crear: '+(error?.message||'desconocido'));
     return;
