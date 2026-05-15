@@ -2258,23 +2258,27 @@ async function confirmarCrearExpedicionAC(acId){
 
   toast('Creando expedición...');
 
-  // Insertar solo campos base garantizados — ac_* se sincronizan después via sincronizarExpedicion
+  // Insertar solo columnas originales de expediciones (sin columnas añadidas por ALTER TABLE)
   var expCore={
     buque_id:buqueId,
-    nº_expedicion:e.awb||null,
-    remitente:e.consignatario||null,
     bultos:e.bultos||null,
     kilos:e.kilos_tasables||null,
     status_aduanero:e.status||null,
     ubicacion:e.ubicacion||'Aeropuerto AGP',
     estado_semaforo:'⏳ EN TRÁNSITO',
   };
+  // nº_expedicion siempre es texto — añadir directamente en el objeto
+  expCore['nº_expedicion'] = e.awb||null;
 
-  var {data:newExp,error}=await sb.from('expediciones').insert(expCore).select('id,nº_expedicion').single();
+  var {data:newExp,error}=await sb.from('expediciones').insert(expCore).select('id').single();
   if(error||!newExp){
-    toast('Error al crear: '+(error?.message||'desconocido'));
+    toast('Error al crear expedición: '+(error?.message||'contacta con soporte'));
+    console.error('[crearExpAC] insert error:', error);
     return;
   }
+
+  // Intentar añadir remitente si la columna existe (ALTER TABLE opcional)
+  try{ await sb.from('expediciones').update({'remitente':e.consignatario||null}).eq('id',newExp.id); }catch(ex){}
 
   // Vincular airport_cargo con la nueva expedición
   await sb.from('airport_cargo').update({expedicion_id:newExp.id}).eq('id',acId);
