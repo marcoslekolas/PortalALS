@@ -11250,8 +11250,8 @@ async function renderDocsList(expId, expRef){
         <input type="file" id="pdf-file-input" accept=".pdf,application/pdf" multiple style="display:none" 
           onchange="subirDocsPDF('${expId}','${expRef}',this.files)">
         <div style="font-size:24px;margin-bottom:6px">📄</div>
-        <div style="font-size:13px;font-weight:600;color:var(--b700)">Seleccionar PDFs o arrastrar aquí</div>
-        <div style="font-size:11px;color:var(--g400);margin-top:4px">Varios archivos a la vez</div>
+        <div style="font-size:13px;font-weight:600;color:var(--b700)">Clic para seleccionar PDFs</div>
+        <div style="font-size:11px;color:var(--g400);margin-top:4px">O arrastra archivos aquí · varios a la vez</div>
       </label>
       <div id="pdf-upload-progress" style="margin-top:8px"></div>
     </div>`;
@@ -11278,13 +11278,12 @@ async function renderDocsList(expId, expRef){
   document.getElementById('m-body').innerHTML = uploadZone + docsList;
   document.getElementById('m-foot').innerHTML = `<button class="btn btn-s" onclick="closeModal()">Cerrar</button>`;
 
-  // Drag & drop
+  // Drag & drop — solo eventos drag, no click (el label ya abre el input)
   const zone = document.getElementById('pdf-drop-zone');
   if(zone){
     zone.addEventListener('dragover', e=>{ e.preventDefault(); zone.style.background='var(--b100)'; });
     zone.addEventListener('dragleave', ()=>{ zone.style.background='var(--b50)'; });
     zone.addEventListener('drop', e=>{ e.preventDefault(); zone.style.background='var(--b50)'; subirDocsPDF(expId, expRef, e.dataTransfer.files); });
-    zone.addEventListener('click', ()=>document.getElementById('pdf-file-input')?.click());
   }
 }
 
@@ -11376,7 +11375,18 @@ async function openBuque(id){
   if(MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
   const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre,email_confronta,otros_emails),en:consignatario_id(nombre,email_confronta)').eq('id',id).single();
   if(!b)return;
-  const [{data:exps},{data:emps}]=await Promise.all([sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,ubicacion,bultos,kilos,nº_mrn,status_aduanero,tramite_aduanero,foto_llegada_url,foto_carga_url,foto_embarque_url,cliente_override_id,cliente_override_nombre,empresas!empresa_id(nombre)').eq('buque_id',id).order('nº_expedicion'),sb.from('empresas').select('id,nombre').order('nombre')]);
+  const [{data:exps},{data:emps}]=await Promise.all([
+    sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,ubicacion,bultos,kilos,nº_mrn,status_aduanero,tramite_aduanero,foto_llegada_url,foto_carga_url,foto_embarque_url,cliente_override_id,cliente_override_nombre,empresas!empresa_id(nombre)').eq('buque_id',id).order('nº_expedicion'),
+    sb.from('empresas').select('id,nombre').order('nombre')
+  ]);
+  // Cargar indicadores de docs PDF para esta ficha (no bloquea el render)
+  try{
+    const expIds=(exps||[]).map(e=>e.id);
+    if(expIds.length){
+      const {data:dd}=await sb.from('expedicion_docs').select('expedicion_id').in('expedicion_id',expIds);
+      (dd||[]).forEach(d=>_expIdsConDocs.add(d.expedicion_id));
+    }
+  }catch(ex){}
   const stCls=estOpCls(b.estado_operacion||b.estado||'');
   const totalBultos=(exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
   const totalKilos=(exps||[]).reduce((a,e)=>a+(e.kilos||0),0);
