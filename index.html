@@ -10994,7 +10994,10 @@ const MODALS={
     const {data,error}=await sb.from('buques').insert(obj).select().single();
     if(error){alert('Error: '+error.message);return;}
     await logAct('buques',data?.id,obj.nombre,'crear',null,null,obj.nombre);
-    showToast('Buque creado');closeModal();loadView(CV);
+    showToast('Buque creado');
+    closeModal();
+    await loadBuques(); // recargar lista
+    if(data?.id) setTimeout(()=>openBuque(data.id),200); // abrir ficha para editar y crear expediciones
   }
 },
 'nueva-expedicion':{t:'📦 Nueva expedición',btn:'📦 Crear expedición',
