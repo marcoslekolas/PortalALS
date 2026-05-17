@@ -11025,10 +11025,10 @@ const MODALS={
     if(error){alert('Error: '+error.message);return;}
     await logAct('expediciones',data?.id,obj.nº_expedicion,'crear',null,null,obj.nº_expedicion);
     showToast('Expedición creada');
-    // Si venía desde ficha buque, reabrir la ficha buque con la expedición ya creada
+    // Si venía desde ficha buque, reabrir la ficha buque sin cerrarla
     const parentB=document.getElementById('mbox')?.dataset?.parentBuque;
     closeModal();
-    if(parentB){setTimeout(()=>openBuqueD(parentB),200);}
+    if(parentB){setTimeout(()=>openBuque(parentB),250);}
     else{loadView(CV);}
     // Si la ubicación es de aeropuerto → crear entrada en airport_cargo y ofrecer completarla
     if((obj.ubicacion||'').includes('Aeropuerto')){
@@ -11162,6 +11162,7 @@ async function openModal(key,extraParam){
   if(m.after)m.after();
 }
 function closeModal(){
+  if(window._buqueExpSub){ try{sb.removeChannel(window._buqueExpSub);}catch(ex){} window._buqueExpSub=null; }
   _presenciaAbandonar();
   window._modalExpId = null;
   const mbox=document.getElementById('mbox');
@@ -11173,26 +11174,41 @@ function closeModalOut(e){if(e.target.id==='mo')closeModal();}
 
 // ── BUSCAR IMO ── Solo VesselFinder y MarineTraffic
 function buscarIMOporNombre(){
-  const nom=document.getElementById('nb-n')?.value||'';
+  const nom=(document.getElementById('nb-n')?.value||'').trim();
   if(!nom||nom.length<2){alert('Escribe primero el nombre del buque');return;}
   const enc=encodeURIComponent(nom);
+  // Copiar nombre al portapapeles automáticamente
+  try{
+    navigator.clipboard.writeText(nom).then(()=>{
+      showToast('📋 "'+nom+'" copiado — pégalo en el buscador');
+    }).catch(()=>{});
+  }catch(ex){}
+  // Abrir Tradlinx directamente (abre el buscador principal, pega el nombre copiado)
+  window.open('https://www.tradlinx.com/es/vessel-tracking','_blank');
+  // Mostrar links alternativos inline
   const d=document.getElementById('nombre-search');
-  if(d) d.innerHTML=`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-    <a class="ext-link" href="https://www.marinetraffic.com/en/ais/index/ships/all/shipname:${enc}" target="_blank">🌍 MarineTraffic</a>
-    <a class="ext-link" href="https://www.vesselfinder.com/?name=${enc}" target="_blank">🎯 VesselFinder</a>
-    <a class="ext-link" href="https://www.fleetmon.com/vessels/?search=${enc}" target="_blank">📡 FleetMon</a>
-    <a class="ext-link" href="https://www.myshiptracking.com/?search=${enc}" target="_blank">🔍 MyShipTracking</a>
-  </div>`;
+  if(d) d.innerHTML=`<div style="margin-top:8px;font-size:11px;color:var(--g500);margin-bottom:4px">
+      📋 Nombre copiado al portapapeles — pégalo (Cmd+V / Ctrl+V) en el buscador de la página que se abrió.
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <a class="ext-link" href="https://www.tradlinx.com/es/vessel-tracking" target="_blank" onclick="navigator.clipboard?.writeText('${nom.replace(/'/g,"\\'")}')">🚢 Tradlinx</a>
+      <a class="ext-link" href="https://www.marinetraffic.com/en/ais/index/ships/all/shipname:${enc}" target="_blank">🌍 MarineTraffic</a>
+      <a class="ext-link" href="https://www.vesselfinder.com/?name=${enc}" target="_blank">🎯 VesselFinder</a>
+      <a class="ext-link" href="https://www.fleetmon.com/vessels/?search=${enc}" target="_blank">📡 FleetMon</a>
+    </div>`;
 }
 function prevIMO(imo){
   try{
   const d=document.getElementById('imo-prev');if(!d)return;
   if(!imo||imo.length<5){d.innerHTML='';return;}
-  const nom=document.getElementById('nb-n')?.value||'';
-  const encNom=encodeURIComponent(nom);
-  d.innerHTML=`<a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic</a>`;
+  const nom=(document.getElementById('nb-n')?.value||'').trim();
+  const enc=encodeURIComponent(nom);
+  d.innerHTML=`
+    <a class="ext-link" href="https://www.tradlinx.com/es/vessel-tracking" target="_blank" onclick="navigator.clipboard?.writeText('${nom.replace(/'/g,"\\'")}');showToast('📋 Nombre copiado')">🚢 Tradlinx</a>
+    <a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic IMO</a>
+    <a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder IMO</a>`;
   const nsDiv=document.getElementById('nombre-search');
-  if(nsDiv&&nom.length>2){nsDiv.innerHTML=`<div style="margin-top:6px;font-size:11px;color:var(--g500)">Buscar por nombre: <a class="ext-link" href="https://www.marinetraffic.com/en/ais/index/ships/all/shipname:${encNom}" target="_blank">🌍 MT por nombre</a> <a class="ext-link" href="https://www.vesselfinder.com/?name=${encNom}" target="_blank">🎯 VF por nombre</a></div>`;}
+  if(nsDiv&&nom.length>2){nsDiv.innerHTML=`<div style="margin-top:6px;font-size:11px;color:var(--g500)">Por nombre: <a class="ext-link" href="https://www.marinetraffic.com/en/ais/index/ships/all/shipname:${enc}" target="_blank">🌍 MarineTraffic</a> <a class="ext-link" href="https://www.fleetmon.com/vessels/?search=${enc}" target="_blank">📡 FleetMon</a></div>`;}
   }catch(ex){console.warn('prevIMO err:',ex);}
 }
 
@@ -11434,12 +11450,24 @@ async function openBuque(id){
     ${(exps||[]).map(e=>{
       const tieneOverride = e.cliente_override_id && e.cliente_override_id !== b.cliente_id;
       const overrideNombre = e.cliente_override_nombre || e.empresas?.nombre || '—';
-      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid ${tieneOverride?'var(--am300)':'var(--g200)'};border-radius:var(--r);margin-bottom:5px;cursor:pointer;transition:background .12s;background:${tieneOverride?'var(--am50)':''}" onmouseenter="this.style.background='${tieneOverride?'#fef9c3':'var(--g50)'}'" onmouseleave="this.style.background='${tieneOverride?'var(--am50)':''}'" onclick="openExpDesdeBuque('${e.id}','${b.id}')">
-        <div>
+      const esAC = !!(e.ac_vuelo||e.ac_fecha_llegada||e.ac_status||e.ac_remitente);
+      const acRows=[];
+      if(e.ac_remitente) acRows.push('<span>Remitente: <strong>'+e.ac_remitente+'</strong></span>');
+      if(e.ac_vuelo)     acRows.push('<span>Vuelo: <strong>'+e.ac_vuelo+'</strong></span>');
+      if(e.ac_hora_llegada) acRows.push('<span>Hora: <strong>'+e.ac_hora_llegada+'</strong></span>');
+      if(e.ac_status)    acRows.push('<span>Status: <strong>'+e.ac_status+'</strong></span>');
+      if(e.ac_docs_puerto) acRows.push('<span>Docs: <strong>'+e.ac_docs_puerto+'</strong></span>');
+      if(e.ac_ubicacion) acRows.push('<span>Ubic.: <strong>'+e.ac_ubicacion+'</strong></span>');
+      if(e.ac_confirmacion) acRows.push('<span style="color:var(--gr700)">Llegada confirmada</span>');
+      acRows.push(e.ac_despachado?'<span style="color:var(--gr700)">Despachado</span>':'<span style="color:var(--am600)">Pend. despacho</span>');
+      const acPanel=esAC?'<div class="ac-sync-panel" style="margin-top:6px;padding:6px 8px;background:var(--b50);border-radius:6px;border:1px solid var(--b100);font-size:10px;color:var(--b800);display:flex;flex-wrap:wrap;gap:8px">'+acRows.join('')+'</div>':'';
+      return `<div id="exp-card-${e.id}" style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid ${tieneOverride?'var(--am300)':'var(--g200)'};border-radius:var(--r);margin-bottom:5px;cursor:pointer;transition:background .12s;background:${tieneOverride?'var(--am50)':''}" onmouseenter="this.style.background='${tieneOverride?'#fef9c3':'var(--g50)'}'" onmouseleave="this.style.background='${tieneOverride?'var(--am50)':''}'" onclick="openExpDesdeBuque('${e.id}','${b.id}')">
+        <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:13px">${e.nº_expedicion}${tieneOverride?` <span style="font-size:10px;background:var(--am100);color:var(--am700);border-radius:4px;padding:1px 5px;font-weight:700">💼 ${overrideNombre}</span>`:''}</div>
           <div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div>
+          ${acPanel}
         </div>
-        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">${_expIdsConDocs.has(e.id)?'<span title="Documentos adjuntos" style="font-size:12px;color:var(--g500)">📎</span>':''}${(e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url)?'<span title="Tiene fotos" style="font-size:11px">📸</span>':''}${bdg(e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo)}</div>
+        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px">${_expIdsConDocs.has(e.id)?'<span title="Documentos adjuntos" style="font-size:12px;color:var(--g500)">📎</span>':''}${(e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url)?'<span title="Tiene fotos" style="font-size:11px">📸</span>':''}${bdg(e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo)}</div>
       </div>`;
     }).join('')||'<div class="empty" style="padding:20px"><div class="empty-txt">Sin expediciones</div></div>'}`;
   // Info facturación en ficha de buque
@@ -11460,6 +11488,34 @@ async function openBuque(id){
     }
   }
   document.getElementById('mo').classList.add('open');
+
+  // Realtime push: actualizar panel AC en tarjetas de expedición cuando AC sincroniza
+  if(window._buqueExpSub){ try{sb.removeChannel(window._buqueExpSub);}catch(ex){} window._buqueExpSub=null; }
+  if((exps||[]).length){
+    window._buqueExpSub = sb.channel('bexp-'+b.id)
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'expediciones',filter:'buque_id=eq.'+b.id},
+        function(p){
+          var u=p.new; if(!u) return;
+          var card=document.getElementById('exp-card-'+u.id); if(!card) return;
+          var ac=!!(u.ac_vuelo||u.ac_fecha_llegada||u.ac_status||u.ac_remitente);
+          var rows=[];
+          if(u.ac_remitente) rows.push('<span>Remitente: <strong>'+u.ac_remitente+'</strong></span>');
+          if(u.ac_vuelo) rows.push('<span>Vuelo: <strong>'+u.ac_vuelo+'</strong></span>');
+          if(u.ac_hora_llegada) rows.push('<span>Hora: <strong>'+u.ac_hora_llegada+'</strong></span>');
+          if(u.ac_status) rows.push('<span>Status: <strong>'+u.ac_status+'</strong></span>');
+          if(u.ac_docs_puerto) rows.push('<span>Docs: <strong>'+u.ac_docs_puerto+'</strong></span>');
+          if(u.ac_ubicacion) rows.push('<span>Ubic.: <strong>'+u.ac_ubicacion+'</strong></span>');
+          if(u.ac_confirmacion) rows.push('<span style="color:var(--gr700)">Llegada confirmada</span>');
+          rows.push(u.ac_despachado?'<span style="color:var(--gr700)">Despachado</span>':'<span style="color:var(--am600)">Pend. despacho</span>');
+          var html=ac?'<div class="ac-sync-panel" style="margin-top:6px;padding:6px 8px;background:var(--b50);border-radius:6px;border:1px solid var(--b100);font-size:10px;color:var(--b800);display:flex;flex-wrap:wrap;gap:8px">'+rows.join('')+'</div>':'';
+          var prev=card.querySelector('.ac-sync-panel');
+          var inner=card.querySelector('div:first-child');
+          if(prev){ if(html) prev.outerHTML=html; else prev.remove(); }
+          else if(html&&inner) inner.insertAdjacentHTML('beforeend',html);
+          showToast('Actualizado desde Airport Cargo');
+        })
+      .subscribe();
+  }
 }
 
 function buscarIMOporNombreEdit(bid){const nom=document.getElementById('bq-n-'+bid)?.value||'';if(!nom||nom.length<2){alert('El nombre del buque está vacío');return;}const enc=encodeURIComponent(nom);window.open('https://www.vesselfinder.com/?name='+enc,'_blank');window.open('https://www.marinetraffic.com/en/ais/index/ships/all/shipname:'+enc,'_blank');}
