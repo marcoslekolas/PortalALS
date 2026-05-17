@@ -11025,11 +11025,7 @@ const MODALS={
     if(error){alert('Error: '+error.message);return;}
     await logAct('expediciones',data?.id,obj.nº_expedicion,'crear',null,null,obj.nº_expedicion);
     showToast('Expedición creada');
-    // Si venía desde ficha buque, reabrir la ficha buque sin cerrarla
-    const parentB=document.getElementById('mbox')?.dataset?.parentBuque;
-    closeModal();
-    if(parentB){setTimeout(()=>openBuque(parentB),250);}
-    else{loadView(CV);}
+    closeModal(); // closeModal detecta parentBuque y reabre la ficha buque automáticamente
     // Si la ubicación es de aeropuerto → crear entrada en airport_cargo y ofrecer completarla
     if((obj.ubicacion||'').includes('Aeropuerto')){
       await crearAirportCargoDesdeExpedicion(data, obj);
@@ -11168,7 +11164,10 @@ function closeModal(){
   const mbox=document.getElementById('mbox');
   const parentBuque=mbox?.dataset?.parentBuque;
   document.getElementById('mo').classList.remove('open');
-  if(parentBuque){delete mbox.dataset.parentBuque;setTimeout(()=>openBuque(parentBuque),60);}
+  if(parentBuque){
+    delete mbox.dataset.parentBuque;
+    setTimeout(()=>openBuque(parentBuque),80);
+  }
 }
 function closeModalOut(e){if(e.target.id==='mo')closeModal();}
 
@@ -13172,10 +13171,10 @@ function abrirExpEnBuque(buqueId,buqueNombre){
     document.getElementById('m-title').textContent='📦 Nueva expedición — '+buqueNombre;
     document.getElementById('m-body').innerHTML='<div class="loading"><div class="spinner"></div>Cargando...</div>';
     document.getElementById('m-foot').innerHTML=`<button class="btn btn-s" onclick="closeModal()">Cancelar</button><button class="btn btn-p" id="mab">${m.btn}</button>`;
+    // Guardar parentBuque ANTES de abrir para que el save lo encuentre
+    document.getElementById('mbox').dataset.parentBuque=buqueId;
     document.getElementById('mo').classList.add('open');
-    // Pasar buqueId directamente a body() para que preseleccione el buque
     document.getElementById('m-body').innerHTML=await m.body(buqueId);
-    // Restore draft if available
     const draft=loadDraft('nueva-exp-'+buqueId);
     if(draft){Object.entries(draft).forEach(([k,v])=>{const el=document.getElementById(k);if(el)el.value=v;});showToast('📝 Borrador restaurado');}
     document.getElementById('mab').onclick=m.action;
