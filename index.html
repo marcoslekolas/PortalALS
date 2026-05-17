@@ -5661,6 +5661,51 @@ async function notifAlmacenistaCamion(camionId){
 
 // FIN MÓDULO CAMIONES CONSOLIDADOS
 
+// ── Catálogo de buques — autocomplete ─────────────────────────────
+var _catalogoCache = null;
+async function _loadCatalogo(){
+  if(_catalogoCache) return _catalogoCache;
+  try{
+    const {data}=await sb.from('buques_catalogo').select('nombre,imo').order('nombre').limit(500);
+    _catalogoCache=data||[];
+  }catch(ex){_catalogoCache=[];}
+  return _catalogoCache;
+}
+async function _nbSuggest(q){
+  const sugg=document.getElementById('nb-sugg'); if(!sugg) return;
+  if(!q||q.length<2){sugg.style.display='none';return;}
+  const cat=await _loadCatalogo();
+  const matches=cat.filter(v=>v.nombre.toLowerCase().includes(q.toLowerCase())).slice(0,8);
+  if(!matches.length){sugg.style.display='none';return;}
+  sugg.innerHTML=matches.map(v=>`
+    <div style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--g100)"
+      onmousedown="document.getElementById('nb-n').value='${v.nombre.replace(/'/g,"\\'")}';
+        document.getElementById('nb-imo').value='${(v.imo||'').replace(/'/g,"\\'")}';
+        document.getElementById('nb-sugg').style.display='none';
+        checkNbUnlock();prevIMO(document.getElementById('nb-imo').value);"
+      onmouseover="this.style.background='var(--b50)'" onmouseout="this.style.background=''">
+      <strong>${v.nombre}</strong>${v.imo?` <span style="color:var(--g400);font-size:11px">IMO ${v.imo}</span>`:''}
+    </div>`).join('');
+  sugg.style.display='block';
+}
+
+async function _bqEditSuggest(q, nomId, imoId, suggId){
+  const sugg=document.getElementById(suggId); if(!sugg) return;
+  if(!q||q.length<2){sugg.style.display='none';return;}
+  const cat=await _loadCatalogo();
+  const matches=cat.filter(v=>v.nombre.toLowerCase().includes(q.toLowerCase())).slice(0,8);
+  if(!matches.length){sugg.style.display='none';return;}
+  sugg.innerHTML=matches.map(v=>`
+    <div style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--g100)"
+      onmousedown="document.getElementById('${nomId}').value='${v.nombre.replace(/'/g,"\\'")}';
+        const imoEl=document.getElementById('${imoId}');if(imoEl)imoEl.value='${(v.imo||'').replace(/'/g,"\\'")}';
+        document.getElementById('${suggId}').style.display='none';"
+      onmouseover="this.style.background='var(--b50)'" onmouseout="this.style.background=''">
+      <strong>${v.nombre}</strong>${v.imo?` <span style="color:var(--g400);font-size:11px">IMO ${v.imo}</span>`:''}
+    </div>`).join('');
+  sugg.style.display='block';
+}
+
 function buqueCard(b,listo){
   const ec=b.ec?.nombre||b.en?.nombre||'—';
   const stCls=estOpCls(b.estado_operacion||b.estado||'');
@@ -6718,7 +6763,21 @@ async function loadFlota(){
 
 let allB=[];
 async function loadBuques(){const {data}=await sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').order('eta_buque');allB=data||[];renderB(allB);}
-function renderB(list){document.getElementById('buques-list').innerHTML=list.map(b=>buqueCard(b,false)).join('')||'<div class="empty"><div class="empty-txt">Sin resultados</div></div>';setTimeout(attachBuqueCardDrag,50);}
+function renderB(list){
+  const conEta   = list.filter(b=>b.eta_buque);
+  const sinEta   = list.filter(b=>!b.eta_buque);
+  let html = conEta.map(b=>buqueCard(b,false)).join('');
+  if(sinEta.length){
+    html += '<div style="margin:18px 0 8px;padding:8px 12px;background:var(--am50);border-radius:var(--r);border-left:3px solid var(--am400);display:flex;align-items:center;gap:8px">'
+      +'<span style="font-size:14px">⏳</span>'
+      +'<span style="font-size:12px;font-weight:600;color:var(--am700)">Sin ETA asignada ('+sinEta.length+')</span>'
+      +'<span style="font-size:11px;color:var(--am600)">— asigna la ETA en la ficha cuando la conozcas</span>'
+      +'</div>';
+    html += sinEta.map(b=>buqueCard(b,false)).join('');
+  }
+  document.getElementById('buques-list').innerHTML=html||'<div class="empty"><div class="empty-txt">Sin resultados</div></div>';
+  setTimeout(attachBuqueCardDrag,50);
+}
 function filtrarB(q){const s=q.toLowerCase();renderB(allB.filter(b=>(b.nombre||'').toLowerCase().includes(s)||(b.imo||'').includes(s)||(b.nº_escala||'').toLowerCase().includes(s)));}
 
 let allE=[];
@@ -10975,13 +11034,19 @@ const MODALS={
     return`
     <div class="info-box" style="margin-bottom:14px">Rellena el nombre y la Ref. Visual Trans para desbloquear el resto de campos.</div>
     <div class="fr2">
-      <div class="fg2"><label class="fl2">Nombre del buque *</label><input id="nb-n" class="fi" placeholder="Ej: Tanger Express" oninput="checkNbUnlock()"></div>
+      <div class="fg2"><label class="fl2">Nombre del buque *</label>
+          <div style="position:relative">
+            <input id="nb-n" class="fi" placeholder="Escribe o busca en catálogo…" autocomplete="off"
+              oninput="checkNbUnlock();_nbSuggest(this.value)"
+              onblur="setTimeout(()=>{const d=document.getElementById('nb-sugg');if(d)d.style.display='none'},200)">
+            <div id="nb-sugg" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:9999;background:var(--w);border:1px solid var(--b300);border-radius:0 0 var(--r) var(--r);max-height:200px;overflow-y:auto;box-shadow:var(--shl)"></div>
+          </div></div>
       <div class="fg2"><label class="fl2">Ref. Visual Trans *</label><input id="nb-vt" class="fi" placeholder="Nº expediente (obligatorio)" oninput="checkNbUnlock()"></div>
     </div>
     <div id="nb-rest" style="opacity:.35;pointer-events:none;transition:opacity .2s">
       <div class="fg2"><label class="fl2">IMO — <a href="#" onclick="buscarIMOporNombre();return false;" style="color:var(--b600);font-size:11px;font-weight:600">🔍 Buscar IMO</a></label><input id="nb-imo" class="fi" placeholder="Ej: 9246695" oninput="prevIMO(this.value)"><div id="imo-prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div><div id="nombre-search"></div></div>
       <div class="fg2"><label class="fl2">Nº Escala APBA — <a href="https://sugb.frontend.app.teleportpcs.com/generalsupply/list" target="_blank" style="color:var(--b600);font-size:11px">🔎 SUGB APBA</a></label><input id="nb-esc" class="fi" placeholder="ESALG…"></div>
-      <div class="fr2"><div class="fg2"><label class="fl2">ETA buque</label><input id="nb-eta" class="fi" type="datetime-local"></div><div class="fg2"><label class="fl2">Puerto / Terminal</label><input id="nb-pto" class="fi" placeholder="Algeciras / T. Ro-Ro"></div></div>
+      <div class="fr2"><div class="fg2"><label class="fl2">ETA buque <span style="font-size:10px;color:var(--am600)">(opcional — dejar vacío si no se conoce)</span></label><input id="nb-eta" class="fi" type="datetime-local"></div><div class="fg2"><label class="fl2">Puerto / Terminal</label><input id="nb-pto" class="fi" placeholder="Algeciras / T. Ro-Ro"></div></div>
       <div class="fr2"><div class="fg2"><label class="fl2">Cliente</label><select id="nb-cli" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div><div class="fg2"><label class="fl2">Estado operación</label><select id="nb-est" class="fi fs"><option>Sin comenzar</option><option selected>En proceso</option><option>Embarcado</option><option>Cancelado</option><option>Aplazado</option></select></div></div>
       <div class="fg2"><label class="fl2">Consignatario</label><select id="nb-con" class="fi fs"><option value="">— Seleccionar —</option>${opts}</select></div>
       <div style="font-size:12px;color:var(--g400);text-align:center">¿Empresa no existe? <span style="color:var(--b600);cursor:pointer" onclick="_guardarEstadoNuevoBuque();document.getElementById('mbox').dataset.fromBuque='1';closeModal();openModal('nueva-empresa')">Crear empresa →</span></div>
@@ -10997,7 +11062,16 @@ const MODALS={
     showToast('Buque creado');
     closeModal();
     await loadBuques(); // recargar lista
-    if(data?.id) setTimeout(()=>openBuque(data.id),200); // abrir ficha para editar y crear expediciones
+    if(data?.id) setTimeout(()=>openBuque(data.id),200); // abrir ficha
+    // Añadir al catálogo si no existe ya
+    if(obj.nombre){
+      try{
+        const {data:exist}=await sb.from('buques_catalogo').select('id').ilike('nombre',obj.nombre).limit(1);
+        if(!exist||!exist.length){
+          await sb.from('buques_catalogo').insert({nombre:obj.nombre,imo:obj.imo||null});
+        }
+      }catch(ex){}
+    }
   }
 },
 'nueva-expedicion':{t:'📦 Nueva expedición',btn:'📦 Crear expedición',
@@ -11419,7 +11493,13 @@ async function openBuque(id){
       <div><div style="font-size:10px;color:var(--g500);font-weight:600;text-transform:uppercase">Kilos</div><div style="font-size:20px;font-weight:700">${totalKilos.toLocaleString('es-ES')}</div></div>
     </div>
     <div class="fr2">
-      <div class="fg2"><label class="fl2">Nombre del buque</label><input id="bq-n-${id}" class="fi" value="${b.nombre||''}"></div>
+      <div class="fg2"><label class="fl2">Nombre del buque</label>
+        <div style="position:relative">
+          <input id="bq-n-${id}" class="fi" value="${b.nombre||''}" autocomplete="off"
+            oninput="_bqEditSuggest(this.value,'bq-n-${id}','bq-imo-${id}','bq-sugg-${id}')"
+            onblur="setTimeout(()=>{const d=document.getElementById('bq-sugg-${id}');if(d)d.style.display='none'},200)">
+          <div id="bq-sugg-${id}" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:9999;background:var(--w);border:1px solid var(--b300);border-radius:0 0 var(--r) var(--r);max-height:180px;overflow-y:auto;box-shadow:var(--shl)"></div>
+        </div></div>
       <div class="fg2"><label class="fl2">Ref. Visual Trans</label><input id="bq-vt-${id}" class="fi" value="${b.ref_visual_trans||''}"></div>
     </div>
     <div class="fg2"><label class="fl2">IMO — <a href="#" onclick="buscarIMOporNombreEdit('${id}');return false;" style="color:var(--b600);font-size:11px;font-weight:600">🔍 Buscar IMO</a></label>
