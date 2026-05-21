@@ -11277,20 +11277,87 @@ function buscarIMOporNombre(){
 
 async function _buscarVesselInline(nom){
   const panel=document.getElementById('nombre-search');
-  if(!panel) return;
+  if(!panel||!nom||nom.length<2) return;
   panel.innerHTML='<div style="font-size:11px;color:var(--b600);padding:6px 0">🔍 Buscando <em>'+nom+'</em>…</div>';
 
   const results=[];
   const seen=new Set();
+  const q=nom.toLowerCase();
 
-  // ── PASO 1: Catálogo local (instantáneo) ─────────────────────
-  const cat=await _loadCatalogo();
-  cat.filter(v=>v.nombre.toLowerCase().includes(nom.toLowerCase())||
-    (v.imo&&v.imo.includes(nom)))
-    .forEach(v=>{
+  // ── PASO 1: Tabla buques (datos reales ya en el portal) ────────
+  try{
+    const {data:buqData}=await sb.from('buques')
+      .select('nombre,imo')
+      .ilike('nombre','%'+nom+'%')
+      .not('imo','is',null)
+      .order('nombre').limit(8);
+    (buqData||[]).forEach(v=>{
       const key=v.imo||v.nombre;
-      if(!seen.has(key)){seen.add(key);results.push({...v,src:'local'});}
+      if(!seen.has(key)){seen.add(key);results.push({nombre:v.nombre.toUpperCase(),imo:v.imo,tipo:'',src:'local'});}
     });
+  }catch(ex){}
+
+  // ── PASO 2: Catálogo buques (tabla auxiliar) ───────────────────
+  try{
+    const {data:catData}=await sb.from('buques_catalogo')
+      .select('nombre,imo')
+      .ilike('nombre','%'+nom+'%')
+      .order('nombre').limit(8);
+    (catData||[]).forEach(v=>{
+      const key=v.imo||v.nombre;
+      if(!seen.has(key)){seen.add(key);results.push({nombre:(v.nombre||'').toUpperCase(),imo:v.imo||'',tipo:'',src:'local'});}
+    });
+  }catch(ex){}
+
+  // ── PASO 3: IA via OpenRouter (para buques no registrados aún) ─
+  if(results.length<5){
+    try{
+      // Obtener clave directamente desde Supabase (sin localStorage)
+      const {data:cfg}=await sb.from('als_config').select('valor').eq('clave','gemini_api_key').single();
+      const key=cfg?.valor;
+      if(key){
+        const r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'HTTP-Referer':'https://portal.alsalgeciras.com'},
+          body:JSON.stringify({
+            model:'mistralai/mistral-small-3.2-24b-instruct',
+            max_tokens:300,
+            temperature:0,
+            messages:[{role:'user',content:
+              'Lista los buques de carga comerciales cuyo nombre contiene "'+nom+'".\n'+
+              'Responde SOLO con un array JSON, sin texto adicional:\n'+
+              '[{"nombre":"NOMBRE_OFICIAL","imo":"7654321","tipo":"Container Ship"}]\n'+
+              'Reglas: imo siempre 7 dígitos exactos. Si no conoces el imo con certeza, omite ese buque. Máximo 6 resultados.'
+            }]
+          })
+        });
+        const d=await r.json();
+        const txt=(d?.choices?.[0]?.message?.content||'').replace(/```json|```/g,'').trim();
+        let aiRes=[];
+        try{aiRes=JSON.parse(txt);}catch(e){}
+        (Array.isArray(aiRes)?aiRes:[]).forEach(v=>{
+          const imo=String(v.imo||'').replace(/\D/g,'');
+          const nombre=(v.nombre||'').toUpperCase().trim();
+          if(!nombre||imo.length!==7) return;
+          if(!seen.has(imo)){seen.add(imo);results.push({nombre,imo,tipo:v.tipo||'',src:'ai'});}
+        });
+      }
+    }catch(ex){console.warn('IMO AI:',ex);}
+  }
+
+  const enc=encodeURIComponent(nom);
+  const vfUrl='https://www.vesselfinder.com/vessels?search='+enc;
+  const mtUrl='https://www.marinetraffic.com/en/ais/index/ships/all/shipname:'+enc;
+
+  if(!results.length){
+    panel.innerHTML='<div style="background:var(--am50);border:1px solid var(--am200);border-radius:var(--r);padding:8px 12px;margin-top:4px;font-size:11px;color:var(--am700)">Sin resultados para "<strong>'+nom+'</strong>". Busca el IMO en:<br><div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><a class="ext-link" href="'+vfUrl+'" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="'+mtUrl+'" target="_blank">🌍 MarineTraffic</a><a class="ext-link" href="https://www.myshiptracking.com/vessels?name='+enc+'" target="_blank">📡 MyShipTracking</a></div></div>';
+    return;
+  }
+
+  const rows=results.map(v=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--g100)" onmouseover="this.style.background=\'var(--b50)\'" onmouseout="this.style.background=\'\'" onclick="_seleccionarVessel(\''+v.nombre.replace(/'/g,"\\'")+"','"+(v.imo||'').replace(/'/g,"\\'")+'\')"><div><div style="font-size:13px;font-weight:600">'+v.nombre+'</div>'+(v.tipo?'<div style="font-size:10px;color:var(--g400)">'+v.tipo+'</div>':'')+'</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+(v.imo?'<span style="font-family:monospace;font-size:12px;font-weight:700;color:var(--b700)">IMO '+v.imo+'</span>':'<span style="font-size:11px;color:var(--g400)">—</span>')+(v.src==='local'?'<span style="font-size:9px;padding:1px 5px;background:var(--gr50);color:var(--gr700);border-radius:4px">📁</span>':'<span style="font-size:9px;padding:1px 5px;background:var(--b50);color:var(--b700);border-radius:4px">🤖</span>')+'</div></div>').join('');
+
+  panel.innerHTML='<div style="background:var(--w);border:1px solid var(--b200);border-radius:var(--r);overflow:hidden;margin-top:6px;box-shadow:var(--shl)"><div style="font-size:10px;color:var(--g500);padding:5px 12px;background:var(--g50);border-bottom:1px solid var(--g100)">'+results.length+' resultado'+(results.length!==1?'s':'')+' — clic para rellenar nombre e IMO</div>'+rows+'<div style="padding:6px 12px;border-top:1px solid var(--g100);display:flex;gap:10px;background:var(--g50)"><a class="ext-link" style="font-size:11px" href="'+vfUrl+'" target="_blank">🎯 VesselFinder</a><a class="ext-link" style="font-size:11px" href="'+mtUrl+'" target="_blank">🌍 MarineTraffic</a></div></div>';
+}
 
   // ── PASO 2: IA (OpenRouter/Mistral) — para lo que no está en catálogo ─
   if(results.length<4){
