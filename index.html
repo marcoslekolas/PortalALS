@@ -11050,7 +11050,7 @@ const MODALS={
       <div class="fg2"><label class="fl2">Nombre del buque *</label>
           <div style="position:relative">
             <input id="nb-n" class="fi" placeholder="Escribe o busca en catálogo…" autocomplete="off"
-              oninput="checkNbUnlock();_nbSuggest(this.value)"
+              oninput="checkNbUnlock();_nbSuggest(this.value);clearTimeout(_imoSearchTimer);if(this.value.length>=3){_imoSearchTimer=setTimeout(()=>_buscarVesselInline(this.value.trim()),600);}"
               onblur="setTimeout(()=>{const d=document.getElementById('nb-sugg');if(d)d.style.display='none'},200)">
             <div id="nb-sugg" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:9999;background:var(--w);border:1px solid var(--b300);border-radius:0 0 var(--r) var(--r);max-height:200px;overflow-y:auto;box-shadow:var(--shl)"></div>
           </div></div>
@@ -11262,42 +11262,143 @@ function closeModal(){
 function closeModalOut(e){if(e.target.id==='mo')closeModal();}
 
 // ── BUSCAR IMO ── Solo VesselFinder y MarineTraffic
+// ── BÚSQUEDA INLINE DE IMO ────────────────────────────────────────
+// 1. Busca en catálogo local (buques_catalogo)
+// 2. Si hay pocos resultados, consulta API pública via CORS proxy
+// 3. Muestra dropdown dentro del portal con nombre + IMO
+// 4. Al seleccionar: rellena nombre e IMO automáticamente, sin abrir web externa
+
+let _imoSearchTimer = null;
+
 function buscarIMOporNombre(){
   const nom=(document.getElementById('nb-n')?.value||'').trim();
-  if(!nom||nom.length<2){alert('Escribe primero el nombre del buque');return;}
+  if(!nom||nom.length<2){showToast('⚠️ Escribe al menos 2 letras del nombre');return;}
+  _buscarVesselInline(nom);
+}
+
+async function _buscarVesselInline(nom){
+  const panel=document.getElementById('nombre-search');
+  if(!panel) return;
+  panel.innerHTML='<div style="font-size:11px;color:var(--b600);padding:6px 0">🔍 Buscando <em>'+nom+'</em>…</div>';
+
+  const results=[];
+  const seen=new Set();
+
+  // ── PASO 1: Catálogo local ────────────────────────────────────
+  const cat=await _loadCatalogo();
+  const localMatches=cat.filter(v=>v.nombre.toLowerCase().includes(nom.toLowerCase())||
+    (v.imo&&v.imo.includes(nom)));
+  localMatches.forEach(v=>{
+    if(!seen.has(v.imo||v.nombre)){ seen.add(v.imo||v.nombre); results.push({...v,src:'local'}); }
+  });
+
+  // ── PASO 2: MyShipTracking API via CORS proxy (gratis, sin auth) ─
+  // Si el catálogo tiene <3 resultados, buscamos externamente
+  if(results.length<3){
+    const proxies=['https://corsproxy.io/?','https://api.allorigins.win/raw?url='];
+    const apiUrl='https://www.myshiptracking.com/get-vessels-list?search='+encodeURIComponent(nom)+'&start=0&length=10';
+    for(const proxy of proxies){
+      try{
+        const r=await fetch(proxy+encodeURIComponent(apiUrl),{signal:AbortSignal.timeout(4000)});
+        if(!r.ok) continue;
+        const txt=await r.text();
+        // Parsear JSON de MyShipTracking
+        let data=null;
+        try{ data=JSON.parse(txt); }catch(e){
+          // Si la respuesta es HTML, intentar extraer datos JSON embebidos
+          const m=txt.match(/\[\s*\{[^]*?"IMO"\s*:\s*"?(\d+)"?[^]*?\}\s*\]/);
+          if(m) try{ data=JSON.parse(m[0]); }catch(e2){}
+        }
+        if(data&&Array.isArray(data)){
+          data.slice(0,8).forEach(v=>{
+            const nombre=(v.NAME||v.name||v.SHIPNAME||'').toUpperCase().trim();
+            const imo=String(v.IMO||v.imo||'').replace(/\D/g,'').slice(0,7);
+            if(nombre&&!seen.has(imo||nombre)){
+              seen.add(imo||nombre);
+              results.push({nombre,imo:imo||null,tipo:v.SHIPTYPE||v.type||'',src:'api'});
+            }
+          });
+          if(results.length>0) break;
+        }
+      }catch(ex){}
+    }
+  }
+
+  // ── PASO 3: Fallback — VesselFinder URL con búsqueda pre-ejecutada ─
   const enc=encodeURIComponent(nom);
-  // Copiar nombre al portapapeles automáticamente
-  try{
-    navigator.clipboard.writeText(nom).then(()=>{
-      showToast('📋 "'+nom+'" copiado — pégalo en el buscador');
-    }).catch(()=>{});
-  }catch(ex){}
-  // Abrir Tradlinx directamente (abre el buscador principal, pega el nombre copiado)
-  window.open('https://www.tradlinx.com/es/vessel-tracking','_blank');
-  // Mostrar links alternativos inline
-  const d=document.getElementById('nombre-search');
-  if(d) d.innerHTML=`<div style="margin-top:8px;font-size:11px;color:var(--g500);margin-bottom:4px">
-      📋 Nombre copiado al portapapeles — pégalo (Cmd+V / Ctrl+V) en el buscador de la página que se abrió.
-    </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <a class="ext-link" href="https://www.tradlinx.com/es/vessel-tracking" target="_blank" onclick="navigator.clipboard?.writeText('${nom.replace(/'/g,"\\'")}')">🚢 Tradlinx</a>
-      <a class="ext-link" href="https://www.marinetraffic.com/en/ais/index/ships/all/shipname:${enc}" target="_blank">🌍 MarineTraffic</a>
-      <a class="ext-link" href="https://www.vesselfinder.com/?name=${enc}" target="_blank">🎯 VesselFinder</a>
-      <a class="ext-link" href="https://www.fleetmon.com/vessels/?search=${enc}" target="_blank">📡 FleetMon</a>
+  const vfUrl='https://www.vesselfinder.com/vessels?search='+enc;
+  const mtUrl='https://www.marinetraffic.com/en/ais/index/ships/all/shipname:'+enc;
+
+  // ── Renderizar resultados ─────────────────────────────────────
+  if(!results.length){
+    panel.innerHTML=`
+      <div style="font-size:11px;color:var(--g500);padding:4px 0;margin-bottom:6px">Sin resultados locales. Abre una web de tracking para buscar el IMO:</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a class="ext-link" href="${vfUrl}" target="_blank" style="font-weight:600">🎯 VesselFinder (resultados directos)</a>
+        <a class="ext-link" href="${mtUrl}" target="_blank">🌍 MarineTraffic</a>
+        <a class="ext-link" href="https://www.myshiptracking.com/vessels?name=${enc}" target="_blank">📡 MyShipTracking</a>
+      </div>`;
+    return;
+  }
+
+  const rows=results.map(v=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--g100);transition:background .1s"
+      onmouseover="this.style.background='var(--b50)'" onmouseout="this.style.background=''"
+      onclick="_seleccionarVessel('${v.nombre.replace(/'/g,"\\'")}','${(v.imo||'').replace(/'/g,"\\'")}')">
+      <div>
+        <div style="font-size:13px;font-weight:600">${v.nombre}</div>
+        ${v.tipo?`<div style="font-size:10px;color:var(--g400)">${v.tipo}</div>`:''}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        ${v.imo?`<span style="font-family:monospace;font-size:12px;font-weight:600;color:var(--b700)">IMO ${v.imo}</span>`:'<span style="font-size:11px;color:var(--g400)">IMO desconocido</span>'}
+        ${v.src==='local'?'<span style="font-size:9px;padding:1px 5px;background:var(--gr50);color:var(--gr700);border-radius:4px">catálogo</span>':'<span style="font-size:9px;padding:1px 5px;background:var(--b50);color:var(--b700);border-radius:4px">online</span>'}
+      </div>
+    </div>`).join('');
+
+  panel.innerHTML=`
+    <div style="background:var(--w);border:1px solid var(--b200);border-radius:var(--r);overflow:hidden;margin-top:4px;box-shadow:var(--shl)">
+      <div style="font-size:10px;color:var(--g500);padding:5px 10px;background:var(--g50);border-bottom:1px solid var(--g100)">
+        ${results.length} resultado${results.length!==1?'s':''} — clic para rellenar nombre e IMO automáticamente
+      </div>
+      ${rows}
+      <div style="padding:6px 10px;border-top:1px solid var(--g100);display:flex;gap:8px;background:var(--g50)">
+        <a class="ext-link" style="font-size:11px" href="${vfUrl}" target="_blank">🎯 Ver más en VesselFinder</a>
+        <a class="ext-link" style="font-size:11px" href="${mtUrl}" target="_blank">🌍 MarineTraffic</a>
+      </div>
     </div>`;
 }
+
+function _seleccionarVessel(nombre, imo){
+  // Rellenar nombre e IMO automáticamente
+  const nbN=document.getElementById('nb-n');
+  const nbImo=document.getElementById('nb-imo');
+  if(nbN){ nbN.value=nombre; checkNbUnlock(); }
+  if(nbImo&&imo){ nbImo.value=imo; prevIMO(imo); }
+  // Ocultar sugerencias del catálogo
+  const sugg=document.getElementById('nb-sugg');
+  if(sugg) sugg.style.display='none';
+  // Cerrar panel de búsqueda
+  const panel=document.getElementById('nombre-search');
+  if(panel) panel.innerHTML=`<div style="font-size:11px;color:var(--gr600);padding:4px 0">✅ Seleccionado: <strong>${nombre}</strong>${imo?' · IMO '+imo:''}</div>`;
+  // Guardar en catálogo si no existía
+  if(nombre&&imo){
+    sb.from('buques_catalogo').select('id').ilike('nombre',nombre).limit(1).then(r=>{
+      if(!r.data||!r.data.length) sb.from('buques_catalogo').insert({nombre,imo}).catch(()=>{});
+      else sb.from('buques_catalogo').update({imo}).eq('id',r.data[0].id).catch(()=>{});
+      _catalogoCache=null; // invalidar caché
+    }).catch(()=>{});
+  }
+  showToast('✅ '+nombre+(imo?' — IMO '+imo:''));
+}
+
 function prevIMO(imo){
   try{
   const d=document.getElementById('imo-prev');if(!d)return;
   if(!imo||imo.length<5){d.innerHTML='';return;}
-  const nom=(document.getElementById('nb-n')?.value||'').trim();
-  const enc=encodeURIComponent(nom);
   d.innerHTML=`
-    <a class="ext-link" href="https://www.tradlinx.com/es/vessel-tracking" target="_blank" onclick="navigator.clipboard?.writeText('${nom.replace(/'/g,"\\'")}');showToast('📋 Nombre copiado')">🚢 Tradlinx</a>
-    <a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic IMO</a>
-    <a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder IMO</a>`;
-  const nsDiv=document.getElementById('nombre-search');
-  if(nsDiv&&nom.length>2){nsDiv.innerHTML=`<div style="margin-top:6px;font-size:11px;color:var(--g500)">Por nombre: <a class="ext-link" href="https://www.marinetraffic.com/en/ais/index/ships/all/shipname:${enc}" target="_blank">🌍 MarineTraffic</a> <a class="ext-link" href="https://www.fleetmon.com/vessels/?search=${enc}" target="_blank">📡 FleetMon</a></div>`;}
+    <a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic</a>
+    <a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder</a>
+    <a class="ext-link" href="https://www.myshiptracking.com/vessels?imo=${imo}" target="_blank">📡 MyShipTracking</a>`;
   }catch(ex){console.warn('prevIMO err:',ex);}
 }
 
