@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://*.openrouter.ai https://api.anthropic.com https://corsproxy.io https://api.allorigins.win https://api.opencorporates.com; font-src https://fonts.gstatic.com; worker-src 'self' blob:; manifest-src 'self' blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://*.openrouter.ai https://api.anthropic.com https://corsproxy.io https://api.allorigins.win https://api.opencorporates.com https://en.wikipedia.org https://www.wikidata.org; font-src https://fonts.gstatic.com; worker-src 'self' blob:; manifest-src 'self' blob:;">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#2563eb">
 <meta name="mobile-web-app-capable" content="yes">
@@ -11278,46 +11278,80 @@ function buscarIMOporNombre(){
 async function _buscarVesselInline(nom){
   const panel=document.getElementById('nombre-search');
   if(!panel||!nom||nom.length<2) return;
-  panel.innerHTML='<div style="font-size:11px;color:var(--b600);padding:6px 0">Buscando '+nom+'...</div>';
+  panel.innerHTML='<div style="font-size:11px;color:var(--b600);padding:6px 0">🔍 Buscando IMO de <em>'+nom+'</em>…</div>';
   const results=[]; const seen=new Set();
-  // Buscar en buques del portal (datos reales con IMO verificado)
+
+  // ── 1. Buques ya en el portal (datos verificados) ─────────────
   try{
-    const {data:d1}=await sb.from('buques').select('nombre,imo').ilike('nombre','%'+nom+'%').not('imo','is',null).order('nombre').limit(10);
+    const {data:d1}=await sb.from('buques').select('nombre,imo').ilike('nombre','%'+nom+'%').not('imo','is',null).order('nombre').limit(8);
     (d1||[]).forEach(v=>{if(!seen.has(v.imo)){seen.add(v.imo);results.push({nombre:v.nombre.toUpperCase(),imo:v.imo,src:'portal'});}});
   }catch(ex){}
-  // Buscar en catalogo auxiliar
   try{
-    const {data:d2}=await sb.from('buques_catalogo').select('nombre,imo').ilike('nombre','%'+nom+'%').order('nombre').limit(10);
+    const {data:d2}=await sb.from('buques_catalogo').select('nombre,imo').ilike('nombre','%'+nom+'%').order('nombre').limit(8);
     (d2||[]).forEach(v=>{const k=v.imo||v.nombre;if(!seen.has(k)){seen.add(k);results.push({nombre:(v.nombre||'').toUpperCase(),imo:v.imo||null,src:'catalogo'});}});
   }catch(ex){}
+
+  // ── 2. Wikipedia API — extrae IMO del infobox del artículo ─────
+  // Wikipedia tiene el IMO en el infobox de casi todos los buques comerciales
+  if(results.length<3){
+    try{
+      var wikiSearch=await fetch(
+        'https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch='+encodeURIComponent(nom+' ship')+'&format=json&origin=*&utf8=1&srlimit=4',
+        {signal:AbortSignal.timeout(5000)}
+      );
+      var wikiData=await wikiSearch.json();
+      var pages=(wikiData.query&&wikiData.query.search)||[];
+      for(var pi=0;pi<pages.length;pi++){
+        var page=pages[pi];
+        // Descartar artículos claramente no relacionados con buques
+        var ttl=(page.title||'').toLowerCase();
+        if(!ttl.includes(nom.toLowerCase().split(' ')[0].substring(0,4))&&pi>0) continue;
+        // Obtener contenido del artículo para extraer el IMO
+        var contentResp=await fetch(
+          'https://en.wikipedia.org/w/api.php?action=query&pageids='+page.pageid+'&prop=revisions&rvprop=content&rvslots=main&format=json&origin=*&utf8=1&rvsection=0',
+          {signal:AbortSignal.timeout(5000)}
+        );
+        var contentData=await contentResp.json();
+        var content=(contentData.query&&contentData.query.pages&&contentData.query.pages[page.pageid]&&contentData.query.pages[page.pageid].revisions&&contentData.query.pages[page.pageid].revisions[0]&&(contentData.query.pages[page.pageid].revisions[0].slots&&contentData.query.pages[page.pageid].revisions[0].slots.main&&contentData.query.pages[page.pageid].revisions[0].slots.main['*']||contentData.query.pages[page.pageid].revisions[0]['*']))||'';
+        // Buscar IMO de 7 dígitos en el contenido del infobox
+        var imoMatch=content.match(/\|\s*imo\s*=\s*(\d{7})/i)||content.match(/IMO\s+number[^<]*?(\d{7})/i)||content.match(/IMO[^0-9]*(\d{7})/i)||content.match(/imo_no\s*=\s*(\d{7})/i)||content.match(/imono\s*=\s*(\d{7})/i)||content.match(/[^a-z](\d{7})[^0-9]/);
+        if(imoMatch){
+          var imoNum=imoMatch[1];
+          var nombre=page.title.toUpperCase();
+          if(!seen.has(imoNum)){
+            seen.add(imoNum);
+            results.push({nombre:nombre,imo:imoNum,src:'wikipedia'});
+          }
+        }
+      }
+    }catch(ex){console.warn('Wikipedia IMO lookup:',ex.message);}
+  }
+
   const enc=encodeURIComponent(nom);
-  const googleUrl2='https://www.google.com/search?q=IMO+'+enc+'+ship';
-  const mtUrl2='https://www.marinetraffic.com/en/ais/index/ships/all/shipname:'+nom.toUpperCase().replace(/ /g,'+');
-  const links='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:5px">'
-    +'<a class="ext-link" href="'+googleUrl2+'" target="_blank" style="font-weight:600;color:var(--b700)">🔍 Google IMO</a>'
-    +'<a class="ext-link" href="'+mtUrl2+'" target="_blank">🌍 MarineTraffic</a>'
-    +'<a class="ext-link" href="https://www.vesselfinder.com/vessels" target="_blank">🎯 VesselFinder</a>'
-    +'</div><div style="font-size:10px;color:var(--g400);margin-top:3px">Google muestra el IMO directamente en el primer resultado</div>';
+  const googleUrl='https://www.google.com/search?q=IMO+number+'+enc+'+ship';
+
+  window._vesselResults=results;
   if(!results.length){
-    panel.innerHTML='<div style="background:var(--am50);border:1px solid var(--am200);border-radius:var(--r);padding:8px 12px;margin-top:4px;font-size:11px;color:var(--am700)">No encontrado en el portal para "<strong>'+nom+'</strong>". Consulta el IMO en:'+links+'</div>';
+    panel.innerHTML='<div style="background:var(--am50);border:1px solid var(--am200);border-radius:var(--r);padding:8px 12px;margin-top:4px;font-size:11px;color:var(--am700)">No encontrado para "<strong>'+nom+'</strong>". <a class="ext-link" href="'+googleUrl+'" target="_blank" style="font-weight:600">🔍 Buscar en Google</a> — el IMO de 7 dígitos aparece en el primer resultado.</div>';
     return;
   }
-  window._vesselResults=results;
+
   const rows=results.map(function(v,i){
-    const badge=v.src==='portal'
-      ?'<span style="font-size:9px;padding:2px 5px;background:#dbeafe;color:#1d4ed8;border-radius:4px">portal</span>'
+    var srcBadge=v.src==='portal'?'<span style="font-size:9px;padding:2px 5px;background:#dbeafe;color:#1d4ed8;border-radius:4px">portal</span>'
+      :v.src==='wikipedia'?'<span style="font-size:9px;padding:2px 5px;background:#f3e8ff;color:#7c3aed;border-radius:4px">Wikipedia</span>'
       :'<span style="font-size:9px;padding:2px 5px;background:#dcfce7;color:#166534;border-radius:4px">catálogo</span>';
-    const imoHtml=v.imo
+    var imoHtml=v.imo
       ?'<span style="font-family:monospace;font-size:12px;font-weight:700;color:#1d4ed8">IMO '+v.imo+'</span>'
       :'<span style="font-size:11px;color:#9ca3af">sin IMO</span>';
     return '<div data-vi="'+i+'" style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;border-bottom:1px solid #f3f4f6" onclick="_seleccionarVesselIdx(this.dataset.vi)">'
       +'<div style="font-size:13px;font-weight:600">'+v.nombre+'</div>'
-      +'<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+imoHtml+badge+'</div></div>';
+      +'<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+imoHtml+srcBadge+'</div></div>';
   }).join('');
-  panel.innerHTML='<div style="background:var(--w);border:1px solid var(--b200);border-radius:var(--r);overflow:hidden;margin-top:6px;box-shadow:var(--shl)">'
-    +'<div style="font-size:10px;color:var(--g500);padding:5px 12px;background:var(--g50);border-bottom:1px solid var(--g100)">'+results.length+' en historial — clic para rellenar</div>'
+
+  panel.innerHTML='<div style="background:#fff;border:1px solid #bfdbfe;border-radius:var(--r);overflow:hidden;margin-top:6px;box-shadow:0 2px 8px rgba(0,0,0,.08)">'
+    +'<div style="font-size:10px;color:#6b7280;padding:5px 12px;background:#f9fafb;border-bottom:1px solid #f3f4f6">'+results.length+' resultado'+(results.length!==1?'s':'')+' — clic para rellenar nombre e IMO</div>'
     +rows
-    +'<div style="padding:8px 12px;border-top:1px solid var(--g100);background:var(--g50);font-size:11px;color:var(--g500)">Buque nuevo? Busca el IMO en:'+links+'</div></div>';
+    +'<div style="padding:7px 12px;border-top:1px solid #f3f4f6;background:#f9fafb;font-size:11px;color:#6b7280">No es el buque? → <a class="ext-link" href="'+googleUrl+'" target="_blank">🔍 Google IMO</a></div></div>';
 }
 
 function _seleccionarVesselIdx(i){
