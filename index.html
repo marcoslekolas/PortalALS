@@ -11291,13 +11291,13 @@ async function _buscarVesselInline(nom){
     (d2||[]).forEach(v=>{const k=v.imo||v.nombre;if(!seen.has(k)){seen.add(k);results.push({nombre:(v.nombre||'').toUpperCase(),imo:v.imo||null,src:'catalogo'});}});
   }catch(ex){}
   const enc=encodeURIComponent(nom);
-  const vfUrl='https://www.vesselfinder.com/vessels?search='+enc;
-  const mtUrl='https://www.marinetraffic.com/en/ais/index/ships/all/shipname:'+enc;
+  const googleUrl2='https://www.google.com/search?q=IMO+'+enc+'+ship';
+  const mtUrl2='https://www.marinetraffic.com/en/ais/index/ships/all/shipname:'+nom.toUpperCase().replace(/ /g,'+');
   const links='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:5px">'
-    +'<a class="ext-link" href="'+vfUrl+'" target="_blank" style="font-weight:600">VesselFinder</a>'
-    +'<a class="ext-link" href="'+mtUrl+'" target="_blank">MarineTraffic</a>'
-    +'<a class="ext-link" href="https://www.myshiptracking.com/vessels?name='+enc+'" target="_blank">MyShipTracking</a>'
-    +'</div><div style="font-size:10px;color:var(--g400);margin-top:3px">Abre la web, el IMO de 7 digitos aparece en la ficha del buque</div>';
+    +'<a class="ext-link" href="'+googleUrl2+'" target="_blank" style="font-weight:600;color:var(--b700)">🔍 Google IMO</a>'
+    +'<a class="ext-link" href="'+mtUrl2+'" target="_blank">🌍 MarineTraffic</a>'
+    +'<a class="ext-link" href="https://www.vesselfinder.com/vessels" target="_blank">🎯 VesselFinder</a>'
+    +'</div><div style="font-size:10px;color:var(--g400);margin-top:3px">Google muestra el IMO directamente en el primer resultado</div>';
   if(!results.length){
     panel.innerHTML='<div style="background:var(--am50);border:1px solid var(--am200);border-radius:var(--r);padding:8px 12px;margin-top:4px;font-size:11px;color:var(--am700)">No encontrado en el portal para "<strong>'+nom+'</strong>". Consulta el IMO en:'+links+'</div>';
     return;
@@ -11323,11 +11323,6 @@ async function _buscarVesselInline(nom){
 function _seleccionarVesselIdx(i){
   var v=(window._vesselResults||[])[parseInt(i)];
   if(v) _seleccionarVessel(v.nombre,v.imo||'');
-}
-
-function _seleccionarVesselIdx(idx){
-  var v=(window._vesselResults||[])[parseInt(idx)];
-  if(v) _seleccionarVessel(v.nombre, v.imo||'');
 }
 
 function _seleccionarVessel(nombre, imo){
