@@ -2009,6 +2009,7 @@ async function showForm(e, prefill){
   document.getElementById('m-foot').innerHTML='<button class="btn btn-s" onclick="closeModal()">Cancelar</button>'+
     (isEdit && !e.expedicion_id ? '<button class="btn btn-s" onclick="crearExpedicionDesdeAC(\''+e.id+'\')" title="Crear expedición vinculada en Operativas" style="color:var(--b600)">📦 Crear en Operativas</button>' : '')+
     (isEdit && e.expedicion_id  ? '<span style="font-size:11px;color:var(--gr600);padding:0 8px;align-self:center">✅ Expedición vinculada</span>' : '')+
+    (!isEdit ? '<button class="btn btn-s" onclick="crearEntradaYExpedicion()" title="Guardar registro y crear expedición en Operativas" style="color:var(--b600)">📦 Guardar y crear en Operativas</button>' : '')+
     '<button class="btn btn-p" onclick="'+(isEdit?'saveEntrada(\''+e.id+'\')':'crearEntrada()')+'">💾 '+(isEdit?'Guardar cambios':'Crear entrada')+'</button>';
   openModal();
   onHC();
@@ -2120,6 +2121,24 @@ async function crearEntrada(){
   try{var lr=await sb.from('airport_cargo').select('id').eq('awb',o.awb).order('id',{ascending:false}).limit(1);if(lr.data&&lr.data.length)lastId=lr.data[0].id;}catch(ex){}
   if(lastId){try{await sb.from('airport_cargo').update(buildObjExtended()).eq('id',lastId);}catch(ex){}}
   toast('Entrada creada ✅');closeModal();await loadAll();loadView();
+}
+
+async function crearEntradaYExpedicion(){
+  var o=buildObj();
+  if(!o.awb){alert('AWB obligatorio');return;}
+  if(!o.consignatario){alert('Consignatario obligatorio');return;}
+  if(!o.kilos_tasables){alert('Kilos tasables obligatorios');return;}
+  var r=await sb.from('airport_cargo').insert(o);
+  if(r.error){alert('Error: '+r.error.message);return;}
+  // Obtener ID del registro recién creado
+  var lastId=null;
+  try{var lr=await sb.from('airport_cargo').select('id').eq('awb',o.awb).order('id',{ascending:false}).limit(1);if(lr.data&&lr.data.length)lastId=lr.data[0].id;}catch(ex){}
+  if(lastId){try{await sb.from('airport_cargo').update(buildObjExtended()).eq('id',lastId);}catch(ex){}}
+  await loadAll();
+  toast('Entrada creada — abriendo selector de expedición…');
+  // Abrir directamente el flujo de crear expedición en Operativas
+  if(lastId) setTimeout(function(){ crearExpedicionDesdeAC(lastId); }, 400);
+  else { closeModal(); loadView(); }
 }
 async function saveEntrada(id){
   var o=buildObj();
