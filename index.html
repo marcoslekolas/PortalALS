@@ -11270,45 +11270,60 @@ function closeModalOut(e){if(e.target.id==='mo')closeModal();}
 let _imoSearchTimer = null;
 
 function buscarIMOporNombre(){
-  if(window._esperandoIMO){
-    // Segunda pulsación: leer portapapeles tras haber buscado en Google
-    window._esperandoIMO=false;
-    if(navigator.clipboard&&navigator.clipboard.readText){
-      navigator.clipboard.readText().then(function(txt){
-        var clean=(txt||'').trim().replace(/[^0-9]/g,'');
-        if(clean.length===7){
-          var el=document.getElementById('nb-imo');
-          if(el){el.value=clean;prevIMO(clean);}
-          var panel=document.getElementById('nombre-search');
-          if(panel) panel.innerHTML='<div style="font-size:11px;color:#16a34a;padding:4px 0">✅ IMO '+clean+' aplicado</div>';
-          showToast('✅ IMO '+clean);
-        } else {
-          showToast('⚠️ No hay un IMO de 7 dígitos en el portapapeles');
-          _abrirBusquedaGoogle();
-        }
-      }).catch(function(){
-        showToast('⚠️ No se pudo leer el portapapeles — pega el IMO manualmente');
-        window._esperandoIMO=false;
-      });
-    } else {
-      showToast('Pega el IMO manualmente en el campo');
-    }
-  } else {
-    // Primera pulsación: abrir Google y marcar que esperamos el IMO
-    _abrirBusquedaGoogle();
-  }
-}
-function _abrirBusquedaGoogle(){
   var nom=(document.getElementById('nb-n')?.value||'').trim();
-  if(!nom){showToast('⚠️ Escribe primero el nombre del buque');return;}
-  var url='https://www.google.com/search?q=IMO+number+'+encodeURIComponent(nom)+'+ship';
-  window.open(url,'_blank');
-  window._esperandoIMO=true; // marcar que el siguiente clic pegará del portapapeles
+  if(!nom||nom.length<2){showToast('⚠️ Escribe primero el nombre del buque');return;}
   var panel=document.getElementById('nombre-search');
-  if(panel) panel.innerHTML='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin-top:4px;font-size:12px;color:#1e40af">'
-    +'<strong>📋 Cómo obtener el IMO:</strong><br>'
-    +'1. En Google, copia el número de 7 dígitos (ej: <code style="background:#dbeafe;padding:1px 4px;border-radius:3px">9246695</code>)<br>'
-    +'2. Vuelve aquí y pulsa de nuevo <strong>🔍 Buscar IMO</strong> — se pegará automáticamente</div>';
+  if(panel) panel.innerHTML='<div style="font-size:11px;color:var(--b600);padding:6px 0">🔍 Buscando IMO de <em>'+nom+'</em> en tiempo real…</div>';
+  _buscarIMOconIA(nom);
+}
+
+async function _buscarIMOconIA(nom){
+  var panel=document.getElementById('nombre-search');
+  try{
+    var cfg=await sb.from('als_config').select('valor').eq('clave','gemini_api_key').single();
+    var key=cfg?.data?.valor;
+    if(!key){
+      if(panel) panel.innerHTML='<div style="font-size:11px;color:var(--am600)">No hay clave OpenRouter configurada</div>';
+      return;
+    }
+    // Usar perplexity/sonar que tiene busqueda web en tiempo real
+    var r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'HTTP-Referer':'https://portal.alsalgeciras.com'},
+      body:JSON.stringify({
+        model:'perplexity/sonar',
+        max_tokens:30,
+        temperature:0,
+        messages:[{role:'user',content:'What is the IMO number of the cargo vessel named "'+nom+'"? Reply with ONLY the 7-digit IMO number, nothing else. If not found reply NOT_FOUND.'}]
+      })
+    });
+    var d=await r.json();
+    var resp=(d?.choices?.[0]?.message?.content||'').trim().replace(/[^0-9A-Z_]/g,'');
+    if(resp==='NOT_FOUND'||!resp){
+      if(panel) panel.innerHTML='<div style="background:var(--am50);border:1px solid var(--am200);border-radius:var(--r);padding:8px 12px;margin-top:4px;font-size:11px;color:var(--am700)">'
+        +'No encontrado. <a class="ext-link" href="https://www.google.com/search?q=IMO+number+'+encodeURIComponent(nom)+'+ship" target="_blank" style="font-weight:600">🔍 Buscar en Google</a> y pega el IMO manualmente.</div>';
+      return;
+    }
+    var imo=resp.replace(/\D/g,'').slice(0,7);
+    if(imo.length!==7){
+      if(panel) panel.innerHTML='<div style="font-size:11px;color:var(--am600)">Respuesta inesperada: '+resp+' — <a class="ext-link" href="https://www.google.com/search?q=IMO+'+encodeURIComponent(nom)+'+ship" target="_blank">verificar en Google</a></div>';
+      return;
+    }
+    // Rellenar automaticamente
+    var el=document.getElementById('nb-imo');
+    if(el){el.value=imo;prevIMO(imo);}
+    if(panel) panel.innerHTML='<div style="background:var(--gr50);border:1px solid var(--gr200);border-radius:var(--r);padding:8px 12px;margin-top:4px;font-size:12px;color:var(--gr700)">'
+      +'✅ IMO <strong>'+imo+'</strong> encontrado y rellenado — <a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:'+imo+'" target="_blank" style="font-size:11px">verificar en MarineTraffic</a></div>';
+    showToast('✅ IMO '+imo+' — '+nom);
+    // Guardar en catalogo
+    sb.from('buques_catalogo').select('id').ilike('nombre',nom).limit(1).then(function(r2){
+      if(!r2.data?.length) sb.from('buques_catalogo').insert({nombre:nom.toUpperCase(),imo:imo}).catch(function(){});
+      else sb.from('buques_catalogo').update({imo:imo}).eq('id',r2.data[0].id).catch(function(){});
+      _catalogoCache=null;
+    }).catch(function(){});
+  }catch(ex){
+    if(panel) panel.innerHTML='<div style="font-size:11px;color:var(--rd500)">Error: '+ex.message+'</div>';
+  }
 }
 
 async function _buscarVesselInline(nom){
