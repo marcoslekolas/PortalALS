@@ -11056,7 +11056,7 @@ const MODALS={
           </div></div>
       <div class="fg2"><label class="fl2">Ref. Visual Trans *</label><input id="nb-vt" class="fi" placeholder="Nº expediente (obligatorio)" oninput="checkNbUnlock()"></div>
     </div>
-      <div class="fg2"><label class="fl2">IMO — <a href="#" onclick="buscarIMOporNombre();return false;" style="color:var(--b600);font-size:11px;font-weight:600">🔍 Buscar IMO automático</a></label><input id="nb-imo" class="fi" placeholder="Se rellena solo al buscar · o escribe manualmente" oninput="prevIMO(this.value)"><div id="imo-prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div><div id="nombre-search"></div></div>
+      <div class="fg2"><label class="fl2">IMO — <a href="#" onclick="buscarIMOporNombre();return false;" style="color:var(--b600);font-size:11px;font-weight:600">🔍 Buscar IMO automático</a></label><input id="nb-imo" class="fi" placeholder="7 dígitos · o copia de Google y pulsa Buscar IMO" oninput="prevIMO(this.value)" onfocus="_pegarIMOdesdePortapapeles()"><div id="imo-prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div><div id="nombre-search"></div></div>
     <div id="nb-rest" style="opacity:.35;pointer-events:none;transition:opacity .2s">
       <div class="fg2"><label class="fl2">Nº Escala APBA — <a href="https://sugb.frontend.app.teleportpcs.com/generalsupply/list" target="_blank" style="color:var(--b600);font-size:11px">🔎 SUGB APBA</a></label><input id="nb-esc" class="fi" placeholder="ESALG…"></div>
       <div class="fr2"><div class="fg2"><label class="fl2">ETA buque <span style="font-size:10px;color:var(--am600)">(opcional — dejar vacío si no se conoce)</span></label><input id="nb-eta" class="fi" type="datetime-local"></div><div class="fg2"><label class="fl2">Puerto / Terminal</label><input id="nb-pto" class="fi" placeholder="Algeciras / T. Ro-Ro"></div></div>
@@ -11270,88 +11270,58 @@ function closeModalOut(e){if(e.target.id==='mo')closeModal();}
 let _imoSearchTimer = null;
 
 function buscarIMOporNombre(){
-  const nom=(document.getElementById('nb-n')?.value||'').trim();
-  if(!nom||nom.length<2){showToast('⚠️ Escribe al menos 2 letras del nombre');return;}
-  _buscarVesselInline(nom);
+  // Intentar leer portapapeles primero (el usuario viene de buscar en Google)
+  if(navigator.clipboard && navigator.clipboard.readText){
+    navigator.clipboard.readText().then(function(txt){
+      var clean=(txt||'').trim().replace(/\D/g,'');
+      if(clean.length===7){
+        var imoEl=document.getElementById('nb-imo');
+        if(imoEl){ imoEl.value=clean; prevIMO(clean); }
+        showToast('✅ IMO '+clean+' pegado desde portapapeles');
+        var panel=document.getElementById('nombre-search');
+        if(panel) panel.innerHTML='<div style="font-size:11px;color:#16a34a;padding:4px 0">✅ IMO '+clean+' rellenado automáticamente</div>';
+        return;
+      }
+      _abrirBusquedaGoogle();
+    }).catch(function(){ _abrirBusquedaGoogle(); });
+  } else {
+    _abrirBusquedaGoogle();
+  }
+}
+function _abrirBusquedaGoogle(){
+  var nom=(document.getElementById('nb-n')?.value||'').trim();
+  var url='https://www.google.com/search?q=IMO+number+'+encodeURIComponent(nom)+'+ship';
+  window.open(url,'_blank');
+  var panel=document.getElementById('nombre-search');
+  if(panel) panel.innerHTML='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin-top:4px;font-size:12px;color:#1e40af">'
+    +'<strong>Cómo obtener el IMO:</strong><br>'
+    +'1. En Google, copia el número de 7 dígitos (ej: <code style="background:#dbeafe;padding:1px 4px;border-radius:3px">9246695</code>)<br>'
+    +'2. Vuelve aquí y pulsa <strong>🔍 Buscar IMO</strong> — se pegará automáticamente</div>';
 }
 
 async function _buscarVesselInline(nom){
   const panel=document.getElementById('nombre-search');
   if(!panel||!nom||nom.length<2) return;
-  panel.innerHTML='<div style="font-size:11px;color:var(--b600);padding:6px 0">🔍 Buscando IMO de <em>'+nom+'</em>…</div>';
   const results=[]; const seen=new Set();
-
-  // ── 1. Buques ya en el portal (datos verificados) ─────────────
   try{
     const {data:d1}=await sb.from('buques').select('nombre,imo').ilike('nombre','%'+nom+'%').not('imo','is',null).order('nombre').limit(8);
-    (d1||[]).forEach(v=>{if(!seen.has(v.imo)){seen.add(v.imo);results.push({nombre:v.nombre.toUpperCase(),imo:v.imo,src:'portal'});}});
+    (d1||[]).forEach(v=>{if(!seen.has(v.imo)){seen.add(v.imo);results.push({nombre:v.nombre.toUpperCase(),imo:v.imo});}});
   }catch(ex){}
   try{
-    const {data:d2}=await sb.from('buques_catalogo').select('nombre,imo').ilike('nombre','%'+nom+'%').order('nombre').limit(8);
-    (d2||[]).forEach(v=>{const k=v.imo||v.nombre;if(!seen.has(k)){seen.add(k);results.push({nombre:(v.nombre||'').toUpperCase(),imo:v.imo||null,src:'catalogo'});}});
+    const {data:d2}=await sb.from('buques_catalogo').select('nombre,imo').ilike('nombre','%'+nom+'%').not('imo','is',null).order('nombre').limit(8);
+    (d2||[]).forEach(v=>{if(!seen.has(v.imo)){seen.add(v.imo);results.push({nombre:(v.nombre||'').toUpperCase(),imo:v.imo});}});
   }catch(ex){}
-
-  // ── 2. Wikipedia API — extrae IMO del infobox del artículo ─────
-  // Wikipedia tiene el IMO en el infobox de casi todos los buques comerciales
-  if(results.length<3){
-    try{
-      var wikiSearch=await fetch(
-        'https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch='+encodeURIComponent(nom+' ship')+'&format=json&origin=*&utf8=1&srlimit=4',
-        {signal:AbortSignal.timeout(5000)}
-      );
-      var wikiData=await wikiSearch.json();
-      var pages=(wikiData.query&&wikiData.query.search)||[];
-      for(var pi=0;pi<pages.length;pi++){
-        var page=pages[pi];
-        // Descartar artículos claramente no relacionados con buques
-        var ttl=(page.title||'').toLowerCase();
-        if(!ttl.includes(nom.toLowerCase().split(' ')[0].substring(0,4))&&pi>0) continue;
-        // Obtener contenido del artículo para extraer el IMO
-        var contentResp=await fetch(
-          'https://en.wikipedia.org/w/api.php?action=query&pageids='+page.pageid+'&prop=revisions&rvprop=content&rvslots=main&format=json&origin=*&utf8=1&rvsection=0',
-          {signal:AbortSignal.timeout(5000)}
-        );
-        var contentData=await contentResp.json();
-        var content=(contentData.query&&contentData.query.pages&&contentData.query.pages[page.pageid]&&contentData.query.pages[page.pageid].revisions&&contentData.query.pages[page.pageid].revisions[0]&&(contentData.query.pages[page.pageid].revisions[0].slots&&contentData.query.pages[page.pageid].revisions[0].slots.main&&contentData.query.pages[page.pageid].revisions[0].slots.main['*']||contentData.query.pages[page.pageid].revisions[0]['*']))||'';
-        // Buscar IMO de 7 dígitos en el contenido del infobox
-        var imoMatch=content.match(/\|\s*imo\s*=\s*(\d{7})/i)||content.match(/IMO\s+number[^<]*?(\d{7})/i)||content.match(/IMO[^0-9]*(\d{7})/i)||content.match(/imo_no\s*=\s*(\d{7})/i)||content.match(/imono\s*=\s*(\d{7})/i)||content.match(/[^a-z](\d{7})[^0-9]/);
-        if(imoMatch){
-          var imoNum=imoMatch[1];
-          var nombre=page.title.toUpperCase();
-          if(!seen.has(imoNum)){
-            seen.add(imoNum);
-            results.push({nombre:nombre,imo:imoNum,src:'wikipedia'});
-          }
-        }
-      }
-    }catch(ex){console.warn('Wikipedia IMO lookup:',ex.message);}
-  }
-
-  const enc=encodeURIComponent(nom);
-  const googleUrl='https://www.google.com/search?q=IMO+number+'+enc+'+ship';
-
   window._vesselResults=results;
-  if(!results.length){
-    panel.innerHTML='<div style="background:var(--am50);border:1px solid var(--am200);border-radius:var(--r);padding:8px 12px;margin-top:4px;font-size:11px;color:var(--am700)">No encontrado para "<strong>'+nom+'</strong>". <a class="ext-link" href="'+googleUrl+'" target="_blank" style="font-weight:600">🔍 Buscar en Google</a> — el IMO de 7 dígitos aparece en el primer resultado.</div>';
-    return;
+  if(results.length){
+    const rows=results.map(function(v,i){
+      return '<div data-vi="'+i+'" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;cursor:pointer;border-bottom:1px solid #f3f4f6" onclick="_seleccionarVesselIdx(this.dataset.vi)">'
+        +'<span style="font-size:13px;font-weight:600">'+v.nombre+'</span>'
+        +'<span style="font-family:monospace;font-size:12px;font-weight:700;color:#1d4ed8">IMO '+v.imo+'</span></div>';
+    }).join('');
+    panel.innerHTML='<div style="background:#fff;border:1px solid #bfdbfe;border-radius:6px;overflow:hidden;margin-top:4px;box-shadow:0 2px 8px rgba(0,0,0,.08)">'+rows+'</div>';
+  } else {
+    panel.innerHTML='';
   }
-
-  const rows=results.map(function(v,i){
-    var srcBadge=v.src==='portal'?'<span style="font-size:9px;padding:2px 5px;background:#dbeafe;color:#1d4ed8;border-radius:4px">portal</span>'
-      :v.src==='wikipedia'?'<span style="font-size:9px;padding:2px 5px;background:#f3e8ff;color:#7c3aed;border-radius:4px">Wikipedia</span>'
-      :'<span style="font-size:9px;padding:2px 5px;background:#dcfce7;color:#166534;border-radius:4px">catálogo</span>';
-    var imoHtml=v.imo
-      ?'<span style="font-family:monospace;font-size:12px;font-weight:700;color:#1d4ed8">IMO '+v.imo+'</span>'
-      :'<span style="font-size:11px;color:#9ca3af">sin IMO</span>';
-    return '<div data-vi="'+i+'" style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;border-bottom:1px solid #f3f4f6" onclick="_seleccionarVesselIdx(this.dataset.vi)">'
-      +'<div style="font-size:13px;font-weight:600">'+v.nombre+'</div>'
-      +'<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+imoHtml+srcBadge+'</div></div>';
-  }).join('');
-
-  panel.innerHTML='<div style="background:#fff;border:1px solid #bfdbfe;border-radius:var(--r);overflow:hidden;margin-top:6px;box-shadow:0 2px 8px rgba(0,0,0,.08)">'
-    +'<div style="font-size:10px;color:#6b7280;padding:5px 12px;background:#f9fafb;border-bottom:1px solid #f3f4f6">'+results.length+' resultado'+(results.length!==1?'s':'')+' — clic para rellenar nombre e IMO</div>'
-    +rows
-    +'<div style="padding:7px 12px;border-top:1px solid #f3f4f6;background:#f9fafb;font-size:11px;color:#6b7280">No es el buque? → <a class="ext-link" href="'+googleUrl+'" target="_blank">🔍 Google IMO</a></div></div>';
 }
 
 function _seleccionarVesselIdx(i){
@@ -11377,6 +11347,19 @@ function _seleccionarVessel(nombre, imo){
     }).catch(()=>{});
   }
   showToast('✅ '+nombre+(imo?' — IMO '+imo:''));
+}
+
+function _pegarIMOdesdePortapapeles(){
+  if(!navigator.clipboard||!navigator.clipboard.readText) return;
+  var el=document.getElementById('nb-imo');
+  if(!el||el.value.length===7) return; // ya tiene IMO
+  navigator.clipboard.readText().then(function(txt){
+    var clean=(txt||'').trim().replace(/\D/g,'');
+    if(clean.length===7){
+      el.value=clean; prevIMO(clean);
+      showToast('✅ IMO '+clean+' pegado automáticamente');
+    }
+  }).catch(function(){});
 }
 
 function prevIMO(imo){
