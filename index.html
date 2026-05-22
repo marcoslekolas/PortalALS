@@ -11056,7 +11056,7 @@ const MODALS={
           </div></div>
       <div class="fg2"><label class="fl2">Ref. Visual Trans *</label><input id="nb-vt" class="fi" placeholder="Nº expediente (obligatorio)" oninput="checkNbUnlock()"></div>
     </div>
-      <div class="fg2"><label class="fl2">IMO — <a href="#" onclick="buscarIMOporNombre();return false;" style="color:var(--b600);font-size:11px;font-weight:600">🔍 Buscar IMO automático</a></label><input id="nb-imo" class="fi" placeholder="7 dígitos · o copia de Google y pulsa Buscar IMO" oninput="prevIMO(this.value)" onfocus="_pegarIMOdesdePortapapeles()"><div id="imo-prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div><div id="nombre-search"></div></div>
+      <div class="fg2"><label class="fl2">IMO — <a href="#" onclick="buscarIMOporNombre();return false;" style="color:var(--b600);font-size:11px;font-weight:600">🔍 Buscar IMO automático</a></label><input id="nb-imo" class="fi" placeholder="7 dígitos · o copia de Google y pulsa Buscar IMO" oninput="prevIMO(this.value)" ><div id="imo-prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div><div id="nombre-search"></div></div>
     <div id="nb-rest" style="opacity:.35;pointer-events:none;transition:opacity .2s">
       <div class="fg2"><label class="fl2">Nº Escala APBA — <a href="https://sugb.frontend.app.teleportpcs.com/generalsupply/list" target="_blank" style="color:var(--b600);font-size:11px">🔎 SUGB APBA</a></label><input id="nb-esc" class="fi" placeholder="ESALG…"></div>
       <div class="fr2"><div class="fg2"><label class="fl2">ETA buque <span style="font-size:10px;color:var(--am600)">(opcional — dejar vacío si no se conoce)</span></label><input id="nb-eta" class="fi" type="datetime-local"></div><div class="fg2"><label class="fl2">Puerto / Terminal</label><input id="nb-pto" class="fi" placeholder="Algeciras / T. Ro-Ro"></div></div>
@@ -11270,33 +11270,45 @@ function closeModalOut(e){if(e.target.id==='mo')closeModal();}
 let _imoSearchTimer = null;
 
 function buscarIMOporNombre(){
-  // Intentar leer portapapeles primero (el usuario viene de buscar en Google)
-  if(navigator.clipboard && navigator.clipboard.readText){
-    navigator.clipboard.readText().then(function(txt){
-      var clean=(txt||'').trim().replace(/\D/g,'');
-      if(clean.length===7){
-        var imoEl=document.getElementById('nb-imo');
-        if(imoEl){ imoEl.value=clean; prevIMO(clean); }
-        showToast('✅ IMO '+clean+' pegado desde portapapeles');
-        var panel=document.getElementById('nombre-search');
-        if(panel) panel.innerHTML='<div style="font-size:11px;color:#16a34a;padding:4px 0">✅ IMO '+clean+' rellenado automáticamente</div>';
-        return;
-      }
-      _abrirBusquedaGoogle();
-    }).catch(function(){ _abrirBusquedaGoogle(); });
+  if(window._esperandoIMO){
+    // Segunda pulsación: leer portapapeles tras haber buscado en Google
+    window._esperandoIMO=false;
+    if(navigator.clipboard&&navigator.clipboard.readText){
+      navigator.clipboard.readText().then(function(txt){
+        var clean=(txt||'').trim().replace(/[^0-9]/g,'');
+        if(clean.length===7){
+          var el=document.getElementById('nb-imo');
+          if(el){el.value=clean;prevIMO(clean);}
+          var panel=document.getElementById('nombre-search');
+          if(panel) panel.innerHTML='<div style="font-size:11px;color:#16a34a;padding:4px 0">✅ IMO '+clean+' aplicado</div>';
+          showToast('✅ IMO '+clean);
+        } else {
+          showToast('⚠️ No hay un IMO de 7 dígitos en el portapapeles');
+          _abrirBusquedaGoogle();
+        }
+      }).catch(function(){
+        showToast('⚠️ No se pudo leer el portapapeles — pega el IMO manualmente');
+        window._esperandoIMO=false;
+      });
+    } else {
+      showToast('Pega el IMO manualmente en el campo');
+    }
   } else {
+    // Primera pulsación: abrir Google y marcar que esperamos el IMO
     _abrirBusquedaGoogle();
   }
 }
 function _abrirBusquedaGoogle(){
   var nom=(document.getElementById('nb-n')?.value||'').trim();
+  if(!nom){showToast('⚠️ Escribe primero el nombre del buque');return;}
   var url='https://www.google.com/search?q=IMO+number+'+encodeURIComponent(nom)+'+ship';
   window.open(url,'_blank');
+  window._esperandoIMO=true; // marcar que el siguiente clic pegará del portapapeles
   var panel=document.getElementById('nombre-search');
   if(panel) panel.innerHTML='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin-top:4px;font-size:12px;color:#1e40af">'
-    +'<strong>Cómo obtener el IMO:</strong><br>'
+    +'<strong>📋 Cómo obtener el IMO:</strong><br>'
     +'1. En Google, copia el número de 7 dígitos (ej: <code style="background:#dbeafe;padding:1px 4px;border-radius:3px">9246695</code>)<br>'
-    +'2. Vuelve aquí y pulsa <strong>🔍 Buscar IMO</strong> — se pegará automáticamente</div>';
+    +'2. Vuelve aquí y pulsa de nuevo <strong>🔍 Buscar IMO</strong> — se pegará automáticamente</div>';
 }
 
 async function _buscarVesselInline(nom){
@@ -11349,18 +11361,6 @@ function _seleccionarVessel(nombre, imo){
   showToast('✅ '+nombre+(imo?' — IMO '+imo:''));
 }
 
-function _pegarIMOdesdePortapapeles(){
-  if(!navigator.clipboard||!navigator.clipboard.readText) return;
-  var el=document.getElementById('nb-imo');
-  if(!el||el.value.length===7) return; // ya tiene IMO
-  navigator.clipboard.readText().then(function(txt){
-    var clean=(txt||'').trim().replace(/\D/g,'');
-    if(clean.length===7){
-      el.value=clean; prevIMO(clean);
-      showToast('✅ IMO '+clean+' pegado automáticamente');
-    }
-  }).catch(function(){});
-}
 
 function prevIMO(imo){
   try{
