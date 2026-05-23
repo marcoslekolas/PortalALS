@@ -58,6 +58,7 @@
 const SB_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 const sb = supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:false}});
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 function renderError(msg) {
   document.getElementById('content').innerHTML =
@@ -90,34 +91,34 @@ function render(exp, incs) {
   if (incs && incs.length > 0) {
     var items = incs.map(function(i) {
       return '<li class="incidencia-item"><span style="font-size:18px;flex-shrink:0">&#9888;&#65039;</span><div>' +
-        '<div class="inc-name">' + (i.nombre||'Incidencia') + '</div>' +
-        (i.descripcion ? '<div class="inc-desc">' + i.descripcion + '</div>' : '') +
-        (i.estado ? '<div style="font-size:11px;font-weight:700;margin-top:4px;color:#fbbf24">' + i.estado + '</div>' : '') +
+        '<div class="inc-name">' + esc(i.nombre||'Incidencia') + '</div>' +
+        (i.descripcion ? '<div class="inc-desc">' + esc(i.descripcion) + '</div>' : '') +
+        (i.estado ? '<div style="font-size:11px;font-weight:700;margin-top:4px;color:#fbbf24">' + esc(i.estado) + '</div>' : '') +
         '</div></li>';
     }).join('');
     incHtml = '<div class="card"><div class="card-label">&#9888;&#65039; Incidencias (' + incs.length + ')</div><ul class="incidencias-list">' + items + '</ul></div>';
   }
 
-  var mrn = nmrn ? '<div class="data-item" style="grid-column:1/-1"><div class="data-key">MRN</div><div class="data-val">' + nmrn + '</div></div>' : '';
-  var sta = exp.status_aduanero ? '<div class="data-item" style="grid-column:1/-1"><div class="data-key">Estado aduanero</div><div class="data-val">' + exp.status_aduanero + '</div></div>' : '';
+  var mrn = nmrn ? '<div class="data-item" style="grid-column:1/-1"><div class="data-key">MRN</div><div class="data-val">' + esc(nmrn) + '</div></div>' : '';
+  var sta = exp.status_aduanero ? '<div class="data-item" style="grid-column:1/-1"><div class="data-key">Estado aduanero</div><div class="data-val">' + esc(exp.status_aduanero) + '</div></div>' : '';
 
   document.getElementById('content').innerHTML =
     '<div class="card">' +
       '<div class="card-label">Referencia de expedici\u00f3n</div>' +
-      '<div class="exp-ref">' + nref + '</div>' +
-      '<div class="exp-empresa">' + (empresa.nombre||'\u2014') + '</div>' +
+      '<div class="exp-ref">' + esc(nref) + '</div>' +
+      '<div class="exp-empresa">' + esc(empresa.nombre||'\u2014') + '</div>' +
       '<div class="status-badge ' + semClass + '">' + (sem || '&#128203; En proceso') + '</div>' +
       '<div class="data-grid">' +
         '<div class="data-item"><div class="data-key">Bultos</div><div class="data-val">' + (exp.bultos||0) + '</div></div>' +
         '<div class="data-item"><div class="data-key">Kilos</div><div class="data-val">' + (exp.kilos ? exp.kilos+' kg' : '\u2014') + '</div></div>' +
-        '<div class="data-item"><div class="data-key">Ubicaci\u00f3n</div><div class="data-val">&#128205; ' + (exp.ubicacion||'Sin ubicar') + '</div></div>' +
-        '<div class="data-item"><div class="data-key">Estado carga</div><div class="data-val">' + (exp.estado_carga||'\u2014') + '</div></div>' +
+        '<div class="data-item"><div class="data-key">Ubicaci\u00f3n</div><div class="data-val">&#128205; ' + esc(exp.ubicacion||'Sin ubicar') + '</div></div>' +
+        '<div class="data-item"><div class="data-key">Estado carga</div><div class="data-val">' + esc(exp.estado_carga||'\u2014') + '</div></div>' +
         mrn + sta +
       '</div>' +
     '</div>' +
     '<div class="card ship-card">' +
       '<div class="card-label">&#128674; Buque</div>' +
-      '<div class="data-val" style="font-size:18px;font-weight:800;color:#fff;margin-bottom:8px">' + (buque.nombre||'\u2014') + '</div>' +
+      '<div class="data-val" style="font-size:18px;font-weight:800;color:#fff;margin-bottom:8px">' + esc(buque.nombre||'\u2014') + '</div>' +
       '<div class="data-grid"><div class="data-item"><div class="data-key">ETA</div><div class="data-val">' + fmtFecha(buque.eta_buque) + '</div></div></div>' +
     '</div>' +
     incHtml +
@@ -132,10 +133,10 @@ function render(exp, incs) {
 function renderAWB(e) {
   document.getElementById('content').innerHTML =
     '<div class="card"><div class="card-label">&#9992;&#65039; Expedici\u00f3n Aeropuerto</div>' +
-    '<div class="exp-ref">' + (e.awb||e.numero_vuelo||'\u2014') + '</div>' +
-    '<div class="exp-empresa">' + (e.consignatario||'\u2014') + '</div>' +
+    '<div class="exp-ref">' + esc(e.awb||e.numero_vuelo||'\u2014') + '</div>' +
+    '<div class="exp-empresa">' + esc(e.consignatario||'\u2014') + '</div>' +
     '<div class="data-grid">' +
-      '<div class="data-item"><div class="data-key">Estado</div><div class="data-val">' + (e.estado||'\u2014') + '</div></div>' +
+      '<div class="data-item"><div class="data-key">Estado</div><div class="data-val">' + esc(e.estado||'\u2014') + '</div></div>' +
       '<div class="data-item"><div class="data-key">Fecha llegada</div><div class="data-val">' + fmtFecha(e.fecha_llegada) + '</div></div>' +
       '<div class="data-item"><div class="data-key">Bultos</div><div class="data-val">' + (e.bultos||0) + '</div></div>' +
       '<div class="data-item"><div class="data-key">Kilos</div><div class="data-val">' + (e.kilos ? e.kilos+' kg' : '\u2014') + '</div></div>' +
@@ -156,11 +157,11 @@ async function init() {
 
   if (awbId) {
     try {
-      var r = await sb.from('airport_cargo').select('*').eq('id', awbId).single();
+      var r = await sb.from('airport_cargo').select('awb,numero_vuelo,consignatario,estado,fecha_llegada,bultos,kilos').eq('id', awbId).single();
       if (r.error || !r.data) { renderError('No se encontr\u00f3 el AWB solicitado.'); return; }
       renderAWB(r.data);
       setInterval(async function() {
-        var fr = await sb.from('airport_cargo').select('*').eq('id', awbId).single();
+        var fr = await sb.from('airport_cargo').select('awb,numero_vuelo,consignatario,estado,fecha_llegada,bultos,kilos').eq('id', awbId).single();
         if (fr.data) renderAWB(fr.data);
       }, 120000);
     } catch(e) {
@@ -171,7 +172,7 @@ async function init() {
 
   try {
     var results = await Promise.all([
-      sb.from('expediciones').select('*,buques(nombre,eta_buque),empresas!empresa_id(nombre)').eq('id', expId).single(),
+      sb.from('expediciones').select('nº_expedicion,nº_mrn,bultos,kilos,ubicacion,estado_carga,estado_semaforo,status_aduanero,buques(nombre,eta_buque),empresas!empresa_id(nombre)').eq('id', expId).single(),
       sb.from('incidencias').select('nombre,descripcion,estado').eq('expedicion_id', expId)
     ]);
     var exp = results[0].data;
@@ -188,7 +189,7 @@ async function init() {
 
     setInterval(async function() {
       var r2 = await Promise.all([
-        sb.from('expediciones').select('*,buques(nombre,eta_buque),empresas!empresa_id(nombre)').eq('id', expId).single(),
+        sb.from('expediciones').select('nº_expedicion,nº_mrn,bultos,kilos,ubicacion,estado_carga,estado_semaforo,status_aduanero,buques(nombre,eta_buque),empresas!empresa_id(nombre)').eq('id', expId).single(),
         sb.from('incidencias').select('nombre,descripcion,estado').eq('expedicion_id', expId)
       ]);
       if (r2[0].data) render(r2[0].data, r2[1].data);
