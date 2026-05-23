@@ -11819,7 +11819,7 @@ async function renderDocsList(expId, expRef){
           onchange="subirDocsPDF('${expId}','${expRef}',this.files)">
         <div style="font-size:24px;margin-bottom:6px">📄</div>
         <div style="font-size:13px;font-weight:600;color:var(--b700)">Clic para seleccionar PDFs</div>
-        <div style="font-size:11px;color:var(--g400);margin-top:4px">O arrastra archivos aquí · varios a la vez</div>
+        <div style="font-size:11px;color:var(--g400);margin-top:4px">O arrastra aquí <strong>PDFs</strong> o un <strong>email</strong> · varios a la vez.<br>Outlook escritorio: si el adjunto no se suelta, guárdalo y arrástralo (o usa Outlook web). Un email arrastrado se guarda como PDF.</div>
       </label>
       <div id="pdf-upload-progress" style="margin-top:8px"></div>
     </div>`;
@@ -11851,8 +11851,71 @@ async function renderDocsList(expId, expRef){
   if(zone){
     zone.addEventListener('dragover', e=>{ e.preventDefault(); zone.style.background='var(--b100)'; });
     zone.addEventListener('dragleave', ()=>{ zone.style.background='var(--b50)'; });
-    zone.addEventListener('drop', e=>{ e.preventDefault(); zone.style.background='var(--b50)'; subirDocsPDF(expId, expRef, e.dataTransfer.files); });
+    zone.addEventListener('drop', e=>{ zone.style.background='var(--b50)'; manejarDropAdjuntos(e, expId, expRef); });
   }
+}
+
+// ── #2: Drag & drop de adjuntos (PDF y emails arrastrados → PDF) ──
+async function manejarDropAdjuntos(e, expId, expRef){
+  e.preventDefault();
+  const dt=e.dataTransfer; if(!dt) return;
+  // 1) Archivos reales (PDF del sistema, Outlook web, o adjunto si el navegador lo expone)
+  let files=[];
+  if(dt.items && dt.items.length){
+    for(const it of dt.items){ if(it.kind==='file'){ const f=it.getAsFile(); if(f) files.push(f); } }
+  }
+  if(!files.length && dt.files && dt.files.length) files=Array.from(dt.files);
+  const pdfs=files.filter(f=>f.type==='application/pdf'||/\.pdf$/i.test(f.name));
+  if(pdfs.length){ subirDocsPDF(expId, expRef, pdfs); return; }
+  // Archivos legibles como texto (email .eml/.txt/.html) -> convertir a PDF
+  const textuales=files.filter(f=>/\.(eml|txt|html?)$/i.test(f.name)||/^text\//.test(f.type)||f.type==='message/rfc822');
+  if(textuales.length){
+    showToast('📧 Convirtiendo a PDF…');
+    const generados=[];
+    for(const f of textuales){
+      let contenido=''; try{ contenido=await f.text(); }catch(_){ contenido=''; }
+      if(/\.html?$/i.test(f.name)){ const t=document.createElement('div'); t.innerHTML=contenido; contenido=(t.innerText||t.textContent||contenido); }
+      const pdf=await _emailDropToPDF('', contenido, expRef);
+      if(pdf) generados.push(pdf);
+    }
+    if(generados.length) subirDocsPDF(expId, expRef, generados);
+    return;
+  }
+  if(files.length){ showToast('⚠️ Solo se admiten PDF. Convierte el archivo o arrástralo como PDF.'); return; }
+  // 2) Sin archivo: contenido arrastrado (email de Outlook como texto/HTML)
+  const getData=t=>{ try{ return dt.getData(t)||''; }catch(_){ return ''; } };
+  const html=getData('text/html'); const txt=getData('text/plain'); const uri=getData('text/uri-list');
+  if(html||txt){
+    showToast('📧 Convirtiendo el email a PDF…');
+    const pdf=await _emailDropToPDF(html, txt, expRef);
+    if(pdf) subirDocsPDF(expId, expRef, [pdf]);
+    return;
+  }
+  if(uri){ showToast('ℹ️ Se arrastró un enlace, no un archivo. Descárgalo y suéltalo.'); return; }
+  showToast('⚠️ No se pudo leer lo arrastrado. En Outlook escritorio guarda el adjunto y arrástralo, o usa Outlook web.');
+}
+
+async function _emailDropToPDF(html, txt, ref){
+  if(!window.jspdf && !window.jsPDF){
+    await new Promise(res=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res; s.onerror=res; document.head.appendChild(s); });
+  }
+  const JsPDF=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
+  if(!JsPDF){ showToast('❌ No se pudo cargar el generador de PDF'); return null; }
+  let cuerpo=(txt||'').trim();
+  if(cuerpo.length<5 && html){ const tmp=document.createElement('div'); tmp.innerHTML=html; cuerpo=((tmp.innerText||tmp.textContent||'')+'').trim(); }
+  cuerpo=(cuerpo||'(sin contenido de texto)').replace(/\r/g,'');
+  const doc=new JsPDF({unit:'pt',format:'a4'});
+  const margin=40, maxW=515; let y=margin;
+  doc.setFontSize(13); doc.setFont(undefined,'bold');
+  doc.text('Email adjunto — '+(ref||''), margin, y); y+=20;
+  doc.setFontSize(9); doc.setFont(undefined,'normal'); doc.setTextColor(120);
+  doc.text('Generado desde contenido arrastrado · '+new Date().toLocaleString('es-ES'), margin, y); y+=18;
+  doc.setTextColor(20); doc.setFontSize(10);
+  const lines=doc.splitTextToSize(cuerpo, maxW);
+  for(const ln of lines){ if(y>800){ doc.addPage(); y=margin; } doc.text(ln, margin, y); y+=14; }
+  const blob=doc.output('blob');
+  const fname='email_'+((ref||'adjunto')+'').replace(/[^\w.-]+/g,'_')+'_'+Date.now()+'.pdf';
+  return new File([blob], fname, {type:'application/pdf'});
 }
 
 async function subirDocsPDF(expId, expRef, files){
