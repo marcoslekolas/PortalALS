@@ -11409,6 +11409,52 @@ function etaPrev(e){
   if(e.ac_fecha_llegada) return String(e.ac_fecha_llegada).slice(0,10);
   return null;
 }
+// #8: tarjeta de expedición dentro de la ficha de buque (extraída para poder agrupar/ordenar)
+function _expCardHTML(e, b){
+  const tieneOverride = e.cliente_override_id && e.cliente_override_id !== b.cliente_id;
+  const overrideNombre = e.cliente_override_nombre || e.empresas?.nombre || '—';
+  const esAC = !!(e.ac_vuelo||e.ac_fecha_llegada||e.ac_status||e.ac_remitente);
+  const acRows=[];
+  if(e.ac_remitente) acRows.push('<span>Remitente: <strong>'+e.ac_remitente+'</strong></span>');
+  if(e.ac_vuelo)     acRows.push('<span>Vuelo: <strong>'+e.ac_vuelo+'</strong></span>');
+  if(e.ac_hora_llegada) acRows.push('<span>Hora: <strong>'+e.ac_hora_llegada+'</strong></span>');
+  if(e.ac_status)    acRows.push('<span>Status: <strong>'+e.ac_status+'</strong></span>');
+  if(e.ac_docs_puerto) acRows.push('<span>Docs: <strong>'+e.ac_docs_puerto+'</strong></span>');
+  if(e.ac_ubicacion) acRows.push('<span>Ubic.: <strong>'+e.ac_ubicacion+'</strong></span>');
+  if(e.ac_confirmacion) acRows.push('<span style="color:var(--gr700)">Llegada confirmada</span>');
+  acRows.push(e.ac_despachado?'<span style="color:var(--gr700)">Despachado</span>':'<span style="color:var(--am600)">Pend. despacho</span>');
+  const acPanel=esAC?'<div class="ac-sync-panel" style="margin-top:6px;padding:6px 8px;background:var(--b50);border-radius:6px;border:1px solid var(--b100);font-size:10px;color:var(--b800);display:flex;flex-wrap:wrap;gap:8px">'+acRows.join('')+'</div>':'';
+  const eta=etaPrev(e);
+  const etaChip=eta?`<span style="font-size:10px;background:var(--b50);color:var(--b700);border:1px solid var(--b100);border-radius:4px;padding:1px 6px;font-weight:600">📅 ${new Date(eta+'T12:00').toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'})}</span>`:'';
+  const pendLlegar=(e.ubicacion==='Pendiente recibir');
+  return `<div id="exp-card-${e.id}" style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid ${tieneOverride?'var(--am300)':'var(--g200)'};border-radius:var(--r);margin-bottom:5px;cursor:pointer;transition:background .12s;background:${tieneOverride?'var(--am50)':''}" onmouseenter="this.style.background='${tieneOverride?'#fef9c3':'var(--g50)'}'" onmouseleave="this.style.background='${tieneOverride?'var(--am50)':''}'" onclick="openExpDesdeBuque('${e.id}','${b.id}')">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${e.nº_expedicion}${etaChip}${pendLlegar?'<span style="font-size:10px;background:var(--am50);color:var(--am700);border:1px solid var(--am100);border-radius:4px;padding:1px 6px;font-weight:600">⏳ Pend. llegar</span>':''}${tieneOverride?` <span style="font-size:10px;background:var(--am100);color:var(--am700);border-radius:4px;padding:1px 5px;font-weight:700">💼 ${overrideNombre}</span>`:''}</div>
+          <div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div>
+          ${acPanel}
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px">${_expIdsConDocs.has(e.id)?'<span title="Documentos adjuntos" style="font-size:12px;color:var(--g500)">📎</span>':''}${(e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url)?'<span title="Tiene fotos" style="font-size:11px">📸</span>':''}${bdg(e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo)}</div>
+      </div>`;
+}
+// #8: agrupa en Pendientes (no embarcadas) + A bordo (embarcadas), ordenadas por llegada prevista (más reciente arriba)
+function _renderExpsGrouped(exps, b){
+  const list=(exps||[]).slice();
+  if(!list.length) return '<div class="empty" style="padding:20px"><div class="empty-txt">Sin expediciones</div></div>';
+  const emb=e=>(((e.estado_carga||'')+' '+(e.estado_semaforo||'')).includes('EMBARCADO'));
+  const byEtaDesc=(a,c)=>{const da=etaPrev(a),dc=etaPrev(c);if(da&&dc)return dc<da?-1:(dc>da?1:0);if(da&&!dc)return -1;if(!da&&dc)return 1;return (a.nº_expedicion||'')<(c.nº_expedicion||'')?-1:1;};
+  const pendientes=list.filter(e=>!emb(e)).sort(byEtaDesc);
+  const embarcadas=list.filter(e=>emb(e)).sort(byEtaDesc);
+  let html='';
+  if(pendientes.length){
+    html+='<div style="font-size:11px;font-weight:700;color:var(--g600);text-transform:uppercase;letter-spacing:.4px;margin:4px 0 8px">📦 Pendientes ('+pendientes.length+')</div>';
+    html+=pendientes.map(e=>_expCardHTML(e,b)).join('');
+  }
+  if(embarcadas.length){
+    html+='<div style="font-size:11px;font-weight:700;color:var(--gr700);text-transform:uppercase;letter-spacing:.4px;margin:14px 0 8px;display:flex;align-items:center;gap:8px"><span>🚢 A bordo / embarcadas ('+embarcadas.length+')</span><span style="flex:1;height:1px;background:var(--g200)"></span></div>';
+    html+='<div style="opacity:.6">'+embarcadas.map(e=>_expCardHTML(e,b)).join('')+'</div>';
+  }
+  return html;
+}
 // Helper: render Airport Cargo sync data in expedition detail
 function _renderAcSync(e){
   if(!e.ac_vuelo&&!e.ac_fecha_llegada) return '';
@@ -11799,29 +11845,7 @@ async function openBuque(id){
       <button class="btn btn-p btn-sm" onclick="abrirExpEnBuque('${b.id}','${b.nombre}')">+ Nueva expedición</button>
     </div>
     <input type="hidden" id="bq-modal-nombre" value="${(b.nombre||'').replace(/"/g,'&quot;')}">
-    ${(exps||[]).map(e=>{
-      const tieneOverride = e.cliente_override_id && e.cliente_override_id !== b.cliente_id;
-      const overrideNombre = e.cliente_override_nombre || e.empresas?.nombre || '—';
-      const esAC = !!(e.ac_vuelo||e.ac_fecha_llegada||e.ac_status||e.ac_remitente);
-      const acRows=[];
-      if(e.ac_remitente) acRows.push('<span>Remitente: <strong>'+e.ac_remitente+'</strong></span>');
-      if(e.ac_vuelo)     acRows.push('<span>Vuelo: <strong>'+e.ac_vuelo+'</strong></span>');
-      if(e.ac_hora_llegada) acRows.push('<span>Hora: <strong>'+e.ac_hora_llegada+'</strong></span>');
-      if(e.ac_status)    acRows.push('<span>Status: <strong>'+e.ac_status+'</strong></span>');
-      if(e.ac_docs_puerto) acRows.push('<span>Docs: <strong>'+e.ac_docs_puerto+'</strong></span>');
-      if(e.ac_ubicacion) acRows.push('<span>Ubic.: <strong>'+e.ac_ubicacion+'</strong></span>');
-      if(e.ac_confirmacion) acRows.push('<span style="color:var(--gr700)">Llegada confirmada</span>');
-      acRows.push(e.ac_despachado?'<span style="color:var(--gr700)">Despachado</span>':'<span style="color:var(--am600)">Pend. despacho</span>');
-      const acPanel=esAC?'<div class="ac-sync-panel" style="margin-top:6px;padding:6px 8px;background:var(--b50);border-radius:6px;border:1px solid var(--b100);font-size:10px;color:var(--b800);display:flex;flex-wrap:wrap;gap:8px">'+acRows.join('')+'</div>':'';
-      return `<div id="exp-card-${e.id}" style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid ${tieneOverride?'var(--am300)':'var(--g200)'};border-radius:var(--r);margin-bottom:5px;cursor:pointer;transition:background .12s;background:${tieneOverride?'var(--am50)':''}" onmouseenter="this.style.background='${tieneOverride?'#fef9c3':'var(--g50)'}'" onmouseleave="this.style.background='${tieneOverride?'var(--am50)':''}'" onclick="openExpDesdeBuque('${e.id}','${b.id}')">
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:13px">${e.nº_expedicion}${tieneOverride?` <span style="font-size:10px;background:var(--am100);color:var(--am700);border-radius:4px;padding:1px 5px;font-weight:700">💼 ${overrideNombre}</span>`:''}</div>
-          <div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div>
-          ${acPanel}
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px">${_expIdsConDocs.has(e.id)?'<span title="Documentos adjuntos" style="font-size:12px;color:var(--g500)">📎</span>':''}${(e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url)?'<span title="Tiene fotos" style="font-size:11px">📸</span>':''}${bdg(e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo)}</div>
-      </div>`;
-    }).join('')||'<div class="empty" style="padding:20px"><div class="empty-txt">Sin expediciones</div></div>'}`;
+    ${_renderExpsGrouped(exps, b)}`;
   // Info facturación en ficha de buque
   const factBadge = b.email_facturacion_sent
     ? `<span class="badge bg" title="Email enviado el ${b.email_facturacion_fecha ? new Date(b.email_facturacion_fecha).toLocaleDateString('es-ES') : '—'}">📧 Email fact. ${b.email_facturacion_fecha ? new Date(b.email_facturacion_fecha).toLocaleDateString('es-ES') : ''}</span>`
@@ -13746,7 +13770,7 @@ async function imprimirDia(fecha){
   closeModal();
   // Cargar buques con ETA en la fecha seleccionada
   const {data:buques} = await sb.from('buques')
-    .select('*')
+    .select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)')
     .gte('eta_buque', fecha)
     .lt('eta_buque', new Date(new Date(fecha+'T12:00').getTime()+86400000).toISOString().slice(0,10))
     .order('nombre',{ascending:true});
@@ -13759,7 +13783,7 @@ async function imprimirDia(fecha){
   // Cargar expediciones de todos esos buques
   const buqueIds=buques.map(b=>b.id);
   const {data:expsAll}=await sb.from('expediciones')
-    .select('id,buque_id,nº_expedicion,remitente,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,tramite_aduanero,nº_mrn,fecha_max_despacho,docs_puerto,observaciones,empresas!empresa_id(nombre)')
+    .select('id,buque_id,nº_expedicion,remitente,bultos,kilos,ubicacion,estado_semaforo,estado_carga,status_aduanero,tramite_aduanero,nº_mrn,fecha_max_despacho,fecha_llegada_prevista,ac_fecha_llegada,docs_puerto,observaciones,empresas!empresa_id(nombre)')
     .in('buque_id',buqueIds)
     .order('nº_expedicion',{ascending:true});
 
@@ -13779,10 +13803,17 @@ async function imprimirDia(fecha){
   const fechaStr=new Date(fecha+'T12:00').toLocaleDateString('es-ES',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   const hoyPrint=new Date().toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
 
+  // #6: helper para detectar expediciones ya entregadas a bordo (embarcadas)
+  const esEmbarcada=e=>(((e.estado_carga||'')+' '+(e.estado_semaforo||'')).includes('EMBARCADO'));
+  const fLleg=e=>{const d=etaPrev(e);return d?new Date(d+'T12:00').toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'}):'—';};
+
   const bloquesBuque=buques.map(b=>{
-    const exps=expPorBuque[b.id]||[];
+    // #6: solo expediciones NO entregadas a bordo, sea cual sea su ubicación o si están pendientes de recibir
+    const exps=(expPorBuque[b.id]||[]).filter(e=>!esEmbarcada(e));
     const totalBlt=exps.reduce((a,e)=>a+(e.bultos||0),0);
     const totalKg=exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+    const cliente=b.ec?.nombre||'—';
+    const consig=b.en?.nombre||'—';
     const filas=exps.map((e,i)=>{
       const desps=despachosMap[e.id]||[];
       const mrnsHTML=desps.length
@@ -13793,6 +13824,7 @@ async function imprimirDia(fecha){
         <td style="font-size:10px">${e.remitente||e.empresas?.nombre||'—'}</td>
         <td style="text-align:center;font-size:10px">${e.bultos||0}</td>
         <td style="text-align:right;font-size:10px">${parseFloat(e.kilos)||0} kg</td>
+        <td style="text-align:center;font-size:10px">${fLleg(e)}</td>
         <td style="font-size:10px">${e.ubicacion||'—'}</td>
         <td style="font-size:10px">${e.status_aduanero||'—'}</td>
         <td style="font-size:10px">${e.tramite_aduanero||'—'}</td>
@@ -13802,16 +13834,21 @@ async function imprimirDia(fecha){
       </tr>`;
     }).join('');
     return `<div style="margin-bottom:24px;page-break-inside:avoid">
-      <div style="background:#1e3a5f;color:#fff;padding:7px 12px;border-radius:4px 4px 0 0;display:flex;justify-content:space-between;align-items:center">
-        <div style="font-size:13px;font-weight:700">🚢 ${b.nombre}</div>
-        <div style="font-size:10px;opacity:.8">IMO: ${b.imo||'—'} · Escala: ${b.nº_escala||'—'} · Terminal: ${b.puerto_terminal||'—'} · Estado: ${b.estado_operacion||'—'}</div>
+      <div style="background:#1e3a5f;color:#fff;padding:9px 14px;border-radius:4px 4px 0 0">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+          <div style="font-size:19px;font-weight:800;letter-spacing:.3px">🚢 ${b.nombre}</div>
+          <div style="font-size:11px">Cliente: <strong>${cliente}</strong> &nbsp;·&nbsp; Consignatario: <strong>${consig}</strong></div>
+        </div>
+        <div style="font-size:10px;opacity:.9;margin-top:3px">IMO: ${b.imo||'—'} · Escala: ${b.nº_escala||'—'} · Estado: ${b.estado_operacion||'—'} · Terminal: <span style="background:#ffd54a;color:#1e3a5f;font-weight:800;padding:1px 7px;border-radius:3px">${b.puerto_terminal||'—'}</span></div>
       </div>
+      ${b.observaciones?`<div style="background:#fff8e1;border:1px solid #ffe082;border-top:none;padding:6px 14px;font-size:11px;color:#5d4037"><strong>Observaciones:</strong> ${(b.observaciones||'').replace(/</g,'&lt;')}</div>`:''}
       ${exps.length?`<table style="border-collapse:collapse;width:100%;font-size:10px;border:1px solid #ddd">
         <thead><tr style="background:#e8eff8">
           <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;font-size:9px">Referencia</th>
           <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;font-size:9px">Remitente</th>
           <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Btos</th>
           <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Kilos</th>
+          <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Lleg.prev.</th>
           <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Ubicación</th>
           <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Status</th>
           <th style="padding:5px 8px;border:1px solid #ddd;font-size:9px">Trámite</th>
@@ -13824,9 +13861,9 @@ async function imprimirDia(fecha){
           <td colspan="2" style="padding:5px 8px;border:1px solid #ddd;font-size:10px">TOTAL — ${exps.length} expedición${exps.length!==1?'es':''}</td>
           <td style="padding:5px 8px;border:1px solid #ddd;text-align:center;font-size:10px">${totalBlt}</td>
           <td style="padding:5px 8px;border:1px solid #ddd;text-align:right;font-size:10px">${totalKg} kg</td>
-          <td colspan="5" style="border:1px solid #ddd"></td>
-        </tfoot>
-      </table>`:'<div style="padding:8px 12px;font-size:11px;color:#888;border:1px solid #ddd;border-top:none">Sin expediciones registradas</div>'}
+          <td colspan="7" style="border:1px solid #ddd"></td>
+        </tr></tfoot>
+      </table>`:'<div style="padding:8px 12px;font-size:11px;color:#888;border:1px solid #ddd;border-top:none">Sin expediciones pendientes de embarcar</div>'}
     </div>`;
   }).join('');
 
