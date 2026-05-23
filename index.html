@@ -7694,94 +7694,73 @@ async function applyGlobalDrop(){
 // ── TIMELINE: calendar top + 24h lateral + draggable ──────
 window.tlYear=null;window.tlMonth=null;window.tlDragId=null;
 
-// ── #12: Vista mensual simplificada (línea por etiqueta: Terminal · Buque) ──
-function mvSetRange(r){ window.mvRange=r; loadMensual(); }
+// ── #12: Vista mensual estilo calendario (Terminal · Buque, clic abre ficha) ──
 function mvNav(dir){
   const a=window.mvAnchor?new Date(window.mvAnchor):new Date();
-  const r=window.mvRange||'mes';
-  if(r==='mes') a.setMonth(a.getMonth()+dir);
-  else if(r==='quincena') a.setDate(a.getDate()+15*dir);
-  else a.setDate(a.getDate()+7*dir);
+  a.setMonth(a.getMonth()+dir, 1);
   window.mvAnchor=a.toISOString();
   loadMensual();
 }
 function mvHoy(){ window.mvAnchor=new Date().toISOString(); loadMensual(); }
-function _mvRangoFechas(){
-  const r=window.mvRange||'mes';
-  const a=window.mvAnchor?new Date(window.mvAnchor):new Date();
-  const MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  let ini,fin,label;
-  if(r==='mes'){
-    ini=new Date(a.getFullYear(),a.getMonth(),1);
-    fin=new Date(a.getFullYear(),a.getMonth()+1,0);
-    label=MES[a.getMonth()]+' '+a.getFullYear();
-  } else if(r==='quincena'){
-    if(a.getDate()<=15){ ini=new Date(a.getFullYear(),a.getMonth(),1); fin=new Date(a.getFullYear(),a.getMonth(),15); }
-    else { ini=new Date(a.getFullYear(),a.getMonth(),16); fin=new Date(a.getFullYear(),a.getMonth()+1,0); }
-    label='Quincena · '+ini.getDate()+'–'+fin.getDate()+' '+MES[a.getMonth()]+' '+a.getFullYear();
-  } else {
-    const dow=(a.getDay()+6)%7;
-    ini=new Date(a.getFullYear(),a.getMonth(),a.getDate()-dow);
-    fin=new Date(ini); fin.setDate(ini.getDate()+6);
-    const f=d=>d.getDate()+' '+MES[d.getMonth()].slice(0,3);
-    label='Semana · '+f(ini)+' – '+f(fin)+' '+fin.getFullYear();
-  }
-  return {ini,fin,label};
-}
 async function loadMensual(){
-  if(!window.mvRange) window.mvRange='mes';
   if(!window.mvAnchor) window.mvAnchor=new Date().toISOString();
   const wrap=document.getElementById('mv-wrap'); if(!wrap) return;
-  const {ini,fin,label}=_mvRangoFechas();
-  const iniISO=`${ini.getFullYear()}-${String(ini.getMonth()+1).padStart(2,'0')}-${String(ini.getDate()).padStart(2,'0')}`;
-  const finISO=`${fin.getFullYear()}-${String(fin.getMonth()+1).padStart(2,'0')}-${String(fin.getDate()).padStart(2,'0')}`;
+  const a=new Date(window.mvAnchor);
+  const year=a.getFullYear(), month=a.getMonth();
+  const MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const fin=new Date(year,month+1,0);
+  const iniISO=`${year}-${String(month+1).padStart(2,'0')}-01`;
+  const finISO=`${year}-${String(month+1).padStart(2,'0')}-${String(fin.getDate()).padStart(2,'0')}`;
   const {data}=await sb.from('buques').select('id,nombre,eta_buque,puerto_terminal,estado_operacion').not('eta_buque','is',null).gte('eta_buque',iniISO).lte('eta_buque',finISO+'T23:59:59').order('eta_buque');
   const buques=data||[];
-  const r=window.mvRange;
-  const btn=(val,txt)=>`<button onclick="mvSetRange('${val}')" style="padding:5px 12px;border:1px solid var(--g300);background:${r===val?'var(--b600)':'#fff'};color:${r===val?'#fff':'var(--g700)'};border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">${txt}</button>`;
-  const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const DOW=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const porDia={};
-  buques.forEach(b=>{
-    const dt=new Date(b.eta_buque);
-    const key=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
-    (porDia[key]=porDia[key]||[]).push(b);
-  });
-  const dias=Object.keys(porDia).sort();
-  const estCls=e=>{const s=(e||'').toLowerCase();if(s.includes('embarc'))return '#2e7d32';if(s.includes('cancel'))return '#c62828';if(s.includes('aplaz'))return '#ef6c00';if(s.includes('proceso'))return '#1565c0';return '#64748b';};
-  let cuerpo;
-  if(!dias.length){
-    cuerpo='<div class="empty" style="padding:40px"><div class="empty-icon">🗓️</div><div class="empty-txt">Sin embarques previstos en este periodo</div></div>';
-  } else {
-    cuerpo=dias.map(k=>{
-      const dt=new Date(k+'T12:00');
-      const hoy=new Date(); const esHoy=dt.toDateString()===hoy.toDateString();
-      const lineas=porDia[k].map(b=>{
-        const term=(b.puerto_terminal||'—');
-        const col=estCls(b.estado_operacion);
-        return `<div onclick="openBuque('${b.id}')" title="Abrir ficha de ${(b.nombre||'').replace(/"/g,'&quot;')}" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--g200);border-left:4px solid ${col};border-radius:8px;background:#fff;cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--g50)'" onmouseleave="this.style.background='#fff'">
-          <span style="flex-shrink:0;font-size:11px;font-weight:700;color:#1e3a5f;background:#ffd54a;padding:2px 8px;border-radius:5px">${term}</span>
-          <span style="font-weight:700;font-size:14px;color:var(--g900)">${b.nombre||'—'}</span>
-        </div>`;
-      }).join('');
-      return `<div style="margin-bottom:14px">
-        <div style="font-size:12px;font-weight:700;color:${esHoy?'#1565c0':'var(--g500)'};text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">${DOW[dt.getDay()]} ${dt.getDate()} ${MESES[dt.getMonth()]}${esHoy?' · HOY':''}</div>
-        <div style="display:flex;flex-direction:column;gap:5px">${lineas}</div>
-      </div>`;
-    }).join('');
-  }
-  wrap.innerHTML=`
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+  buques.forEach(b=>{ const dt=new Date(b.eta_buque); if(dt.getFullYear()===year&&dt.getMonth()===month){ const d=dt.getDate(); (porDia[d]=porDia[d]||[]).push(b); } });
+  const estCol=e=>{const s=(e||'').toLowerCase();if(s.includes('embarc'))return '#2e7d32';if(s.includes('cancel'))return '#c62828';if(s.includes('aplaz'))return '#ef6c00';if(s.includes('proceso'))return '#1565c0';return '#64748b';};
+  const hoy=new Date();
+  const chip=b=>`<div onclick="event.stopPropagation();openBuque('${b.id}')" title="${(b.nombre||'').replace(/"/g,'&quot;')} · ${b.puerto_terminal||'—'}" style="display:flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--g200);border-left:3px solid ${estCol(b.estado_operacion)};border-radius:4px;padding:2px 4px;margin-bottom:2px;cursor:pointer;overflow:hidden">`
+    +`<span style="flex-shrink:0;font-size:9px;font-weight:700;color:#1e3a5f;background:#ffd54a;padding:0 4px;border-radius:3px">${b.puerto_terminal||'—'}</span>`
+    +`<span style="font-size:10px;font-weight:600;color:var(--g900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.nombre||'—'}</span></div>`;
+  const header=`
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:8px">
         <button onclick="mvNav(-1)" style="width:34px;height:34px;border:1px solid var(--g300);background:#fff;border-radius:8px;cursor:pointer;font-size:16px">‹</button>
-        <div style="font-size:16px;font-weight:800;color:var(--g900);min-width:180px;text-align:center">${label}</div>
+        <div style="font-size:17px;font-weight:800;color:var(--g900);min-width:170px;text-align:center">${MES[month]} ${year}</div>
         <button onclick="mvNav(1)" style="width:34px;height:34px;border:1px solid var(--g300);background:#fff;border-radius:8px;cursor:pointer;font-size:16px">›</button>
-        <button onclick="mvHoy()" style="margin-left:6px;padding:6px 12px;border:1px solid var(--g300);background:#fff;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">Hoy</button>
+        <button onclick="mvHoy()" style="margin-left:6px;padding:7px 14px;border:1px solid var(--g300);background:#fff;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">Hoy</button>
       </div>
-      <div style="display:flex;gap:6px">${btn('semana','Semana')}${btn('quincena','Quincena')}${btn('mes','Mes')}</div>
-    </div>
-    <div style="font-size:12px;color:var(--g500);margin-bottom:14px">${buques.length} embarque${buques.length!==1?'s':''} previsto${buques.length!==1?'s':''} · clic en un buque para abrir su ficha</div>
-    ${cuerpo}`;
+      <div style="font-size:12px;color:var(--g500)">${buques.length} embarque${buques.length!==1?'s':''} · clic en un buque para abrir su ficha</div>
+    </div>`;
+
+  if(window.innerWidth<=768){
+    const DOW=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    const dias=Object.keys(porDia).map(Number).sort((x,y)=>x-y);
+    const cuerpo=dias.length?dias.map(d=>{
+      const dt=new Date(year,month,d); const esHoy=dt.toDateString()===hoy.toDateString();
+      return `<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:${esHoy?'#1565c0':'var(--g500)'};text-transform:uppercase;margin-bottom:5px">${DOW[dt.getDay()]} ${d} ${MES[month]}${esHoy?' · HOY':''}</div><div style="display:flex;flex-direction:column;gap:4px">${porDia[d].map(chip).join('')}</div></div>`;
+    }).join(''):'<div class="empty" style="padding:30px"><div class="empty-icon">🗓️</div><div class="empty-txt">Sin embarques previstos este mes</div></div>';
+    wrap.innerHTML=header+cuerpo;
+    return;
+  }
+
+  const primerDow=(new Date(year,month,1).getDay()+6)%7;
+  const celdas=[];
+  for(let i=0;i<primerDow;i++) celdas.push(null);
+  for(let d=1;d<=fin.getDate();d++) celdas.push(d);
+  while(celdas.length%7!==0) celdas.push(null);
+  const dowHdr=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(d=>`<div style="text-align:center;font-size:11px;font-weight:700;color:var(--g500);padding:6px 0;text-transform:uppercase;letter-spacing:.5px">${d}</div>`).join('');
+  let filas='';
+  for(let i=0;i<celdas.length;i+=7){
+    filas+='<div style="display:grid;grid-template-columns:repeat(7,1fr)">'+celdas.slice(i,i+7).map(d=>{
+      if(d===null) return '<div style="min-height:98px;background:var(--g50);border:1px solid var(--g100)"></div>';
+      const dt=new Date(year,month,d); const esHoy=dt.toDateString()===hoy.toDateString();
+      const items=porDia[d]||[];
+      return `<div style="min-height:98px;border:1px solid var(--g200);padding:4px;background:${esHoy?'#e8f0fe':'#fff'};overflow:hidden">
+        <div style="font-size:12px;font-weight:${esHoy?800:600};color:${esHoy?'#1565c0':'var(--g600)'};margin-bottom:3px">${d}</div>
+        <div style="max-height:130px;overflow-y:auto">${items.map(chip).join('')}</div>
+      </div>`;
+    }).join('')+'</div>';
+  }
+  wrap.innerHTML=header+`<div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:2px">${dowHdr}</div>${filas}`;
 }
 
 async function loadTL(){
@@ -10679,6 +10658,70 @@ async function delUser(id){
   closeModal();loadView(CV);
 }
 
+// ── #10: Trazabilidad a demanda (PDF) — disponible para todos los usuarios ──
+function _trazAccionLabel(a){
+  const m={crear:'Creación',eliminar:'Eliminación',editar:'Edición',email_aduanas:'Email aduanas',email_cliente:'Email cliente',email_confronta:'Email confronta',alerta_llegada:'Alerta de llegada'};
+  return m[a]||a||'—';
+}
+function _trazRenderPDF(titulo, subtitulo, rows){
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const filas=rows.length?rows.map((l,i)=>`<tr style="background:${i%2?'#f9f9f9':'#fff'}">
+    <td style="white-space:nowrap">${fdt(l.created_at)}</td>
+    <td>${esc(_trazAccionLabel(l.accion))}</td>
+    <td>${esc(l.registro_nombre||'—')}</td>
+    <td>${esc(l.campo_modificado||'—')}</td>
+    <td>${esc(l.valor_anterior||'—')}</td>
+    <td>${esc(l.valor_nuevo||'—')}</td>
+    <td>${esc(l.usuario_nombre||'—')}</td>
+  </tr>`).join(''):'<tr><td colspan="7" style="text-align:center;padding:18px;color:#888">Sin movimientos registrados</td></tr>';
+  const w=window.open('','_blank','width=1100,height=800');
+  if(!w){ showToast('⚠️ Permite ventanas emergentes para generar el PDF'); return; }
+  const hoy=new Date().toLocaleString('es-ES');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(titulo)}</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:24px;color:#111;font-size:11px}
+    h1{font-size:17px;color:#1e3a5f;margin:0 0 2px;border-bottom:3px solid #1e3a5f;padding-bottom:8px}
+    .sub{font-size:12px;color:#555;margin:6px 0 16px}
+    table{width:100%;border-collapse:collapse}
+    th{background:#1e3a5f;color:#fff;padding:6px 8px;font-size:9px;text-transform:uppercase;text-align:left}
+    td{padding:5px 8px;border-bottom:1px solid #e5e5e5;font-size:10px;vertical-align:top}
+    .footer{margin-top:18px;font-size:9px;color:#999;border-top:1px solid #ddd;padding-top:8px}
+    .toolbar{margin-bottom:14px}
+    .btn{background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:12px;cursor:pointer;margin-right:8px}
+    @media print{.toolbar{display:none} body{margin:10px} * {-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
+  </style></head><body>
+  <div class="toolbar">
+    <button class="btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+    <button class="btn" style="background:#6b7280" onclick="window.close()">Cerrar</button>
+  </div>
+  <h1>📋 Informe de trazabilidad</h1>
+  <div class="sub">${esc(subtitulo)} · ${rows.length} movimiento${rows.length!==1?'s':''} · Generado: ${hoy}</div>
+  <table><thead><tr><th>Fecha y hora</th><th>Acción</th><th>Registro</th><th>Campo</th><th>Valor anterior</th><th>Valor nuevo</th><th>Usuario</th></tr></thead>
+  <tbody>${filas}</tbody></table>
+  <div class="footer">ALGECIRAS LOGISTIC SOLUTIONS (ALS) · Portal Operativo · Informe de trazabilidad generado el ${hoy}</div>
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>{ try{ w.print(); }catch(e){} }, 600);
+}
+async function trazabilidadBuque(buqueId, buqueNombre){
+  showToast('⏳ Generando trazabilidad…');
+  const {data:exps}=await sb.from('expediciones').select('id').eq('buque_id',buqueId);
+  const expIds=(exps||[]).map(e=>e.id);
+  const {data:logB}=await sb.from('activity_log').select('*').eq('tabla','buques').eq('registro_id',buqueId);
+  let logE=[];
+  if(expIds.length){
+    const {data}=await sb.from('activity_log').select('*').eq('tabla','expediciones').in('registro_id',expIds);
+    logE=data||[];
+  }
+  const rows=[...(logB||[]),...logE].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  _trazRenderPDF('Trazabilidad buque '+buqueNombre, 'Buque: '+buqueNombre+' · '+expIds.length+' expedición'+(expIds.length!==1?'es':''), rows);
+}
+async function trazabilidadExp(expId, ref){
+  showToast('⏳ Generando trazabilidad…');
+  const {data}=await sb.from('activity_log').select('*').eq('tabla','expediciones').eq('registro_id',expId).order('created_at',{ascending:false});
+  _trazRenderPDF('Trazabilidad expedición '+ref, 'Expedición: '+ref, data||[]);
+}
+
 async function loadLog(){
   const [actR, authR] = await Promise.all([
     sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(200),
@@ -11946,7 +11989,7 @@ async function openBuque(id){
     : (b.estado_operacion==='Embarcado' ? '<span class="badge bb">⏳ Fact. pendiente</span>' : '');
   const factEstado = b.estado_facturacion==='facturado' ? '<span class="badge bg" style="margin-left:4px">✅ Facturado</span>' : '';
 
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="notifClienteBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📨 Notif. cliente</button>`:''} ${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="instruccionesBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🚛 Instruc. transportista</button>`:''}`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="notifClienteBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📨 Notif. cliente</button>`:''} ${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="trazabilidadBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📋 Trazabilidad</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="instruccionesBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🚛 Instruc. transportista</button>`:''}`;
   // Añadir badge de facturación en el modal body si procede
   if(factBadge||factEstado){
     const mbody = document.getElementById('m-body');
@@ -12266,7 +12309,7 @@ async function openExpD(id, forceOpen=false){
     </div>
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-s btn-sm" onclick="abrirDocsExpedicion('${e.id}')" title="Documentos PDF">📄 Docs</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="trazabilidadExp('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">📋 Trazabilidad</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-s btn-sm" onclick="abrirDocsExpedicion('${e.id}')" title="Documentos PDF">📄 Docs</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   // ── Poblar select de buques ────────────────────────────────────────
   (async()=>{
     const sel = document.getElementById('buq-sel');
