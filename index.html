@@ -1591,6 +1591,7 @@ function iniciarRealtime(){
           if(vistasBuques.includes(CV)){
             clearTimeout(_rtBuqueTimer);
             _rtBuqueTimer = setTimeout(() => {
+              if(document.getElementById('mo')?.classList.contains('open')) return; // no recargar con modal abierto (evita refresco continuo)
               if(vistasBuques.includes(CV)) loadView(CV);
             }, 2000);
           }
@@ -7026,18 +7027,29 @@ async function loteNotifCliente(){
       const totBlt = gExps.reduce((a,e)=>a+(e.bultos||0),0);
       const totKg  = gExps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
       const asunto = 'Aviso mercancía en almacén — '+(buquesG||'Buque')+ ' · '+gExps.length+' expedición'+(gExps.length!==1?'es':'');
-      const detalle = gExps.map((e,i)=>
-        '  '+(i+1)+'. '+e.nº_expedicion+
-        '\n     • Buque:       '+(e.buques?.nombre||'—')+
-        '\n     • Bultos:      '+(e.bultos||0)+' btos · '+(parseFloat(e.kilos)||0)+' kg'+
-        '\n     • Ubicación:   '+(e.ubicacion||'—')+
-        '\n     • Estado:      '+(e.estado_semaforo||'—')+
-        '\n     • Trámite:     '+(e.tramite_aduanero||'—')+
-        '\n     • Status:      '+(e.status_aduanero||'—')+
-        (e._despachos&&e._despachos.length
-          ? '\n     • Despachos:   '+e._despachos.map((d,di)=>'#'+(di+1)+' MRN: '+(d.nº_mrn||'—')+' | '+(d.status_aduanero||'—')+' | '+(d.tramite_aduanero||'—')).join(' / ')
-          : (e.nº_mrn?'\n     • MRN:        '+e.nº_mrn:''))
-      ).join('\n\n');
+      const detalle = gExps.map((e,i)=>{
+        const tieneDespachos = e._despachos && e._despachos.length;
+        const despachosLines = tieneDespachos
+          ? e._despachos.map((d,di)=>
+              '     • Despacho #'+(di+1)+':  '+
+              (d.nº_mrn      ? 'MRN: '+d.nº_mrn+'  '  : '')+
+              (d.status_aduanero ? d.status_aduanero+'  ' : '')+
+              (d.tramite_aduanero ? '('+d.tramite_aduanero+')' : '')+
+              (d.fecha_despacho ? '  '+d.fecha_despacho.slice(0,10) : '')+
+              (d.notas ? '  — '+d.notas : '')
+            ).join('\n')
+          : (e.nº_mrn ? '\n     • MRN:        '+e.nº_mrn : '');
+        return '  '+(i+1)+'. '+e.nº_expedicion+
+          '\n     • Buque:       '+(e.buques?.nombre||'—')+
+          '\n     • Bultos:      '+(e.bultos||0)+' btos · '+(parseFloat(e.kilos)||0)+' kg'+
+          '\n     • Ubicación:   '+(e.ubicacion||'—')+
+          '\n     • Estado:      '+(e.estado_semaforo||'—')+
+          (tieneDespachos
+            ? '\n'+despachosLines
+            : '\n     • Trámite:     '+(e.tramite_aduanero||'—')+
+              '\n     • Status:      '+(e.status_aduanero||'—')+
+              despachosLines);
+      }).join('\n\n');
       const cuerpo =
         'Estimado cliente,\n\n'+
         'Le comunicamos que las siguientes expediciones se encuentran bajo control logístico, documental y en trámite para su próximo embarque.\n\n'+
