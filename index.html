@@ -9301,9 +9301,84 @@ async function guardarIncidenciaLlegada(){
   closeModal();
 }
 function onCargaFoto(bid){const f=document.getElementById('cg-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='';setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);}}
+// ── #7a: Reempaquetado de carga y reimpresión de etiquetas QR únicas ──
+function abrirReempaquetado(bid, buqueNombre, totalPrevisto){
+  const ov=document.createElement('div');
+  ov.id='reemp-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:21000;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML=`<div style="background:#fff;border-radius:16px;padding:24px;max-width:380px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.3)">
+    <div style="font-size:16px;font-weight:800;color:var(--g900);margin-bottom:4px">📦 Reempaquetado de carga</div>
+    <div style="font-size:12px;color:var(--g500);margin-bottom:14px">${buqueNombre?('Buque: <strong>'+buqueNombre+'</strong> · '):''}Bultos previstos: <strong>${totalPrevisto}</strong></div>
+    <label style="font-size:12px;font-weight:600;color:var(--g700);display:block;margin-bottom:6px">¿Cuántos bultos resultan tras paletizar / reagrupar?</label>
+    <input id="reemp-n" type="number" min="1" value="${totalPrevisto}" class="fi" style="width:100%;font-size:20px;text-align:center;font-weight:700;padding:10px">
+    <div style="font-size:11px;color:var(--g400);margin:8px 0 16px">Se imprimirá una etiqueta QR única por cada bulto resultante. Estas etiquetas serán las que se escaneen al embarcar.</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('reemp-overlay').remove()" style="background:var(--g100);color:var(--g600);border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Omitir</button>
+      <button onclick="generarEtiquetasReempaque('${bid}','${(buqueNombre||'').replace(/'/g,"\\'")}')" style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer">🖨️ Generar e imprimir</button>
+    </div>
+  </div>`;
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+  setTimeout(()=>{ const i=document.getElementById('reemp-n'); if(i){ i.focus(); i.select(); } }, 80);
+}
+
+async function generarEtiquetasReempaque(bid, buqueNombre){
+  const n=parseInt(document.getElementById('reemp-n')?.value)||0;
+  if(n<1){ showToast('⚠️ Introduce un número de bultos válido'); return; }
+  document.getElementById('reemp-overlay')?.remove();
+  showToast('⏳ Generando '+n+' etiqueta'+(n!==1?'s':'')+'…');
+  // Persistir bultos reempaquetados (reemplaza los anteriores de este buque)
+  try{
+    await sb.from('carga_bultos').delete().eq('buque_id', bid);
+    const filas=[];
+    for(let i=1;i<=n;i++) filas.push({buque_id:bid, codigo:`ALS-CARGA:${bid}:${i}:${n}`, num:i, total:n, escaneado:false});
+    await sb.from('carga_bultos').insert(filas);
+    try{ await sb.from('buques').update({bultos_cargados:n}).eq('id',bid); }catch(e2){}
+    await logAct('buques',bid,buqueNombre,'editar','bultos_cargados','—',String(n)+' bultos reempaquetados');
+  }catch(ex){ console.warn('carga_bultos', ex); showToast('⚠️ No se pudieron guardar los bultos (revisa la tabla carga_bultos). Imprimo igualmente.'); }
+  // Generar e imprimir etiquetas
+  const etiquetas=[];
+  for(let i=1;i<=n;i++){
+    const data=`ALS-CARGA:${bid}:${i}:${n}`;
+    const url=await generarQRDataURL(data,250);
+    etiquetas.push({n:i,data,url});
+  }
+  _imprimirEtiquetasCarga(buqueNombre, n, etiquetas);
+}
+
+function _imprimirEtiquetasCarga(buqueNombre, total, etiquetas){
+  const w=window.open('','_blank','width=440,height=640');
+  if(!w){ showToast('⚠️ Permite ventanas emergentes para imprimir'); return; }
+  const esc=s=>String(s||'').replace(/</g,'&lt;');
+  const fecha=new Date().toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const labels=etiquetas.map(et=>`<div class="label">
+    <div class="logo">● ALS · CARGA REEMPAQUETADA</div>
+    <div class="buque">${esc(buqueNombre)}</div>
+    <div class="bulto">Bulto ${et.n} / ${total}</div>
+    <div class="qr-wrap">${et.url?`<img src="${et.url}" alt="QR carga ${et.n}">`:'<div style="padding:40px;color:#c00">QR error</div>'}</div>
+    <div class="cod">${et.data}</div>
+    <div class="fecha">Generado: ${fecha}</div>
+  </div>`).join('');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Etiquetas carga — ${esc(buqueNombre)}</title>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#fff;color:#111}
+  .label{text-align:center;padding:16px;border-bottom:1px dashed #bbb;page-break-inside:avoid;page-break-after:always}.label:last-child{page-break-after:auto;border-bottom:none}
+  .logo{font-size:10px;font-weight:700;letter-spacing:1px;color:#1565c0;margin-bottom:4px}
+  .buque{font-size:26px;font-weight:900;line-height:1.1;margin:2px 0}
+  .bulto{font-size:18px;font-weight:800;color:#1e3a5f;margin:4px 0}
+  .qr-wrap{display:inline-block;border:2px solid #e5e7eb;border-radius:8px;padding:8px;margin:6px 0}.qr-wrap img{display:block;width:200px;height:200px}
+  .cod{font-size:9px;color:#9ca3af;font-family:monospace;word-break:break-all}.fecha{font-size:9px;color:#6b7280;margin-top:4px}
+  .toolbar{position:sticky;top:0;background:#fff;padding:10px;text-align:center;border-bottom:1px solid #ddd}
+  .btn{min-height:44px;font-size:14px;padding:10px 22px;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;margin:0 4px}
+  @media print{.toolbar{display:none!important}@page{margin:6mm;size:80mm auto}}</style></head><body>
+  <div class="toolbar"><button class="btn" style="background:#1565c0" onclick="window.print()">🖨️ Imprimir ${total} etiqueta${total!==1?'s':''}</button><button class="btn" style="background:#6b7280" onclick="window.close()">✕ Cerrar</button></div>
+  ${labels}</body></html>`);
+  w.document.close();
+  setTimeout(()=>{try{w.print();}catch(e){}},800);
+}
+
 async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
   if(!await confirmarAccion('¿Confirmar carga en camión para TODAS las expediciones autorizadas de este buque?'))return;
-  const {data}=await sb.from('expediciones').select('id,nº_expedicion').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO');
+  const {data}=await sb.from('expediciones').select('id,nº_expedicion,bultos').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO');
   if(!data||!data.length){alert('No hay expediciones autorizadas');return;}
   // Subir fotos del buque (una foto para toda la carga)
   const prevEl=document.getElementById('cg-pv-'+bid);
@@ -9322,7 +9397,11 @@ async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin
     await logAct('expediciones',e.id,e.nº_expedicion,'editar','ubicacion','—','Camión cargado'+( fotoUrl?' [con foto]':''));
   }
   showToast('✅ Carga confirmada — '+data.length+' expediciones'+( fotoUrl?' 📸':''));
+  const totalPrevisto = data.reduce((a,e)=>a+(e.bultos||0),0);
+  const {data:bqn}=await sb.from('buques').select('nombre').eq('id',bid).single();
   await loadAlmFotos('carga');
+  // #7a: reempaquetado — preguntar nº de bultos resultante e imprimir nuevas etiquetas QR únicas
+  abrirReempaquetado(bid, bqn?.nombre||'', totalPrevisto);
 }
 function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);}}
 
@@ -9620,6 +9699,20 @@ async function enviarEmailEmbarqueCliente(buqueId, fotoUrl){
     ).join('\n');
 
     const cuerpo =
+      'Dear customer,\n\n'+
+      'We are pleased to confirm that your cargo has been successfully loaded on board the vessel.\n\n'+
+      '🚢 Vessel: '+b.nombre+
+      (b.nº_escala?'\n🔢 Call: '+b.nº_escala:'')+
+      '\n📅 Loading date: '+hoy+
+      '\n\n── SHIPMENTS LOADED ON BOARD ─────────────────\n'+
+      detalle+
+      '\n\n📦 Total: '+totalBultos+' packages · '+totalKilos.toLocaleString('en-GB')+' kg'+
+      (fotoUrl?'\n📸 Loading confirmation photo attached to this email.':'')+
+      '\n\nWe remain at your disposal for any queries.\n\n'+
+      'Kind regards,\n\nOperations Department\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n'+
+      '📞 +34 956 58 13 16 · als@alsalgeciras.com\n'+
+      'Operations 24/7 · Boardings +34 664 07 49 40\n\n'+
+      '══════════════════════════════════════════════\n\n'+
       'Estimado cliente,\n\n'+
       'Le confirmamos que su mercancía ha sido embarcada correctamente a bordo del buque.\n\n'+
       '🚢 Buque: '+b.nombre+
@@ -9629,7 +9722,6 @@ async function enviarEmailEmbarqueCliente(buqueId, fotoUrl){
       detalle+
       '\n\n📦 Total: '+totalBultos+' bultos · '+totalKilos.toLocaleString('es-ES')+' kg'+
       (fotoUrl?'\n📸 Foto de confirmación de embarque adjunta en este email.':'')+
-      '\n\n──────────────────────────────────────────────'+
       '\n\nQuedamos a su disposición para cualquier consulta.\n\n'+
       'Atentamente,\n\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n'+
       '📞 +34 956 58 13 16 · als@alsalgeciras.com\n'+
@@ -9637,16 +9729,13 @@ async function enviarEmailEmbarqueCliente(buqueId, fotoUrl){
 
     const otros = (b.ec?.otros_emails||[]).filter(Boolean).join(',');
     const cc = otros || '';
-    const asunto = encodeURIComponent('✅ Embarque confirmado — Buque '+b.nombre+' · '+hoy);
+    const asunto = encodeURIComponent('Cargo loaded on board — Vessel '+b.nombre+' · '+hoy+'  /  Embarque confirmado — Buque '+b.nombre);
 
     // iOS Safari limita mailto: a ~2000 chars — usar cuerpo corto en iPhone/iPad
     const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const cuerpoFinal = esIOS
-      ? 'Estimado cliente,\n\n'+
-        'Confirmamos embarque a bordo del buque '+b.nombre+' el '+hoy+'.\n\n'+
-        'Expediciones: '+totalBultos+' bultos · '+totalKilos.toLocaleString('es-ES')+' kg\n'+
-        (exps||[]).map(e=>'· '+e.nº_expedicion+(e.nº_mrn?' (MRN: '+e.nº_mrn+')':'')).join('\n')+
-        '\n\nALS Algeciras · +34 956 58 13 16'
+      ? 'Dear customer,\nWe confirm your cargo has been loaded on board vessel '+b.nombre+' on '+hoy+'.\n'+totalBultos+' packages · '+totalKilos.toLocaleString('en-GB')+' kg\n\n'+
+        'Estimado cliente,\nConfirmamos embarque a bordo del buque '+b.nombre+' el '+hoy+'.\n'+totalBultos+' bultos · '+totalKilos.toLocaleString('es-ES')+' kg\n\nALS Algeciras · +34 956 58 13 16'
       : cuerpo;
 
     const mailto = 'mailto:'+emailCliente
