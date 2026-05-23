@@ -12012,7 +12012,7 @@ async function notifClienteBuque(buqueId, buqueNombre){
   const clienteBuqueId = buque?.cliente_id;
 
   const {data:expsAll} = await sb.from('expediciones')
-    .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,tramite_aduanero,status_aduanero,nº_mrn,cliente_override_id,cliente_override_nombre,empresas!empresa_id(nombre,email_confronta,otros_emails)')
+    .select('id,nº_expedicion,bultos,kilos,ubicacion,estado_semaforo,status_aduanero,nº_mrn,fecha_llegada_prevista,ac_fecha_llegada,foto_llegada_url,foto_carga_url,foto_embarque_url,cliente_override_id,cliente_override_nombre,empresas!empresa_id(nombre,email_confronta,otros_emails)')
     .eq('buque_id', buqueId)
     .neq('estado_semaforo','🚢 EMBARCADO');
 
@@ -12049,17 +12049,33 @@ async function notifClienteBuque(buqueId, buqueNombre){
   const ccEmail = [...ccSet].join(',');
 
   const asunto = `Aviso mercancía en almacén — Buque ${buqueNombre} · ${exps.length} expedición${exps.length!==1?'es':''}`;
-  const sepLinea = '─'.repeat(52);
-  const trackingBase = 'https://www.alsalgeciras.com/tracking?exp=';
-  const detalle = exps.map((e,i)=>`  ${i+1}. ${e.nº_expedicion}
-     • Buque:       ${buqueNombre}
-     • Bultos:      ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg
-     • Ubicación:   ${e.ubicacion||'—'}
-     • Estado:      ${e.estado_semaforo||'—'}
-     • Trámite:     ${e.tramite_aduanero||'—'}
-     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}
-     🔍 Seguimiento: ${trackingBase}${e.id}`
-  ).join('\n\n');
+  const sep = '─'.repeat(48);
+  const trackingBase = 'https://portal.alsalgeciras.com/tracking.html?exp=';
+
+  // Criterio: "Pendiente recibir" = aún no ha llegado al almacén; el resto = recibidas
+  const esPendiente = e => (e.ubicacion === 'Pendiente recibir');
+  const recibidas  = exps.filter(e => !esPendiente(e));
+  const pendientes = exps.filter(e =>  esPendiente(e));
+
+  const fmtFecha = d => d ? new Date(d+'T12:00').toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}) : 'por confirmar';
+  const fotoDe = e => e.foto_llegada_url || e.foto_carga_url || e.foto_embarque_url || '';
+  const sub = arr => `${arr.reduce((a,e)=>a+(e.bultos||0),0)} bultos · ${arr.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0)} kg`;
+
+  const lineaRecibida = (e,i) => {
+    const foto = fotoDe(e);
+    return `  ${i+1}. ${e.nº_expedicion}  ·  ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg  ·  ${e.estado_semaforo||'En almacén'}${e.nº_mrn?`  ·  MRN: ${e.nº_mrn}`:''}\n     Seguimiento: ${trackingBase}${e.id}${foto?`\n     📷 Foto: ${foto}`:''}`;
+  };
+  const lineaPendiente = (e,i) => {
+    const foto = fotoDe(e);
+    return `  ${i+1}. ${e.nº_expedicion}  ·  ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg  ·  Llegada prevista: ${fmtFecha(etaPrev(e))}${e.nº_mrn?`  ·  MRN: ${e.nº_mrn}`:''}\n     Seguimiento: ${trackingBase}${e.id}${foto?`\n     📷 Foto: ${foto}`:''}`;
+  };
+
+  const bloqueRecibidas = recibidas.length
+    ? `📦 EXPEDICIONES RECIBIDAS (${recibidas.length})\n${sep}\n${recibidas.map(lineaRecibida).join('\n\n')}\n   ── Subtotal recibidas: ${sub(recibidas)}`
+    : '';
+  const bloquePendientes = pendientes.length
+    ? `⏳ EXPEDICIONES PENDIENTES DE RECIBIR (${pendientes.length})\n${sep}\n${pendientes.map(lineaPendiente).join('\n\n')}\n   ── Subtotal pendientes: ${sub(pendientes)}`
+    : '';
 
   const firma = `Atentamente,
 
@@ -12070,23 +12086,20 @@ OPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40`;
 
   const cuerpo = `Estimado cliente,
 
-Le comunicamos que las siguientes expediciones se encuentran bajo control logístico, documental y en trámite para su próximo embarque.
+Le informamos del estado de su mercancía para el buque ${buqueNombre}.
 
 BUQUE: ${buqueNombre}
 FECHA: ${fecha}
-RESUMEN: ${exps.length} expedición${exps.length!==1?'es':''} · ${totalBultos} bultos · ${totalKilos} kg
+RESUMEN: ${exps.length} expedición${exps.length!==1?'es':''} · ${totalBultos} bultos · ${totalKilos} kg${recibidas.length?`\n   • Recibidas: ${recibidas.length} (${sub(recibidas)})`:''}${pendientes.length?`\n   • Pendientes de recibir: ${pendientes.length} (${sub(pendientes)})`:''}
 
-${sepLinea}
-DETALLE DE EXPEDICIONES
-${sepLinea}
+${[bloqueRecibidas, bloquePendientes].filter(Boolean).join('\n\n\n')}
 
-${detalle}
+${sep}
+TOTAL: ${totalBultos} bultos · ${totalKilos} kg
+${sep}
 
-${sepLinea}
-TOTALES: ${totalBultos} bultos · ${totalKilos} kg
-${sepLinea}
-
-Quedamos a su disposición para cualquier consulta relacionada con el despacho aduanero o la retirada de la mercancía.
+Puede consultar el estado y las fotos de cada expedición en su enlace de seguimiento.
+Quedamos a su disposición para cualquier consulta.
 
 ${firma}`;
 
