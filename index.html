@@ -1131,7 +1131,7 @@ if('serviceWorker' in navigator){
   s.onload=function(){ 
     // SDK listo — inicializar cliente Supabase
     try{
-      sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});
+      sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
     }catch(e){ console.warn('SDK createClient:',e); }
     // Procesar destino pendiente (si venimos de airport_cargo)
     if(window._pendingMod){
@@ -2110,38 +2110,36 @@ async function doLogin(){
   try{
     let rows=null;
 
-    // 1. Intentar con función segura verificar_password (bcrypt)
-    // Intentar con nombre y también con email (el usuario puede escribir cualquiera)
+    // 1. Supabase Auth (JWT) — el acceso es por EMAIL
     try{
-      // Intento 1a: buscar por nombre
-      const rpcR=await fetch(SB_URL+'/rest/v1/rpc/verificar_password',{
-        method:'POST',
-        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Accept:'application/json'},
-        body:JSON.stringify({p_nombre:email,p_password:pass})
-      });
-      if(rpcR.ok){
-        const data=await rpcR.json();
-        if(data&&data.length>0) rows=data;
+      const ar=await sb.auth.signInWithPassword({ email: email.toLowerCase(), password: pass });
+      if(!ar.error && ar.data && ar.data.user){
+        const { data: perfil } = await sb.from('usuarios').select('*').eq('email', email.toLowerCase()).maybeSingle();
+        if(perfil && perfil.activo!==false){ try{ delete perfil.password_hash; delete perfil.password; }catch(e){} rows=[perfil]; console.log('✅ Login vía Supabase Auth (JWT)'); }
+        else if(perfil && perfil.activo===false){ try{ await sb.auth.signOut(); }catch(e){} }
       }
-      // Intento 1b: si no encontró por nombre, buscar por email exacto
-      if(!rows||!rows.length){
-        const rpcR2=await fetch(SB_URL+'/rest/v1/rpc/verificar_password_email',{
+    }catch(e){ console.warn('Auth signIn:',e); }
+
+    // 2. Fallback transitorio: RPC bcrypt (se retira en la Fase 2 del cierre de seguridad)
+    if(!rows||!rows.length){
+      try{
+        const rpcR=await fetch(SB_URL+'/rest/v1/rpc/verificar_password',{
           method:'POST',
           headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Accept:'application/json'},
-          body:JSON.stringify({p_email:email,p_password:pass})
+          body:JSON.stringify({p_nombre:email,p_password:pass})
         });
-        if(rpcR2.ok){
-          const data2=await rpcR2.json();
-          if(data2&&data2.length>0) rows=data2;
+        if(rpcR.ok){ const data=await rpcR.json(); if(data&&data.length>0) rows=data; }
+        if(!rows||!rows.length){
+          const rpcR2=await fetch(SB_URL+'/rest/v1/rpc/verificar_password_email',{
+            method:'POST',
+            headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Accept:'application/json'},
+            body:JSON.stringify({p_email:email,p_password:pass})
+          });
+          if(rpcR2.ok){ const data2=await rpcR2.json(); if(data2&&data2.length>0) rows=data2; }
         }
-      }
-    }catch(rpcErr){console.warn('RPC no disponible, usando fallback:',rpcErr.message);}
-
-    // 2. Fallback legacy DESACTIVADO — solo bcrypt permitido
-    // Los fallbacks de texto plano han sido eliminados por seguridad (v3.2.0)
-    // Si un usuario no puede entrar, debe resetear su contraseña via admin
-
-    // 3. Fallback legacy DESACTIVADO
+        if(rows&&rows.length) console.warn('⚠️ Login vía RPC bcrypt (sin JWT). Revisa la importación a Supabase Auth para este usuario.');
+      }catch(rpcErr){ console.warn('RPC fallback:',rpcErr.message); }
+    }
 
     if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
     if(!rows||rows.length===0){
@@ -2175,7 +2173,7 @@ async function doLogin(){
     try{ delete CU.password_hash; delete CU.password; }catch(e){}
     saveSession(CU);
     // Init SDK (best effort)
-    if(!sb){try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});}catch(e3){console.warn('SDK init:',e3);}}
+    if(!sb){try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});}catch(e3){console.warn('SDK init:',e3);}}
     // Cargar roles del usuario (multi-rol) desde als_usuario_roles
     try{
       const {data:rD}=await sb.from('als_usuario_roles').select('rol').eq('usuario_id',CU.id);
@@ -2242,6 +2240,11 @@ async function doChangePwd(){
   if(!p1||p1.length<6){err.textContent='Mínimo 6 caracteres';return;}
   if(p1!==p2){err.textContent='Las contraseñas no coinciden';return;}
   err.textContent='Guardando…';
+  // PRIMARIO: actualizar la contraseña en Supabase Auth (JWT)
+  let authOk=false;
+  try{
+    if(sb&&sb.auth){ const {error:aerr}=await sb.auth.updateUser({ password: p1 }); if(!aerr) authOk=true; else console.warn('Auth updateUser:',aerr.message); }
+  }catch(e){ console.warn('Auth updateUser ex:',e); }
   // Intentar PATCH con el id del usuario actual
   const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(CU.id),{
     method:'PATCH',
@@ -2265,10 +2268,10 @@ async function doChangePwd(){
         const r2=await sb.from('usuarios').update({password_hash:p1}).eq('id',CU.id);
         error=r2.error;
       }
-        if(error){err.textContent='Error al guardar: '+error.message;return;}
+        if(error && !authOk){err.textContent='Error al guardar: '+error.message;return;}
       }
     }
-  } else if(!r.ok){
+  } else if(!r.ok && !authOk){
     err.textContent='Error al guardar. Verifica la conexión.';return;
   }
   CU.must_change_password=false;
@@ -3798,6 +3801,7 @@ function abrirTrackingAWB(awb){
 function doLogout(){
   detenerRealtime();
   logAuth('logout', CU?.id, CU?.nombre, CU?.rol||'');
+  try{ if(sb&&sb.auth) sb.auth.signOut(); }catch(e){}
   CU=null;MOD=null;clearSession();
   document.getElementById('app').style.display='none';
   document.getElementById('screen-home').style.display='none';
