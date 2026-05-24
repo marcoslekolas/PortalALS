@@ -5228,8 +5228,11 @@ function setupFotos(inpId, prevId, stId){
   // En iOS/Android el sistema muestra el selector automáticamente con accept="image/*"
 
   inp.addEventListener('change', async()=>{
-    const files = Array.from(inp.files || []);
-    if(!files.length) return;
+    const nuevos = Array.from(inp.files || []);
+    if(!nuevos.length) return;
+    const previos = Array.isArray(prev._files) ? prev._files : [];
+    const files = [...previos, ...nuevos];  // ACUMULAR fotos de capturas sucesivas (no sobrescribir)
+    prev._files = files;
 
     // Feedback inmediato — el usuario sabe que algo está pasando
     prev.innerHTML = `<div style="padding:12px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--b600)">
@@ -9066,6 +9069,7 @@ async function confirmarLlegadaFotos(id){
   const inp = document.getElementById('fl-fi-'+id) || document.getElementById('fl-i');
   const prevEl = document.getElementById('fl-pv-'+id) || document.getElementById('fl-p');
   const files = prevEl?._files || [];
+  if(!files.length){ showToast('📸 Adjunta al menos una foto antes de confirmar la llegada'); return; }
   const estado = (window['_estLlegada'] || {})[id] || 'ok';
   const nota = (document.getElementById('fl-nota-'+id)?.value || '').trim();
 
@@ -9492,7 +9496,7 @@ function _procesarQREmbarque(texto,bid,buqueNombre,total,validSet){
   }
 }
 
-function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);}}
+function onEmbTabFoto(bid){const f=document.getElementById('embt-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('embt-btn-'+bid);if(btn)btn.style.display='';}}
 
 async function loadFactBadge(){
   try {
@@ -13287,25 +13291,29 @@ let _onbStep = 0;
 let _onbPasosRol = [];
 
 function iniciarOnboarding(){
+  const ov = document.getElementById('onboarding-overlay');
+  if(!ov) return;
   const rol = CU?.rol || 'operativa';
-  _onbPasosRol = _onbPasos[rol] || _onbPasos.oficina;
+  _onbPasosRol = _onbPasos[rol] || _onbPasos.oficina || [];
+  if(!_onbPasosRol.length) return;
   _onbStep = 0;
   renderOnbStep();
-  document.getElementById('onboarding-overlay').style.display='flex';
+  ov.style.display='flex';
 }
 
 function renderOnbStep(){
   const paso = _onbPasosRol[_onbStep];
+  if(!paso) return;
   const total = _onbPasosRol.length;
-  document.getElementById('onb-icon').textContent = paso.icon;
-  document.getElementById('onb-title').textContent = paso.title;
-  document.getElementById('onb-subtitle').textContent = `Paso ${_onbStep+1} de ${total}`;
-  document.getElementById('onb-body').innerHTML = `<p style="font-size:14px;color:var(--g700);line-height:1.7">${paso.txt}</p>`;
-  document.getElementById('onb-next').textContent = _onbStep < total-1 ? 'Siguiente →' : '¡Empezar! ✓';
-  // Dots
-  document.getElementById('onb-dots').innerHTML = _onbPasosRol.map((_,i)=>
+  const set=(id,prop,val)=>{const el=document.getElementById(id); if(el) el[prop]=val;};
+  set('onb-icon','textContent',paso.icon);
+  set('onb-title','textContent',paso.title);
+  set('onb-subtitle','textContent',`Paso ${_onbStep+1} de ${total}`);
+  set('onb-body','innerHTML',`<p style="font-size:14px;color:var(--g700);line-height:1.7">${paso.txt}</p>`);
+  set('onb-next','textContent', _onbStep < total-1 ? 'Siguiente →' : '¡Empezar! ✓');
+  set('onb-dots','innerHTML', _onbPasosRol.map((_,i)=>
     `<div style="width:7px;height:7px;border-radius:50%;background:${i===_onbStep?'var(--b600)':'var(--g200)'}"></div>`
-  ).join('');
+  ).join(''));
 }
 
 function onbSiguiente(){
@@ -14380,13 +14388,12 @@ async function impExpAlb(expId){
 
 // ── QR en llegadas — aparece al añadir foto ───────────────────────
 function onFotoLlegadaCambiada(expId, input){
-  // Delegar al setupFotos normal (que ya está configurado)
-  // y además mostrar/ocultar el botón QR según haya foto
+  // setupFotos (ya conectado a este input) gestiona y ACUMULA las fotos en _files.
+  // Aquí solo mostramos el botón de QR si hay al menos una foto.
   const prev = document.getElementById('fl-pv-'+expId);
-  const files = Array.from(input.files||[]);
-  if(prev) { prev._files = [...files]; renderFotoPreview(prev, files); }
+  const hay = (input.files && input.files.length) || (prev && Array.isArray(prev._files) && prev._files.length);
   const qrBtn = document.getElementById('qr-ll-btn-'+expId);
-  if(qrBtn) qrBtn.style.display = files.length ? '' : 'none';
+  if(qrBtn) qrBtn.style.display = hay ? '' : 'none';
 }
 
 async function imprimirQRLlegada(expId, ref){
