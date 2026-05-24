@@ -81,10 +81,10 @@ function fmtFecha(d) {
 
 function render(exp, incs) {
   var sem = exp['estado_semaforo'] || '';
-  var buque = exp.buques || {};
-  var empresa = exp.empresas || {};
-  var nref = exp['\u00ba_expedicion'] || exp['nº_expedicion'] || '—';
-  var nmrn = exp['\u00ba_mrn'] || exp['nº_mrn'] || '';
+  var buque = { nombre: exp.buque_nombre, eta_buque: exp.eta_buque };
+  var empresa = { nombre: exp.empresa_nombre };
+  var nref = exp.nro_expedicion || '—';
+  var nmrn = exp.nro_mrn || '';
   var semClass = semToClass(sem);
 
   var incHtml = '';
@@ -157,11 +157,11 @@ async function init() {
 
   if (awbId) {
     try {
-      var r = await sb.from('airport_cargo').select('awb,numero_vuelo,consignatario,estado,fecha_llegada,bultos,kilos').eq('id', awbId).single();
+      var r = await sb.from('tracking_publico_awb').select('awb,numero_vuelo,consignatario,estado,fecha_llegada,bultos,kilos').eq('id', awbId).single();
       if (r.error || !r.data) { renderError('No se encontr\u00f3 el AWB solicitado.'); return; }
       renderAWB(r.data);
       setInterval(async function() {
-        var fr = await sb.from('airport_cargo').select('awb,numero_vuelo,consignatario,estado,fecha_llegada,bultos,kilos').eq('id', awbId).single();
+        var fr = await sb.from('tracking_publico_awb').select('awb,numero_vuelo,consignatario,estado,fecha_llegada,bultos,kilos').eq('id', awbId).single();
         if (fr.data) renderAWB(fr.data);
       }, 120000);
     } catch(e) {
@@ -172,8 +172,8 @@ async function init() {
 
   try {
     var results = await Promise.all([
-      sb.from('expediciones').select('nº_expedicion,nº_mrn,bultos,kilos,ubicacion,estado_carga,estado_semaforo,status_aduanero,buques(nombre,eta_buque),empresas!empresa_id(nombre)').eq('id', expId).single(),
-      sb.from('incidencias').select('nombre,descripcion,estado').eq('expedicion_id', expId)
+      sb.from('tracking_publico').select('*').eq('id', expId).single(),
+      sb.from('tracking_publico_inc').select('nombre,descripcion,estado').eq('expedicion_id', expId)
     ]);
     var exp = results[0].data;
     var err = results[0].error;
@@ -189,8 +189,8 @@ async function init() {
 
     setInterval(async function() {
       var r2 = await Promise.all([
-        sb.from('expediciones').select('nº_expedicion,nº_mrn,bultos,kilos,ubicacion,estado_carga,estado_semaforo,status_aduanero,buques(nombre,eta_buque),empresas!empresa_id(nombre)').eq('id', expId).single(),
-        sb.from('incidencias').select('nombre,descripcion,estado').eq('expedicion_id', expId)
+        sb.from('tracking_publico').select('*').eq('id', expId).single(),
+        sb.from('tracking_publico_inc').select('nombre,descripcion,estado').eq('expedicion_id', expId)
       ]);
       if (r2[0].data) render(r2[0].data, r2[1].data);
       var lu = document.getElementById('last-update');
