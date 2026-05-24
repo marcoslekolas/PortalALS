@@ -1133,15 +1133,31 @@ if('serviceWorker' in navigator){
     try{
       sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
     }catch(e){ console.warn('SDK createClient:',e); }
-    // Procesar destino pendiente (si venimos de airport_cargo)
-    if(window._pendingMod){
-      var dest=window._pendingMod; window._pendingMod=null;
-      if(dest==='operativa') enterMod('operativa');
-      else if(dest==='almacen') enterMod('almacen');
-      else showHome();
+    function _navPendiente(){
+      if(window._pendingMod){
+        var dest=window._pendingMod; window._pendingMod=null;
+        if(dest==='operativa') enterMod('operativa');
+        else if(dest==='almacen') enterMod('almacen');
+        else showHome();
+      }
     }
-    // Ping silencioso para verificar conexión
-    fetch(SB_URL+'/rest/v1/usuarios?select=email&limit=1',{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}})
+    // Guard de sesión: exigir JWT de Auth. Sin sesión, limpiar estado y mostrar login
+    // (evita "UI logueada sin JWT" que, tras el cierre de seguridad, deja todo en blanco).
+    if(sb && sb.auth && sb.auth.getSession){
+      sb.auth.getSession().then(function(res){
+        var sess = res && res.data && res.data.session;
+        if(sess){ _navPendiente(); }
+        else {
+          try{ if(typeof clearSession==='function') clearSession(); }catch(_){}
+          CU=null; window._pendingMod=null;
+          try{ var ap=document.getElementById('app'); if(ap) ap.style.display='none'; }catch(_){}
+          try{ var sh=document.getElementById('screen-home'); if(sh) sh.style.display='none'; }catch(_){}
+          var sl=document.getElementById('screen-login'); if(sl) sl.style.display='flex';
+        }
+      }).catch(function(){ _navPendiente(); });
+    } else { _navPendiente(); }
+    // Ping silencioso de conectividad (vista pública, accesible sin sesión)
+    fetch(SB_URL+'/rest/v1/tracking_publico?select=id&limit=1',{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}})
       .catch(function(e){ console.warn('Ping:',e); });
   };
   s.onerror=function(){
