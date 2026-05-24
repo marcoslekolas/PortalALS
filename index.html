@@ -1722,14 +1722,16 @@ function _onRealtimeExpedicion(payload){
       if(payload.new) window._modalExpState = {...(window._modalExpState||{}), ...payload.new};
       return;
     }
+    // Cambio relevante: el parche quirúrgico (arriba) ya actualizó los campos en el DOM.
+    // NO recargamos la ficha entera para no reiniciar el scroll ni entrar en bucle de refresco.
+    if(payload.new) window._modalExpState = {...(window._modalExpState||{}), ...payload.new};
+    const autor = payload.new?.updated_by_nombre || 'otro usuario';
     clearTimeout(window._modalRefreshTimer);
     window._modalRefreshTimer = setTimeout(() => {
       if(document.getElementById('mo')?.classList.contains('open') && window._modalExpId === expId){
-        const autor = payload.new?.updated_by_nombre || 'otro usuario';
-        mostrarBanner('🔄 Expedición actualizada por '+autor+' — recargando ficha', 'blue');
-        openExpD(expId, true);
+        mostrarBanner('🔄 Cambios de '+autor+' aplicados a esta ficha', 'blue');
       }
-    }, 1500);
+    }, 800);
     return;
   }
 
@@ -3812,12 +3814,16 @@ function doLogout(){
 // ── PUNTO 20: Log de autenticación ───────────────────────────
 async function logAuth(evento, usuarioId, usuarioNombre, detalles){
   if(!sb) return;
+  // usuario_id es integer en la tabla: coaccionar a entero o null (evita 400 si el id no es entero)
+  let uid = null;
+  if(usuarioId!=null && /^\d+$/.test(String(usuarioId))) uid = parseInt(usuarioId,10);
   try {
     await sb.from('als_auth_log').insert({
       evento,
-      usuario_id: usuarioId || null,
+      usuario_id: uid,
       usuario_nombre: usuarioNombre || null,
       email_intentado: usuarioNombre || null,
+      user_agent: (typeof navigator!=='undefined' ? String(navigator.userAgent).slice(0,300) : null),
       detalles: detalles || null,
       created_at: new Date().toISOString()
     });
@@ -6791,7 +6797,7 @@ function renderB(list){
   document.getElementById('buques-list').innerHTML=html||'<div class="empty"><div class="empty-txt">Sin resultados</div></div>';
   setTimeout(attachBuqueCardDrag,50);
 }
-function filtrarB(q){const s=q.toLowerCase();renderB(allB.filter(b=>(b.nombre||'').toLowerCase().includes(s)||(b.imo||'').includes(s)||(b.nº_escala||'').toLowerCase().includes(s)));}
+function filtrarB(q){const n=v=>String(v||'').toLowerCase().replace(/[\s\-_.\/]/g,'');const s=n(q);renderB(allB.filter(b=>n(b.nombre).includes(s)||n(b.imo).includes(s)||n(b.nº_escala).includes(s)));}
 
 let allE=[];
 let _expIdsConDocs=new Set(); // expedicion IDs que tienen documentos PDF adjuntos
@@ -6911,6 +6917,7 @@ let _expFiltradas = []; // lista actualmente visible
 
 function filtrarExp(){
   const q   = (document.getElementById('fil-q')?.value||'').toLowerCase().trim();
+  const qn  = q.replace(/[\s\-_.\/]/g,''); // normalizado: sin espacios/guiones/puntos/barras
   const buqs= getBuquesFiltro(); // array, vacío = todos
   const emp = document.getElementById('fil-empresa')?.value||'';
   const est = document.getElementById('fil-est')?.value||'';
@@ -6918,8 +6925,8 @@ function filtrarExp(){
   const tra = document.getElementById('fil-tra')?.value||'';
   const ubi = document.getElementById('fil-ubic')?.value||'';
   _expFiltradas = allE.filter(e=>{
-    if(q && !([e.nº_expedicion,e.buques?.nombre,e.empresas?.nombre,e.nº_mrn,e.ubicacion,e.status_aduanero,e.tramite_aduanero]
-      .map(v=>(v||'').toLowerCase()).some(v=>v.includes(q)))) return false;
+    if(qn && !([e.nº_expedicion,e.buques?.nombre,e.empresas?.nombre,e.nº_mrn,e.ubicacion,e.status_aduanero,e.tramite_aduanero]
+      .map(v=>String(v||'').toLowerCase().replace(/[\s\-_.\/]/g,'')).some(v=>v.includes(qn)))) return false;
     if(buqs.length && !buqs.includes(e.buques?.nombre)) return false;
     if(emp && e.empresas?.nombre!==emp) return false;
     if(est && e.estado_semaforo!==est) return false;
