@@ -496,7 +496,18 @@ try{CU=JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu
 (function(){
   const s=document.createElement('script');
   s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-  s.onload=function(){sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});init();};
+  s.onload=function(){
+    sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
+    // Guard de sesión: sin JWT de Auth, volver al login (index.html)
+    sb.auth.getSession().then(function(res){
+      var sess=res&&res.data&&res.data.session;
+      if(sess){ init(); }
+      else {
+        var base=window.location.href.replace(/\/airport_cargo\.html.*$/,'');
+        window.location.replace(base+'/index.html');
+      }
+    }).catch(function(){ init(); });
+  };
   s.onerror=function(){document.body.innerHTML='<p style="padding:40px;color:red">Error cargando SDK</p>';};
   document.head.appendChild(s);
 })();
