@@ -12412,9 +12412,9 @@ async function openExpDesdeBuque(expId,buqueId){
 }
 
 // ── Notificación cliente desde ficha buque ────────────────────────
-// Abre un email con cuerpo HTML (tablas/formato que mailto no soporta) en el cliente
-// de correo SIN dejar fichero en Descargas: blob message/rfc822 + target=_blank (igual
-// que airport_cargo). El SO detecta el tipo y lanza Mail/Outlook.
+// Previsualiza y abre un email con cuerpo HTML en el cliente de correo. La apertura del
+// .eml ocurre DENTRO del clic del botón (gesto de usuario) -> abre Mail/Outlook en vez de
+// descargar el fichero. Mismo mecanismo que airport_cargo.
 function _abrirEmailHTML(opts){
   const to=opts.to||'', cc=opts.cc||'', subject=opts.subject||'', html=opts.html||'';
   const fromEmail=(typeof CU!=='undefined'&&CU&&CU.email)||'als@alsalgeciras.com';
@@ -12426,27 +12426,67 @@ function _abrirEmailHTML(opts){
       return btoa(chunks.join(''));
     }catch(ex){ return btoa(unescape(encodeURIComponent(str))); }
   }
-  const subjectMime='=?UTF-8?B?'+toB64(subject)+'?=';
-  const fullHtml='<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;font-family:Arial,sans-serif">'+html+'</body></html>';
-  const eml=
-    'MIME-Version: 1.0\r\n'+
-    'From: '+fromName+' <'+fromEmail+'>\r\n'+
-    'To: '+to+'\r\n'+
-    (cc?('Cc: '+cc+'\r\n'):'')+
-    'Subject: '+subjectMime+'\r\n'+
-    'Content-Type: text/html; charset=UTF-8\r\n'+
-    'Content-Transfer-Encoding: base64\r\n\r\n'+
-    toB64(fullHtml);
-  try{
+  function abrirEnCliente(dest){
+    const ccList = cc ? (fromEmail+','+cc) : fromEmail;
+    const subjectMime='=?UTF-8?B?'+toB64(subject)+'?=';
+    const fullHtml='<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;font-family:Arial,sans-serif">'+html+'</body></html>';
+    const eml=
+      'MIME-Version: 1.0\r\n'+
+      'From: '+fromName+' <'+fromEmail+'>\r\n'+
+      'To: '+dest+'\r\n'+
+      'Cc: '+ccList+'\r\n'+
+      'Subject: '+subjectMime+'\r\n'+
+      'Content-Type: text/html; charset=UTF-8\r\n'+
+      'Content-Transfer-Encoding: base64\r\n\r\n'+
+      toB64(fullHtml);
     const blob=new Blob([eml],{type:'message/rfc822'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url; a.target='_blank'; a.rel='noopener'; a.style.display='none';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url), 10000);
-  }catch(e){ console.warn('eml:',e); showToast('⚠️ No se pudo generar el correo'); }
+    showToast('📧 Revisa la nueva pestaña o tu cliente de correo');
+  }
+  const prev=document.getElementById('email-prev-dlg'); if(prev) prev.remove();
+  const styleEl=document.getElementById('email-dlg-style'); if(styleEl) styleEl.remove();
+  const st=document.createElement('style');
+  st.id='email-dlg-style';
+  st.textContent='#email-prev-dlg{border:none;border-radius:14px;padding:0;max-width:860px;width:calc(100vw - 24px);max-height:90vh;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.3)}#email-prev-dlg::backdrop{background:rgba(0,0,0,.75)}';
+  document.head.appendChild(st);
+  const dlg=document.createElement('dialog');
+  dlg.id='email-prev-dlg';
+  const toAttr=String(to).replace(/"/g,'&quot;');
+  const subjSafe=String(subject).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  dlg.innerHTML=
+    '<div style="display:flex;flex-direction:column;max-height:90vh">'+
+      '<div style="padding:13px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:flex-start;gap:10px;flex-shrink:0">'+
+        '<div style="flex:1;min-width:0;font-size:12px;line-height:1.9;color:#111">'+
+          '<span style="color:#6b7280">De:</span> '+fromName+' &lt;'+fromEmail+'&gt;<br>'+
+          '<span style="color:#6b7280">Para:</span> '+
+          '<input id="ep-dest" value="'+toAttr+'" placeholder="email@empresa.com" style="font-size:12px;font-weight:600;border:1px solid #d1d5db;border-radius:5px;padding:5px 7px;min-width:220px;max-width:100%">'+
+          (cc?' &nbsp;·&nbsp; CC: '+cc:'')+'<br>'+
+          '<span style="color:#6b7280">Asunto:</span> <strong>'+subjSafe+'</strong>'+
+        '</div>'+
+        '<button id="ep-close" aria-label="Cerrar" style="background:#f3f4f6;border:none;border-radius:8px;padding:6px 12px;font-size:15px;cursor:pointer;flex-shrink:0;min-height:40px">✕</button>'+
+      '</div>'+
+      '<div id="ep-preview" style="flex:1;overflow-y:auto;padding:20px;font-family:Arial,sans-serif;font-size:12px;line-height:1.5;color:#111;background:#fff"></div>'+
+      '<div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;background:#f9fafb;gap:12px;flex-shrink:0;flex-wrap:wrap">'+
+        '<div style="font-size:11px;color:#6b7280">Puedes editar el destinatario. Al pulsar se abrirá tu cliente de correo con el email HTML.</div>'+
+        '<button id="ep-send" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;min-height:48px">📧 Abrir en cliente de correo</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(dlg);
+  document.getElementById('ep-preview').innerHTML=html;
+  document.getElementById('ep-close').onclick=function(){ dlg.close(); dlg.remove(); };
+  document.getElementById('ep-send').onclick=function(){
+    const dest=(document.getElementById('ep-dest').value||'').trim();
+    if(!dest){ alert('Introduce un email destinatario'); return; }
+    dlg.close(); dlg.remove();
+    abrirEnCliente(dest);
+  };
+  dlg.addEventListener('click',function(ev){ if(ev.target===dlg){ dlg.close(); dlg.remove(); } });
+  try{ dlg.showModal(); }catch(_){ dlg.setAttribute('open',''); dlg.style.display='block'; }
 }
-
 async function notifClienteBuque(buqueId, buqueNombre){
   showToast('⏳ Cargando expediciones…');
   // Cargar el cliente del buque para saber a quién notificar

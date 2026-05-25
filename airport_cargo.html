@@ -415,6 +415,11 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
             <option value="07-Jul">Jul</option><option value="08-Ago">Ago</option><option value="09-Sep">Sep</option>
             <option value="10-Oct">Oct</option><option value="11-Nov">Nov</option><option value="12-Dic">Dic</option>
           </select>
+          <span style="font-size:11px;color:var(--g500);align-self:center;margin-left:4px">Retirada:</span>
+          <input type="date" class="fi" id="fil-rd-desde" style="width:auto;padding:6px 8px;font-size:12px" onchange="filtrarFin()" title="Retirada desde">
+          <span style="font-size:11px;color:var(--g500);align-self:center">–</span>
+          <input type="date" class="fi" id="fil-rd-hasta" style="width:auto;padding:6px 8px;font-size:12px" onchange="filtrarFin()" title="Retirada hasta">
+          <button class="btn btn-s btn-sm" onclick="document.getElementById('fil-rd-desde').value='';document.getElementById('fil-rd-hasta').value='';filtrarFin()" title="Limpiar rango de fechas">✕</button>
         </div>
         <div class="tc"><table class="tbl costs-hidden">
           <thead><tr>
@@ -491,7 +496,7 @@ try{CU=JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu
 (function(){
   const s=document.createElement('script');
   s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-  s.onload=function(){sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});sb.auth.getSession().then(function(r){if(!(r&&r.data&&r.data.session)){location.replace('index.html');}});init();};
+  s.onload=function(){sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});init();};
   s.onerror=function(){document.body.innerHTML='<p style="padding:40px;color:red">Error cargando SDK</p>';};
   document.head.appendChild(s);
 })();
@@ -1289,8 +1294,13 @@ function filtrarFin(){
   var h=document.getElementById('fil-h-fin').value||'';
   var y=document.getElementById('fil-y-fin').value||'';
   var m=document.getElementById('fil-m-fin').value||'';
+  var rd=(document.getElementById('fil-rd-desde')||{}).value||'';
+  var rh=(document.getElementById('fil-rd-hasta')||{}).value||'';
   var f=ALL.filter(function(e){
     if(!e.fecha_retirada) return false;
+    var fr=String(e.fecha_retirada).slice(0,10);
+    if(rd&&fr<rd)return false;
+    if(rh&&fr>rh)return false;
     if(q&&!((e.awb||'')+(e.consignatario||'')+(e.buque||'')).toLowerCase().includes(q))return false;
     if(h&&e.handling!==h)return false;
     if(y||m){var mo=calcMes(e.fecha_retirada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
