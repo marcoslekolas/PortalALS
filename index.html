@@ -12319,30 +12319,39 @@ async function openExpDesdeBuque(expId,buqueId){
 }
 
 // ── Notificación cliente desde ficha buque ────────────────────────
-// Genera un borrador .eml (message/rfc822) con cuerpo HTML — permite tablas/formato
-// que mailto no soporta. Al abrir el .eml, Mail/Outlook lo cargan como nuevo mensaje.
+// Abre un email con cuerpo HTML (tablas/formato que mailto no soporta) en el cliente
+// de correo SIN dejar fichero en Descargas: blob message/rfc822 + target=_blank (igual
+// que airport_cargo). El SO detecta el tipo y lanza Mail/Outlook.
 function _abrirEmailHTML(opts){
   const to=opts.to||'', cc=opts.cc||'', subject=opts.subject||'', html=opts.html||'';
-  let subjEnc=subject;
-  try{ subjEnc='=?utf-8?B?'+btoa(unescape(encodeURIComponent(subject)))+'?='; }catch(_){ subjEnc=subject; }
-  let b64=''; try{ b64=btoa(unescape(encodeURIComponent(html))); }catch(_){ try{ b64=btoa(html); }catch(__){ b64=''; } }
-  const eml =
+  const fromEmail=(typeof CU!=='undefined'&&CU&&CU.email)||'als@alsalgeciras.com';
+  const fromName=(typeof CU!=='undefined'&&CU&&CU.nombre)?(CU.nombre+' · ALS'):'Departamento de Operaciones ALS';
+  function toB64(str){
+    try{
+      const bytes=new TextEncoder().encode(str); const chunks=[];
+      for(let i=0;i<bytes.length;i+=512) chunks.push(String.fromCharCode.apply(null,bytes.subarray(i,Math.min(i+512,bytes.length))));
+      return btoa(chunks.join(''));
+    }catch(ex){ return btoa(unescape(encodeURIComponent(str))); }
+  }
+  const subjectMime='=?UTF-8?B?'+toB64(subject)+'?=';
+  const fullHtml='<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;font-family:Arial,sans-serif">'+html+'</body></html>';
+  const eml=
+    'MIME-Version: 1.0\r\n'+
+    'From: '+fromName+' <'+fromEmail+'>\r\n'+
     'To: '+to+'\r\n'+
     (cc?('Cc: '+cc+'\r\n'):'')+
-    'Subject: '+subjEnc+'\r\n'+
-    'X-Unsent: 1\r\n'+
-    'MIME-Version: 1.0\r\n'+
-    'Content-Type: text/html; charset=utf-8\r\n'+
+    'Subject: '+subjectMime+'\r\n'+
+    'Content-Type: text/html; charset=UTF-8\r\n'+
     'Content-Transfer-Encoding: base64\r\n\r\n'+
-    (b64.match(/.{1,76}/g)||[]).join('\r\n');
+    toB64(fullHtml);
   try{
     const blob=new Blob([eml],{type:'message/rfc822'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
-    a.href=url; a.download=(String(subject).replace(/[^\w\s\-]/g,'').trim().slice(0,60)||'aviso')+'.eml';
+    a.href=url; a.target='_blank'; a.rel='noopener'; a.style.display='none';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(()=>URL.revokeObjectURL(url), 5000);
-  }catch(e){ console.warn('eml:',e); showToast('⚠️ No se pudo generar el borrador'); }
+    setTimeout(()=>URL.revokeObjectURL(url), 10000);
+  }catch(e){ console.warn('eml:',e); showToast('⚠️ No se pudo generar el correo'); }
 }
 
 async function notifClienteBuque(buqueId, buqueNombre){
@@ -12467,7 +12476,7 @@ async function notifClienteBuque(buqueId, buqueNombre){
   if(!toEmail){ showToast('⚠️ No hay email configurado para las empresas de este buque'); return; }
   closeModal();
   _abrirEmailHTML({to:toEmail, cc:ccEmail, subject:asunto, html});
-  showToast('📧 Borrador de aviso generado (.eml) — ábrelo en tu correo para enviarlo');
+  showToast('📧 Abriendo aviso en tu cliente de correo…');
 }
 
 async function saveBuqueEst(id,val){
@@ -13969,38 +13978,57 @@ async function notifAduana(id,ref){
   const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans,puerto_terminal,place),empresas!empresa_id(nombre,email_confronta,otros_emails)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('nombre,descripcion').eq('expedicion_id',id).neq('estado','Cerrada');
   if(!e)return;
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const vNombreB=e.buques?.nombre||'Sin Buque',vRefB=e.buques?.ref_visual_trans||'Sin Ref.',vTerminal=e.buques?.puerto_terminal||e.buques?.place||'No especificada',vExp=e.nº_expedicion||'-',vBultos=e.bultos||0,vKilos=e.kilos||0,vUbi=e.ubicacion||'No definida',vStatus=e.status_aduanero||'Pendiente';
-  const listaInc=(incs||[]).map(i=>'❌ '+i.nombre+': '+i.descripcion).join('\n');
-  const bloqueAviso=listaInc?'🚨 --- ADVERTENCIA IMPORTANTE: INCIDENCIAS ---\n'+listaInc:'ℹ️ ESTADO: Mercancía recibida / Pendiente de revisar.';
-  const destinatario='aduana@customsway.eu'; // default fijo para notif aduana
-  const todosDestinatarios=destinatario;
-  const cc=encodeURIComponent('als@alsalgeciras.com');
-  const asunto=encodeURIComponent('Nueva Expedición Buque '+vNombreB+' // Expediente '+vRefB);
-  const cuerpo=encodeURIComponent('Hola,\n\nuna expedición para el buque '+vNombreB+' requiere de vuestra atención.\n\n📍 Terminal: '+vTerminal+'\n🏢 Ubicación actual: '+vUbi+'\n\n🆔 Nº Expedición: '+vExp+'\n📦 Bultos: '+vBultos+'\n⚖️ Kilos: '+vKilos+' kg\n🚦 Status: '+vStatus+'\n\n'+bloqueAviso+'\n\nAtentamente,\n\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n📞 +34 956 58 13 16 · als@alsalgeciras.com\nOPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40');
+  const TD='border:1px solid #999;padding:6px 9px';
+  const TDk='border:1px solid #999;padding:6px 9px;background:#f3f4f6;font-weight:bold;white-space:nowrap';
+  const filas=[['Buque',vNombreB],['Expediente / Ref.',vRefB],['Terminal',vTerminal],['Nº Expedición',vExp],['Bultos',vBultos],['Kilos',vKilos+' kg'],['Ubicación actual',vUbi],['Status aduanero',vStatus]];
+  const tablaDetalle=`<table style="border-collapse:collapse;font-size:13px;margin:8px 0">${filas.map(([k,v])=>`<tr><td style="${TDk}">${esc(k)}</td><td style="${TD}">${esc(v)}</td></tr>`).join('')}</table>`;
+  const incHtml=(incs&&incs.length)
+    ? `<div style="border:2px solid #ef4444;background:#fef2f2;border-radius:8px;padding:10px 12px;margin:10px 0"><div style="font-weight:bold;color:#b91c1c;margin-bottom:6px">🚨 ADVERTENCIA — INCIDENCIAS</div><ul style="margin:0;padding-left:18px;color:#7f1d1d">${incs.map(i=>`<li><b>${esc(i.nombre)}:</b> ${esc(i.descripcion)}</li>`).join('')}</ul></div>`
+    : `<div style="border:1px solid #86efac;background:#f0fdf4;border-radius:8px;padding:10px 12px;margin:10px 0;color:#166534">ℹ️ Mercancía recibida / pendiente de revisar.</div>`;
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:680px">
+    <p>Hola,</p>
+    <p>Una expedición para el buque <b>${esc(vNombreB)}</b> requiere de vuestra atención.</p>
+    ${tablaDetalle}
+    ${incHtml}
+    <p style="margin-top:16px">Atentamente,<br><b>Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com<br>OPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40</p>
+  </div>`;
+  const asunto='Nueva Expedición Buque '+vNombreB+' // Expediente '+vRefB;
   await sb.from('expediciones').update({notif_aduanas_sent:true,fecha_aviso_aduanas:new Date().toISOString()}).eq('id',id);
   await logAct('expediciones',id,ref,'email_aduanas','notif_aduanas_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
-  // Abrir cliente de correo en nueva pestaña para no cerrar la app
-  const mailtoUrl='mailto:'+todosDestinatarios+'?cc='+cc+'&subject='+asunto+'&body='+cuerpo;
-  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
-  showToast('📧 Abriendo cliente de correo...');
+  _abrirEmailHTML({to:'aduana@customsway.eu', cc:'als@alsalgeciras.com', subject:asunto, html});
+  showToast('📧 Abriendo aviso a aduana en tu correo…');
   closeModal();loadView(CV);
 }
 async function notifCliente(id,emailDest,ref){
   const {data:e}=await sb.from('expediciones').select('*,buques(nombre,ref_visual_trans),empresas!empresa_id(nombre,email_confronta,otros_emails)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('nombre,descripcion').eq('expedicion_id',id).neq('estado','Cerrada');
   if(!e)return;
-  const listaInc=(incs||[]).map(i=>'❌ '+i.nombre+': '+i.descripcion).join('\n');
-  const bloqueAviso=listaInc?'🚨 INCIDENCIAS:\n'+listaInc:'ℹ️ Mercancía recibida correctamente.';
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const todosEmails=[emailDest,...(e.empresas?.otros_emails||[])].filter(Boolean).join(',');
-  const asunto=encodeURIComponent('Recepción: '+e.buques?.nombre+' // Exp: '+e.nº_expedicion);
   const trackingUrl='https://portal.alsalgeciras.com/tracking.html?exp='+id;
-  const cuerpo=encodeURIComponent('Estimado cliente,\n\nLe informamos que su mercancía ha sido recibida.\n\n🚢 Buque: '+e.buques?.nombre+'\n🆔 Expedición: '+e.nº_expedicion+'\n📦 Bultos: '+e.bultos+'\n⚖️ Kilos: '+e.kilos+' kg\n📍 Ubicación: '+e.ubicacion+'\n🚦 Status: '+e.status_aduanero+'\n\n'+bloqueAviso+'\n\n──────────────────────────────\n🔍 SEGUIMIENTO EN TIEMPO REAL:\n'+trackingUrl+'\n──────────────────────────────\n\nAcceda al enlace en cualquier momento para consultar el estado actualizado de su expedición.\n\nAtentamente,\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n📞 +34 956 58 13 16 · als@alsalgeciras.com');
-  // Sin CC en email cliente
+  const TD='border:1px solid #999;padding:6px 9px';
+  const TDk='border:1px solid #999;padding:6px 9px;background:#f3f4f6;font-weight:bold;white-space:nowrap';
+  const filas=[['Buque',e.buques?.nombre||'—'],['Nº Expedición',e.nº_expedicion||'—'],['Bultos',e.bultos||0],['Kilos',(e.kilos||0)+' kg'],['Ubicación',e.ubicacion||'—'],['Status aduanero',e.status_aduanero||'—']];
+  const tablaDetalle=`<table style="border-collapse:collapse;font-size:13px;margin:8px 0">${filas.map(([k,v])=>`<tr><td style="${TDk}">${esc(k)}</td><td style="${TD}">${esc(v)}</td></tr>`).join('')}</table>`;
+  const incHtml=(incs&&incs.length)
+    ? `<div style="border:2px solid #ef4444;background:#fef2f2;border-radius:8px;padding:10px 12px;margin:10px 0"><div style="font-weight:bold;color:#b91c1c;margin-bottom:6px">🚨 Incidencias</div><ul style="margin:0;padding-left:18px;color:#7f1d1d">${incs.map(i=>`<li><b>${esc(i.nombre)}:</b> ${esc(i.descripcion)}</li>`).join('')}</ul></div>`
+    : `<div style="border:1px solid #86efac;background:#f0fdf4;border-radius:8px;padding:10px 12px;margin:10px 0;color:#166534">ℹ️ Mercancía recibida correctamente.</div>`;
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:680px">
+    <p>Estimado cliente,</p>
+    <p>Le informamos que su mercancía ha sido recibida.</p>
+    ${tablaDetalle}
+    ${incHtml}
+    <p style="margin:14px 0"><a href="${trackingUrl}" style="display:inline-block;background:#1565c0;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:bold">🔍 Seguimiento en tiempo real</a></p>
+    <p style="font-size:12px;color:#555">O copie este enlace: ${trackingUrl}</p>
+    <p style="margin-top:16px">Atentamente,<br><b>Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com</p>
+  </div>`;
+  const asunto='Recepción: '+(e.buques?.nombre||'')+' // Exp: '+(e.nº_expedicion||'');
   await sb.from('expediciones').update({notif_cliente_sent:true,fecha_aviso_cliente:new Date().toISOString()}).eq('id',id);
   await logAct('expediciones',id,e.nº_expedicion,'email_cliente','notif_cliente_sent',null,'Enviado por '+CU?.nombre+' el '+new Date().toLocaleString('es-ES'));
-  const mailtoUrl=`mailto:${todosEmails}?subject=${asunto}&body=${cuerpo}`;
-  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
-  showToast('📧 Abriendo cliente de correo...');
+  _abrirEmailHTML({to:todosEmails, cc:'', subject:asunto, html});
+  showToast('📧 Abriendo aviso al cliente en tu correo…');
   closeModal();loadView(CV);
 }
 async function sendConfronta(buqueId){
@@ -16239,3 +16267,11 @@ async function mostrarEventosHoy(){
       <button onclick="cerrarOnboarding()" style="background:none;border:none;color:var(--g400);font-size:12px;cursor:pointer">Saltar tour</button>
       <div style="display:flex;gap:6px;align-items:center">
         
+        <div id="onb-dots" style="display:flex;gap:6px;align-items:center"></div>
+        <button id="onb-next" onclick="onbSiguiente()" style="background:var(--b600);color:#fff;border:none;border-radius:10px;padding:12px 22px;font-size:14px;font-weight:700;cursor:pointer;min-height:44px">Siguiente →</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
