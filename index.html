@@ -8665,6 +8665,78 @@ function switchFotosTab(tab,el){
   if(el && el.style) { el.style.borderBottomColor='var(--b600)'; el.style.color='var(--b600)'; }
   loadAlmFotos(tab);
 }
+// ── ALMACÉN MÓVIL (rediseño solo en pantallas estrechas; escritorio intacto) ──
+function _esMovilAlm(){ try{ return window.matchMedia('(max-width:768px)').matches; }catch(_){ return (window.innerWidth||999)<=768; } }
+function _almEscH(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function _almChipLleg(e){
+  const u=e.ubicacion||'';
+  if(u.includes('Aeropuerto')) return '<span style="background:var(--b50);color:var(--b700);font-size:12px;font-weight:600;padding:3px 9px;border-radius:8px;flex-shrink:0">Aeropuerto</span>';
+  return '<span style="background:var(--am50);color:var(--am700);font-size:12px;font-weight:600;padding:3px 9px;border-radius:8px;flex-shrink:0">Pendiente</span>';
+}
+function cerrarAccionAlm(){ const ov=document.getElementById('alm-sheet'); if(ov) ov.remove(); }
+function abrirAccionLlegada(expId){
+  const e=(window._almLlegMap||{})[expId];
+  if(!e){ showToast('No se pudo abrir la expedición'); return; }
+  cerrarAccionAlm();
+  const refEsc=(e.nº_expedicion||'').replace(/'/g,"\\'");
+  const ov=document.createElement('div');
+  ov.id='alm-sheet';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:20002;display:flex;align-items:flex-end;justify-content:center';
+  ov.onclick=ev=>{ if(ev.target===ov) cerrarAccionAlm(); };
+  ov.innerHTML=`
+    <div style="background:var(--w);width:100%;max-width:520px;border-radius:20px 20px 0 0;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
+      <div style="position:sticky;top:0;background:var(--w);border-bottom:1px solid var(--g100);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;z-index:2">
+        <div style="min-width:0">
+          <div style="font-size:16px;font-weight:800;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_almEscH(e.nº_expedicion)}</div>
+          <div style="font-size:13px;color:var(--g500)">${_almEscH(e.buques?.nombre||'Sin buque')} · ${e.bultos||0} btos · ${e.kilos||0} kg</div>
+        </div>
+        <button onclick="cerrarAccionAlm()" aria-label="Cerrar" style="background:var(--g100);border:none;border-radius:50%;width:40px;height:40px;font-size:20px;color:var(--g600);cursor:pointer;flex-shrink:0">✕</button>
+      </div>
+      <div style="padding:16px">
+        <label class="fl2">Estado de la mercancía recibida</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px" id="est-${e.id}">
+          <button class="est-btn active" data-val="ok" onclick="selEstado('${e.id}','ok',this)" style="padding:14px 8px;border:2px solid var(--gr400);border-radius:12px;background:var(--gr50);color:var(--gr700);font-size:13px;font-weight:700;cursor:pointer">✅ Correcto</button>
+          <button class="est-btn" data-val="leve" onclick="selEstado('${e.id}','leve',this)" style="padding:14px 8px;border:2px solid var(--g200);border-radius:12px;background:var(--w);color:var(--g500);font-size:13px;font-weight:700;cursor:pointer">⚠️ Daño leve</button>
+          <button class="est-btn" data-val="grave" onclick="selEstado('${e.id}','grave',this)" style="padding:14px 8px;border:2px solid var(--g200);border-radius:12px;background:var(--w);color:var(--g500);font-size:13px;font-weight:700;cursor:pointer">🔴 Daño grave</button>
+          <button class="est-btn" data-val="humedad" onclick="selEstado('${e.id}','humedad',this)" style="padding:14px 8px;border:2px solid var(--g200);border-radius:12px;background:var(--w);color:var(--g500);font-size:13px;font-weight:700;cursor:pointer">💧 Humedad</button>
+          <button class="est-btn" data-val="precinto" onclick="selEstado('${e.id}','precinto',this)" style="padding:14px 8px;border:2px solid var(--g200);border-radius:12px;background:var(--w);color:var(--g500);font-size:13px;font-weight:700;cursor:pointer;grid-column:1/-1">🔓 Precinto roto</button>
+        </div>
+        <div id="aviso-estado-${e.id}" style="display:none;margin-top:8px;padding:8px 12px;background:var(--am50);border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e">⚠️ Se creará una incidencia automáticamente al confirmar</div>
+        <div style="margin-top:16px">
+          <label class="fl2">📸 Fotos de los bultos recibidos</label>
+          <div class="foto-area" onclick="document.getElementById('fl-fi-${e.id}').click()" style="padding:22px;margin-top:6px">
+            <input type="file" id="fl-fi-${e.id}" accept="image/*" multiple capture="environment" onchange="onFotoLlegadaCambiada('${e.id}',this)">
+            <div style="font-size:32px;margin-bottom:4px">📷</div>
+            <div style="font-size:14px;font-weight:600;color:var(--g700)">Fotografiar bultos</div>
+            <div style="font-size:12px;color:var(--g400);margin-top:3px">cámara trasera · varias fotos</div>
+          </div>
+          <div class="foto-prev" id="fl-pv-${e.id}"></div>
+        </div>
+        <div style="margin-top:14px">
+          <textarea id="fl-nota-${e.id}" class="fi" placeholder="Notas de llegada: marcas, condición del embalaje…" style="min-height:60px;font-size:14px;resize:vertical;width:100%"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-s" style="flex:1;min-height:50px;font-size:14px" onclick="imprimirQRLlegada('${e.id}','${refEsc}')">📱 QR</button>
+          <button class="btn btn-s" style="flex:1;min-height:50px;font-size:14px" onclick="leerAlbaranOCR('${e.id}','${refEsc}',${e.bultos||0},${e.kilos||0})">📄 Albarán</button>
+        </div>
+      </div>
+      <div style="position:sticky;bottom:0;background:var(--w);border-top:1px solid var(--g100);padding:12px 16px">
+        <button class="btn btn-g" style="width:100%;min-height:54px;font-size:16px;font-weight:700" onclick="_confirmarLlegadaSheet('${e.id}')">✅ Confirmar llegada</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  setupFotos('fl-fi-'+e.id,'fl-pv-'+e.id,null);
+  window['_estLlegada']=window['_estLlegada']||{};
+  window['_estLlegada'][e.id]='ok';
+}
+async function _confirmarLlegadaSheet(id){
+  const prevEl=document.getElementById('fl-pv-'+id);
+  const files=(prevEl&&prevEl._files)||[];
+  if(!files.length){ showToast('⚠️ Adjunta al menos una foto antes de confirmar'); return; }
+  await confirmarLlegadaFotos(id);
+  cerrarAccionAlm();
+}
+
 async function loadAlmFotos(tab){
   currentFotosTab=tab||currentFotosTab;
   const cont=document.getElementById('fotos-tab-content');
@@ -8697,6 +8769,27 @@ async function loadAlmFotos(tab){
       if(!a.eta)return 1;if(!b.eta)return -1;
       return new Date(a.eta)-new Date(b.eta);
     });
+    if(_esMovilAlm()){
+      window._almLlegMap={};
+      (exps||[]).forEach(x=>{ window._almLlegMap[x.id]=x; });
+      cont.innerHTML=sorted.map(([bid,d])=>`
+        <div style="margin-bottom:14px">
+          <div style="font-size:12px;font-weight:600;color:var(--g500);padding:6px 4px;display:flex;align-items:center;gap:6px">🚢 ${_almEscH(d.nombre)} · ETA ${d.eta?fd(d.eta):'—'} · ${d.items.length} exp.</div>
+          <div style="background:var(--w);border:1px solid var(--g200);border-radius:14px;overflow:hidden">
+            ${d.items.map((e,i)=>`
+            <button onclick="abrirAccionLlegada('${e.id}')" style="width:100%;${i>0?'border-top:1px solid var(--g100);':''}border-left:none;border-right:none;border-bottom:none;background:var(--w);padding:14px;display:flex;align-items:center;gap:11px;text-align:left;cursor:pointer;min-height:64px">
+              <span style="font-size:24px;flex-shrink:0">${(e.ubicacion||'').includes('Aeropuerto')?'✈️':'📦'}</span>
+              <span style="flex:1;min-width:0">
+                <span style="display:block;font-size:15px;font-weight:700;color:#111">${_almEscH(e.nº_expedicion)}</span>
+                <span style="display:block;font-size:13px;color:var(--g500)">${e.bultos||0} btos · ${e.kilos||0} kg</span>
+              </span>
+              ${_almChipLleg(e)}
+              <span style="font-size:22px;color:var(--g300);flex-shrink:0">›</span>
+            </button>`).join('')}
+          </div>
+        </div>`).join('');
+      return;
+    }
     cont.innerHTML=sorted.map(([bid,d])=>`
       <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;box-shadow:var(--sh0)">
         <div style="background:var(--b50);border-bottom:1px solid var(--b100);padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
