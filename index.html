@@ -15560,7 +15560,7 @@ async function _verificarManualScanner(){
   const res = document.getElementById('scanner-result');
   res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Buscando…</div>';
   const {data:exps} = await sb.from('expediciones')
-    .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
+    .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas!empresa_id(nombre)')
     .ilike('nº_expedicion',`%${ref}%`).limit(3);
   if(!exps?.length){ res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ No encontrada: '+ref+'</div>'; return; }
   await _mostrarResultadoScan(exps[0], res);
@@ -15609,11 +15609,11 @@ async function _procesarQRLeido(texto){
     const expId=matchBlt[1], numBulto=matchBlt[2], totalBultos=matchBlt[3];
     res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Identificando bulto…</div>';
     const {data:e,error} = await sb.from('expediciones')
-      .select('id,nº_expedicion,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
-      .eq('id',expId).single();
+      .select('id,nº_expedicion,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas!empresa_id(nombre)')
+      .eq('id',expId).maybeSingle();
     if(error||!e){
       beepError();
-      res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada</div>';
+      res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada'+(error?' <span style="font-size:10px;color:#9ca3af">('+String(error.message||error.code||'').replace(/[<>]/g,'')+')</span>':'')+'</div>';
       _scannerPausado = false;
       return;
     }
@@ -15658,10 +15658,10 @@ async function _procesarQRLeido(texto){
   const uuid = match ? match[1] : bltAlt[1];
   res.innerHTML = '<div style="color:#9ca3af;font-size:13px"><div class="spinner" style="display:inline-block;margin-right:6px"></div>Consultando…</div>';
   const {data:e,error} = await sb.from('expediciones')
-    .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas(nombre)')
-    .eq('id',uuid).single();
+    .select('id,nº_expedicion,estado_carga,estado_semaforo,ubicacion,bultos,kilos,buques(nombre),empresas!empresa_id(nombre)')
+    .eq('id',uuid).maybeSingle();
   if(error||!e){
-    res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada</div>';
+    res.innerHTML = '<div style="color:#f87171;font-size:13px;padding:8px">❌ Expedición no encontrada'+(error?' <span style="font-size:10px;color:#9ca3af">('+String(error.message||error.code||'').replace(/[<>]/g,'')+')</span>':'')+'</div>';
     beepError(); if(navigator.vibrate) navigator.vibrate([100,50,100]);
     _scannerPausado = false;
     return;
