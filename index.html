@@ -9191,6 +9191,8 @@ function ofrecerEtiquetasBultos(expId, ref, numBultos){
 }
 
 async function imprimirEtiquetasBultos(expId, ref, numBultos){
+  let buqueNombre='';
+  try{ const {data:e}=await sb.from('expediciones').select('buques(nombre)').eq('id',expId).single(); buqueNombre=(e&&e.buques&&e.buques.nombre)||''; }catch(_){}
   const qrPromises = [];
   for(let i = 1; i <= numBultos; i++){
     const qrData = `ALS-BLT:${expId}:${i}:${numBultos}`;
@@ -9205,6 +9207,7 @@ async function imprimirEtiquetasBultos(expId, ref, numBultos){
   const etiqHtml = etiquetas.map(({n, url, qrData}, i)=>`
     <div class="etiq${i < etiquetas.length-1 ? ' salto' : ''}">
       <div class="empresa">ALGECIRAS LOGISTIC SOLUTIONS</div>
+      ${buqueNombre?`<div class="buque">${buqueNombre}</div>`:''}
       <div class="ref">${ref}</div>
       <div class="bulto-num">BULTO ${n} / ${numBultos}</div>
       <div class="qr-wrap">
@@ -9259,6 +9262,10 @@ async function imprimirEtiquetasBultos(expId, ref, numBultos){
         letter-spacing:.8px;text-transform:uppercase;
         border-bottom:1px solid #e5e7eb;padding-bottom:2mm;width:100%
       }
+      .buque{
+        font-size:20pt;font-weight:900;color:#0f2d6e;
+        line-height:1.05;letter-spacing:.3px;word-break:break-word
+      }
       .ref{
         font-size:14pt;font-weight:900;letter-spacing:.3px;color:#111;
         line-height:1.1;word-break:break-all
@@ -9311,11 +9318,7 @@ async function imprimirEtiquetasBultos(expId, ref, numBultos){
       </div>
     </div>
     ${etiqHtml}
-  </div>
-
-<!-- ── Panel Centro de Notificaciones ─────────────────────────────── -->
-
-</body></html>`);
+  </body></html>`);
   w.document.close();
   setTimeout(()=>{ try{ w.print(); }catch(e){} }, 900);
 }
@@ -12316,6 +12319,32 @@ async function openExpDesdeBuque(expId,buqueId){
 }
 
 // ── Notificación cliente desde ficha buque ────────────────────────
+// Genera un borrador .eml (message/rfc822) con cuerpo HTML — permite tablas/formato
+// que mailto no soporta. Al abrir el .eml, Mail/Outlook lo cargan como nuevo mensaje.
+function _abrirEmailHTML(opts){
+  const to=opts.to||'', cc=opts.cc||'', subject=opts.subject||'', html=opts.html||'';
+  let subjEnc=subject;
+  try{ subjEnc='=?utf-8?B?'+btoa(unescape(encodeURIComponent(subject)))+'?='; }catch(_){ subjEnc=subject; }
+  let b64=''; try{ b64=btoa(unescape(encodeURIComponent(html))); }catch(_){ try{ b64=btoa(html); }catch(__){ b64=''; } }
+  const eml =
+    'To: '+to+'\r\n'+
+    (cc?('Cc: '+cc+'\r\n'):'')+
+    'Subject: '+subjEnc+'\r\n'+
+    'X-Unsent: 1\r\n'+
+    'MIME-Version: 1.0\r\n'+
+    'Content-Type: text/html; charset=utf-8\r\n'+
+    'Content-Transfer-Encoding: base64\r\n\r\n'+
+    (b64.match(/.{1,76}/g)||[]).join('\r\n');
+  try{
+    const blob=new Blob([eml],{type:'message/rfc822'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=(String(subject).replace(/[^\w\s\-]/g,'').trim().slice(0,60)||'aviso')+'.eml';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  }catch(e){ console.warn('eml:',e); showToast('⚠️ No se pudo generar el borrador'); }
+}
+
 async function notifClienteBuque(buqueId, buqueNombre){
   showToast('⏳ Cargando expediciones…');
   // Cargar el cliente del buque para saber a quién notificar
@@ -12360,70 +12389,85 @@ async function notifClienteBuque(buqueId, buqueNombre){
   const ccEmail = [...ccSet].join(',');
 
   const asunto = `Aviso mercancía en almacén — Buque ${buqueNombre} · ${exps.length} expedición${exps.length!==1?'es':''}`;
-  const sep = '─'.repeat(48);
   const trackingBase = 'https://portal.alsalgeciras.com/tracking.html?exp=';
+  const esP = e => (e.ubicacion === 'Pendiente recibir');
+  const recibidas  = exps.filter(e => !esP(e));
+  const pendientes = exps.filter(e =>  esP(e));
+  const _esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const fmtF = d => d ? new Date(d+'T12:00').toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}) : 'por confirmar';
+  const subB = arr => arr.reduce((a,e)=>a+(e.bultos||0),0);
+  const subK = arr => arr.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+  const TH  = 'border:1px solid #999;padding:5px 7px;text-align:left;background:#e5e7eb;font-weight:bold';
+  const TD  = 'border:1px solid #999;padding:5px 7px';
+  const TDr = 'border:1px solid #999;padding:5px 7px;text-align:right';
 
-  // Criterio: "Pendiente recibir" = aún no ha llegado al almacén; el resto = recibidas
-  const esPendiente = e => (e.ubicacion === 'Pendiente recibir');
-  const recibidas  = exps.filter(e => !esPendiente(e));
-  const pendientes = exps.filter(e =>  esPendiente(e));
+  const filasRec = recibidas.map((e,i)=>`<tr style="background:${i%2?'#f9f9f9':'#ffffff'}">
+        <td style="${TD}">${i+1}</td>
+        <td style="${TD}"><b>${_esc(e.nº_expedicion)}</b></td>
+        <td style="${TDr}">${e.bultos||0}</td>
+        <td style="${TDr}">${parseFloat(e.kilos)||0}</td>
+        <td style="${TD}">${_esc(e.estado_semaforo||'En almacén')}</td>
+        <td style="${TD}">${_esc(e.nº_mrn||'—')}</td>
+        <td style="${TD}"><a href="${trackingBase}${e.id}">Ver</a></td>
+      </tr>`).join('');
+  const tablaRecibidas = recibidas.length ? `
+    <h3 style="font-size:14px;margin:16px 0 6px">📦 Expediciones recibidas (${recibidas.length})</h3>
+    <table style="border-collapse:collapse;width:100%;font-size:12px">
+      <tr><th style="${TH}">#</th><th style="${TH}">Expedición</th>
+        <th style="${TH};text-align:right">Bultos</th><th style="${TH};text-align:right">Kilos</th>
+        <th style="${TH}">Estado</th><th style="${TH}">MRN</th><th style="${TH}">Seguimiento</th></tr>
+      ${filasRec}
+      <tr style="background:#dbeafe;font-weight:bold"><td style="${TD}" colspan="2">SUBTOTAL RECIBIDAS</td>
+        <td style="${TDr}">${subB(recibidas)}</td><td style="${TDr}">${subK(recibidas)}</td><td style="${TD}" colspan="3"></td></tr>
+    </table>` : '';
 
-  const fmtFecha = d => d ? new Date(d+'T12:00').toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}) : 'por confirmar';
-  const fotoDe = e => e.foto_llegada_url || e.foto_carga_url || e.foto_embarque_url || '';
-  const sub = arr => `${arr.reduce((a,e)=>a+(e.bultos||0),0)} bultos · ${arr.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0)} kg`;
+  const filasPen = pendientes.map((e,i)=>`<tr style="background:${i%2?'#f9f9f9':'#ffffff'}">
+        <td style="${TD}">${i+1}</td>
+        <td style="${TD}"><b>${_esc(e.nº_expedicion)}</b></td>
+        <td style="${TDr}">${e.bultos||0}</td>
+        <td style="${TDr}">${parseFloat(e.kilos)||0}</td>
+        <td style="${TD}">${fmtF(etaPrev(e))}</td>
+        <td style="${TD}">${_esc(e.nº_mrn||'—')}</td>
+        <td style="${TD}"><a href="${trackingBase}${e.id}">Ver</a></td>
+      </tr>`).join('');
+  const tablaPendientes = pendientes.length ? `
+    <h3 style="font-size:14px;margin:16px 0 6px">⏳ Expediciones pendientes de recibir (${pendientes.length})</h3>
+    <table style="border-collapse:collapse;width:100%;font-size:12px">
+      <tr><th style="${TH}">#</th><th style="${TH}">Expedición</th>
+        <th style="${TH};text-align:right">Bultos</th><th style="${TH};text-align:right">Kilos</th>
+        <th style="${TH}">Llegada prevista</th><th style="${TH}">MRN</th><th style="${TH}">Seguimiento</th></tr>
+      ${filasPen}
+      <tr style="background:#fef3c7;font-weight:bold"><td style="${TD}" colspan="2">SUBTOTAL PENDIENTES</td>
+        <td style="${TDr}">${subB(pendientes)}</td><td style="${TDr}">${subK(pendientes)}</td><td style="${TD}" colspan="3"></td></tr>
+    </table>` : '';
 
-  const lineaRecibida = (e,i) => {
-    const foto = fotoDe(e);
-    return `  ${i+1}. ${e.nº_expedicion}  ·  ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg  ·  ${e.estado_semaforo||'En almacén'}${e.nº_mrn?`  ·  MRN: ${e.nº_mrn}`:''}\n     Seguimiento: ${trackingBase}${e.id}${foto?`\n     📷 Foto: ${foto}`:''}`;
-  };
-  const lineaPendiente = (e,i) => {
-    const foto = fotoDe(e);
-    return `  ${i+1}. ${e.nº_expedicion}  ·  ${e.bultos||0} btos · ${parseFloat(e.kilos)||0} kg  ·  Llegada prevista: ${fmtFecha(etaPrev(e))}${e.nº_mrn?`  ·  MRN: ${e.nº_mrn}`:''}\n     Seguimiento: ${trackingBase}${e.id}${foto?`\n     📷 Foto: ${foto}`:''}`;
-  };
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:760px">
+    <p>Estimado cliente,</p>
+    <p>Le informamos del estado de su mercancía para el buque <b>${_esc(buqueNombre)}</b>.</p>
+    <table style="border-collapse:collapse;font-size:12px;margin:6px 0">
+      <tr><td style="${TD};background:#f3f4f6;font-weight:bold">BUQUE</td><td style="${TD}">${_esc(buqueNombre)}</td></tr>
+      <tr><td style="${TD};background:#f3f4f6;font-weight:bold">FECHA</td><td style="${TD}">${fecha}</td></tr>
+      <tr><td style="${TD};background:#f3f4f6;font-weight:bold">RESUMEN</td><td style="${TD}">${exps.length} expedición${exps.length!==1?'es':''} · ${totalBultos} bultos · ${totalKilos} kg</td></tr>
+    </table>
+    ${tablaRecibidas}
+    ${tablaPendientes}
+    <table style="border-collapse:collapse;font-size:13px;margin:16px 0">
+      <tr><td style="${TD};background:#111;color:#fff;font-weight:bold">TOTAL</td>
+          <td style="${TD};font-weight:bold">${totalBultos} bultos · ${totalKilos} kg</td></tr>
+    </table>
+    <p>Puede consultar el estado y las fotos de cada expedición en su enlace de seguimiento.<br>Quedamos a su disposición para cualquier consulta.</p>
+    <p style="margin-top:18px">Atentamente,<br>
+      <b>Departamento de Operaciones</b><br>
+      ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>
+      📞 +34 956 58 13 16 · als@alsalgeciras.com<br>
+      OPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40
+    </p>
+  </div>`;
 
-  const bloqueRecibidas = recibidas.length
-    ? `📦 EXPEDICIONES RECIBIDAS (${recibidas.length})\n${sep}\n${recibidas.map(lineaRecibida).join('\n\n')}\n${sep}\n▸ SUBTOTAL RECIBIDAS:  ${sub(recibidas)}`
-    : '';
-  const bloquePendientes = pendientes.length
-    ? `⏳ EXPEDICIONES PENDIENTES DE RECIBIR (${pendientes.length})\n${sep}\n${pendientes.map(lineaPendiente).join('\n\n')}\n${sep}\n▸ SUBTOTAL PENDIENTES:  ${sub(pendientes)}`
-    : '';
-
-  const firma = `Atentamente,
-
-Departamento de Operaciones
-ALGECIRAS LOGISTIC SOLUTIONS (ALS)
-📞 +34 956 58 13 16 · als@alsalgeciras.com
-OPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40`;
-
-  const cuerpo = `Estimado cliente,
-
-Le informamos del estado de su mercancía para el buque ${buqueNombre}.
-
-BUQUE: ${buqueNombre}
-FECHA: ${fecha}
-RESUMEN: ${exps.length} expedición${exps.length!==1?'es':''} · ${totalBultos} bultos · ${totalKilos} kg${recibidas.length?`\n   • Recibidas: ${recibidas.length} (${sub(recibidas)})`:''}${pendientes.length?`\n   • Pendientes de recibir: ${pendientes.length} (${sub(pendientes)})`:''}
-
-${[bloqueRecibidas, bloquePendientes].filter(Boolean).join('\n\n\n')}
-
-${sep}
-TOTAL: ${totalBultos} bultos · ${totalKilos} kg
-${sep}
-
-Puede consultar el estado y las fotos de cada expedición en su enlace de seguimiento.
-Quedamos a su disposición para cualquier consulta.
-
-${firma}`;
-
-  // Abrir directamente el cliente de correo
   if(!toEmail){ showToast('⚠️ No hay email configurado para las empresas de este buque'); return; }
-  let _mailto = `mailto:${toEmail}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
-  if(ccEmail) _mailto += `&cc=${encodeURIComponent(ccEmail)}`;
   closeModal();
-  setTimeout(()=>{
-    const _a = document.createElement('a'); _a.href=_mailto; _a.target='_blank';
-    document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
-    showToast('📧 Abriendo cliente de correo…');
-  }, 100);
+  _abrirEmailHTML({to:toEmail, cc:ccEmail, subject:asunto, html});
+  showToast('📧 Borrador de aviso generado (.eml) — ábrelo en tu correo para enviarlo');
 }
 
 async function saveBuqueEst(id,val){
