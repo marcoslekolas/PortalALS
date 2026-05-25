@@ -1082,14 +1082,14 @@ if('serviceWorker' in navigator){
   <button class="mob-alm-btn" id="mab-carga" onclick="switchFotosTab('carga',this);navAlmMob(this)">
     <span class="mob-icon">🚛</span><span class="mob-lbl">Carga</span>
   </button>
+  <button class="mob-alm-btn" id="mab-scanner" onclick="abrirScannerQR()" style="position:relative">
+    <span class="mob-icon" style="display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:50%;background:var(--b600);color:#fff;box-shadow:0 3px 10px rgba(37,99,235,.45);font-size:20px">📷</span><span class="mob-lbl" style="color:var(--b700);font-weight:700">Escáner</span>
+  </button>
   <button class="mob-alm-btn" id="mab-embarque" onclick="switchFotosTab('embarque',this);navAlmMob(this)">
     <span class="mob-icon">🚢</span><span class="mob-lbl">Embarque</span>
   </button>
   <button class="mob-alm-btn" id="mab-landed" onclick="switchFotosTab('landed',this);navAlmMob(this)">
     <span class="mob-icon">⚓</span><span class="mob-lbl">Landed</span>
-  </button>
-  <button class="mob-alm-btn" id="mab-scanner" onclick="abrirScannerQR()">
-    <span class="mob-icon">📷</span><span class="mob-lbl">Escáner</span>
   </button>
   <button class="mob-alm-btn" id="mab-home" onclick="navAlmMobHome()">
     <span class="mob-icon">🏠</span><span class="mob-lbl">Inicio</span>
@@ -8737,6 +8737,83 @@ async function _confirmarLlegadaSheet(id){
   cerrarAccionAlm();
 }
 
+function abrirAccionEmbarque(bid){
+  const d=(window._almEmbMap||{})[bid];
+  if(!d){ showToast('No se pudo abrir el buque'); return; }
+  cerrarAccionAlm();
+  const nomEsc=(d.nombre||'').replace(/'/g,"\\'");
+  const nCarga=d.nCarga||0;
+  const scanPanel = nCarga>0 ? `
+        <div id="emb-scan-panel-${bid}" style="border:1px solid var(--am300);background:var(--am50);border-radius:12px;padding:14px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:700;color:var(--am800);margin-bottom:6px">🔒 Verifica los ${nCarga} bultos reempaquetados antes de la foto</div>
+          <div id="emb-scan-status-${bid}" style="font-size:12px;color:var(--am700);margin-bottom:10px">0 / ${nCarga} escaneados</div>
+          <button onclick="abrirScannerEmbarque('${bid}','${nomEsc}')" style="width:100%;background:var(--b600);color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;min-height:52px">📷 Escanear bultos de embarque</button>
+        </div>` : '';
+  const ov=document.createElement('div');
+  ov.id='alm-sheet';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:20002;display:flex;align-items:flex-end;justify-content:center';
+  ov.onclick=ev=>{ if(ev.target===ov) cerrarAccionAlm(); };
+  ov.innerHTML=`
+    <div style="background:var(--w);width:100%;max-width:520px;border-radius:20px 20px 0 0;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
+      <div style="position:sticky;top:0;background:var(--w);border-bottom:1px solid var(--g100);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;z-index:2">
+        <div style="min-width:0"><div style="font-size:16px;font-weight:800;color:#111">🚢 ${_almEscH(d.nombre)}</div><div style="font-size:13px;color:var(--g500)">ETA ${fd(d.eta)||'—'} · embarque</div></div>
+        <button onclick="cerrarAccionAlm()" aria-label="Cerrar" style="background:var(--g100);border:none;border-radius:50%;width:40px;height:40px;font-size:20px;color:var(--g600);cursor:pointer;flex-shrink:0">✕</button>
+      </div>
+      <div style="padding:16px">
+        ${scanPanel}
+        <div id="emb-foto-wrap-${bid}" style="display:${nCarga>0?'none':''}">
+          <label class="fl2">📸 Foto embarque <span style="color:var(--rd600);font-size:10px">requerida</span></label>
+          <div class="foto-area" onclick="document.getElementById('embt-fi-${bid}').click()" style="padding:22px;margin-top:6px">
+            <input type="file" id="embt-fi-${bid}" accept="image/*" multiple capture="environment" onchange="onEmbTabFoto('${bid}')">
+            <div style="font-size:32px;margin-bottom:4px">📷</div>
+            <div style="font-size:14px;font-weight:600;color:var(--g700)">Foto del buque embarcado</div>
+          </div>
+          <div class="foto-prev" id="embt-pv-${bid}"></div>
+        </div>
+      </div>
+      <div style="position:sticky;bottom:0;background:var(--w);border-top:1px solid var(--g100);padding:12px 16px">
+        <button id="embt-btn-${bid}" class="btn btn-g" style="width:100%;min-height:54px;font-size:16px;font-weight:700;display:none" onclick="confirmarEmbarqueTab('${bid}')">✅ Confirmar embarque</button>
+        <div id="embt-hint-${bid}" style="font-size:12px;color:var(--g400);text-align:center">${nCarga>0?'Escanea los bultos, añade la foto y confirma':'Añade la foto del embarque para confirmar'}</div>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  setupFotos('embt-fi-'+bid,'embt-pv-'+bid,null);
+}
+function abrirAccionLanded(bid){
+  const d=(window._almLndMap||{})[bid];
+  if(!d){ showToast('No se pudo abrir el buque'); return; }
+  cerrarAccionAlm();
+  const nomEsc=(d.nombre||'').replace(/'/g,"\\'");
+  const ov=document.createElement('div');
+  ov.id='alm-sheet';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:20002;display:flex;align-items:flex-end;justify-content:center';
+  ov.onclick=ev=>{ if(ev.target===ov) cerrarAccionAlm(); };
+  ov.innerHTML=`
+    <div style="background:var(--w);width:100%;max-width:520px;border-radius:20px 20px 0 0;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
+      <div style="position:sticky;top:0;background:var(--w);border-bottom:1px solid var(--g100);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;z-index:2">
+        <div style="min-width:0"><div style="font-size:16px;font-weight:800;color:#111">🚢 ${_almEscH(d.nombre)}</div><div style="font-size:13px;color:var(--am600)">⚓ ${d.items.length} exp. Landed</div></div>
+        <button onclick="cerrarAccionAlm()" aria-label="Cerrar" style="background:var(--g100);border:none;border-radius:50%;width:40px;height:40px;font-size:20px;color:var(--g600);cursor:pointer;flex-shrink:0">✕</button>
+      </div>
+      <div style="padding:16px">
+        <div style="font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Mercancía a recoger del barco</div>
+        ${d.items.map(e=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--g100);font-size:13px"><span style="font-weight:700;font-family:var(--mono)">${_almEscH(e.nº_expedicion)}</span><span style="color:var(--g500)">${e.bultos||'—'} btos · ${e.kilos||'—'} kg</span>${e.foto_llegada_url?'<span style="font-size:11px">📸</span>':''}</div>`).join('')}
+        <div style="margin-top:16px">
+          <label class="fl2">📸 Foto de recogida en muelle (opcional)</label>
+          <div class="foto-area" onclick="document.getElementById('lnd-fi-${bid}').click()" style="padding:22px;margin-top:6px">
+            <input type="file" id="lnd-fi-${bid}" accept="image/*" multiple capture="environment" onchange="onLandedBuqueFoto('${bid}')">
+            <div style="font-size:32px;margin-bottom:4px">📷</div>
+            <div style="font-size:14px;font-weight:600;color:var(--g700)">Foto de la mercancía en muelle</div>
+          </div>
+          <div class="foto-prev" id="lnd-pv-${bid}"></div>
+        </div>
+      </div>
+      <div style="position:sticky;bottom:0;background:var(--w);border-top:1px solid var(--g100);padding:12px 16px">
+        <button id="lnd-btn-${bid}" class="btn btn-g" style="width:100%;min-height:54px;font-size:16px;font-weight:700" onclick="confirmarLandedBuque('${bid}','${nomEsc}')">⚓ Confirmar recogida Landed</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  setupFotos('lnd-fi-'+bid,'lnd-pv-'+bid,null);
+}
 function abrirAccionCarga(bid){
   const d=(window._almCargaMap||{})[bid];
   if(!d){ showToast('No se pudo abrir el buque'); return; }
@@ -8983,6 +9060,24 @@ async function loadAlmFotos(tab){
     if(_embBids.length){
       try{ const {data:_cb}=await sb.from('carga_bultos').select('buque_id').in('buque_id',_embBids); (_cb||[]).forEach(r=>{_cargaCount[r.buque_id]=(_cargaCount[r.buque_id]||0)+1;}); }catch(e){}
     }
+    if(_esMovilAlm()){
+      window._almEmbMap={};
+      cont.innerHTML=buques.map(b=>{
+        const nCarga=_cargaCount[b.id]||0;
+        window._almEmbMap[b.id]={nombre:b.nombre,eta:b.eta_buque,nCarga};
+        const chip = nCarga>0
+          ? `<span style="background:var(--am50);color:var(--am700);font-size:12px;font-weight:600;padding:3px 9px;border-radius:8px;flex-shrink:0">🔒 ${nCarga}</span>`
+          : `<span style="background:var(--b50);color:var(--b700);font-size:12px;font-weight:600;padding:3px 9px;border-radius:8px;flex-shrink:0">Listo</span>`;
+        return `
+        <button onclick="abrirAccionEmbarque('${b.id}')" style="width:100%;background:var(--w);border:1px solid var(--g200);border-radius:14px;margin-bottom:10px;padding:14px;display:flex;align-items:center;gap:11px;text-align:left;cursor:pointer;min-height:64px">
+          <span style="font-size:24px;flex-shrink:0">🚢</span>
+          <span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:700;color:#111">${_almEscH(b.nombre)}</span><span style="display:block;font-size:13px;color:var(--g500)">ETA ${fd(b.eta_buque)||'—'}</span></span>
+          ${chip}
+          <span style="font-size:22px;color:var(--g300);flex-shrink:0">›</span>
+        </button>`;
+      }).join('');
+      return;
+    }
     cont.innerHTML=buques.map(b=>{
       const nCarga=_cargaCount[b.id]||0;
       const scanPanel = nCarga>0 ? `
@@ -9041,6 +9136,21 @@ async function loadAlmFotos(tab){
         <button class="btn btn-p btn-sm" onclick="abrirLandedNoPrevisto()">+ Registrar landed no previsto</button>
       </div>`;
 
+    if(_esMovilAlm()){
+      window._almLndMap={};
+      if(!buquesConLanded.length){ cont.innerHTML=headerHtml+'<div class="empty" style="padding:40px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay expediciones Landed pendientes de recoger</div></div>'; return; }
+      cont.innerHTML=headerHtml+buquesConLanded.map(b=>{
+        const bLanded=landedByBuque[b.id]||[];
+        window._almLndMap[b.id]={nombre:b.nombre,items:bLanded};
+        return `
+        <button onclick="abrirAccionLanded('${b.id}')" style="width:100%;background:var(--w);border:1px solid var(--g200);border-radius:14px;margin-bottom:10px;padding:14px;display:flex;align-items:center;gap:11px;text-align:left;cursor:pointer;min-height:64px">
+          <span style="font-size:24px;flex-shrink:0">🚢</span>
+          <span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:700;color:#111">${_almEscH(b.nombre)}</span><span style="display:block;font-size:13px;color:var(--am600)">⚓ ${bLanded.length} exp. Landed</span></span>
+          <span style="font-size:22px;color:var(--g300);flex-shrink:0">›</span>
+        </button>`;
+      }).join('');
+      return;
+    }
     if(!buquesConLanded.length){
       cont.innerHTML = headerHtml + '<div class="empty" style="padding:40px 0"><div class="empty-icon">⚓</div><div class="empty-txt">No hay expediciones Landed previstas pendientes de recoger</div></div>';
       return;
@@ -9956,6 +10066,7 @@ async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Si
   // Email automático al cliente con confirmación de embarque
   await enviarEmailEmbarqueCliente(bid, fotoUrl);
   await loadAlmFotos('embarque');
+  if(document.getElementById('alm-sheet')) cerrarAccionAlm();
 }
 
 // ── Email automático al cliente al confirmar embarque ─────────────────
@@ -10081,6 +10192,7 @@ async function confirmarLandedBuque(buqueId, buqueNombre){
   }
   showToast('✅ Recogida confirmada'+(fotoUrl?' 📸':'')+' — '+(exps.length>1?exps.length+' expediciones':'1 expedición')+' → pendiente llegada almacén');
   await loadAlmFotos('landed');
+  if(document.getElementById('alm-sheet')) cerrarAccionAlm();
 }
 
 function modalFotos(id,ref){
