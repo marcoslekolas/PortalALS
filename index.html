@@ -8771,6 +8771,10 @@ function abrirAccionEmbarque(bid){
           </div>
           <div class="foto-prev" id="embt-pv-${bid}"></div>
         </div>
+        <div style="margin-top:14px">
+          <label class="fl2">📍 Lugar de entrega <span style="color:var(--g400);font-size:10px">se incluye en el aviso al cliente</span></label>
+          <textarea id="emb-lugar-${bid}" class="fi" rows="2" style="margin-top:6px;resize:vertical;width:100%" placeholder="Dirección / puerto / instrucciones de entrega"></textarea>
+        </div>
       </div>
       <div style="position:sticky;bottom:0;background:var(--w);border-top:1px solid var(--g100);padding:12px 16px">
         <button id="embt-btn-${bid}" class="btn btn-g" style="width:100%;min-height:54px;font-size:16px;font-weight:700;display:none" onclick="confirmarEmbarqueTab('${bid}')">✅ Confirmar embarque</button>
@@ -9103,6 +9107,8 @@ async function loadAlmFotos(tab){
               </div>
               <div class="foto-prev" id="embt-pv-${b.id}"></div>
             </div>
+            <div class="fg2"><label class="fl2">📍 Lugar de entrega <span style="color:var(--g400);font-size:10px">se incluye en el aviso al cliente</span></label>
+              <textarea id="emb-lugar-${b.id}" class="fi" rows="2" style="resize:vertical" placeholder="Dirección / puerto / instrucciones de entrega"></textarea></div>
             <button id="embt-btn-${b.id}" class="btn btn-g btn-full" style="display:none" onclick="confirmarEmbarqueTab('${b.id}')">✅ Confirmar embarque — cambiar estado a EMBARCADO</button>
           </div>
         </div>
@@ -10101,7 +10107,10 @@ async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Si
     const urls=await subirFotosYGuardar(files,'buques',bid,'embarque');
     if(urls.length) fotoUrl=urls[0];
   }
-  await sb.from('buques').update({estado_operacion:'Finalizado'}).eq('id',bid);
+  const lugarEntrega=(document.getElementById('emb-lugar-'+bid)?.value||'').trim();
+  const _updB={estado_operacion:'Finalizado'};
+  if(lugarEntrega) _updB.lugar_entrega=lugarEntrega;
+  await sb.from('buques').update(_updB).eq('id',bid);
   const {data:exps}=await sb.from('expediciones').select('id,ubicacion').eq('buque_id',bid);
   for(const e of exps||[]){
     if(e.ubicacion==='Landed') continue;
@@ -10124,79 +10133,51 @@ async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Si
 async function enviarEmailEmbarqueCliente(buqueId, fotoUrl){
   try{
     const {data:b} = await sb.from('buques')
-      .select('nombre,nº_escala,eta_buque,ec:cliente_id(nombre,email_confronta,otros_emails)')
+      .select('nombre,nº_escala,eta_buque,lugar_entrega,ec:cliente_id(nombre,email_confronta,otros_emails)')
       .eq('id',buqueId).single();
     if(!b) return;
-
     const emailCliente = b.ec?.email_confronta;
     if(!emailCliente){ showToast('ℹ️ Sin email cliente para notif. embarque'); return; }
-
     const {data:exps} = await sb.from('expediciones')
-      .select('nº_expedicion,bultos,kilos,nº_mrn')
+      .select('nº_expedicion,remitente,bultos,kilos,nº_mrn')
       .eq('buque_id',buqueId)
       .eq('estado_semaforo','🚢 EMBARCADO')
       .neq('ubicacion','Landed');
-
     const hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
     const totalBultos = (exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
     const totalKilos  = (exps||[]).reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
-
-    const detalle = (exps||[]).map(e=>
-      '  · Exp: '+e.nº_expedicion+' | '+e.bultos+' btos · '+e.kilos+' kg'+(e.nº_mrn?' | MRN: '+e.nº_mrn:'')
-    ).join('\n');
-
-    const cuerpo =
-      'Dear customer,\n\n'+
-      'We are pleased to confirm that your cargo has been successfully loaded on board the vessel.\n\n'+
-      '🚢 Vessel: '+b.nombre+
-      (b.nº_escala?'\n🔢 Call: '+b.nº_escala:'')+
-      '\n📅 Loading date: '+hoy+
-      '\n\n── SHIPMENTS LOADED ON BOARD ─────────────────\n'+
-      detalle+
-      '\n\n📦 Total: '+totalBultos+' packages · '+totalKilos.toLocaleString('en-GB')+' kg'+
-      (fotoUrl?'\n📸 Loading confirmation photo attached to this email.':'')+
-      '\n\nWe remain at your disposal for any queries.\n\n'+
-      'Kind regards,\n\nOperations Department\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n'+
-      '📞 +34 956 58 13 16 · als@alsalgeciras.com\n'+
-      'Operations 24/7 · Boardings +34 664 07 49 40\n\n'+
-      '══════════════════════════════════════════════\n\n'+
-      'Estimado cliente,\n\n'+
-      'Le confirmamos que su mercancía ha sido embarcada correctamente a bordo del buque.\n\n'+
-      '🚢 Buque: '+b.nombre+
-      (b.nº_escala?'\n🔢 Escala: '+b.nº_escala:'')+
-      '\n📅 Fecha embarque: '+hoy+
-      '\n\n── EXPEDICIONES EMBARCADAS ──────────────────\n'+
-      detalle+
-      '\n\n📦 Total: '+totalBultos+' bultos · '+totalKilos.toLocaleString('es-ES')+' kg'+
-      (fotoUrl?'\n📸 Foto de confirmación de embarque adjunta en este email.':'')+
-      '\n\nQuedamos a su disposición para cualquier consulta.\n\n'+
-      'Atentamente,\n\nDepartamento de Operaciones\nALGECIRAS LOGISTIC SOLUTIONS (ALS)\n'+
-      '📞 +34 956 58 13 16 · als@alsalgeciras.com\n'+
-      'Operations 24/7 · Boardings +34 664 07 49 40';
-
-    const otros = (b.ec?.otros_emails||[]).filter(Boolean).join(',');
-    const cc = otros || '';
-    const asunto = encodeURIComponent('Cargo loaded on board — Vessel '+b.nombre+' · '+hoy+'  /  Embarque confirmado — Buque '+b.nombre);
-
-    // iOS Safari limita mailto: a ~2000 chars — usar cuerpo corto en iPhone/iPad
-    const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    const cuerpoFinal = esIOS
-      ? 'Dear customer,\nWe confirm your cargo has been loaded on board vessel '+b.nombre+' on '+hoy+'.\n'+totalBultos+' packages · '+totalKilos.toLocaleString('en-GB')+' kg\n\n'+
-        'Estimado cliente,\nConfirmamos embarque a bordo del buque '+b.nombre+' el '+hoy+'.\n'+totalBultos+' bultos · '+totalKilos.toLocaleString('es-ES')+' kg\n\nALS Algeciras · +34 956 58 13 16'
-      : cuerpo;
-
-    const mailto = 'mailto:'+emailCliente
-      +'?cc='+encodeURIComponent(cc)
-      +'&subject='+asunto
-      +'&body='+encodeURIComponent(cuerpoFinal);
-
-    const a = document.createElement('a');
-    a.href = mailto; a.target = '_blank';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    showToast('📧 Email de embarque abierto — recuerda enviar'+(esIOS?' (versión compacta iOS)':''));
+    const _esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const TH='border:1px solid #999;padding:5px 7px;background:#e5e7eb;font-weight:bold;text-align:left';
+    const TD='border:1px solid #999;padding:5px 7px';
+    const TDr='border:1px solid #999;padding:5px 7px;text-align:right';
+    const filas=(exps||[]).map((e,i)=>`<tr style="background:${i%2?'#f9f9f9':'#fff'}"><td style="${TD}"><b>${_esc(e.nº_expedicion)}</b></td><td style="${TD}">${_esc(e.remitente||'—')}</td><td style="${TDr}">${e.bultos||0}</td><td style="${TDr}">${parseFloat(e.kilos)||0}</td><td style="${TD}">${_esc(e.nº_mrn||'—')}</td></tr>`).join('');
+    const tablaExps=`<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+      <tr><th style="${TH}">Expedición / P.O.</th><th style="${TH}">Remitente</th><th style="${TH};text-align:right">Bultos</th><th style="${TH};text-align:right">Kilos</th><th style="${TH}">MRN</th></tr>
+      ${filas}
+      <tr style="background:#dbeafe;font-weight:bold"><td style="${TD}" colspan="2">TOTAL</td><td style="${TDr}">${totalBultos}</td><td style="${TDr}">${totalKilos}</td><td style="${TD}"></td></tr>
+    </table>`;
+    const lugarBlock = b.lugar_entrega ? `<table style="border-collapse:collapse;font-size:13px;margin:10px 0"><tr><td style="${TD};background:#fff7ed;font-weight:bold;color:#9a3412">📍 Lugar de entrega / Delivery place</td><td style="${TD}">${_esc(b.lugar_entrega)}</td></tr></table>` : '';
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:720px">
+      <p><b>Dear customer / Estimado cliente,</b></p>
+      <p>We confirm your cargo has been loaded on board the vessel. / Le confirmamos que su mercancía ha sido embarcada a bordo del buque.</p>
+      <table style="border-collapse:collapse;font-size:13px;margin:6px 0">
+        <tr><td style="${TD};background:#f3f4f6;font-weight:bold">🚢 Buque / Vessel</td><td style="${TD}">${_esc(b.nombre)}</td></tr>
+        ${b.nº_escala?`<tr><td style="${TD};background:#f3f4f6;font-weight:bold">🔢 Escala / Call</td><td style="${TD}">${_esc(b.nº_escala)}</td></tr>`:''}
+        <tr><td style="${TD};background:#f3f4f6;font-weight:bold">📅 Fecha / Date</td><td style="${TD}">${hoy}</td></tr>
+      </table>
+      ${lugarBlock}
+      <h3 style="font-size:14px;margin:14px 0 4px">📦 Expediciones embarcadas / Shipments loaded on board</h3>
+      ${tablaExps}
+      ${fotoUrl?'<p style="font-size:12px;color:#555">📸 Foto de confirmación de embarque disponible en el seguimiento.</p>':''}
+      <p>We remain at your disposal for any queries. / Quedamos a su disposición para cualquier consulta.</p>
+      <p style="margin-top:16px">Kind regards / Atentamente,<br><b>Operations Department · Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com<br>Operations 24/7 · Boardings +34 664 07 49 40</p>
+    </div>`;
+    const cc = (b.ec?.otros_emails||[]).filter(Boolean).join(',');
+    const subject = 'Cargo loaded on board — Vessel '+b.nombre+' · '+hoy+'  /  Embarque confirmado — Buque '+b.nombre;
+    _previewEmail({to:emailCliente, cc, subject, html});
   } catch(ex){
     console.warn('Email embarque error:', ex);
-    showToast('⚠️ No se pudo abrir el email de embarque: '+ex.message);
+    showToast('⚠️ No se pudo preparar el email de embarque: '+ex.message);
   }
 }
 function onLandedFoto(){const f=document.getElementById('lnd-fi')?.files;if(f&&f.length>0){const btn=document.getElementById('lnd-btn');if(btn)btn.style.display='';setupFotos('lnd-fi','lnd-pv',null);}}
@@ -12576,6 +12557,7 @@ async function openBuque(id){
         ${['Sin comenzar','En proceso','Finalizado','Cancelado','Aplazado'].map(s=>`<option ${(b.estado_operacion||'En proceso')===s?'selected':''}>${s}</option>`).join('')}
       </select>
     </div>
+    <div class="fg2"><label class="fl2">📍 Lugar de entrega</label><textarea id="bq-lugar-${id}" class="fi" style="min-height:46px;resize:vertical" placeholder="Dirección / puerto / instrucciones de entrega al cliente">${(b.lugar_entrega||'').replace(/</g,'&lt;')}</textarea></div>
     ${b.created_by_nombre?`<div style="font-size:12px;color:var(--g400);margin-bottom:10px">Creado por <strong>${b.created_by_nombre}</strong>${b.updated_at?` · Actualizado: ${fdt(b.updated_at)}`:''}</div>`:''}
     <hr class="fdiv">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
@@ -12635,7 +12617,7 @@ async function openBuque(id){
 function buscarIMOporNombreEdit(bid){const nom=document.getElementById('bq-n-'+bid)?.value||'';if(!nom||nom.length<2){alert('El nombre del buque está vacío');return;}const enc=encodeURIComponent(nom);window.open('https://www.vesselfinder.com/?name='+enc,'_blank');window.open('https://www.marinetraffic.com/en/ais/index/ships/all/shipname:'+enc,'_blank');}
 function prevIMOEdit(bid,imo){const d=document.getElementById('imo-prev-edit-'+bid);if(!d)return;if(!imo||imo.length<5){d.innerHTML='';return;}d.innerHTML=`<a class="ext-link" href="https://www.vesselfinder.com/vessels/details/${imo}" target="_blank">🎯 VesselFinder</a><a class="ext-link" href="https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}" target="_blank">🌍 MarineTraffic</a>`;}
 async function saveBuqueEdit(id){
-  const obj={nombre:document.getElementById('bq-n-'+id)?.value||'',ref_visual_trans:document.getElementById('bq-vt-'+id)?.value||null,imo:document.getElementById('bq-imo-'+id)?.value||null,nº_escala:document.getElementById('bq-esc-'+id)?.value||null,eta_buque:document.getElementById('bq-eta-'+id)?.value||null,puerto_terminal:document.getElementById('bq-pto-'+id)?.value||null,cliente_id:document.getElementById('bq-cli-'+id)?.value||null,consignatario_id:document.getElementById('bq-con-'+id)?.value||null,observaciones:(document.getElementById('bq-obs-'+id)?.value||'').trim()||null};
+  const obj={nombre:document.getElementById('bq-n-'+id)?.value||'',ref_visual_trans:document.getElementById('bq-vt-'+id)?.value||null,imo:document.getElementById('bq-imo-'+id)?.value||null,nº_escala:document.getElementById('bq-esc-'+id)?.value||null,eta_buque:document.getElementById('bq-eta-'+id)?.value||null,puerto_terminal:document.getElementById('bq-pto-'+id)?.value||null,cliente_id:document.getElementById('bq-cli-'+id)?.value||null,consignatario_id:document.getElementById('bq-con-'+id)?.value||null,observaciones:(document.getElementById('bq-obs-'+id)?.value||'').trim()||null,lugar_entrega:(document.getElementById('bq-lugar-'+id)?.value||'').trim()||null};
   await sb.from('buques').update(obj).eq('id',id);
   await logAct('buques',id,obj.nombre,'editar','datos',null,'editado');
   showToast('Buque actualizado ✅');closeModal();loadView(CV);
@@ -12648,11 +12630,57 @@ async function openExpDesdeBuque(expId,buqueId){
   },60);
 }
 
-// ── Notificación cliente desde ficha buque ────────────────────────
-// Abre un email con cuerpo HTML directamente en el cliente de correo (sin previsualización).
-// IMPORTANTE: debe invocarse DENTRO del clic del usuario, sin ningún await por delante,
-// si no el navegador descarga el .eml en vez de abrirlo. Por eso los emails se pre-construyen
-// Envía el email vía Edge Function (Nylas) — sin blob, sin descarga de ningún fichero.
+// ── Notificación por email (previsualización en app + envío vía Nylas) ────────
+// _previewEmail: muestra el email dentro de la aplicación con Para/CC/Asunto/cuerpo
+// EDITABLES; al pulsar "Enviar" lo manda con Nylas (Edge Function send-notif). No abre
+// el cliente de correo del ordenador ni descarga ningún fichero.
+function _previewEmail(opts){
+  const to=opts.to||'', cc=opts.cc||'', subject=opts.subject||'', html=opts.html||'';
+  const onSent=opts.onSent;
+  const _attr=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  const prev=document.getElementById('email-preview'); if(prev) prev.remove();
+  const ov=document.createElement('div');
+  ov.id='email-preview';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20004;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML=`
+    <div style="background:#fff;border-radius:16px;width:100%;max-width:720px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 12px 48px rgba(0,0,0,.35);overflow:hidden">
+      <div style="padding:15px 18px;border-bottom:1px solid var(--g100);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <div style="font-size:16px;font-weight:800;color:#111">✉️ Previsualizar y enviar</div>
+        <button onclick="document.getElementById('email-preview').remove()" aria-label="Cerrar" style="background:var(--g100);border:none;border-radius:50%;width:36px;height:36px;font-size:18px;color:var(--g600);cursor:pointer">✕</button>
+      </div>
+      <div style="padding:14px 18px;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch">
+        <label class="fl2">Para</label>
+        <input id="pe-to" class="fi" value="${_attr(to)}" style="margin:4px 0 10px">
+        <label class="fl2">CC <span style="font-size:10px;color:var(--g400)">(opcional)</span></label>
+        <input id="pe-cc" class="fi" value="${_attr(cc)}" style="margin:4px 0 10px" placeholder="separa varios con comas">
+        <label class="fl2">Asunto</label>
+        <input id="pe-subject" class="fi" value="${_attr(subject)}" style="margin:4px 0 10px">
+        <label class="fl2">Cuerpo <span style="font-size:10px;color:var(--g400)">— editable, haz clic para modificar</span></label>
+        <div id="pe-body" contenteditable="true" style="border:1px solid var(--g200);border-radius:10px;padding:14px;max-height:44vh;overflow-y:auto;background:#fff;font-size:13px;line-height:1.5;margin-top:4px;outline:none">${html}</div>
+      </div>
+      <div style="padding:13px 18px;border-top:1px solid var(--g100);display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">
+        <button onclick="document.getElementById('email-preview').remove()" class="btn btn-s" style="min-height:44px">Cancelar</button>
+        <button id="pe-send" class="btn btn-p" style="min-height:44px;font-weight:700">📤 Enviar con Nylas</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.onclick=ev=>{ if(ev.target===ov) ov.remove(); };
+  document.getElementById('pe-send').onclick=async()=>{
+    const btn=document.getElementById('pe-send');
+    const data={
+      to:(document.getElementById('pe-to').value||'').trim(),
+      cc:(document.getElementById('pe-cc').value||'').trim(),
+      subject:(document.getElementById('pe-subject').value||'').trim(),
+      html:document.getElementById('pe-body').innerHTML
+    };
+    if(!data.to){ showToast('⚠️ Indica al menos un destinatario'); return; }
+    btn.disabled=true; const _t=btn.textContent; btn.textContent='⏳ Enviando…';
+    const ok=await _abrirEmailHTML(data);
+    if(ok){ ov.remove(); if(typeof onSent==='function'){ try{ onSent(); }catch(_){}} }
+    else { btn.disabled=false; btn.textContent=_t; }
+  };
+}
+// _abrirEmailHTML: envía el email vía Edge Function (Nylas). Devuelve true si fue OK.
 async function _abrirEmailHTML(opts){
   const to=(opts.to||'').trim(), cc=(opts.cc||'').trim(), subject=opts.subject||'', html=opts.html||'';
   if(!to||!html){ showToast('⚠️ Falta destinatario o contenido del email'); return false; }
@@ -12820,11 +12848,11 @@ async function _prepBuqueEmail(buqueId, buqueNombre){
   if(!toEmail){ window._buqueEmailCache[buqueId]=false; return; }
   window._buqueEmailCache[buqueId]={to:toEmail, cc:ccEmail, subject:asunto, html};
 }
-async function notifClienteBuque(buqueId, buqueNombre){
+function notifClienteBuque(buqueId, buqueNombre){
   const c=(window._buqueEmailCache||{})[buqueId];
   if(c===undefined){ showToast('⏳ Preparando el aviso… reinténtalo en un segundo'); _prepBuqueEmail(buqueId, buqueNombre); return; }
   if(!c){ showToast('No hay expediciones/email para notificar en este buque'); return; }
-  await _abrirEmailHTML(c);
+  _previewEmail({...c});
 }
 
 async function saveBuqueEst(id,val){
@@ -14353,23 +14381,23 @@ async function _prepNotifEmails(e){
     cliente:{to:todosEmails, cc:'', subject:'Recepción: '+(e.buques?.nombre||'')+' // Exp: '+(e.nº_expedicion||''), html:htmlC}
   };
 }
-async function notifAduana(id,ref){
+function notifAduana(id,ref){
   const c=(window._notifEmailCache||{})[id];
   if(!c||!c.aduana){ showToast('⏳ Preparando el email… reinténtalo en un segundo'); return; }
-  const ok=await _abrirEmailHTML(c.aduana);
-  if(!ok) return;
-  sb.from('expediciones').update({notif_aduanas_sent:true,fecha_aviso_aduanas:new Date().toISOString()}).eq('id',id).then(()=>{}).catch(()=>{});
-  logAct('expediciones',id,ref,'email_aduanas','notif_aduanas_sent',null,'Enviado por '+(CU?.nombre)+' el '+new Date().toLocaleString('es-ES'));
+  _previewEmail({...c.aduana, onSent:()=>{
+    sb.from('expediciones').update({notif_aduanas_sent:true,fecha_aviso_aduanas:new Date().toISOString()}).eq('id',id).then(()=>{}).catch(()=>{});
+    logAct('expediciones',id,ref,'email_aduanas','notif_aduanas_sent',null,'Enviado por '+(CU?.nombre)+' el '+new Date().toLocaleString('es-ES'));
+  }});
 }
-async function notifCliente(id,emailDest,ref){
+function notifCliente(id,emailDest,ref){
   const c=(window._notifEmailCache||{})[id];
   if(!c||!c.cliente){ showToast('⏳ Preparando el email… reinténtalo en un segundo'); return; }
-  const data=c.cliente;
+  const data={...c.cliente};
   if(emailDest && !data.to) data.to=emailDest;
-  const ok=await _abrirEmailHTML(data);
-  if(!ok) return;
-  sb.from('expediciones').update({notif_cliente_sent:true,fecha_aviso_cliente:new Date().toISOString()}).eq('id',id).then(()=>{}).catch(()=>{});
-  logAct('expediciones',id,ref,'email_cliente','notif_cliente_sent',null,'Enviado por '+(CU?.nombre)+' el '+new Date().toLocaleString('es-ES'));
+  _previewEmail({...data, onSent:()=>{
+    sb.from('expediciones').update({notif_cliente_sent:true,fecha_aviso_cliente:new Date().toISOString()}).eq('id',id).then(()=>{}).catch(()=>{});
+    logAct('expediciones',id,ref,'email_cliente','notif_cliente_sent',null,'Enviado por '+(CU?.nombre)+' el '+new Date().toLocaleString('es-ES'));
+  }});
 }
 async function sendConfronta(buqueId){
   const {data:b}=await sb.from('buques').select('*,en:consignatario_id(nombre,email_confronta)').eq('id',buqueId).single();
