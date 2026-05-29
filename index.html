@@ -2856,22 +2856,25 @@ async function _bgBuscar(q){
 
   _searchTimer = setTimeout(async()=>{
     try{
+      // qI: versión para ilike — reemplaza caracteres no alfanuméricos por % (wildcard Postgres)
+      // así "SSI-Conquest" y "SSI Conquest" y "020-07" encuentran los mismos registros
+      const qI = q.replace(/[^a-z0-9]/gi,'%').replace(/%{2,}/g,'%').replace(/^%+|%+$/g,'') || q;
       const [rb, re, rmrn, rempSearch, remp, rinc, rawb] = await Promise.all([
         sb.from('buques').select('id,nombre,imo,estado_operacion,nº_escala,eta_buque')
-          .or(`nombre.ilike.%${q}%,nº_escala.ilike.%${q}%`).limit(4),
+          .or(`nombre.ilike.%${qI}%,nº_escala.ilike.%${qI}%`).limit(4),
         sb.from('expediciones').select('id,nº_expedicion,buques(nombre),empresas!empresa_id(nombre),estado_semaforo,ubicacion')
-          .or(`nº_expedicion.ilike.%${q}%`).limit(5),
+          .or(`nº_expedicion.ilike.%${qI}%`).limit(5),
         sb.from('expediciones').select('id,nº_expedicion,nº_mrn,buques(nombre),estado_semaforo')
-          .ilike('nº_mrn',`%${q}%`).limit(3),
+          .ilike('nº_mrn',`%${qI}%`).limit(3),
         sb.from('expediciones').select('id,nº_expedicion,empresas!empresa_id(nombre),buques(nombre),estado_semaforo,ubicacion')
-          .ilike('empresas.nombre',`%${q}%`).limit(3),
+          .ilike('empresas.nombre',`%${qI}%`).limit(3),
         sb.from('empresas').select('id,nombre,email_confronta')
-          .or(`nombre.ilike.%${q}%,email_confronta.ilike.%${q}%`).limit(4),
+          .or(`nombre.ilike.%${qI}%,email_confronta.ilike.%${qI}%`).limit(4),
         sb.from('incidencias').select('id,tipo,descripcion,estado,expediciones(id,nº_expedicion)')
-          .ilike('descripcion',`%${q}%`).limit(3),
+          .ilike('descripcion',`%${qI}%`).limit(3),
         // Airport cargo: buscar por AWB
         sb.from('airport_cargo_entradas').select('id,awb,cliente,consignatario,status,aeropuerto')
-          .or(`awb.ilike.%${q}%,cliente.ilike.%${q}%`).limit(3),
+          .or(`awb.ilike.%${qI}%,cliente.ilike.%${qI}%`).limit(3),
       ]);
 
       const grupos = [];
@@ -14368,6 +14371,38 @@ function semaforoDeUbicacion(ubic){
   return null;
 }
 
+// ✈️ Detección automática de expediciones de aeropuerto (formato AWB: XXX-XXXXXXXX).
+// Si el nº de expedición coincide y no existe ya en airport_cargo, crea la entrada
+// automáticamente y la vincula a la expedición de operativas.
+async function _detectarYRegistrarAWB(expId, awbCandidate){
+  if(!awbCandidate) return;
+  // AWB = 10-11 dígitos (con o sin guión entre el prefijo de 3 y el resto)
+  const awbClean = String(awbCandidate).replace(/[-\s]/g,'');
+  if(!/^\d{10,11}$/.test(awbClean)) return; // no es formato AWB, ignorar
+  const awbFmt = awbClean.substring(0,3)+'-'+awbClean.substring(3);
+  try{
+    // Comprobar si ya existe una entrada con este AWB o vinculada a esta expedición
+    const [{data:byAwb},{data:byExp}]=await Promise.all([
+      sb.from('airport_cargo').select('id').ilike('awb',awbFmt).limit(1),
+      sb.from('airport_cargo').select('id').eq('expedicion_id',expId).limit(1)
+    ]);
+    if(byAwb?.length || byExp?.length) return; // ya existe, nada que hacer
+    // Obtener datos de la expedición para rellenar airport_cargo
+    const {data:exp}=await sb.from('expediciones').select('nº_expedicion,bultos,kilos,remitente,empresas!empresa_id(nombre),buques(nombre,eta_buque)').eq('id',expId).single();
+    if(!exp) return;
+    const {error}=await sb.from('airport_cargo').insert({
+      awb: awbFmt,
+      consignatario: exp.empresas?.nombre||'',
+      cliente: exp.empresas?.nombre||'',
+      bultos: exp.bultos||0,
+      kilos_tasables: parseFloat(exp.kilos)||0,
+      handling: 'Manual',
+      aeropuerto: 'AGP',
+      expedicion_id: expId,
+    });
+    if(!error) showToast('✈️ AWB detectado — entrada creada automáticamente en Airport Cargo ('+awbFmt+')');
+  }catch(ex){ console.warn('_detectarYRegistrarAWB:',ex); }
+}
 async function guardarExpedicion(id){if(!checkOnline())return;
   const mrn=(document.getElementById('mrn-inp')?.value||'').trim()||null;
   const ref=(document.getElementById('ref-inp')?.value||'').trim()||null;
@@ -14423,6 +14458,8 @@ async function guardarExpedicion(id){if(!checkOnline())return;
     _notificarAlmacenAutorizacion(id);
   }
   showToast('✅ Cambios guardados');
+  // ✈️ Auto-detección: si el nº de expedición tiene formato AWB (XXX-XXXXXXXX), registrar en airport_cargo
+  if(ref) _detectarYRegistrarAWB(id, ref).catch(()=>{});
   closeModal();loadView(CV);
 }
 
