@@ -2856,41 +2856,29 @@ async function _bgBuscar(q){
 
   _searchTimer = setTimeout(async()=>{
     try{
-      // Búsqueda de expediciones: usa allE (en memoria, ya normalizado con _nb) para que
-      // funcione con guiones, espacios y símbolos igual que el filtro local del panel.
-      const _nb = v=>String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
-      const qn = _nb(q);
       // qI para las queries ilike de Supabase (buques, empresas, incidencias)
       const qI = q.replace(/[^a-z0-9]/gi,'%').replace(/%{2,}/g,'%').replace(/^%+|%+$/g,'') || q;
-      // Buscar expediciones en allE (en memoria, normalizado) — resuelve guiones/espacios/mayúsculas
-      const expLocal = qn.length >= 2 ? (allE||[]).filter(e=>
-        [e.nº_expedicion,e.remitente,e.dossier_visual_aduana,e.empresas?.nombre,e.buques?.nombre]
-          .some(v=>_nb(v).includes(qn))
-      ).slice(0,5) : [];
 
-      const [rb, rmrn, rempSearch, remp, rinc, rawb] = await Promise.all([
+      const [rb, rExpRPC, rmrn, remp, rinc, rawb] = await Promise.all([
         sb.from('buques').select('id,nombre,imo,estado_operacion,nº_escala,eta_buque')
           .or(`nombre.ilike.%${qI}%,nº_escala.ilike.%${qI}%`).limit(4),
+        // RPC normaliza los campos en Postgres (igual que _nb): ignora mayúsculas, espacios, guiones
+        sb.rpc('buscar_expedicion_norm', {q}).then(r=>r).catch(()=>({data:[]})),
         sb.from('expediciones').select('id,nº_expedicion,nº_mrn,buques(nombre),estado_semaforo')
           .ilike('nº_mrn',`%${qI}%`).limit(3),
-        sb.from('expediciones').select('id,nº_expedicion,empresas!empresa_id(nombre),buques(nombre),estado_semaforo,ubicacion')
-          .ilike('empresas.nombre',`%${qI}%`).limit(3),
         sb.from('empresas').select('id,nombre,email_confronta')
           .or(`nombre.ilike.%${qI}%,email_confronta.ilike.%${qI}%`).limit(4),
         sb.from('incidencias').select('id,tipo,descripcion,estado,expediciones(id,nº_expedicion)')
           .ilike('descripcion',`%${qI}%`).limit(3),
-        // Airport cargo: buscar por AWB
-        sb.from('airport_cargo_entradas').select('id,awb,cliente,consignatario,status,aeropuerto')
-          .or(`awb.ilike.%${qI}%,cliente.ilike.%${qI}%`).limit(3),
+        sb.from('airport_cargo').select('id,awb,cliente,consignatario,aeropuerto')
+          .or(`awb.ilike.%${qI}%,cliente.ilike.%${qI}%,consignatario.ilike.%${qI}%`).limit(3),
       ]);
 
       const grupos = [];
 
       const buques = rb.data||[];
-      // Combinar resultados locales de expediciones con los del MRN/empresa de Supabase
-      const expRef = expLocal;
+      const expRef = rExpRPC.data||[];
       const expMrn = (rmrn.data||[]).filter(e=>!expRef.find(x=>x.id===e.id));
-      const expEmp = (rempSearch?.data||[]).filter(e=>!expRef.find(x=>x.id===e.id)&&!expMrn.find(x=>x.id===e.id));
       const empresas = remp.data||[];
       const incs = rinc.data||[];
 
@@ -2909,19 +2897,13 @@ async function _bgBuscar(q){
         items: [
           ...expRef.map(e=>({
             titulo: e.nº_expedicion,
-            sub: [e.buques?.nombre, e.empresas?.nombre, e.ubicacion].filter(Boolean).join(' · ') || '—',
+            sub: [e.buque_nombre, e.empresa_nombre, e.ubicacion].filter(Boolean).join(' · ') || '—',
             badge: e.estado_semaforo||'',
             action: ()=>{ cerrarBusquedaGlobal(); openExpD(e.id); nav('expediciones',null); }
           })),
           ...expMrn.map(e=>({
             titulo: e.nº_mrn,
             sub: `Exp: ${e.nº_expedicion} · ${e.buques?.nombre||'—'}`,
-            badge: e.estado_semaforo||'',
-            action: ()=>{ cerrarBusquedaGlobal(); openExpD(e.id); nav('expediciones',null); }
-          })),
-          ...expEmp.map(e=>({
-            titulo: e.nº_expedicion,
-            sub: [e.empresas?.nombre, e.buques?.nombre, e.ubicacion].filter(Boolean).join(' · ') || '—',
             badge: e.estado_semaforo||'',
             action: ()=>{ cerrarBusquedaGlobal(); openExpD(e.id); nav('expediciones',null); }
           }))
