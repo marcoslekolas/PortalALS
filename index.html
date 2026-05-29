@@ -2862,7 +2862,8 @@ async function _bgBuscar(q){
       const qn = _nb(q);
       // qI para las queries ilike de Supabase (buques, empresas, incidencias)
       const qI = q.replace(/[^a-z0-9]/gi,'%').replace(/%{2,}/g,'%').replace(/^%+|%+$/g,'') || q;
-      const expLocal = qn.length >= 2 ? (window.allE||[]).filter(e=>
+      // Buscar expediciones en allE (en memoria, normalizado) — resuelve guiones/espacios/mayúsculas
+      const expLocal = qn.length >= 2 ? (allE||[]).filter(e=>
         [e.nº_expedicion,e.remitente,e.dossier_visual_aduana,e.empresas?.nombre,e.buques?.nombre]
           .some(v=>_nb(v).includes(qn))
       ).slice(0,5) : [];
