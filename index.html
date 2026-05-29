@@ -7291,8 +7291,9 @@ async function loadKanban(){
 
 function filtrarKanban(q){
   if(!window._kbData) return;
-  const s = (q||'').toLowerCase().trim();
-  const lista = s ? window._kbData.filter(b=>(b.nombre||'').toLowerCase().includes(s)) : window._kbData;
+  const _nb=v=>String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+  const s=_nb(q);
+  const lista=s ? window._kbData.filter(b=>_nb(b.nombre).includes(s)) : window._kbData;
   renderKanban(lista);
 }
 
@@ -10417,17 +10418,18 @@ function _rebuilAlphaBar(){
 }
 
 function _renderEmpresas(){
-  const q = (document.getElementById('emp-search')?.value||'').toLowerCase().trim();
+  const _nb=v=>String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+  const q = _nb(document.getElementById('emp-search')?.value||'');
   let lista = _getEmpFiltradoPorRol();
   if(_empLetraActiva){
     lista = lista.filter(e=>(e.nombre||'').charAt(0).toUpperCase()===_empLetraActiva);
   }
   if(q){
     lista = lista.filter(e=>
-      (e.nombre||'').toLowerCase().includes(q) ||
-      (e.email_confronta||'').toLowerCase().includes(q) ||
-      (e.persona_contacto||'').toLowerCase().includes(q) ||
-      (e.otros_emails||[]).some(m=>(m||'').toLowerCase().includes(q))
+      _nb(e.nombre).includes(q) ||
+      _nb(e.email_confronta).includes(q) ||
+      _nb(e.persona_contacto).includes(q) ||
+      (e.otros_emails||[]).some(m=>_nb(m).includes(q))
     );
   }
   const countEl = document.getElementById('emp-count');

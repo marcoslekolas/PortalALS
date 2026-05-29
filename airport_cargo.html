@@ -1321,13 +1321,14 @@ function filtrarFin(){
 }
 
 function filtrar(){
-  var q=(document.getElementById('src').value||'').toLowerCase();
+  var _nb=function(v){return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');};
+  var q=_nb(document.getElementById('src').value||'');
   var h=document.getElementById('fil-h').value||'';
   var y=document.getElementById('fil-y').value||'';
   var m=document.getElementById('fil-m').value||'';
   var f=ALL.filter(function(e){
     if(e.fecha_retirada) return false;
-    if(q&&!((e.awb||'')+(e.consignatario||'')+(e.buque||'')).toLowerCase().includes(q))return false;
+    if(q&&!(_nb(e.awb)+_nb(e.consignatario)+_nb(e.buque)).includes(q))return false;
     if(h&&e.handling!==h)return false;
     if(y||m){var mo=calcMes(e.fecha_llegada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
     return true;
