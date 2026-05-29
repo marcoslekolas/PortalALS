@@ -12756,7 +12756,8 @@ async function _abrirEmailHTML(opts){
     const resp=await fetch(SB_URL+'/functions/v1/send-notif',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
-      body:JSON.stringify({to,cc,subject,html, attachments:opts.attachments||undefined})
+      // No pasamos "from": Nylas usa automáticamente la cuenta del grant (mvalencia@customsway.eu)
+      body:JSON.stringify({to,cc,subject,html,attachments:opts.attachments||undefined})
     });
     if(resp.ok){ showToast('✅ Email enviado correctamente'); return true; }
     const err=await resp.text().catch(()=> '');
