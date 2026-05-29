@@ -2670,25 +2670,22 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
 
   var haySeleccion = selIds && selIds.length > 0;
 
-  // Pendientes debajo de la firma: SOLO cuando hay selección manual
-  // (cuando no hay selección, todos los registros ya aparecen arriba)
+  // Tabla de previsiones / pendientes (siempre al pie del email):
+  // · Con selección: todas las expediciones NO seleccionadas del mismo cliente/consig,
+  //   sin ningún filtro de fecha, confirmación, etc. Solo se excluyen las ya retiradas.
+  // · Sin selección: la totalidad de las expediciones del cliente/consig (selSet vacío → nada excluido).
   var pendHtml = '';
-  if(haySeleccion){
-    var hoyDate = new Date(); hoyDate.setHours(0,0,0,0);
-    var selSet = new Set((selIds||[]).map(String));
-    var pendExps = (todasLasExps||[]).filter(function(e){
-      if(selSet.has(String(e.id))) return false;
-      if(e.fecha_retirada) return false;
-      if(pendFiltro && pendFiltro.campo && pendFiltro.valor){
-        var val = (e[pendFiltro.campo]||'').trim().toLowerCase();
-        var ref = pendFiltro.valor.trim().toLowerCase();
-        if(val !== ref) return false;
-      }
-      // Incluir TODAS las expediciones sin llegada confirmada del mismo cliente/consig,
-      // independientemente de la fecha (incluidas las ya pasadas y las sin fecha).
-      if(e.confirmacion_llegada) return false; // ya confirmadas no deben estar aquí
-      return true;
-    });
+  var selSet = new Set((selIds||[]).map(String));
+  var pendExps = (todasLasExps||[]).filter(function(e){
+    if(selSet.has(String(e.id))) return false;   // ya aparece en la tabla principal
+    if(e.fecha_retirada) return false;            // ya retirada, no es pendiente
+    if(pendFiltro && pendFiltro.campo && pendFiltro.valor){
+      var val = (e[pendFiltro.campo]||'').trim().toLowerCase();
+      var ref = pendFiltro.valor.trim().toLowerCase();
+      if(val !== ref) return false;
+    }
+    return true; // sin filtro de fecha ni de confirmación de llegada
+  });
     if(pendExps.length){
       // Ordenar por campo de previsión (fecha_llegada si existe, si no eta_buque) + hora ascendente
       pendExps.sort(function(a,b){
@@ -2711,7 +2708,6 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
         htmlTable(['AWB','Consignatario','Buque','Handler','Llegada / Hora','Vuelo','Cantidad','Observaciones'], pendRows)+
         '</div>';
     }
-  }
 
   // Texto de apertura según si hay selección (llegada confirmada) o no (situación general)
   var textoApertura = haySeleccion
