@@ -2683,9 +2683,10 @@ function buildEmailHtml(sel, clienteNombre, apts, totalBlt, totalKg, hoy, todasL
         var ref = pendFiltro.valor.trim().toLowerCase();
         if(val !== ref) return false;
       }
-      var d = e.fecha_llegada ? new Date(e.fecha_llegada) : (e.eta_buque ? new Date(e.eta_buque) : null);
-      if(!d) return false;
-      return d >= hoyDate;
+      // Incluir TODAS las expediciones sin llegada confirmada del mismo cliente/consig,
+      // independientemente de la fecha (incluidas las ya pasadas y las sin fecha).
+      if(e.confirmacion_llegada) return false; // ya confirmadas no deben estar aquí
+      return true;
     });
     if(pendExps.length){
       // Ordenar por campo de previsión (fecha_llegada si existe, si no eta_buque) + hora ascendente

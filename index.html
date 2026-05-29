@@ -6907,7 +6907,7 @@ function renderE(list){
       (!e.nº_mrn && e.ubicacion && e.ubicacion!=='Pendiente recibir' && e.tramite_aduanero!=='Despachado') ? 'background:rgba(234,179,8,.05)' : '';
     return`<tr onclick="openExpD('${e.id}')" style="${rowBg}" data-expid="${e.id}">
       <td onclick="event.stopPropagation()" style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="toggleExpLote('${e.id}',this)"></label></td>
-      <td><div class="fw">${e.nº_expedicion}${(e.ubicacion||'').toLowerCase().includes('aeropuerto')?'<span class="als-awb-track" data-awb="'+e.nº_expedicion+'" style="cursor:pointer;font-size:10px;color:var(--b500);margin-left:3px" title="Rastrear en portal del carrier">✈️</span>':''}</div></td>
+      <td><div class="fw">${e.nº_expedicion}${(e.ubicacion||'').toLowerCase().includes('aeropuerto')?'<span class="als-awb-track" data-awb="'+e.nº_expedicion+'" style="cursor:pointer;font-size:10px;color:var(--b500);margin-left:3px" title="Rastrear en portal del carrier">✈️</span>':''}${e.dossier_visual_aduana?`<div style="font-size:10px;color:var(--b600);font-weight:600;font-family:var(--mono);margin-top:1px">📋 ${e.dossier_visual_aduana}</div>`:''}</div></td>
       <td class="sm">${e.buques?.nombre||'—'}</td>
       <td class="sm">${e.empresas?.nombre||'—'}</td>
       <td class="sm">${e.bultos}b·${e.kilos}kg</td>
@@ -12085,7 +12085,7 @@ function _expCardHTML(e, b){
   return `<div id="exp-card-${e.id}" style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid ${tieneOverride?'var(--am300)':'var(--g200)'};border-radius:var(--r);margin-bottom:5px;cursor:pointer;transition:background .12s;background:${tieneOverride?'var(--am50)':''}" onmouseenter="this.style.background='${tieneOverride?'#fef9c3':'var(--g50)'}'" onmouseleave="this.style.background='${tieneOverride?'var(--am50)':''}'" onclick="openExpDesdeBuque('${e.id}','${b.id}')">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${e.nº_expedicion}${etaChip}${pendLlegar?'<span style="font-size:10px;background:var(--am50);color:var(--am700);border:1px solid var(--am100);border-radius:4px;padding:1px 6px;font-weight:600">⏳ Pend. llegar</span>':''}${tieneOverride?` <span style="font-size:10px;background:var(--am100);color:var(--am700);border-radius:4px;padding:1px 5px;font-weight:700">💼 ${overrideNombre}</span>`:''}</div>
-          <div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}</div>
+          <div style="font-size:11px;color:var(--g400);margin-top:2px">${e.bultos}b·${e.kilos}kg · 📍${e.ubicacion||'—'}${e.dossier_visual_aduana?` · <span style="color:var(--b600);font-weight:600;font-family:var(--mono)">📋${e.dossier_visual_aduana}</span>`:''}</div>
           ${acPanel}
         </div>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px">${_expIdsConDocs.has(e.id)?'<span title="Documentos adjuntos" style="font-size:12px;color:var(--g500)">📎</span>':''}${(e.foto_llegada_url||e.foto_carga_url||e.foto_embarque_url)?'<span title="Tiene fotos" style="font-size:11px">📸</span>':''}${bdg(e.ubicacion==='Landed'&&e.estado_semaforo==='📦 UBICADA'?'⚓ Landed':e.estado_semaforo)}</div>
@@ -12572,7 +12572,7 @@ async function openBuque(id){
     : (b.estado_operacion==='Embarcado' ? '<span class="badge bb">⏳ Fact. pendiente</span>' : '');
   const factEstado = b.estado_facturacion==='facturado' ? '<span class="badge bg" style="margin-left:4px">✅ Facturado</span>' : '';
 
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="notifClienteBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📨 Notif. cliente</button>`:''} ${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="trazabilidadBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📋 Trazabilidad</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="instruccionesBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🚛 Instruc. transportista</button>`:''}`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="notifClienteBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📨 Notif. cliente</button>`:''} ${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-s btn-sm" onclick="imprimirPreDelivery('${b.id}')">📋 Pre-Delivery</button><button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="trazabilidadBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📋 Trazabilidad</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="instruccionesBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🚛 Instruc. transportista</button>`:''}`;
   // Añadir badge de facturación en el modal body si procede
   if(factBadge||factEstado){
     const mbody = document.getElementById('m-body');
@@ -12657,6 +12657,11 @@ function _previewEmail(opts){
         <input id="pe-subject" class="fi" value="${_attr(subject)}" style="margin:4px 0 10px">
         <label class="fl2">Cuerpo <span style="font-size:10px;color:var(--g400)">— editable, haz clic para modificar</span></label>
         <div id="pe-body" contenteditable="true" style="border:1px solid var(--g200);border-radius:10px;padding:14px;max-height:44vh;overflow-y:auto;background:#fff;font-size:13px;line-height:1.5;margin-top:4px;outline:none">${html}</div>
+        <div style="margin-top:12px">
+          <label class="fl2">📎 Adjuntos <span style="font-size:10px;color:var(--g400)">(PDF, Word, Excel, imágenes…)</span></label>
+          <input id="pe-files" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.gif,.zip,.txt" class="fi" style="margin-top:4px;padding:6px;cursor:pointer">
+          <div id="pe-files-list" style="font-size:11px;color:var(--g500);margin-top:4px"></div>
+        </div>
       </div>
       <div style="padding:13px 18px;border-top:1px solid var(--g100);display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">
         <button onclick="document.getElementById('email-preview').remove()" class="btn btn-s" style="min-height:44px">Cancelar</button>
@@ -12665,13 +12670,28 @@ function _previewEmail(opts){
     </div>`;
   document.body.appendChild(ov);
   ov.onclick=ev=>{ if(ev.target===ov) ov.remove(); };
+  // Mostrar lista de ficheros seleccionados
+  const peFiles=document.getElementById('pe-files');
+  peFiles.addEventListener('change',()=>{
+    const fl=document.getElementById('pe-files-list');
+    if(fl) fl.innerHTML=Array.from(peFiles.files).map(f=>`📎 ${f.name} (${(f.size/1024).toFixed(0)} KB)`).join('<br>');
+  });
   document.getElementById('pe-send').onclick=async()=>{
     const btn=document.getElementById('pe-send');
+    // Convertir adjuntos a base64
+    const attachments=[];
+    if(peFiles?.files?.length){
+      for(const file of peFiles.files){
+        const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
+        attachments.push({filename:file.name, content_type:file.type||'application/octet-stream', content:b64});
+      }
+    }
     const data={
       to:(document.getElementById('pe-to').value||'').trim(),
       cc:(document.getElementById('pe-cc').value||'').trim(),
       subject:(document.getElementById('pe-subject').value||'').trim(),
-      html:document.getElementById('pe-body').innerHTML
+      html:document.getElementById('pe-body').innerHTML,
+      attachments: attachments.length ? attachments : undefined
     };
     if(!data.to){ showToast('⚠️ Indica al menos un destinatario'); return; }
     btn.disabled=true; const _t=btn.textContent; btn.textContent='⏳ Enviando…';
@@ -12691,7 +12711,7 @@ async function _abrirEmailHTML(opts){
     const resp=await fetch(SB_URL+'/functions/v1/send-notif',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
-      body:JSON.stringify({to,cc,subject,html})
+      body:JSON.stringify({to,cc,subject,html, attachments:opts.attachments||undefined})
     });
     if(resp.ok){ showToast('✅ Email enviado correctamente'); return true; }
     const err=await resp.text().catch(()=> '');
@@ -12968,6 +12988,7 @@ async function openExpD(id, forceOpen=false){
     </div>
     <input type="hidden" id="mrn-inp" value="${e.nº_mrn||''}">
     <div class="fg2"><label class="fl2">Referencia / Nº expedición</label><input id="ref-inp" class="fi" value="${(e.nº_expedicion||'').replace(/"/g,'&quot;')}" placeholder="Referencia de la expedición"></div>
+    <div class="fg2"><label class="fl2">Dossier Visual Aduana <span style="font-size:10px;color:var(--g400)">(precedido de EX, DE o DI)</span></label><input id="dva-inp" class="fi" value="${(e.dossier_visual_aduana||'').replace(/"/g,'&quot;')}" placeholder="EX12345 · DE67890 · DI11111"></div>
     <div class="fg2"><label class="fl2">Remitente / Shipper</label><input id="rem-inp" class="fi" value="${(e.remitente||e.empresas?.nombre||'').replace(/"/g,'&quot;')}" placeholder="Nombre del remitente o shipper..."></div>
     <div class="fr2">
       <div class="fg2"><label class="fl2">Trámite aduanero</label><select id="tra-sel" class="fi fs" onchange="saveTra('${e.id}',this.value)"><option ${e.tramite_aduanero==='Pendiente despachar'?'selected':''}>Pendiente despachar</option><option ${e.tramite_aduanero==='Despachado'?'selected':''}>Despachado</option></select></div>
@@ -14271,6 +14292,7 @@ function semaforoDeUbicacion(ubic){
 async function guardarExpedicion(id){if(!checkOnline())return;
   const mrn=(document.getElementById('mrn-inp')?.value||'').trim()||null;
   const ref=(document.getElementById('ref-inp')?.value||'').trim()||null;
+  const dva=(document.getElementById('dva-inp')?.value||'').trim()||null;
   const rem=(document.getElementById('rem-inp')?.value||'').trim()||null;
   const status=document.getElementById('sta-sel')?.value||null;
   const fmax=document.getElementById('fmax-inp')?.value||null;
@@ -14281,6 +14303,7 @@ async function guardarExpedicion(id){if(!checkOnline())return;
   const obj={};
   if(mrn!==undefined) obj['nº_mrn']=mrn;
   if(ref) obj['nº_expedicion']=ref;
+  obj.dossier_visual_aduana=dva;
   if(rem!==null) obj.remitente=rem||null;
   const obs=(document.getElementById('obs-inp')?.value||'').trim()||null;
   if(obs!==undefined) obj.observaciones=obs;
@@ -14835,11 +14858,185 @@ async function imprimirDetalleBuque(buqueId){
   setTimeout(()=>w.print(),600);
 }
 
+// ── PRE-DELIVERY QR ────────────────────────────────────────────────────────────
+// El albarán solo se puede imprimir si los bultos cargados en el camión se han
+// verificado mediante escaneo QR (o si no hay bultos registrados en carga_bultos).
+// Columnas requeridas en buques:
+//   predelivery_ok boolean DEFAULT false
+//   predelivery_fecha timestamptz
+//   predelivery_user text
+
+async function imprimirPreDelivery(buqueId){
+  showToast('📋 Generando hoja pre-delivery…');
+  const {data:b}=await sb.from('buques').select('nombre,nº_escala,ec:cliente_id(nombre),en:consignatario_id(nombre)').eq('id',buqueId).single();
+  const {data:exps}=await sb.from('expediciones').select('nº_expedicion,bultos,remitente,empresas!empresa_id(nombre)').eq('buque_id',buqueId).eq('estado_carga','✅ AUTORIZADO');
+  const {data:bultos}=await sb.from('carga_bultos').select('codigo,num,total,expedicion_id').eq('buque_id',buqueId);
+  if(!b||!bultos?.length){ showToast('⚠️ No hay bultos QR registrados para este buque'); return; }
+  const _esc=s=>String(s==null?'':s).replace(/</g,'&lt;');
+  // Generar QR data URLs para cada bulto
+  const bultosConQR=[];
+  for(const bl of bultos){
+    const url=await generarQRDataURL(bl.codigo,120);
+    bultosConQR.push({...bl,qrUrl:url});
+  }
+  const expMap={}; (exps||[]).forEach(e=>{expMap[e.id]=e;});
+  const fecha=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const w=window.open('','_blank','width=820,height=1060');
+  if(!w){showToast('⚠️ Permite ventanas emergentes para imprimir');return;}
+  const bultosHTML=bultosConQR.map(bl=>{
+    const exp=expMap[bl.expedicion_id];
+    return `<div class="bulto-item"><img src="${bl.qrUrl}" width="90" height="90"><div class="bl-info"><div class="bl-ref">${_esc(bl.codigo)}</div><div class="bl-exp">${exp?_esc(exp.nº_expedicion):'—'} · Bulto ${bl.num}/${bl.total}</div><div class="bl-rem">${exp?_esc(exp.remitente||exp.empresas?.nombre||'—'):'—'}</div></div><div class="bl-check">□</div></div>`;
+  }).join('');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pre-Delivery ${_esc(b.nombre)}</title>
+  <style>@media print{body{margin:0}}body{font-family:Arial,sans-serif;font-size:12px;padding:18px;color:#111}
+  .hdr{display:flex;align-items:center;gap:14px;border-bottom:3px solid #1565c0;padding-bottom:10px;margin-bottom:12px}
+  .logo{font-size:22px;font-weight:900;color:#1565c0;letter-spacing:-1px}
+  .sub{font-size:10px;color:#555}h2{font-size:16px;margin:0 0 2px}
+  .meta{display:flex;gap:20px;margin-bottom:12px;font-size:12px}
+  .meta span b{color:#1565c0}
+  .bulto-item{display:flex;align-items:center;gap:10px;border:1px solid #ddd;border-radius:6px;padding:8px;margin-bottom:6px;break-inside:avoid}
+  .bl-info{flex:1;min-width:0}.bl-ref{font-family:monospace;font-size:11px;color:#555}
+  .bl-exp{font-weight:700;font-size:13px}.bl-rem{font-size:11px;color:#777}
+  .bl-check{font-size:22px;color:#ccc;flex-shrink:0}
+  .total{border-top:2px solid #1565c0;margin-top:10px;padding-top:8px;font-weight:bold;font-size:14px}
+  .firma{margin-top:30px;border-top:1px solid #ccc;padding-top:10px;display:flex;gap:40px}
+  .firma div{flex:1;font-size:11px;color:#555}</style></head><body>
+  <div class="hdr"><div class="logo">ALS</div><div><h2>HOJA PRE-DELIVERY</h2><div class="sub">ALGECIRAS LOGISTIC SOLUTIONS · Verificación bultos antes de la entrega</div></div></div>
+  <div class="meta">
+    <span>🚢 <b>Buque:</b> ${_esc(b.nombre)}</span>
+    ${b.nº_escala?`<span>🔢 <b>Escala:</b> ${_esc(b.nº_escala)}</span>`:''}
+    ${b.ec?.nombre?`<span>🏢 <b>Cliente:</b> ${_esc(b.ec.nombre)}</span>`:''}
+    ${b.en?.nombre?`<span>📋 <b>Consig.:</b> ${_esc(b.en.nombre)}</span>`:''}
+    <span>📅 <b>Fecha:</b> ${fecha}</span>
+  </div>
+  <div style="font-size:11px;color:#b91c1c;margin-bottom:10px;padding:6px 10px;background:#fef2f2;border-radius:6px;border-left:3px solid #ef4444">
+    ⚠️ Escanear cada QR para verificar. El albarán no se puede imprimir hasta completar la verificación al 100%.
+  </div>
+  ${bultosHTML}
+  <div class="total">Total: ${bultos.length} bulto${bultos.length!==1?'s':''} · ${(exps||[]).length} expedición${(exps||[]).length!==1?'es':''}</div>
+  <div class="firma">
+    <div>Operario: ____________________________<br>Firma y nombre</div>
+    <div>Transportista: ____________________________<br>Firma y matrícula</div>
+    <div>Fecha y hora: ____________________________</div>
+  </div>
+  <script>window.onload=()=>window.print();<\/script></body></html>`);
+  w.document.close();
+}
+
+function _showPredeliveryRequired(buqueId, buqueNombre){
+  const prev=document.getElementById('pd-req-modal'); if(prev) prev.remove();
+  const ov=document.createElement('div');
+  ov.id='pd-req-modal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:20005;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML=`
+    <div style="background:#fff;border-radius:16px;padding:24px;max-width:400px;width:100%;box-shadow:0 12px 48px rgba(0,0,0,.35)">
+      <div style="font-size:20px;margin-bottom:8px">📋 Pre-Delivery requerido</div>
+      <div style="font-size:13px;color:var(--g600);margin-bottom:20px">Antes de imprimir el albarán de <b>${(buqueNombre||'').replace(/</g,'&lt;')}</b>, el mozo debe verificar todos los bultos mediante escaneo QR.</div>
+      <button onclick="imprimirPreDelivery('${buqueId}');document.getElementById('pd-req-modal').remove()" class="btn btn-s btn-full" style="min-height:48px;margin-bottom:10px">📋 Imprimir hoja Pre-Delivery</button>
+      <button onclick="document.getElementById('pd-req-modal').remove();abrirPredelivery('${buqueId}')" class="btn btn-g btn-full" style="min-height:48px;margin-bottom:10px">📷 Verificar QR (escaneo)</button>
+      <button onclick="document.getElementById('pd-req-modal').remove()" class="btn btn-s btn-full" style="min-height:44px">Cancelar</button>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.onclick=ev=>{if(ev.target===ov) ov.remove();};
+}
+
+async function abrirPredelivery(buqueId){
+  const {data:bultos}=await sb.from('carga_bultos').select('codigo,num,total').eq('buque_id',buqueId);
+  if(!bultos?.length){showToast('ℹ️ Sin bultos QR — pre-delivery no requerido');return;}
+  const total=bultos.length;
+  const validSet=new Set(bultos.map(b=>b.codigo));
+  let escaneados=0; const scanned=new Set();
+  const ov=document.createElement('div');
+  ov.id='scanner-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
+  ov.innerHTML=`
+    <div style="background:rgba(0,0,0,.9);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px">
+      <div><div style="color:#fff;font-weight:700;font-size:15px">📋 Pre-Delivery QR</div>
+        <div style="color:#9ca3af;font-size:12px">Escanea todos los bultos del camión</div></div>
+      <div style="text-align:right">
+        <div id="pd-count" style="color:#fff;font-weight:800;font-size:20px">0/${total}</div>
+        <button onclick="document.getElementById('scanner-overlay').remove()" style="background:none;border:1px solid #fff4;color:#9ca3af;border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;margin-top:4px">✕ Salir</button>
+      </div>
+    </div>
+    <div id="pd-bar" style="height:5px;background:var(--b600);width:0%;transition:width .3s"></div>
+    <div id="pd-video-wrap" style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative">
+      <video id="pd-video" style="width:100%;height:100%;object-fit:cover" muted playsinline autoplay></video>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+        <div style="width:240px;height:240px;border:3px solid rgba(255,255,255,.7);border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)"></div>
+      </div>
+    </div>
+    <div id="pd-log" style="background:#111;color:#fff;font-size:12px;padding:8px 14px;max-height:120px;overflow-y:auto;flex-shrink:0"></div>`;
+  document.body.appendChild(ov);
+  // Scanner (same pattern as rest of scanners)
+  let stream=null; let rafId=null;
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const video=document.getElementById('pd-video'); video.srcObject=stream;
+    const canvas=document.createElement('canvas');
+    const ctx=canvas.getContext('2d');
+    const tick=async()=>{
+      if(!document.getElementById('scanner-overlay')){ if(stream) stream.getTracks().forEach(t=>t.stop()); return; }
+      if(video.readyState>=2&&video.videoWidth>0){
+        canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+        ctx.drawImage(video,0,0);
+        try{
+          const bmp=await createImageBitmap(canvas);
+          const id=new ImageData(canvas.width,canvas.height);
+          ctx.getImageData(0,0,canvas.width,canvas.height);
+          // Usar jsQR si disponible
+          if(typeof jsQR==='function'){
+            const idata=ctx.getImageData(0,0,canvas.width,canvas.height);
+            const code=jsQR(idata.data,canvas.width,canvas.height);
+            if(code?.data){
+              const qr=code.data.trim();
+              if(validSet.has(qr)&&!scanned.has(qr)){
+                scanned.add(qr); escaneados++;
+                const pct=Math.round(escaneados/total*100);
+                document.getElementById('pd-count').textContent=escaneados+'/'+total;
+                document.getElementById('pd-bar').style.width=pct+'%';
+                const bl=bultos.find(b=>b.codigo===qr);
+                const log=document.getElementById('pd-log');
+                log.innerHTML='<div style="color:#4ade80">✅ '+qr+(bl?' — Bulto '+bl.num+'/'+bl.total:'')+'</div>'+log.innerHTML;
+                if(navigator.vibrate) navigator.vibrate(80);
+                if(escaneados>=total){
+                  // Pre-delivery completado
+                  if(stream) stream.getTracks().forEach(t=>t.stop());
+                  cancelAnimationFrame(rafId);
+                  await sb.from('buques').update({predelivery_ok:true,predelivery_fecha:new Date().toISOString(),predelivery_user:CU?.nombre||'—'}).eq('id',buqueId);
+                  ov.remove();
+                  showToast('✅ Pre-Delivery completado — '+total+' bultos verificados. Ya puedes imprimir el albarán.');
+                  return;
+                }
+              } else if(!validSet.has(qr)){
+                const log=document.getElementById('pd-log');
+                log.innerHTML='<div style="color:#f87171">⚠️ QR no reconocido: '+qr+'</div>'+log.innerHTML;
+              }
+            }
+          }
+        }catch(er){}
+      }
+      rafId=requestAnimationFrame(tick);
+    };
+    await video.play();
+    rafId=requestAnimationFrame(tick);
+  }catch(er){
+    showToast('⚠️ No se pudo acceder a la cámara: '+er.message);
+    ov.remove();
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+  }
+}
+
 async function impAlb(buqueId){
   const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').eq('id',buqueId).single();
+  if(!b) return;
+  // Comprobar si hay bultos QR registrados (carga_bultos) y si el pre-delivery está hecho
+  const {data:bultos}=await sb.from('carga_bultos').select('codigo').eq('buque_id',buqueId);
+  if(bultos?.length && !b.predelivery_ok){
+    _showPredeliveryRequired(buqueId, b.nombre);
+    return;
+  }
   const {data:exps}=await sb.from('expediciones').select('*').eq('buque_id',buqueId).eq('estado_carga','✅ AUTORIZADO');
   const {data:landedExps}=await sb.from('expediciones').select('*').eq('buque_id',buqueId).eq('ubicacion','Landed');
-  if(!b)return;
   const allExps=[...(exps||[]),...(landedExps||[]).filter(e=>!(exps||[]).find(x=>x.id===e.id))];
   abrirAlbaran(htmlAlb(b, allExps, null, QR_ALS_B64));
 }
