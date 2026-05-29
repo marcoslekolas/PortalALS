@@ -6326,7 +6326,7 @@ async function loadDash(){
     bQ = bQ.gte('eta_buque',`${año}-01-01`).lte('eta_buque',`${año}-12-31`);
   }
 
-  let eQ = sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,tramite_aduanero,bultos,kilos,hora_de_carga,notif_llegada_sent,notif_cliente_sent,notif_aduanas_sent,fecha_max_despacho,foto_llegada_url,updated_at,created_at,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)')
+  let eQ = sb.from('expediciones').select('id,nº_expedicion,dossier_visual_aduana,remitente,buque_id,empresa_id,estado_carga,estado_semaforo,nº_mrn,ubicacion,status_aduanero,tramite_aduanero,bultos,kilos,hora_de_carga,notif_llegada_sent,notif_cliente_sent,notif_aduanas_sent,fecha_max_despacho,foto_llegada_url,updated_at,created_at,buques(nombre,eta_buque,cliente_id,consignatario_id),empresas(nombre)')
     .neq('estado_semaforo','🚢 EMBARCADO');
   if(sta) eQ = eQ.eq('status_aduanero', sta);
 
@@ -12502,7 +12502,7 @@ async function openBuque(id){
   if(!b)return;
   _prepBuqueEmail(id, b.nombre); // pre-construir aviso (apertura síncrona al pulsar, sin descarga)
   const [{data:exps},{data:emps}]=await Promise.all([
-    sb.from('expediciones').select('id,nº_expedicion,buque_id,empresa_id,estado_carga,estado_semaforo,ubicacion,bultos,kilos,nº_mrn,status_aduanero,tramite_aduanero,fecha_llegada_prevista,ac_fecha_llegada,foto_llegada_url,foto_carga_url,foto_embarque_url,cliente_override_id,cliente_override_nombre,empresas!empresa_id(nombre)').eq('buque_id',id).order('nº_expedicion'),
+    sb.from('expediciones').select('id,nº_expedicion,dossier_visual_aduana,remitente,buque_id,empresa_id,estado_carga,estado_semaforo,ubicacion,bultos,kilos,nº_mrn,status_aduanero,tramite_aduanero,fecha_llegada_prevista,ac_fecha_llegada,foto_llegada_url,foto_carga_url,foto_embarque_url,cliente_override_id,cliente_override_nombre,empresas!empresa_id(nombre)').eq('buque_id',id).order('nº_expedicion'),
     sb.from('empresas').select('id,nombre').order('nombre')
   ]);
   // Cargar indicadores de docs PDF para esta ficha (no bloquea el render)
@@ -12572,7 +12572,7 @@ async function openBuque(id){
     : (b.estado_operacion==='Embarcado' ? '<span class="badge bb">⏳ Fact. pendiente</span>' : '');
   const factEstado = b.estado_facturacion==='facturado' ? '<span class="badge bg" style="margin-left:4px">✅ Facturado</span>' : '';
 
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="notifClienteBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📨 Notif. cliente</button>`:''} ${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-s btn-sm" onclick="imprimirPreDelivery('${b.id}')">📋 Pre-Delivery</button><button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="trazabilidadBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📋 Trazabilidad</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="instruccionesBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🚛 Instruc. transportista</button>`:''}`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}<button class="btn btn-s btn-sm" onclick="saveBuqueEdit('${b.id}')">💾 Guardar</button><button class="btn btn-s btn-sm" onclick="sendConfronta('${b.id}')">📧 Confronta</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="notifClienteBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📨 Notif. cliente</button>`:''} ${(b.estado_operacion==='Embarcado'||b.estado_operacion==='Finalizado')?`<button class="btn btn-s btn-sm" onclick="enviarEmailFacturacion('${b.id}')">💶 Facturación</button>`:''}<button class="btn btn-s btn-sm" onclick="imprimirPreDelivery('${b.id}')">📋 Pre-Delivery</button><button class="btn btn-g btn-sm" onclick="impAlb('${b.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="trazabilidadBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">📋 Trazabilidad</button><button class="btn btn-s btn-sm" onclick="portadaBuque('${b.id}')">📄 Portada</button>${(exps||[]).length?`<button class="btn btn-s btn-sm" onclick="instruccionesBuque('${b.id}','${(b.nombre||'').replace(/'/g,"\\'")}')">🚛 Instruc. transportista</button>`:''}`;
   // Añadir badge de facturación en el modal body si procede
   if(factBadge||factEstado){
     const mbody = document.getElementById('m-body');
@@ -12657,8 +12657,9 @@ function _previewEmail(opts){
         <input id="pe-subject" class="fi" value="${_attr(subject)}" style="margin:4px 0 10px">
         <label class="fl2">Cuerpo <span style="font-size:10px;color:var(--g400)">— editable, haz clic para modificar</span></label>
         <div id="pe-body" contenteditable="true" style="border:1px solid var(--g200);border-radius:10px;padding:14px;max-height:44vh;overflow-y:auto;background:#fff;font-size:13px;line-height:1.5;margin-top:4px;outline:none">${html}</div>
+        ${(opts.preAttachments?.length)?`<div style="margin-top:12px;border:1px solid var(--b200);background:var(--b50);border-radius:8px;padding:10px"><label class="fl2" style="color:var(--b700)">📎 Documentos adjuntos de la expedición</label><div style="font-size:12px;color:var(--g600);margin-top:4px">${opts.preAttachments.map(a=>`📄 ${a.filename}`).join('<br>')}</div></div>`:''}
         <div style="margin-top:12px">
-          <label class="fl2">📎 Adjuntos <span style="font-size:10px;color:var(--g400)">(PDF, Word, Excel, imágenes…)</span></label>
+          <label class="fl2">📎 Añadir más adjuntos <span style="font-size:10px;color:var(--g400)">(PDF, Word, Excel, imágenes…)</span></label>
           <input id="pe-files" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.gif,.zip,.txt" class="fi" style="margin-top:4px;padding:6px;cursor:pointer">
           <div id="pe-files-list" style="font-size:11px;color:var(--g500);margin-top:4px"></div>
         </div>
@@ -12670,7 +12671,6 @@ function _previewEmail(opts){
     </div>`;
   document.body.appendChild(ov);
   ov.onclick=ev=>{ if(ev.target===ov) ov.remove(); };
-  // Mostrar lista de ficheros seleccionados
   const peFiles=document.getElementById('pe-files');
   peFiles.addEventListener('change',()=>{
     const fl=document.getElementById('pe-files-list');
@@ -12678,8 +12678,10 @@ function _previewEmail(opts){
   });
   document.getElementById('pe-send').onclick=async()=>{
     const btn=document.getElementById('pe-send');
-    // Convertir adjuntos a base64
-    const attachments=[];
+    // Adjuntos pre-cargados (de la expedición)
+    const _preLoaded = opts.preAttachments || [];
+    // Adjuntos añadidos manualmente en el modal
+    const attachments=[..._preLoaded];
     if(peFiles?.files?.length){
       for(const file of peFiles.files){
         const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
@@ -12699,6 +12701,49 @@ function _previewEmail(opts){
     if(ok){ ov.remove(); if(typeof onSent==='function'){ try{ onSent(); }catch(_){}} }
     else { btn.disabled=false; btn.textContent=_t; }
   };
+}
+// Botón "📤 VisualTrans": envía los documentos adjuntos de la expedición por email a VisualTrans
+// con el número de Dossier Visual Aduana en el asunto (#EXnnnnn#). Los docs se descargan desde
+// Supabase Storage y se convierten a base64 para adjuntarlos al email (sin descargar nada local).
+async function enviarDocsVisualTrans(expId){
+  showToast('⏳ Cargando datos para VisualTrans…');
+  const {data:e}=await sb.from('expediciones').select('nº_expedicion,dossier_visual_aduana,empresas!empresa_id(nombre)').eq('id',expId).single();
+  if(!e?.dossier_visual_aduana){
+    showToast('⚠️ Añade el Dossier Visual Aduana a la expedición antes de enviar.');
+    return;
+  }
+  const {data:docs}=await sb.from('expedicion_docs').select('*').eq('expedicion_id',expId).order('created_at');
+  if(!docs?.length){
+    showToast('⚠️ No hay documentos adjuntos en esta expedición. Súbelos en la pestaña 📄 Docs.');
+    return;
+  }
+  // Descargar cada documento y convertir a base64 via URL firmada
+  const preAttachments=[];
+  for(const doc of docs){
+    try{
+      const {data:su}=await sb.storage.from(DOCS_BUCKET).createSignedUrl(doc.file_path,600);
+      if(!su?.signedUrl) continue;
+      const resp=await fetch(su.signedUrl);
+      if(!resp.ok) continue;
+      const blob=await resp.blob();
+      const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(blob); });
+      preAttachments.push({filename:doc.nombre_original||`doc_${preAttachments.length+1}.pdf`, content_type:blob.type||'application/pdf', content:b64});
+    }catch(err){ console.warn('VisualTrans doc fetch:',err); }
+  }
+  if(!preAttachments.length){
+    showToast('⚠️ No se pudieron cargar los documentos. Comprueba los permisos del bucket.');
+    return;
+  }
+  const dossierId=e.dossier_visual_aduana.trim();
+  const subject=`#${dossierId}#`;
+  const _esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5">
+    <p>Estimados,</p>
+    <p>Se adjunta la documentación correspondiente al dossier <strong>${_esc(dossierId)}</strong> — expedición <strong>${_esc(e.nº_expedicion||'—')}</strong>${e.empresas?.nombre?` (${_esc(e.empresas.nombre)})`:''}.</p>
+    <p>Quedo a su disposición para cualquier consulta.</p>
+    <p style="margin-top:16px">Atentamente,<br><b>${CU?.nombre||'Departamento de Operaciones'}</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com</p>
+  </div>`;
+  _previewEmail({to:'docs-algecirasls@visualtrans.app', cc:'', subject, html, preAttachments});
 }
 // _abrirEmailHTML: envía el email vía Edge Function (Nylas). Devuelve true si fue OK.
 async function _abrirEmailHTML(opts){
@@ -13027,7 +13072,7 @@ async function openExpD(id, forceOpen=false){
     </div>
     <div id="hist-exp-cont" style="max-height:140px;overflow-y:auto"></div>
     ${(incs||[]).length?`<div style="background:var(--rd50);border:1px solid #fecaca;border-radius:var(--r);padding:12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--rd600);margin-bottom:8px">⚠️ INCIDENCIAS ACTIVAS (${incs.length})</div>${incs.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fecaca;font-size:12px;cursor:pointer" onclick="openIncD('${i.id}')"><span><strong>${i.tipo}</strong>: ${i.descripcion||'—'}</span><span class="badge br">${i.estado}</span></div>`).join('')}</div>`:''}`;
-  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="trazabilidadExp('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">📋 Trazabilidad</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-s btn-sm" onclick="abrirDocsExpedicion('${e.id}')" title="Documentos PDF">📄 Docs</button><button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
+  document.getElementById('m-foot').innerHTML=`<button class="btn btn-s btn-sm" onclick="closeModal()">Cerrar</button>${CU?.rol==='admin'?`<button class="btn btn-d btn-sm" onclick="delExpedicion('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>`:''}${e.ubicacion && e.ubicacion !== 'Pendiente recibir' ? `<button class="btn btn-s btn-sm" onclick="mostrarQRExpedicion('${e.id}','${e.nº_expedicion}')">📱 QR bultos</button>` : ''}<button class="btn btn-s btn-sm" onclick="impExpAlb('${e.id}')">🖨️ Albarán</button><button class="btn btn-s btn-sm" onclick="trazabilidadExp('${e.id}','${(e.nº_expedicion||'').replace(/'/g,"\\'")}')">📋 Trazabilidad</button><button class="btn btn-s btn-sm" onclick="verFotosExpedicion('${e.id}','${e.nº_expedicion}')">📸 Fotos</button><button class="btn btn-s btn-sm" onclick="abrirDocsExpedicion('${e.id}')" title="Documentos PDF">📄 Docs</button>${e.dossier_visual_aduana?`<button class="btn btn-s btn-sm" onclick="enviarDocsVisualTrans('${e.id}')" title="Enviar docs a VisualTrans — Dossier: ${(e.dossier_visual_aduana||'').replace(/'/g,"\\'")}">📤 VisualTrans</button>`:''}<button class="btn btn-p btn-sm" onclick="abrirLineaVida('${e.id}','${e.nº_expedicion}')" >📋 Línea de vida</button><button class="btn btn-p btn-sm" onclick="guardarExpedicion('${e.id}')">💾 Guardar cambios</button>`;
   // ── Poblar select de buques ────────────────────────────────────────
   (async()=>{
     const sel = document.getElementById('buq-sel');
@@ -14261,6 +14306,34 @@ async function saveMRN(id){
   closeModal();loadView(CV);
 }
 async function saveTra(id,val){await sb.from('expediciones').update({tramite_aduanero:val}).eq('id',id);await logAct('expediciones',id,'','editar','tramite_aduanero',null,val);showToast('Trámite actualizado');}
+// (#4) Notificación automática al cliente cuando la mercancía llega a almacén o puerto.
+// Se dispara desde saveUbic; usa la previsualización _previewEmail para que el operario
+// pueda confirmar/editar antes de enviar (no es un envío ciego automático).
+async function _autoNotifUbicacion(expId, newUbic){
+  try{
+    const {data:e}=await sb.from('expediciones').select('nº_expedicion,remitente,bultos,kilos,nº_mrn,status_aduanero,empresas!empresa_id(nombre,email_confronta,otros_emails),buques(nombre)').eq('id',expId).single();
+    const emailCli=e?.empresas?.email_confronta;
+    if(!emailCli){ showToast('ℹ️ Sin email de cliente — no se enviará notificación automática'); return; }
+    const _esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const TD='border:1px solid #999;padding:6px 9px';
+    const TDk='border:1px solid #999;padding:6px 9px;background:#f3f4f6;font-weight:bold';
+    const filas=[['Nº Expedición',e.nº_expedicion||'—'],['Remitente / Shipper',e.remitente||e.empresas?.nombre||'—'],['Buque',e.buques?.nombre||'—'],['Bultos',e.bultos||0],['Kilos',(e.kilos||0)+' kg'],['Ubicación actual',newUbic],['Status aduanero',e.status_aduanero||'—']].map(([k,v])=>`<tr><td style="${TDk}">${_esc(k)}</td><td style="${TD}">${_esc(v)}</td></tr>`).join('');
+    const trackingUrl='https://portal.alsalgeciras.com/tracking.html?exp='+expId;
+    const html=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:680px">
+      <p>Estimado cliente,</p>
+      <p>Le informamos que su mercancía ha sido <strong>recibida en nuestras instalaciones</strong> y está disponible para los trámites correspondientes.</p>
+      <table style="border-collapse:collapse;font-size:13px;margin:8px 0">${filas}</table>
+      <p style="margin:14px 0"><a href="${trackingUrl}" style="display:inline-block;background:#1565c0;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:bold">🔍 Seguimiento en tiempo real</a></p>
+      <p>No dude en contactarnos para cualquier consulta.</p>
+      <p style="margin-top:16px">Atentamente,<br><b>Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com</p>
+    </div>`;
+    const todosEmails=[emailCli,...((e.empresas?.otros_emails)||[])].filter(Boolean).join(',');
+    const subject='Recepción: '+(e.buques?.nombre||'')+' // Exp: '+(e.nº_expedicion||'')+' // '+newUbic;
+    _previewEmail({to:todosEmails, cc:'', subject, html, onSent:()=>{
+      sb.from('expediciones').update({notif_cliente_sent:true,fecha_aviso_cliente:new Date().toISOString()}).eq('id',expId).then(()=>{}).catch(()=>{});
+    }});
+  }catch(ex){ console.warn('_autoNotifUbicacion:',ex); }
+}
 async function saveUbic(id,val){
   const upd={ubicacion:val};
   const sem=semaforoDeUbicacion(val);
@@ -14271,6 +14344,9 @@ async function saveUbic(id,val){
   const badgeWrap=document.querySelector('[data-exp-badges]');
   if(badgeWrap&&sem) badgeWrap.innerHTML=bdg(sem)+badgeWrap.innerHTML.replace(/<span[^>]*badge[^>]*>[^<]*<\/span>/,'');
   showToast('Ubicación: '+val+(sem?' · '+sem:''));
+  // (#4) Auto-notificar al cliente cuando la mercancía llega a almacén o puerto
+  const UBIC_NOTIF_AUTO=['Almacén-1ª Planta','Almacén-Planta Baja','Almacén-ADT','Almacén-LAME','Puerto'];
+  if(UBIC_NOTIF_AUTO.includes(val)) _autoNotifUbicacion(id, val).catch(()=>{});
 }
 
 // Guarda TODOS los campos editables de la ficha de expedición de una vez
@@ -14858,6 +14934,79 @@ async function imprimirDetalleBuque(buqueId){
   setTimeout(()=>w.print(),600);
 }
 
+async function portadaBuque(buqueId){
+  showToast('📄 Generando portada…');
+  const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').eq('id',buqueId).single();
+  const {data:exps}=await sb.from('expediciones').select('nº_expedicion,dossier_visual_aduana,remitente,bultos,kilos,estado_semaforo,ubicacion,nº_mrn,status_aduanero,empresas!empresa_id(nombre)').eq('buque_id',buqueId).order('nº_expedicion');
+  if(!b) return;
+  const _esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const fd2=s=>s?new Date(s).toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}):'—';
+  const totalBultos=(exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
+  const totalKilos=(exps||[]).reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+  const semCol={'📦 RECIBIDA':'#d1fae5','📋 LLEGADA PREVISTA':'#dbeafe','✅ AUTORIZADO':'#d1fae5','🚢 EMBARCADO':'#e0e7ff','⚠️ REVISAR':'#fef3c7','🚛 CARGADO CAMIÓN':'#fce7f3','⏳ EN TRÁNSITO':'#f3f4f6'};
+  const hoy=new Date().toLocaleString('es-ES',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const rows=(exps||[]).map((e,i)=>{
+    const bg=(i%2===0)?'#fff':'#f9fafb';
+    const semBg=semCol[e.estado_semaforo]||bg;
+    return `<tr><td style="border:1px solid #e5e7eb;padding:5px 7px;background:${bg}">${i+1}</td>
+      <td style="border:1px solid #e5e7eb;padding:5px 7px;background:${bg};font-weight:700;font-family:monospace">${_esc(e.nº_expedicion||'—')}</td>
+      <td style="border:1px solid #e5e7eb;padding:5px 7px;background:${bg};font-size:11px">${_esc(e.dossier_visual_aduana||'—')}</td>
+      <td style="border:1px solid #e5e7eb;padding:5px 7px;background:${bg};font-size:11px">${_esc(e.remitente||e.empresas?.nombre||'—')}</td>
+      <td style="border:1px solid #e5e7eb;padding:5px 7px;background:${bg};text-align:right">${e.bultos||0}</td>
+      <td style="border:1px solid #e5e7eb;padding:5px 7px;background:${bg};text-align:right">${parseFloat(e.kilos)||0}</td>
+      <td style="border:1px solid #e5e7eb;padding:5px 7px;background:${bg};font-size:11px">${_esc(e.ubicacion||'—')}</td>
+      <td style="border:1px solid #e5e7eb;padding:5px 7px;background:${semBg};font-size:11px">${_esc(e.estado_semaforo||'—')}</td>
+      <td style="border:1px solid #e5e7eb;padding:5px 7px;background:${bg};font-size:11px">${_esc(e.status_aduanero||'—')}</td>
+      <td style="border:1px solid #e5e7eb;padding:5px 7px;background:${bg};font-family:monospace;font-size:11px">${_esc(e.nº_mrn||'—')}</td>
+    </tr>`;
+  }).join('');
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Portada Buque ${_esc(b.nombre)}</title>
+  <style>@media print{body{margin:0}.no-print{display:none}}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}
+  h1{font-size:22px;margin:0}h2{font-size:14px;margin:0 0 12px;color:#1565c0}
+  .hdr{display:flex;align-items:center;gap:16px;border-bottom:3px solid #1565c0;padding-bottom:12px;margin-bottom:16px}
+  .meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+  .meta-card{border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;background:#f9fafb}
+  .meta-lbl{font-size:10px;text-transform:uppercase;color:#6b7280;font-weight:600;letter-spacing:.4px}
+  .meta-val{font-size:15px;font-weight:700;color:#111;margin-top:2px}
+  .kpi-row{display:flex;gap:12px;margin-bottom:16px}
+  .kpi{flex:1;background:#dbeafe;border-radius:8px;padding:10px 14px;text-align:center}
+  .kpi .n{font-size:22px;font-weight:900;color:#1565c0}.kpi .l{font-size:11px;color:#1e40af}
+  table{width:100%;border-collapse:collapse;font-size:11px}th{border:1px solid #e5e7eb;padding:5px 7px;background:#e5e7eb;font-weight:700;text-align:left}
+  .footer{margin-top:20px;font-size:10px;color:#9ca3af;text-align:right;border-top:1px solid #e5e7eb;padding-top:8px}
+  .print-btn{background:#1565c0;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;cursor:pointer;margin-bottom:16px}
+  </style></head><body>
+  <button class="print-btn no-print" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+  <div class="hdr">
+    <img src="${QR_ALS_B64}" width="56" height="56" style="border-radius:6px;flex-shrink:0">
+    <div><div style="font-size:10px;font-weight:700;color:#1565c0;text-transform:uppercase;letter-spacing:1px">ALGECIRAS LOGISTIC SOLUTIONS</div>
+    <h1>📋 Portada Resumen de Buque</h1>
+    <div style="font-size:11px;color:#6b7280">Generado: ${hoy}</div></div>
+  </div>
+  <div class="meta">
+    <div class="meta-card"><div class="meta-lbl">🚢 Buque</div><div class="meta-val">${_esc(b.nombre)}</div></div>
+    ${b.nº_escala?`<div class="meta-card"><div class="meta-lbl">🔢 Escala</div><div class="meta-val">${_esc(b.nº_escala)}</div></div>`:'<div></div>'}
+    <div class="meta-card"><div class="meta-lbl">📅 ETA</div><div class="meta-val">${fd2(b.eta_buque)}</div></div>
+    <div class="meta-card"><div class="meta-lbl">🔧 Estado operación</div><div class="meta-val">${_esc(b.estado_operacion||'—')}</div></div>
+    ${b.ec?.nombre?`<div class="meta-card"><div class="meta-lbl">🏢 Cliente</div><div class="meta-val">${_esc(b.ec.nombre)}</div></div>`:''}
+    ${b.en?.nombre?`<div class="meta-card"><div class="meta-lbl">📋 Consignatario</div><div class="meta-val">${_esc(b.en.nombre)}</div></div>`:''}
+    ${b.lugar_entrega?`<div class="meta-card" style="grid-column:span 2"><div class="meta-lbl">📍 Lugar de entrega</div><div class="meta-val">${_esc(b.lugar_entrega)}</div></div>`:''}
+  </div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="n">${(exps||[]).length}</div><div class="l">Expediciones</div></div>
+    <div class="kpi"><div class="n">${totalBultos}</div><div class="l">Bultos totales</div></div>
+    <div class="kpi"><div class="n">${totalKilos.toLocaleString('es-ES')}</div><div class="l">Kilos totales</div></div>
+    <div class="kpi"><div class="n">${(exps||[]).filter(e=>e.estado_semaforo==='🚢 EMBARCADO').length}</div><div class="l">Embarcadas</div></div>
+  </div>
+  <h2>📦 Detalle de expediciones (${(exps||[]).length})</h2>
+  <table><thead><tr><th>#</th><th>Expedición</th><th>Dossier V.A.</th><th>Remitente</th><th style="text-align:right">Bultos</th><th style="text-align:right">Kilos</th><th>Ubicación</th><th>Semáforo</th><th>Status Aduana</th><th>MRN</th></tr></thead><tbody>${rows}</tbody>
+  <tfoot><tr><td colspan="4" style="border:1px solid #e5e7eb;padding:5px 7px;font-weight:bold;background:#f3f4f6">TOTAL</td><td style="border:1px solid #e5e7eb;padding:5px 7px;text-align:right;font-weight:bold">${totalBultos}</td><td style="border:1px solid #e5e7eb;padding:5px 7px;text-align:right;font-weight:bold">${totalKilos.toLocaleString('es-ES')}</td><td colspan="4" style="border:1px solid #e5e7eb;padding:5px 7px"></td></tr></tfoot></table>
+  ${b.observaciones?`<div style="margin-top:16px;border:1px solid #e5e7eb;border-radius:6px;padding:10px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:4px">Observaciones / Notas</div>${_esc(b.observaciones)}</div>`:''}
+  <div class="footer">ALS Portal Operativo · als@alsalgeciras.com · +34 956 58 13 16 · ${hoy}</div>
+  <script>setTimeout(()=>window.print(),600);<\/script></body></html>`;
+  const w=window.open('','_blank','width=1050,height=820');
+  if(!w){showToast('⚠️ Permite ventanas emergentes para imprimir');return;}
+  w.document.write(html); w.document.close();
+}
 // ── PRE-DELIVERY QR ────────────────────────────────────────────────────────────
 // El albarán solo se puede imprimir si los bultos cargados en el camión se han
 // verificado mediante escaneo QR (o si no hay bultos registrados en carga_bultos).

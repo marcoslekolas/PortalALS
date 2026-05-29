@@ -2031,6 +2031,7 @@ async function showForm(e, prefill){
     (isEdit && !e.expedicion_id ? '<button class="btn btn-s" onclick="crearExpedicionDesdeAC(\''+e.id+'\')" title="Crear expedición vinculada en Operativas" style="color:var(--b600)">📦 Crear en Operativas</button>' : '')+
     (isEdit && e.expedicion_id  ? '<span style="font-size:11px;color:var(--gr600);padding:0 8px;align-self:center">✅ Expedición vinculada</span>' : '')+
     (!isEdit ? '<button class="btn btn-s" onclick="crearEntradaYExpedicion()" title="Guardar registro y crear expedición en Operativas" style="color:var(--b600)">📦 Guardar y crear en Operativas</button>' : '')+
+    (isEdit ? '<button class="btn btn-s" onclick="emailSinPreaviso(\''+e.id+'\')" title="Email al consignatario: llegada sin preaviso ni documentación" style="color:var(--am700)">📧 Sin preaviso</button>' : '')+
     '<button class="btn btn-p" onclick="'+(isEdit?'saveEntrada(\''+e.id+'\')':'crearEntrada()')+'">💾 '+(isEdit?'Guardar cambios':'Crear entrada')+'</button>';
   openModal();
   onHC();
@@ -2994,6 +2995,37 @@ function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
   };
   dlg.addEventListener('click',function(ev){if(ev.target===dlg){dlg.close();dlg.remove();}});
   dlg.showModal();
+}
+
+async function emailSinPreaviso(entradaId){
+  var e=ALL.filter(function(x){return String(x.id)===String(entradaId);})[0];
+  if(!e){toast('⚠️ Entrada no encontrada');return;}
+  var consigNombre=(e.consignatario||'').trim();
+  if(!consigNombre){toast('⚠️ Esta entrada no tiene consignatario asignado');return;}
+  var emailDest='';
+  try{ var er=await sb.from('empresas').select('nombre,email_confronta,otros_emails').order('nombre'); emailDest=buscarEmailEmpresa(er.data||[],consigNombre); }catch(ex){}
+  if(!emailDest){toast('⚠️ Sin email para "'+consigNombre+'" — añádelo en la ficha de la empresa');}
+  var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  var awb=formatAwb(e.awb||'');
+  var html=
+    '<div style="font-family:Arial,sans-serif;font-size:12px;max-width:700px;color:#111;line-height:1.5">'+
+    '<p>Estimados señores / Dear Sirs,</p>'+
+    '<p>Les comunicamos que hemos recibido en el aeropuerto de <strong>'+(e.aeropuerto||'—')+'</strong> la siguiente expedición de la que <strong>no teníamos preaviso de llegada ni documentación adjunta</strong>:</p>'+
+    '<table style="border-collapse:collapse;font-size:12px;margin:12px 0">'+
+      '<tr><td style="border:1px solid #999;padding:5px 10px;background:#f3f4f6;font-weight:700">AWB / Nº Expedición</td><td style="border:1px solid #999;padding:5px 10px"><strong>'+awb+'</strong></td></tr>'+
+      (e.buque?'<tr><td style="border:1px solid #999;padding:5px 10px;background:#f3f4f6;font-weight:700">Buque / Vuelo</td><td style="border:1px solid #999;padding:5px 10px">'+e.buque+'</td></tr>':'')+
+      '<tr><td style="border:1px solid #999;padding:5px 10px;background:#f3f4f6;font-weight:700">Handling</td><td style="border:1px solid #999;padding:5px 10px">'+(e.handling||'—')+'</td></tr>'+
+      '<tr><td style="border:1px solid #999;padding:5px 10px;background:#f3f4f6;font-weight:700">Bultos / Kilos</td><td style="border:1px solid #999;padding:5px 10px">'+(e.bultos||'—')+' btos · '+(e.kilos_tasables||'—')+' kg tasables</td></tr>'+
+      '<tr><td style="border:1px solid #999;padding:5px 10px;background:#f3f4f6;font-weight:700">Fecha llegada</td><td style="border:1px solid #999;padding:5px 10px">'+(e.fecha_llegada||'—')+'</td></tr>'+
+    '</table>'+
+    '<p style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:10px 14px">⚠️ <strong>Solicitamos que nos aporten la documentación correspondiente</strong> (instrucciones de despacho, conocimiento de embarque, factura, packing list u otros documentos aduaneros que procedan) <strong>así como sus instrucciones para proceder</strong> con los trámites oportunos.</p>'+
+    '<p>Les informamos que la mercancía permanecerá en las instalaciones del aeropuerto hasta recibir sus instrucciones. De no recibir respuesta, se generarán gastos de almacenaje correspondientes.</p>'+
+    '<p>Quedamos a la espera de sus noticias.</p>'+
+    '<p style="margin-top:16px">Atentamente / Kind regards,<br><strong>Departamento de Aduana — CUSTOMS-WAY SL</strong><br>T. 856 003 50 02 · aduana@customsway.eu</p>'+
+    '<p style="font-size:11px;color:#888">'+hoy+'</p>'+
+    '</div>';
+  var asunto=encodeURIComponent('Expedición sin preaviso ni documentación — '+awb+' — '+hoy);
+  abrirVentanaEmail(html, emailDest, asunto, null);
 }
 
 async function abrirEmail(){
