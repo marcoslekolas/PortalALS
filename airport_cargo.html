@@ -2909,87 +2909,113 @@ function buscarEmailEmpresa(empresas, nombre){
   })[0]||null;
   return match?getEmailEmpresa(match):'';
 }
+// Muestra la previsualización del email con campos editables (Para/CC/Asunto/Cuerpo),
+// picker de adjuntos y botón de envío vía Nylas (Edge Function send-notif).
+// Misma firma que antes → ninguna llamada existente necesita cambiar.
 function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
   var fromEmail=(CU&&CU.email)||'aduana@customsway.eu';
   var fromName=(CU&&CU.nombre)?CU.nombre+' · Dpto. Aduana CUSTOMS-WAY':'Departamento Aduana CUSTOMS-WAY';
   var subjectDecoded='';
   try{subjectDecoded=decodeURIComponent(asunto);}catch(e){subjectDecoded=asunto;}
 
-  function toB64(str){
-    try{
-      var bytes=new TextEncoder().encode(str);var chunks=[];
-      for(var i=0;i<bytes.length;i+=512)chunks.push(String.fromCharCode.apply(null,bytes.subarray(i,Math.min(i+512,bytes.length))));
-      return btoa(chunks.join(''));
-    }catch(ex){return btoa(unescape(encodeURIComponent(str)));}
-  }
-
-  function abrirEnCliente(dest){
-    var ccList=emailCC?fromEmail+','+emailCC:fromEmail;
-    var subjectMime='=?UTF-8?B?'+toB64(subjectDecoded)+'?=';
-    var fullHtml='<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;font-family:Arial,sans-serif">'+htmlContent+'</body></html>';
-    var eml=
-      'MIME-Version: 1.0\r\n'+
-      'From: '+fromName+' <'+fromEmail+'>\r\n'+
-      'To: '+dest+'\r\n'+
-      'Cc: '+ccList+'\r\n'+
-      'Subject: '+subjectMime+'\r\n'+
-      'Content-Type: text/html; charset=UTF-8\r\n'+
-      'Content-Transfer-Encoding: base64\r\n\r\n'+
-      toB64(fullHtml);
-    var blob=new Blob([eml],{type:'message/rfc822'});
-    var url=URL.createObjectURL(blob);
-    // target='_blank' abre en nueva pestaña → el OS detecta message/rfc822 → lanza Mail/Outlook
-    var a=document.createElement('a');
-    a.href=url;a.target='_blank';a.rel='noopener';
-    a.style.display='none';
-    document.body.appendChild(a);a.click();document.body.removeChild(a);
-    setTimeout(function(){URL.revokeObjectURL(url);},10000);
-    toast('📧 Revisa la nueva pestaña o tu cliente de correo');
-  }
-
   // Eliminar modal previo
-  var prev=document.getElementById('email-prev-dlg');
-  if(prev)prev.remove();
-  var styleEl=document.getElementById('email-dlg-style');
-  if(styleEl)styleEl.remove();
-  // Inyectar estilo backdrop (solo una vez)
-  var st=document.createElement('style');
-  st.id='email-dlg-style';
-  st.textContent='#email-prev-dlg{border:none;border-radius:14px;padding:0;max-width:860px;width:calc(100vw - 32px);max-height:90vh;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.3)}'+
-    '#email-prev-dlg::backdrop{background:rgba(0,0,0,.75)}';
+  var prev=document.getElementById('email-prev-dlg');if(prev)prev.remove();
+  var styleEl=document.getElementById('email-dlg-style');if(styleEl)styleEl.remove();
+  var st=document.createElement('style');st.id='email-dlg-style';
+  st.textContent='#email-prev-dlg{border:none;border-radius:14px;padding:0;max-width:860px;width:calc(100vw - 32px);max-height:92vh;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.3)}'
+    +'#email-prev-dlg::backdrop{background:rgba(0,0,0,.75)}';
   document.head.appendChild(st);
 
-  // <dialog> con showModal() → top-layer garantizado, por encima de cualquier transform/z-index
   var dlg=document.createElement('dialog');
   dlg.id='email-prev-dlg';
   dlg.innerHTML=
-    '<div style="display:flex;flex-direction:column;max-height:90vh">'+
-      '<div style="padding:13px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:flex-start;gap:10px;flex-shrink:0">'+
-        '<div style="flex:1;min-width:0;font-size:12px;line-height:1.9">'+
-          '<span style="color:#6b7280">De:</span> '+fromName+' &lt;'+fromEmail+'&gt;<br>'+
-          '<span style="color:#6b7280">Para:</span> '+
-          '<input id="ep-dest" value="'+(emailDest||'')+'" placeholder="email@empresa.com" style="font-size:12px;font-weight:600;border:1px solid #d1d5db;border-radius:5px;padding:2px 7px;width:260px">'+
-          (emailCC?' &nbsp;·&nbsp; CC: '+emailCC:'')+'<br>'+
-          '<span style="color:#6b7280">Asunto:</span> <strong>'+subjectDecoded+'</strong>'+
-        '</div>'+
-        '<button id="ep-close" style="background:#f3f4f6;border:none;border-radius:8px;padding:5px 11px;font-size:14px;cursor:pointer;flex-shrink:0">✕</button>'+
+    '<div style="display:flex;flex-direction:column;max-height:92vh">'+
+      '<div style="padding:13px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'+
+        '<div style="font-size:15px;font-weight:800;color:#111">✉️ Previsualizar y enviar</div>'+
+        '<button id="ep-close" style="background:#f3f4f6;border:none;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer;line-height:1">✕</button>'+
       '</div>'+
-      '<div id="ep-preview" style="flex:1;overflow-y:auto;padding:20px;font-family:Arial,sans-serif;font-size:12px;line-height:1.5"></div>'+
-      '<div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;background:#f9fafb;gap:12px;flex-shrink:0">'+
-        '<div style="font-size:11px;color:#6b7280">Puedes editar el destinatario. Al pulsar se abrirá el cliente de correo con el email HTML completo.</div>'+
-        '<button id="ep-send" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📧 Abrir en cliente de correo</button>'+
+      '<div style="padding:14px 18px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">De</div>'+
+        '<div style="font-size:13px;font-weight:600;margin-bottom:10px;color:#374151">'+fromName+' &lt;'+fromEmail+'&gt;</div>'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">Para</div>'+
+        '<input id="ep-dest" value="'+(emailDest||'')+'" placeholder="email@empresa.com" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;margin-bottom:10px;box-sizing:border-box">'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">CC <span style="font-size:10px">(opcional, separa varios con comas)</span></div>'+
+        '<input id="ep-cc" value="'+(emailCC||'')+'" placeholder="cc@empresa.com" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;margin-bottom:10px;box-sizing:border-box">'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">Asunto</div>'+
+        '<input id="ep-subject" value="'+subjectDecoded.replace(/"/g,'&quot;')+'" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;margin-bottom:10px;box-sizing:border-box">'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">Cuerpo <span style="font-size:10px">— editable, haz clic para modificar</span></div>'+
+        '<div id="ep-body" contenteditable="true" style="border:1px solid #d1d5db;border-radius:8px;padding:14px;max-height:40vh;overflow-y:auto;background:#fff;font-size:12px;line-height:1.5;outline:none">'+htmlContent+'</div>'+
+        '<div style="margin-top:12px">'+
+          '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">📎 Adjuntos <span style="font-size:10px">(PDF, Word, Excel, imágenes…)</span></div>'+
+          '<input id="ep-files" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.gif,.zip,.txt" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:12px;cursor:pointer;box-sizing:border-box">'+
+          '<div id="ep-files-list" style="font-size:11px;color:#6b7280;margin-top:4px"></div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:flex-end;gap:10px;background:#f9fafb;flex-shrink:0">'+
+        '<button id="ep-cancel" style="background:#f3f4f6;color:#374151;border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Cancelar</button>'+
+        '<button id="ep-send" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📤 Enviar con Nylas</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(dlg);
-  document.getElementById('ep-preview').innerHTML=htmlContent;
-  document.getElementById('ep-close').onclick=function(){dlg.close();dlg.remove();};
-  document.getElementById('ep-send').onclick=function(){
-    var dest=(document.getElementById('ep-dest').value||'').trim();
-    if(!dest){alert('Introduce un email destinatario');return;}
-    dlg.close();dlg.remove();
-    abrirEnCliente(dest);
+
+  var epFiles=document.getElementById('ep-files');
+  epFiles.addEventListener('change',function(){
+    var fl=document.getElementById('ep-files-list');
+    if(fl) fl.innerHTML=Array.from(epFiles.files).map(function(f){
+      return '📄 '+f.name+' ('+(f.size/1024).toFixed(0)+' KB)';
+    }).join('<br>');
+  });
+
+  function cerrar(){dlg.close();dlg.remove();}
+  document.getElementById('ep-close').onclick=cerrar;
+  document.getElementById('ep-cancel').onclick=cerrar;
+  dlg.addEventListener('click',function(ev){if(ev.target===dlg)cerrar();});
+
+  document.getElementById('ep-send').onclick=async function(){
+    var btn=document.getElementById('ep-send');
+    var to=(document.getElementById('ep-dest').value||'').trim();
+    var cc=(document.getElementById('ep-cc').value||'').trim();
+    var subj=(document.getElementById('ep-subject').value||'').trim();
+    var html=document.getElementById('ep-body').innerHTML;
+    if(!to){alert('Introduce al menos un destinatario');return;}
+
+    // Convertir adjuntos a base64
+    var attachments=[];
+    if(epFiles&&epFiles.files&&epFiles.files.length){
+      for(var fi=0;fi<epFiles.files.length;fi++){
+        var file=epFiles.files[fi];
+        var b64=await new Promise(function(res,rej){
+          var r=new FileReader();r.onload=function(){res(r.result.split(',')[1]);};r.onerror=rej;r.readAsDataURL(file);
+        });
+        attachments.push({filename:file.name,content_type:file.type||'application/octet-stream',content:b64});
+      }
+    }
+
+    btn.disabled=true;var _t=btn.textContent;btn.textContent='⏳ Enviando…';
+    try{
+      var token=SB_KEY;
+      try{var sess=await sb.auth.getSession();token=(sess&&sess.data&&sess.data.session&&sess.data.session.access_token)||SB_KEY;}catch(_){}
+      var resp=await fetch(SB_URL+'/functions/v1/send-notif',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
+        body:JSON.stringify({to:to,cc:cc,subject:subj,html:html,attachments:attachments.length?attachments:undefined})
+      });
+      if(resp.ok){
+        toast('✅ Email enviado correctamente');
+        cerrar();
+      } else {
+        var err=await resp.text().catch(function(){return '';});
+        console.warn('send-notif:',resp.status,err);
+        toast('⚠️ Error al enviar ('+resp.status+'). Revisa la Edge Function Nylas.');
+        btn.disabled=false;btn.textContent=_t;
+      }
+    }catch(ex){
+      console.warn('abrirVentanaEmail Nylas:',ex);
+      toast('⚠️ No se pudo enviar: '+ex.message);
+      btn.disabled=false;btn.textContent=_t;
+    }
   };
-  dlg.addEventListener('click',function(ev){if(ev.target===dlg){dlg.close();dlg.remove();}});
+
   dlg.showModal();
 }
 
