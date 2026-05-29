@@ -1082,8 +1082,8 @@ if('serviceWorker' in navigator){
   <button class="mob-alm-btn" id="mab-carga" onclick="switchFotosTab('carga',this);navAlmMob(this)">
     <span class="mob-icon">🚛</span><span class="mob-lbl">Carga</span>
   </button>
-  <button class="mob-alm-btn" id="mab-scanner" onclick="abrirScannerQR()" style="position:relative">
-    <span class="mob-icon" style="display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:50%;background:var(--b600);color:#fff;box-shadow:0 3px 10px rgba(37,99,235,.45);font-size:20px">📷</span><span class="mob-lbl" style="color:var(--b700);font-weight:700">Escáner</span>
+  <button class="mob-alm-btn" id="mab-scanner" onclick="abrirScannerQR()" style="position:relative;overflow:visible">
+    <span style="display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:var(--b600);color:#fff;box-shadow:0 4px 14px rgba(37,99,235,.55);font-size:24px;margin-top:-4px">📷</span><span class="mob-lbl" style="color:var(--b700);font-weight:800;font-size:10px">Escáner</span>
   </button>
   <button class="mob-alm-btn" id="mab-embarque" onclick="switchFotosTab('embarque',this);navAlmMob(this)">
     <span class="mob-icon">🚢</span><span class="mob-lbl">Embarque</span>
@@ -2856,14 +2856,20 @@ async function _bgBuscar(q){
 
   _searchTimer = setTimeout(async()=>{
     try{
-      // qI: versión para ilike — reemplaza caracteres no alfanuméricos por % (wildcard Postgres)
-      // así "SSI-Conquest" y "SSI Conquest" y "020-07" encuentran los mismos registros
+      // Búsqueda de expediciones: usa allE (en memoria, ya normalizado con _nb) para que
+      // funcione con guiones, espacios y símbolos igual que el filtro local del panel.
+      const _nb = v=>String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+      const qn = _nb(q);
+      // qI para las queries ilike de Supabase (buques, empresas, incidencias)
       const qI = q.replace(/[^a-z0-9]/gi,'%').replace(/%{2,}/g,'%').replace(/^%+|%+$/g,'') || q;
-      const [rb, re, rmrn, rempSearch, remp, rinc, rawb] = await Promise.all([
+      const expLocal = qn.length >= 2 ? (window.allE||[]).filter(e=>
+        [e.nº_expedicion,e.remitente,e.dossier_visual_aduana,e.empresas?.nombre,e.buques?.nombre]
+          .some(v=>_nb(v).includes(qn))
+      ).slice(0,5) : [];
+
+      const [rb, rmrn, rempSearch, remp, rinc, rawb] = await Promise.all([
         sb.from('buques').select('id,nombre,imo,estado_operacion,nº_escala,eta_buque')
           .or(`nombre.ilike.%${qI}%,nº_escala.ilike.%${qI}%`).limit(4),
-        sb.from('expediciones').select('id,nº_expedicion,buques(nombre),empresas!empresa_id(nombre),estado_semaforo,ubicacion')
-          .or(`nº_expedicion.ilike.%${qI}%,remitente.ilike.%${qI}%`).limit(5),
         sb.from('expediciones').select('id,nº_expedicion,nº_mrn,buques(nombre),estado_semaforo')
           .ilike('nº_mrn',`%${qI}%`).limit(3),
         sb.from('expediciones').select('id,nº_expedicion,empresas!empresa_id(nombre),buques(nombre),estado_semaforo,ubicacion')
@@ -2880,7 +2886,8 @@ async function _bgBuscar(q){
       const grupos = [];
 
       const buques = rb.data||[];
-      const expRef = re.data||[];
+      // Combinar resultados locales de expediciones con los del MRN/empresa de Supabase
+      const expRef = expLocal;
       const expMrn = (rmrn.data||[]).filter(e=>!expRef.find(x=>x.id===e.id));
       const expEmp = (rempSearch?.data||[]).filter(e=>!expRef.find(x=>x.id===e.id)&&!expMrn.find(x=>x.id===e.id));
       const empresas = remp.data||[];
