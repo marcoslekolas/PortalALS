@@ -2992,30 +2992,41 @@ function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
       }
     }
 
-    // CC automático al buzón principal si el remitente es distinto
+    // CC automático al buzón principal
     var emailTrabajo=((CU&&CU.email_trabajo)||'').toLowerCase();
     var autoCc='';
-    if(emailTrabajo.endsWith('@alsalgeciras.com') && emailTrabajo!=='als@alsalgeciras.com'){
-      autoCc='als@alsalgeciras.com';
-    } else if(emailTrabajo.endsWith('@customsway.eu') && emailTrabajo!=='aduana@customsway.eu'){
-      autoCc='aduana@customsway.eu';
-    }
+    if(emailTrabajo.endsWith('@alsalgeciras.com') && emailTrabajo!=='als@alsalgeciras.com') autoCc='als@alsalgeciras.com';
+    else if(emailTrabajo.endsWith('@customsway.eu') && emailTrabajo!=='aduana@customsway.eu') autoCc='aduana@customsway.eu';
     var ccFinal=[cc,autoCc].filter(Boolean).join(';');
 
-    // Convertir HTML a texto plano y abrir el cliente de email del PC
-    var body=html
-      .replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<\/div>/gi,'\n')
-      .replace(/<\/tr>/gi,'\n').replace(/<\/th>/gi,'\t').replace(/<\/td>/gi,'\t')
-      .replace(/<li[^>]*>/gi,'• ').replace(/<\/li>/gi,'\n')
-      .replace(/<[^>]+>/g,'')
-      .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<')
-      .replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'")
-      .replace(/\n{3,}/g,'\n\n').trim();
-    var params=['subject='+encodeURIComponent(subj),'body='+encodeURIComponent(body)];
-    if(ccFinal) params.unshift('cc='+encodeURIComponent(ccFinal));
-    window.location.href='mailto:'+encodeURIComponent(to)+'?'+params.join('&');
-    toast('📧 Abriendo cliente de email…');
-    cerrar();
+    btn.disabled=true;var _t=btn.textContent;btn.textContent='⏳ Enviando…';
+    try{
+      var token=SB_KEY;
+      try{var sess=await sb.auth.getSession();token=(sess&&sess.data&&sess.data.session&&sess.data.session.access_token)||SB_KEY;}catch(_){}
+      var resp=await fetch(SB_URL+'/functions/v1/send-notif',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
+        body:JSON.stringify({to:to,cc:ccFinal,subject:subj,html:html,
+          sender_name:(CU&&CU.nombre)||undefined,
+          sender_email:(CU&&CU.email_trabajo)||undefined,
+          default_domain:'customsway.eu',
+          attachments:attachments.length?attachments:undefined})
+      });
+      if(resp.ok){
+        toast('✅ Email enviado correctamente');
+        cerrar();
+      } else {
+        var errBody=await resp.text().catch(function(){return '';});
+        var errMsg='';try{var ej=JSON.parse(errBody);errMsg=ej.detail||ej.error||ej.message||errBody;}catch(_){errMsg=errBody;}
+        console.warn('send-notif:',resp.status,errMsg);
+        toast('⚠️ Error '+resp.status+': '+(errMsg||'').substring(0,100));
+        btn.disabled=false;btn.textContent=_t;
+      }
+    }catch(ex){
+      console.warn('abrirVentanaEmail error:',ex);
+      toast('⚠️ No se pudo contactar con el servidor de email');
+      btn.disabled=false;btn.textContent=_t;
+    }
   };
 
   dlg.showModal();

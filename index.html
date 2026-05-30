@@ -12650,72 +12650,10 @@ async function openExpDesdeBuque(expId,buqueId){
 // EDITABLES; al pulsar "Enviar" lo manda con Nylas (Edge Function send-notif). No abre
 // el cliente de correo del ordenador ni descarga ningún fichero.
 function _previewEmail(opts){
-  const to=opts.to||'', cc=opts.cc||'', subject=opts.subject||'', html=opts.html||'';
-  const onSent=opts.onSent;
-  const _attr=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
-  const prev=document.getElementById('email-preview'); if(prev) prev.remove();
-  const ov=document.createElement('div');
-  ov.id='email-preview';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20004;display:flex;align-items:center;justify-content:center;padding:16px';
-  ov.innerHTML=`
-    <div style="background:#fff;border-radius:16px;width:100%;max-width:720px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 12px 48px rgba(0,0,0,.35);overflow:hidden">
-      <div style="padding:15px 18px;border-bottom:1px solid var(--g100);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-        <div style="font-size:16px;font-weight:800;color:#111">✉️ Previsualizar y enviar</div>
-        <button onclick="document.getElementById('email-preview').remove()" aria-label="Cerrar" style="background:var(--g100);border:none;border-radius:50%;width:36px;height:36px;font-size:18px;color:var(--g600);cursor:pointer">✕</button>
-      </div>
-      <div style="padding:14px 18px;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch">
-        <label class="fl2">Para</label>
-        <input id="pe-to" class="fi" value="${_attr(to)}" style="margin:4px 0 10px">
-        <label class="fl2">CC <span style="font-size:10px;color:var(--g400)">(opcional)</span></label>
-        <input id="pe-cc" class="fi" value="${_attr(cc)}" style="margin:4px 0 10px" placeholder="separa varios con comas">
-        <label class="fl2">Asunto</label>
-        <input id="pe-subject" class="fi" value="${_attr(subject)}" style="margin:4px 0 10px">
-        <label class="fl2">Cuerpo <span style="font-size:10px;color:var(--g400)">— editable, haz clic para modificar</span></label>
-        <div id="pe-body" contenteditable="true" style="border:1px solid var(--g200);border-radius:10px;padding:14px;max-height:44vh;overflow-y:auto;background:#fff;font-size:13px;line-height:1.5;margin-top:4px;outline:none">${html}</div>
-        ${(opts.preAttachments?.length)?`<div style="margin-top:12px;border:1px solid var(--b200);background:var(--b50);border-radius:8px;padding:10px"><label class="fl2" style="color:var(--b700)">📎 Documentos adjuntos de la expedición</label><div style="font-size:12px;color:var(--g600);margin-top:4px">${opts.preAttachments.map(a=>`📄 ${a.filename}`).join('<br>')}</div></div>`:''}
-        <div style="margin-top:12px">
-          <label class="fl2">📎 Añadir más adjuntos <span style="font-size:10px;color:var(--g400)">(PDF, Word, Excel, imágenes…)</span></label>
-          <input id="pe-files" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.gif,.zip,.txt" class="fi" style="margin-top:4px;padding:6px;cursor:pointer">
-          <div id="pe-files-list" style="font-size:11px;color:var(--g500);margin-top:4px"></div>
-        </div>
-      </div>
-      <div style="padding:13px 18px;border-top:1px solid var(--g100);display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">
-        <button onclick="document.getElementById('email-preview').remove()" class="btn btn-s" style="min-height:44px">Cancelar</button>
-        <button id="pe-send" class="btn btn-p" style="min-height:44px;font-weight:700">📤 Enviar</button>
-      </div>
-    </div>`;
-  document.body.appendChild(ov);
-  ov.onclick=ev=>{ if(ev.target===ov) ov.remove(); };
-  const peFiles=document.getElementById('pe-files');
-  peFiles.addEventListener('change',()=>{
-    const fl=document.getElementById('pe-files-list');
-    if(fl) fl.innerHTML=Array.from(peFiles.files).map(f=>`📎 ${f.name} (${(f.size/1024).toFixed(0)} KB)`).join('<br>');
+  // Sin ventana de previsualización — envío directo
+  _abrirEmailHTML(opts).then(ok=>{
+    if(ok && typeof opts.onSent==='function') try{ opts.onSent(); }catch(_){}
   });
-  document.getElementById('pe-send').onclick=async()=>{
-    const btn=document.getElementById('pe-send');
-    // Adjuntos pre-cargados (de la expedición)
-    const _preLoaded = opts.preAttachments || [];
-    // Adjuntos añadidos manualmente en el modal
-    const attachments=[..._preLoaded];
-    if(peFiles?.files?.length){
-      for(const file of peFiles.files){
-        const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
-        attachments.push({filename:file.name, content_type:file.type||'application/octet-stream', content:b64});
-      }
-    }
-    const data={
-      to:(document.getElementById('pe-to').value||'').trim(),
-      cc:(document.getElementById('pe-cc').value||'').trim(),
-      subject:(document.getElementById('pe-subject').value||'').trim(),
-      html:document.getElementById('pe-body').innerHTML,
-      attachments: attachments.length ? attachments : undefined
-    };
-    if(!data.to){ showToast('⚠️ Indica al menos un destinatario'); return; }
-    btn.disabled=true; const _t=btn.textContent; btn.textContent='⏳ Enviando…';
-    const ok=await _abrirEmailHTML(data);
-    if(ok){ ov.remove(); if(typeof onSent==='function'){ try{ onSent(); }catch(_){}} }
-    else { btn.disabled=false; btn.textContent=_t; }
-  };
 }
 // Botón "📤 VisualTrans": envía los documentos adjuntos de la expedición por email a VisualTrans
 // con el número de Dossier Visual Aduana en el asunto (#EXnnnnn#). Los docs se descargan desde
@@ -12761,7 +12699,7 @@ async function enviarDocsVisualTrans(expId){
   _previewEmail({to:'docs-algecirasls@visualtrans.app', cc:'', subject, html, preAttachments});
 }
 // _abrirEmailHTML: envía el email vía Edge Function (Nylas). Devuelve true si fue OK.
-function _abrirEmailHTML(opts){
+async function _abrirEmailHTML(opts){
   const to=(opts.to||'').trim(), subject=opts.subject||'', html=opts.html||'';
   if(!to||!html){ showToast('⚠️ Falta destinatario o contenido del email'); return false; }
 
@@ -12776,19 +12714,31 @@ function _abrirEmailHTML(opts){
   }
   const ccFinal=[opts.cc||'',autoCc].filter(Boolean).join(';');
 
-  const body=html
-    .replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<\/div>/gi,'\n')
-    .replace(/<\/tr>/gi,'\n').replace(/<\/th>/gi,'\t').replace(/<\/td>/gi,'\t')
-    .replace(/<li[^>]*>/gi,'• ').replace(/<\/li>/gi,'\n')
-    .replace(/<[^>]+>/g,'')
-    .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<')
-    .replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'")
-    .replace(/\n{3,}/g,'\n\n').trim();
-  const params=['subject='+encodeURIComponent(subject),'body='+encodeURIComponent(body)];
-  if(ccFinal) params.unshift('cc='+encodeURIComponent(ccFinal));
-  window.location.href='mailto:'+encodeURIComponent(to)+'?'+params.join('&');
-  showToast('📧 Abriendo cliente de email…');
-  return true;
+  try{
+    let token=SB_KEY;
+    try{ const s=await sb.auth.getSession(); token=s?.data?.session?.access_token||SB_KEY; }catch(_){}
+    showToast('📧 Enviando email…');
+    const resp=await fetch(SB_URL+'/functions/v1/send-notif',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
+      body:JSON.stringify({to, cc:ccFinal, subject, html,
+        sender_name:(typeof CU!=='undefined'&&CU?.nombre)||undefined,
+        sender_email:(typeof CU!=='undefined'&&CU?.email_trabajo)||undefined,
+        default_domain:'alsalgeciras.com',
+        attachments:opts.attachments||undefined})
+    });
+    if(resp.ok){ showToast('✅ Email enviado correctamente'); return true; }
+    const errBody=await resp.text().catch(()=>'');
+    let errMsg='';
+    try{ const j=JSON.parse(errBody); errMsg=j.detail||j.error||j.message||errBody; }catch(_){ errMsg=errBody; }
+    console.error('send-notif error',resp.status,errMsg);
+    showToast('⚠️ Error '+resp.status+': '+(errMsg||'').substring(0,120));
+    return false;
+  }catch(e){
+    console.warn('_abrirEmailHTML:',e);
+    showToast('⚠️ No se pudo contactar con el servidor de email');
+    return false;
+  }
 }
 async function _prepBuqueEmail(buqueId, buqueNombre){
   window._buqueEmailCache=window._buqueEmailCache||{};
