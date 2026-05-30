@@ -2856,14 +2856,27 @@ async function _bgBuscar(q){
 
   _searchTimer = setTimeout(async()=>{
     try{
-      // qI para las queries ilike de Supabase (buques, empresas, incidencias)
-      const qI = q.replace(/[^a-z0-9]/gi,'%').replace(/%{2,}/g,'%').replace(/^%+|%+$/g,'') || q;
+      const _nb = v=>String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+      const qn  = _nb(q);
+      const qI  = q.replace(/[^a-z0-9]/gi,'%').replace(/%{2,}/g,'%').replace(/^%+|%+$/g,'') || q;
 
-      const [rb, rExpRPC, rmrn, remp, rinc, rawb] = await Promise.all([
+      // Expediciones: usa allE si está cargado (vista exps visitada),
+      // si no hace un fetch directo — así funciona desde cualquier pestaña sin SQL extra
+      let pool = (allE&&allE.length) ? allE : null;
+      if(!pool){
+        const {data} = await sb.from('expediciones')
+          .select('id,nº_expedicion,remitente,dossier_visual_aduana,estado_semaforo,ubicacion,buques(nombre),empresas!empresa_id(nombre)')
+          .order('created_at',{ascending:false}).limit(600);
+        pool = data||[];
+      }
+      const expRef = pool.filter(e=>
+        [e.nº_expedicion,e.remitente,e.dossier_visual_aduana,e.empresas?.nombre,e.buques?.nombre]
+          .some(v=>_nb(v).includes(qn))
+      ).slice(0,6);
+
+      const [rb, rmrn, remp, rinc, rawb] = await Promise.all([
         sb.from('buques').select('id,nombre,imo,estado_operacion,nº_escala,eta_buque')
           .or(`nombre.ilike.%${qI}%,nº_escala.ilike.%${qI}%`).limit(4),
-        // RPC normaliza los campos en Postgres (igual que _nb): ignora mayúsculas, espacios, guiones
-        sb.rpc('buscar_expedicion_norm', {q}).then(r=>r).catch(()=>({data:[]})),
         sb.from('expediciones').select('id,nº_expedicion,nº_mrn,buques(nombre),estado_semaforo')
           .ilike('nº_mrn',`%${qI}%`).limit(3),
         sb.from('empresas').select('id,nombre,email_confronta')
@@ -2877,7 +2890,6 @@ async function _bgBuscar(q){
       const grupos = [];
 
       const buques = rb.data||[];
-      const expRef = rExpRPC.data||[];
       const expMrn = (rmrn.data||[]).filter(e=>!expRef.find(x=>x.id===e.id));
       const empresas = remp.data||[];
       const incs = rinc.data||[];
@@ -2897,7 +2909,7 @@ async function _bgBuscar(q){
         items: [
           ...expRef.map(e=>({
             titulo: e.nº_expedicion,
-            sub: [e.buque_nombre, e.empresa_nombre, e.ubicacion].filter(Boolean).join(' · ') || '—',
+            sub: [e.buques?.nombre, e.empresas?.nombre, e.ubicacion].filter(Boolean).join(' · ') || '—',
             badge: e.estado_semaforo||'',
             action: ()=>{ cerrarBusquedaGlobal(); openExpD(e.id); nav('expediciones',null); }
           })),
@@ -14175,7 +14187,63 @@ function toggleDensity(){
 })();
 
 
-// ── Gráfica barras dashboard ─────────────────────────────────────────
+// ── Cierre automático por inactividad ─────────────────────────────────────────
+// 30 min sin actividad → aviso. 5 min más sin actividad → cierre de sesión.
+(function _inactivityGuard(){
+  const WARN_MS  = 30 * 60 * 1000; // 30 min → aviso
+  const CLOSE_MS = 35 * 60 * 1000; // 35 min → cierre
+  let _warnTimer, _closeTimer, _warnEl;
+
+  function _resetTimers(){
+    clearTimeout(_warnTimer);
+    clearTimeout(_closeTimer);
+    if(_warnEl){ _warnEl.remove(); _warnEl=null; }
+    if(!CU) return; // sin sesión activa, no arrancar
+    _warnTimer  = setTimeout(_showWarn,  WARN_MS);
+    _closeTimer = setTimeout(_doLogout,  CLOSE_MS);
+  }
+
+  function _showWarn(){
+    if(_warnEl) return;
+    _warnEl = document.createElement('div');
+    _warnEl.id = 'inactivity-warn';
+    _warnEl.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;background:#1e293b;color:#fff;border-radius:14px;padding:16px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(0,0,0,.45);font-size:14px;max-width:420px;width:90%';
+    _warnEl.innerHTML = `
+      <span style="font-size:22px">⏱️</span>
+      <div style="flex:1">
+        <div style="font-weight:700;margin-bottom:2px">Sesión a punto de cerrarse</div>
+        <div style="opacity:.75;font-size:12px">5 minutos sin actividad. ¿Seguir conectado?</div>
+      </div>
+      <button onclick="window._inactivityReset()" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Seguir</button>`;
+    document.body.appendChild(_warnEl);
+  }
+
+  async function _doLogout(){
+    if(_warnEl){ _warnEl.remove(); _warnEl=null; }
+    try{ await sb.auth.signOut(); }catch(_){}
+    CU=null;
+    try{ document.getElementById('app').style.display='none'; }catch(_){}
+    try{ document.getElementById('screen-home').style.display='none'; }catch(_){}
+    const sl=document.getElementById('screen-login');
+    if(sl){ sl.style.display='flex'; }
+    showToast('🔒 Sesión cerrada por inactividad');
+  }
+
+  window._inactivityReset = function(){ _resetTimers(); };
+
+  const _events = ['mousemove','mousedown','keydown','touchstart','scroll','click'];
+  _events.forEach(ev=>document.addEventListener(ev, _resetTimers, {passive:true}));
+
+  // Arrancar cuando haya sesión activa
+  document.addEventListener('DOMContentLoaded', ()=>{ if(CU) _resetTimers(); });
+  // También arrancar cuando se loguea (CU se asigna después del login)
+  const _origNav = typeof nav==='function' ? nav : null;
+  // Observer: vigilar cuando CU se establece por primera vez
+  let _guardStarted=false;
+  const _guardInterval=setInterval(()=>{
+    if(CU && !_guardStarted){ _guardStarted=true; clearInterval(_guardInterval); _resetTimers(); }
+  },2000);
+})();
 async function renderDashCharts(exps){
   // ── Barras por semana ──
   const wrap = document.getElementById('dash-chart-wrap');
