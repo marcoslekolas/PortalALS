@@ -10798,11 +10798,7 @@ async function editUser(id){
         <input id="eu-e" class="fi" value="${u.email||''}" placeholder="email@als.com">
       </div>
     </div>
-    <div class="fg2" style="margin-bottom:14px">
-      <label class="fl2">📧 Email de trabajo <span style="font-weight:400;color:var(--g400)">(desde el que saldrán los emails — debe ser @alsalgeciras.com o @customsway.eu)</span></label>
-      <input id="eu-email-trabajo" class="fi" value="${u.email_trabajo||''}" placeholder="marcos@alsalgeciras.com">
-      <div style="font-size:11px;color:var(--g400);margin-top:4px">Si se deja vacío, los emails usan la dirección por defecto del módulo (als@alsalgeciras.com / aduana@customsway.eu).</div>
-    </div>
+    
 
     <div style="margin-bottom:14px">
       <label class="fl2">Roles asignados ${isMe?'<span style="color:var(--g400);font-weight:400">(no modificable en tu propio perfil)</span>':''}</label>
@@ -10964,8 +10960,7 @@ async function saveUser(id){
   const PRIO=['admin','aduanas','operativa','almacen','transportista','airport_cargo','control_rpa'];
   const rolPrimario=PRIO.find(r=>rolesSeleccionados.includes(r))||rolesSeleccionados[0];
 
-  const obj={nombre:nuevoNombre,email:gv('eu-e')||null,rol:rolPrimario,activo:document.getElementById('eu-activo')?.checked!==false,
-    email_trabajo:(gv('eu-email-trabajo')||'').trim()||null};
+  const obj={nombre:nuevoNombre,email:gv('eu-e')||null,rol:rolPrimario,activo:document.getElementById('eu-activo')?.checked!==false};
   const p=gv('eu-p');
   if(p) obj.password_hash=p;
   try{ const mcp=document.getElementById('eu-mcp'); if(mcp) obj.must_change_password=p?true:(mcp.checked||false); }catch(e){}
@@ -12705,13 +12700,10 @@ async function _abrirEmailHTML(opts){
 
   // CC automático: si el usuario envía desde un dominio propio pero no desde el buzón principal,
   // el buzón principal queda en copia para tener registro centralizado
-  const emailTrabajo=((typeof CU!=='undefined'&&CU?.email_trabajo)||'').toLowerCase();
+  const emailUsuario=((typeof CU!=='undefined'&&CU?.email)||'').toLowerCase();
   let autoCc='';
-  if(emailTrabajo.endsWith('@alsalgeciras.com') && emailTrabajo!=='als@alsalgeciras.com'){
-    autoCc='als@alsalgeciras.com';
-  } else if(emailTrabajo.endsWith('@customsway.eu') && emailTrabajo!=='aduana@customsway.eu'){
-    autoCc='aduana@customsway.eu';
-  }
+  if(emailUsuario.endsWith('@alsalgeciras.com') && emailUsuario!=='als@alsalgeciras.com') autoCc='als@alsalgeciras.com';
+  else if(emailUsuario.endsWith('@customsway.eu') && emailUsuario!=='aduana@customsway.eu') autoCc='aduana@customsway.eu';
   const ccFinal=[opts.cc||'',autoCc].filter(Boolean).join(';');
 
   try{
@@ -12723,7 +12715,7 @@ async function _abrirEmailHTML(opts){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
       body:JSON.stringify({to, cc:ccFinal, subject, html,
         sender_name:(typeof CU!=='undefined'&&CU?.nombre)||undefined,
-        sender_email:(typeof CU!=='undefined'&&CU?.email_trabajo)||undefined,
+        sender_email:(typeof CU!=='undefined'&&CU?.email)||undefined,
         default_domain:'alsalgeciras.com',
         attachments:opts.attachments||undefined})
     });
