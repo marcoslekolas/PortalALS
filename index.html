@@ -2220,6 +2220,7 @@ async function doLogin(){
     fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,{method:'PATCH',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({ultimo_acceso:new Date().toISOString()})}).catch(()=>{});
     // Registrar sesión única: si hay otra sesión activa del mismo usuario, la invalida
     _registrarSesionUnica(CU.id);
+    if(typeof window._inactivityStart==='function') window._inactivityStart();
     // Check if must change password
     if(CU.must_change_password){showChangePwd();return;}
     iniciarVerificacionSesion();
@@ -3838,6 +3839,7 @@ function abrirTrackingAWB(awb){
 }
 
 function doLogout(){
+  if(typeof window._inactivityStop==='function') window._inactivityStop();
   detenerRealtime();
   logAuth('logout', CU?.id, CU?.nombre, CU?.rol||'');
   try{ if(sb&&sb.auth) sb.auth.signOut(); }catch(e){}
@@ -14220,60 +14222,78 @@ async function _sesionDesplazada(){
 
 // ── Cierre automático por inactividad ─────────────────────────────────────────
 // 30 min sin actividad → aviso. 5 min más sin actividad → cierre de sesión.
-(function _inactivityGuard(){
-  const WARN_MS  = 30 * 60 * 1000; // 30 min → aviso
-  const CLOSE_MS = 35 * 60 * 1000; // 35 min → cierre
-  let _warnTimer, _closeTimer, _warnEl;
+(function(){
+  const WARN_MS  = 30 * 60 * 1000;
+  const CLOSE_MS = 35 * 60 * 1000;
+  let _warnTimer, _closeTimer, _warnEl, _lastReset = 0;
 
-  function _resetTimers(){
+  function _clearTimers(){
     clearTimeout(_warnTimer);
     clearTimeout(_closeTimer);
-    if(_warnEl){ _warnEl.remove(); _warnEl=null; }
-    if(!CU) return; // sin sesión activa, no arrancar
-    _warnTimer  = setTimeout(_showWarn,  WARN_MS);
-    _closeTimer = setTimeout(_doLogout,  CLOSE_MS);
+  }
+
+  function _startTimers(){
+    _clearTimers();
+    _warnTimer  = setTimeout(_showWarn, WARN_MS);
+    _closeTimer = setTimeout(_logout,   CLOSE_MS);
+  }
+
+  // Debounce: solo resetea si han pasado al menos 10 segundos desde el último reset
+  function _onActivity(){
+    if(!CU) return;
+    const now = Date.now();
+    if(now - _lastReset < 10000) return; // ignorar si resetó hace <10s
+    _lastReset = now;
+    if(_warnEl){ _warnEl.remove(); _warnEl = null; }
+    _startTimers();
   }
 
   function _showWarn(){
-    if(_warnEl) return;
+    if(_warnEl || !CU) return;
     _warnEl = document.createElement('div');
-    _warnEl.id = 'inactivity-warn';
     _warnEl.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;background:#1e293b;color:#fff;border-radius:14px;padding:16px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(0,0,0,.45);font-size:14px;max-width:420px;width:90%';
-    _warnEl.innerHTML = `
-      <span style="font-size:22px">⏱️</span>
-      <div style="flex:1">
-        <div style="font-weight:700;margin-bottom:2px">Sesión a punto de cerrarse</div>
-        <div style="opacity:.75;font-size:12px">5 minutos sin actividad. ¿Seguir conectado?</div>
-      </div>
-      <button onclick="window._inactivityReset()" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Seguir</button>`;
+    _warnEl.innerHTML = '<span style="font-size:22px">⏱️</span><div style="flex:1"><div style="font-weight:700;margin-bottom:2px">Sesión a punto de cerrarse</div><div style="opacity:.75;font-size:12px">Tu sesión se cerrará en 5 minutos por inactividad.</div></div><button onclick="window._inactivityKeepAlive()" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer">Seguir</button>';
     document.body.appendChild(_warnEl);
   }
 
-  async function _doLogout(){
-    if(_warnEl){ _warnEl.remove(); _warnEl=null; }
-    try{ await sb.auth.signOut(); }catch(_){}
-    CU=null;
-    try{ document.getElementById('app').style.display='none'; }catch(_){}
-    try{ document.getElementById('screen-home').style.display='none'; }catch(_){}
-    const sl=document.getElementById('screen-login');
-    if(sl){ sl.style.display='flex'; }
-    showToast('🔒 Sesión cerrada por inactividad');
+  function _logout(){
+    _clearTimers();
+    if(_warnEl){ _warnEl.remove(); _warnEl = null; }
+    if(!CU) return;
+    if(typeof showToast==='function') showToast('🔒 Sesión cerrada por inactividad');
+    setTimeout(()=>{ if(typeof doLogout==='function') doLogout(); }, 800);
   }
 
-  window._inactivityReset = function(){ _resetTimers(); };
+  window._inactivityKeepAlive = function(){
+    if(_warnEl){ _warnEl.remove(); _warnEl = null; }
+    _lastReset = 0; // forzar reset inmediato
+    _onActivity();
+  };
 
-  const _events = ['mousemove','mousedown','keydown','touchstart','scroll','click'];
-  _events.forEach(ev=>document.addEventListener(ev, _resetTimers, {passive:true}));
+  // Arrancar/parar los timers cuando cambia el estado de sesión
+  window._inactivityStart = function(){
+    _lastReset = 0;
+    _onActivity();
+  };
+  window._inactivityStop = function(){
+    _clearTimers();
+    if(_warnEl){ _warnEl.remove(); _warnEl = null; }
+  };
 
-  // Arrancar cuando haya sesión activa
-  document.addEventListener('DOMContentLoaded', ()=>{ if(CU) _resetTimers(); });
-  // También arrancar cuando se loguea (CU se asigna después del login)
-  const _origNav = typeof nav==='function' ? nav : null;
-  // Observer: vigilar cuando CU se establece por primera vez
-  let _guardStarted=false;
-  const _guardInterval=setInterval(()=>{
-    if(CU && !_guardStarted){ _guardStarted=true; clearInterval(_guardInterval); _resetTimers(); }
-  },2000);
+  // Eventos de actividad del usuario
+  ['mousedown','keydown','touchstart','scroll','click'].forEach(ev=>
+    document.addEventListener(ev, _onActivity, {passive:true})
+  );
+  // mousemove con throttle adicional (evento muy frecuente)
+  document.addEventListener('mousemove', ()=>{
+    if(!CU || Date.now() - _lastReset < 30000) return;
+    _onActivity();
+  }, {passive:true});
+
+  // Detectar login: arrancar cuando CU se establece
+  const _iv = setInterval(()=>{
+    if(CU){ clearInterval(_iv); window._inactivityStart(); }
+  }, 1000);
 })();
 async function renderDashCharts(exps){
   // ── Barras por semana ──
