@@ -12761,32 +12761,34 @@ async function enviarDocsVisualTrans(expId){
   _previewEmail({to:'docs-algecirasls@visualtrans.app', cc:'', subject, html, preAttachments});
 }
 // _abrirEmailHTML: envía el email vía Edge Function (Nylas). Devuelve true si fue OK.
-async function _abrirEmailHTML(opts){
-  const to=(opts.to||'').trim(), cc=(opts.cc||'').trim(), subject=opts.subject||'', html=opts.html||'';
+function _abrirEmailHTML(opts){
+  const to=(opts.to||'').trim(), subject=opts.subject||'', html=opts.html||'';
   if(!to||!html){ showToast('⚠️ Falta destinatario o contenido del email'); return false; }
-  try{
-    let token=SB_KEY;
-    try{ const s=await sb.auth.getSession(); token=s?.data?.session?.access_token||SB_KEY; }catch(_){}
-    showToast('📧 Enviando email…');
-    const resp=await fetch(SB_URL+'/functions/v1/send-notif',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
-      body:JSON.stringify({to,cc,subject,html,
-        sender_name:(typeof CU!=='undefined'&&CU?.nombre)||undefined,
-        sender_email:(typeof CU!=='undefined'&&CU?.email_trabajo)||undefined,
-        default_domain:'alsalgeciras.com',
-        attachments:opts.attachments||undefined})
-    });
-    if(resp.ok){ showToast('✅ Email enviado correctamente'); return true; }
-    const err=await resp.text().catch(()=> '');
-    console.warn('send-notif error:',resp.status,err);
-    showToast('⚠️ No se pudo enviar el email ('+resp.status+'). Revisa la configuración de Resend en Edge Functions.');
-    return false;
-  }catch(e){
-    console.warn('_abrirEmailHTML:',e);
-    showToast('⚠️ No se pudo enviar el email (sin conexión con el servidor)');
-    return false;
+
+  // CC automático: si el usuario envía desde un dominio propio pero no desde el buzón principal,
+  // el buzón principal queda en copia para tener registro centralizado
+  const emailTrabajo=((typeof CU!=='undefined'&&CU?.email_trabajo)||'').toLowerCase();
+  let autoCc='';
+  if(emailTrabajo.endsWith('@alsalgeciras.com') && emailTrabajo!=='als@alsalgeciras.com'){
+    autoCc='als@alsalgeciras.com';
+  } else if(emailTrabajo.endsWith('@customsway.eu') && emailTrabajo!=='aduana@customsway.eu'){
+    autoCc='aduana@customsway.eu';
   }
+  const ccFinal=[opts.cc||'',autoCc].filter(Boolean).join(';');
+
+  const body=html
+    .replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<\/div>/gi,'\n')
+    .replace(/<\/tr>/gi,'\n').replace(/<\/th>/gi,'\t').replace(/<\/td>/gi,'\t')
+    .replace(/<li[^>]*>/gi,'• ').replace(/<\/li>/gi,'\n')
+    .replace(/<[^>]+>/g,'')
+    .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<')
+    .replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'")
+    .replace(/\n{3,}/g,'\n\n').trim();
+  const params=['subject='+encodeURIComponent(subject),'body='+encodeURIComponent(body)];
+  if(ccFinal) params.unshift('cc='+encodeURIComponent(ccFinal));
+  window.location.href='mailto:'+encodeURIComponent(to)+'?'+params.join('&');
+  showToast('📧 Abriendo cliente de email…');
+  return true;
 }
 async function _prepBuqueEmail(buqueId, buqueNombre){
   window._buqueEmailCache=window._buqueEmailCache||{};
