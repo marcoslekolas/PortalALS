@@ -2204,6 +2204,8 @@ async function doLogin(){
     await cargarPermisosUsuario(CU.id, CU.roles);
     // Update last access
     fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,{method:'PATCH',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({ultimo_acceso:new Date().toISOString()})}).catch(()=>{});
+    // Registrar sesión única: si hay otra sesión activa del mismo usuario, la invalida
+    _registrarSesionUnica(CU.id);
     // Check if must change password
     if(CU.must_change_password){showChangePwd();return;}
     iniciarVerificacionSesion();
@@ -14186,6 +14188,68 @@ function toggleDensity(){
   }
 })();
 
+
+// ── Sesión única por usuario ───────────────────────────────────────────────────
+// Al hacer login se guarda un token aleatorio en la tabla user_sessions.
+// Si otro equipo hace login, sobreescribe ese token.
+// La sesión anterior detecta el cambio (Realtime + polling) y se cierra.
+let _mySessionToken = null;
+let _sessionChannel  = null;
+let _sessionPollTimer = null;
+
+async function _registrarSesionUnica(userId){
+  if(!sb || !userId) return;
+  _mySessionToken = (typeof crypto!=='undefined'&&crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36)+Math.random().toString(36));
+  try{
+    await sb.from('user_sessions').upsert({
+      user_id: userId,
+      session_token: _mySessionToken,
+      updated_at: new Date().toISOString()
+    });
+  }catch(e){ console.warn('user_sessions upsert:',e); return; }
+  _arrancarVigilanciaToken(userId);
+}
+
+function _arrancarVigilanciaToken(userId){
+  // 1. Realtime: detección inmediata cuando otro equipo sobreescribe el token
+  try{
+    if(_sessionChannel) sb.removeChannel(_sessionChannel);
+    _sessionChannel = sb.channel('session-watch-'+userId)
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'user_sessions',filter:`user_id=eq.${userId}`},
+        payload=>{
+          if(payload.new&&payload.new.session_token!==_mySessionToken){
+            _sesionDesplazada();
+          }
+        })
+      .subscribe();
+  }catch(e){ console.warn('Realtime sesión:',e); }
+
+  // 2. Polling cada 90 s como fallback (si Realtime no está disponible)
+  clearInterval(_sessionPollTimer);
+  _sessionPollTimer = setInterval(async()=>{
+    if(!_mySessionToken||!CU) return;
+    try{
+      const {data}=await sb.from('user_sessions').select('session_token').eq('user_id',userId).single();
+      if(data&&data.session_token!==_mySessionToken) _sesionDesplazada();
+    }catch(_){}
+  }, 90000);
+}
+
+async function _sesionDesplazada(){
+  clearInterval(_sessionPollTimer);
+  try{ if(_sessionChannel) sb.removeChannel(_sessionChannel); }catch(_){}
+  _mySessionToken = null;
+  try{ await sb.auth.signOut(); }catch(_){}
+  CU = null;
+  try{ document.getElementById('app').style.display='none'; }catch(_){}
+  try{ document.getElementById('screen-home').style.display='none'; }catch(_){}
+  const sl=document.getElementById('screen-login'); if(sl) sl.style.display='flex';
+  // Mostrar aviso claro
+  const av=document.createElement('div');
+  av.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#b91c1c;color:#fff;text-align:center;padding:14px 20px;font-size:14px;font-weight:600;letter-spacing:.02em';
+  av.textContent='⚠️ Tu sesión fue abierta en otro dispositivo. Por seguridad, esta sesión se ha cerrado.';
+  document.body.appendChild(av);
+}
 
 // ── Cierre automático por inactividad ─────────────────────────────────────────
 // 30 min sin actividad → aviso. 5 min más sin actividad → cierre de sesión.
