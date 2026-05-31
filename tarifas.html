@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal ALS · Tarificador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+<!-- jsPDF y html2canvas para exportar PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<style>
+/* ── Variables CSS del sistema de diseño ALS ── */
+:root{
+  --w:#fff;--g50:#f8f9fa;--g100:#f1f3f5;--g200:#e9ecef;--g300:#dee2e6;
+  --g400:#ced4da;--g500:#adb5bd;--g600:#6c757d;--g700:#495057;
+  --g800:#343a40;--g900:#212529;
+  --b50:#e7f1ff;--b100:#c5dbff;--b500:#3b82f6;--b600:#2563eb;--b700:#1d4ed8;
+  --gr50:#f0fdf4;--gr600:#16a34a;--gr700:#15803d;
+  --rd50:#fff1f2;--rd600:#dc2626;
+  --am50:#fffbeb;--am600:#d97706;
+  --pu50:#f5f3ff;--pu600:#7c3aed;
+  --te50:#f0fdfa;--te600:#0d9488;
+  --f:'Inter',sans-serif;
+  --r:8px;--rl:12px;--rxl:16px;
+  --sh:0 1px 3px rgba(0,0,0,.08);--shl:0 4px 16px rgba(0,0,0,.1);
+
+  /* Sidebar */
+  --sb-w:240px;--sb-wc:64px;
+  --sb-bg:#0f172a;--sb-accent:#3b82f6;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px;overflow-x:hidden}
+
+/* ═══════════════════════════════════════════════════
+   LAYOUT
+═══════════════════════════════════════════════════ */
+.layout{display:flex;min-height:100vh}
+
+/* ── Sidebar ── */
+.sidebar{
+  width:var(--sb-w);background:var(--sb-bg);
+  display:flex;flex-direction:column;
+  position:fixed;top:0;left:0;height:100vh;z-index:100;
+  transition:width .25s ease;overflow:hidden;
+  border-right:1px solid rgba(255,255,255,.04);
+}
+.sidebar.collapsed{width:var(--sb-wc)}
+.main{margin-left:var(--sb-w);flex:1;display:flex;flex-direction:column;min-height:100vh;transition:margin-left .25s ease}
+.sidebar.collapsed~.main{margin-left:var(--sb-wc)}
+
+.sb-header{padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.sb-logo{display:flex;align-items:center;gap:10px;cursor:pointer}
+.sb-logo-icon{width:32px;height:32px;background:var(--sb-accent);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;font-size:13px;color:#fff}
+.sb-logo-text{font-size:13px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;transition:opacity .2s}
+.sb-logo-sub{font-size:10px;color:rgba(255,255,255,.4);letter-spacing:.05em;display:block}
+.sidebar.collapsed .sb-logo-text{opacity:0;width:0}
+.sb-toggle{margin-left:auto;background:none;border:none;cursor:pointer;color:rgba(255,255,255,.4);padding:4px;border-radius:4px;flex-shrink:0;display:flex;align-items:center}
+.sb-toggle:hover{color:#fff;background:rgba(255,255,255,.08)}
+
+.sb-nav{flex:1;padding:8px 0;overflow-y:auto;overflow-x:hidden}
+.sb-section{padding:14px 14px 5px;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.25);white-space:nowrap;overflow:hidden;transition:opacity .2s}
+.sidebar.collapsed .sb-section{opacity:0}
+.sb-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;color:rgba(255,255,255,.55);transition:.15s;position:relative;text-decoration:none;white-space:nowrap}
+.sb-item:hover{background:rgba(255,255,255,.06);color:#fff}
+.sb-item.active{background:rgba(59,130,246,.18);color:#fff}
+.sb-item.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--sb-accent);border-radius:0 2px 2px 0}
+.sb-item svg{flex-shrink:0;width:17px;height:17px}
+.sb-item-label{font-size:13px;font-weight:500;overflow:hidden;transition:opacity .2s,width .2s;white-space:nowrap}
+.sidebar.collapsed .sb-item-label{opacity:0;width:0}
+.sb-badge{background:var(--rd600);color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0;transition:opacity .2s}
+.sidebar.collapsed .sb-badge{opacity:0}
+
+.sb-footer{padding:12px 14px;border-top:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.sb-user{display:flex;align-items:center;gap:10px}
+.sb-avatar{width:32px;height:32px;background:var(--sb-accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.sb-user-info{overflow:hidden;transition:opacity .2s}
+.sidebar.collapsed .sb-user-info{opacity:0;width:0}
+.sb-user-name{font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.sb-user-role{font-size:11px;color:rgba(255,255,255,.35);white-space:nowrap}
+
+/* ── Topbar ── */
+.topbar{
+  background:var(--w);border-bottom:1px solid var(--g200);
+  padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:50;box-shadow:var(--sh);
+}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.page-title{font-size:15px;font-weight:600;color:var(--g900)}
+.page-subtitle{font-size:12px;color:var(--g600)}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.db-badge{display:inline-flex;align-items:center;gap:6px;background:var(--g100);border:1px solid var(--g300);border-radius:20px;padding:4px 12px;font-size:11px;color:var(--g700);font-weight:500;cursor:pointer;transition:.15s}
+.db-badge:hover{background:var(--g200)}
+.db-dot{width:7px;height:7px;border-radius:50%;background:var(--gr600);animation:pulse 2s infinite;flex-shrink:0}
+.db-dot.off{background:var(--rd600);animation:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* ── Content ── */
+.content{padding:24px;flex:1}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--g900);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(10px);transition:.3s;z-index:3000;pointer-events:none;box-shadow:var(--shl)}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast.err{background:var(--rd600)}
+.toast.ok{background:var(--gr600)}
+
+/* ═══════════════════════════════════════════════════
+   COMPONENTES TARIFICADOR
+═══════════════════════════════════════════════════ */
+
+/* Cards */
+.card{background:var(--w);border-radius:var(--rl);box-shadow:var(--sh);border:1px solid var(--g200)}
+.card-header{padding:16px 20px 12px;border-bottom:1px solid var(--g200);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:600;color:var(--g900);display:flex;align-items:center;gap:8px}
+.card-title svg{color:var(--b600);width:16px;height:16px;flex-shrink:0}
+.card-body{padding:20px}
+
+/* Stats */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px}
+.stat-card{background:var(--w);border-radius:var(--rl);padding:16px 18px;box-shadow:var(--sh);border:1px solid var(--g200);display:flex;align-items:flex-start;gap:12px}
+.stat-icon{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.stat-icon.blue{background:var(--b50)} .stat-icon.blue svg{color:var(--b600)}
+.stat-icon.green{background:var(--gr50)} .stat-icon.green svg{color:var(--gr600)}
+.stat-icon.red{background:var(--rd50)} .stat-icon.red svg{color:var(--rd600)}
+.stat-icon.amber{background:var(--am50)} .stat-icon.amber svg{color:var(--am600)}
+.stat-num{font-size:24px;font-weight:700;color:var(--g900);line-height:1;margin-bottom:2px}
+.stat-lbl{font-size:11px;color:var(--g600);text-transform:uppercase;letter-spacing:.06em}
+
+/* Buttons */
+.btn{padding:8px 16px;border-radius:var(--r);font-size:13px;font-family:var(--f);font-weight:600;cursor:pointer;border:1.5px solid transparent;transition:.15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{opacity:.9;transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn-primary{background:var(--b600);color:#fff;border-color:var(--b600)}
+.btn-primary:hover{background:var(--b700);border-color:var(--b700)}
+.btn-outline{background:var(--w);color:var(--g700);border-color:var(--g300)}
+.btn-outline:hover{background:var(--g100);border-color:var(--g400)}
+.btn-danger{background:var(--rd600);color:#fff;border-color:var(--rd600)}
+.btn-ghost{background:transparent;color:var(--g600);border-color:var(--g300)}
+.btn-ghost:hover{background:var(--g100);color:var(--g800)}
+.btn-sm{font-size:11px;padding:5px 12px}
+.btn-xs{font-size:11px;padding:3px 8px}
+
+/* Forms */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group.full{grid-column:1/-1}
+.form-group label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--g600)}
+.form-group input,.form-group select,.form-group textarea{
+  border:1.5px solid var(--g300);border-radius:var(--r);padding:8px 12px;
+  font-family:var(--f);font-size:13px;color:var(--g900);background:#fff;width:100%;transition:.15s
+}
+.form-group textarea{resize:vertical;font-size:12px;line-height:1.5}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{
+  outline:none;border-color:var(--b500);box-shadow:0 0 0 3px rgba(59,130,246,.1)
+}
+
+/* Secciones de tarifas */
+.sections-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+@media(max-width:900px){.sections-grid{grid-template-columns:1fr}}
+.section-block{border:1.5px solid var(--g300);border-radius:var(--r);padding:14px;background:var(--g50);transition:.15s}
+.section-block:hover{border-color:rgba(59,130,246,.35)}
+.section-block.sec-active{border-color:var(--b500);background:var(--b50)}
+.section-block h3{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--g800);font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.section-block h3 input[type=checkbox]{width:14px;height:14px;accent-color:var(--b600);flex-shrink:0;cursor:pointer}
+.rate-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.rate-row input[type=checkbox]{width:13px;height:13px;accent-color:var(--g700);flex-shrink:0;cursor:pointer}
+.rate-row .lbl-edit{flex:1;font-size:12px;border:1px solid transparent;border-radius:4px;padding:2px 6px;background:transparent;font-family:var(--f);color:var(--g900);min-width:0}
+.rate-row .lbl-edit:hover{border-color:var(--g300);background:#fff}
+.rate-row .lbl-edit:focus{outline:none;border-color:var(--b500);background:#fff}
+.rate-row .price{width:74px;border:1.5px solid var(--g300);border-radius:4px;padding:3px 6px;font-size:12px;text-align:right;background:#fff;font-family:var(--f)}
+.rate-row .price:focus{outline:none;border-color:var(--b500)}
+.rate-row .unit-edit{width:56px;font-size:10px;color:var(--g600);border:1px solid transparent;border-radius:4px;padding:2px 4px;background:transparent;font-family:var(--f)}
+.rate-row .unit-edit:hover{border-color:var(--g300);background:#fff}
+.rate-row .unit-edit:focus{outline:none;border-color:var(--b500);background:#fff}
+.del-rate{width:18px;height:18px;border-radius:3px;border:none;background:transparent;color:var(--g400);cursor:pointer;font-size:14px;padding:0;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.del-rate:hover{background:var(--rd50);color:var(--rd600)}
+.add-rate{font-size:11px;padding:4px 8px;border-radius:4px;border:1px dashed var(--g300);background:transparent;color:var(--g600);cursor:pointer;font-family:var(--f)}
+.add-rate:hover{border-color:var(--b500);color:var(--b600);background:var(--b50)}
+.note-input{width:100%;border:1.5px solid var(--g300);border-radius:5px;padding:5px 8px;font-size:11px;font-family:var(--f);margin-top:6px;background:#fff;color:var(--g600)}
+.note-input:focus{outline:none;border-color:var(--b500)}
+
+/* Notice edición */
+.editing-notice{background:var(--am50);border:1.5px solid #fcd34d;border-radius:var(--r);padding:8px 14px;font-size:12px;color:#92400e;display:none;margin-bottom:12px;align-items:center;gap:8px}
+.editing-notice.show{display:flex}
+
+/* Tabla histórico */
+.htable{width:100%;border-collapse:collapse;font-size:13px}
+.htable th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--g600);padding:8px 12px;border-bottom:2px solid var(--g200);white-space:nowrap;font-weight:600}
+.htable td{padding:9px 12px;border-bottom:1px solid var(--g200);vertical-align:middle}
+.htable tbody tr{transition:.1s;cursor:pointer}
+.htable tbody tr:hover{background:var(--g50)}
+.htable tbody tr:last-child td{border-bottom:none}
+.vbadge{background:var(--b50);color:var(--b700);font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;font-family:monospace}
+.rev-due{color:var(--rd600);font-size:11px;font-weight:600}
+.rev-ok{color:var(--gr600);font-size:11px;font-weight:600}
+.rev-soon{color:var(--am600);font-size:11px;font-weight:600}
+.td-actions{display:flex;gap:4px}
+
+/* Search bar */
+.search-bar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.search-wrap{flex:1;min-width:200px;position:relative}
+.search-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--g500);width:14px;height:14px}
+.search-input{width:100%;padding:8px 12px 8px 32px;border:1.5px solid var(--g300);border-radius:var(--r);font-size:13px;font-family:var(--f);background:#fff}
+.search-input:focus{outline:none;border-color:var(--b500);box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+.filter-select{padding:8px 12px;border:1.5px solid var(--g300);border-radius:var(--r);font-size:12px;font-family:var(--f);background:#fff;color:var(--g900)}
+
+/* Empty state */
+.empty-state{text-align:center;padding:48px 24px;color:var(--g600)}
+.empty-state svg{width:44px;height:44px;color:var(--g300);margin-bottom:12px}
+.empty-state p{font-size:14px;margin-bottom:4px;color:var(--g700);font-weight:500}
+.empty-state span{font-size:12px}
+
+/* Preview sticky */
+.preview-wrap{background:var(--w);border-radius:var(--rl);box-shadow:var(--sh);border:1px solid var(--g200)}
+.preview-toolbar{background:linear-gradient(135deg,#0f172a 60%,#1e3a5f 100%);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-radius:var(--rl) var(--rl) 0 0}
+.preview-toolbar span{color:rgba(255,255,255,.7);font-size:13px;font-weight:500}
+
+/* ── DOCUMENTO PDF-style ── */
+.doc-wrap{padding:0;max-width:820px;margin:0 auto}
+.doc-body{padding:1.75rem 2rem;font-size:12px;line-height:1.6}
+.doc-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:2px solid #0f172a}
+.doc-co-name{font-size:20px;font-weight:700;color:#0f172a;margin-bottom:2px;letter-spacing:-.5px}
+.doc-co-name span{color:var(--b600)}
+.doc-address{font-size:11px;color:var(--g600);line-height:1.8}
+.doc-meta{text-align:right;font-size:11px;color:var(--g600);line-height:1.9}
+.doc-meta strong{display:block;font-size:13px;font-weight:700;color:#0f172a;margin-bottom:4px}
+.doc-num{color:var(--b700);font-weight:600;font-size:12px}
+.doc-validity{display:inline-block;background:#0f172a;color:#fff;font-size:10px;padding:2px 8px;border-radius:3px;margin-top:.4rem}
+.doc-recipient{background:var(--b50);border-left:3px solid var(--b500);padding:.75rem 1rem;margin-bottom:1.25rem;border-radius:0 6px 6px 0}
+.doc-recipient-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--b700);font-weight:700;margin-bottom:2px}
+.doc-recipient-name{font-size:14px;font-weight:700;color:#0f172a}
+.sec-title{font-size:13px;font-weight:700;color:#0f172a;margin:1.25rem 0 .4rem;padding-bottom:3px;border-bottom:1px solid var(--g300);display:flex;align-items:center;gap:6px}
+.rates-table{width:100%;border-collapse:collapse;margin-bottom:.35rem;font-size:12px}
+.rates-table th{background:#0f172a;color:#fff;padding:5px 10px;text-align:left;font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+.rates-table td{padding:6px 10px;border-bottom:.5px solid #eee}
+.rates-table tr:nth-child(even) td{background:var(--g50)}
+.rates-table td:last-child{text-align:right;font-weight:600;color:#0f172a}
+.rates-note{font-size:10.5px;color:var(--g600);margin-bottom:.35rem;font-style:italic}
+.doc-conditions{background:var(--g50);border:1px solid var(--g200);border-radius:6px;padding:.75rem 1rem;margin-top:1.25rem;font-size:11px;color:var(--g600);line-height:1.8}
+.doc-conditions strong{display:block;font-size:12px;color:var(--g900);margin-bottom:.3rem;font-weight:600}
+
+/* Modal */
+#modal-root .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto;backdrop-filter:blur(3px)}
+#modal-root .modal-box{background:#fff;border-radius:var(--rxl);width:100%;max-width:900px;margin:auto;box-shadow:0 24px 64px rgba(0,0,0,.25)}
+#modal-root .modal-toolbar{background:linear-gradient(135deg,#0f172a 60%,#1e3a5f 100%);padding:.75rem 1.25rem;display:flex;align-items:center;justify-content:space-between;border-radius:var(--rxl) var(--rxl) 0 0;flex-wrap:wrap;gap:.5rem}
+#modal-root .modal-toolbar-title{color:rgba(255,255,255,.85);font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#modal-root .modal-toolbar-btns{display:flex;gap:.5rem;flex-shrink:0}
+.mbtn{padding:5px 13px;border-radius:5px;font-size:12px;font-family:var(--f);font-weight:600;cursor:pointer;border:none;transition:.15s}
+.mbtn-default{background:rgba(255,255,255,.13);color:#fff}
+.mbtn-default:hover{background:rgba(255,255,255,.22)}
+.mbtn-pdf{background:var(--rd600);color:#fff}
+.mbtn-email{background:var(--b600);color:#fff}
+.mbtn:disabled{opacity:.45;cursor:not-allowed}
+
+/* Btn row */
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px}
+
+/* Section divider */
+.section-divider{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--g600);margin:20px 0 12px;display:flex;align-items:center;gap:10px}
+.section-divider::after{content:'';flex:1;height:1px;background:var(--g200)}
+
+@media print{
+  .sidebar,.topbar,.btn-row,.editing-notice,#modal-root,.preview-toolbar,.search-bar,.stats-grid,.card-header .btn-row{display:none!important}
+  .layout{display:block}.main{margin:0}.content{padding:0}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- ══════════ SIDEBAR ══════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sb-header">
+    <div class="sb-logo">
+      <div class="sb-logo-icon">ALS</div>
+      <div class="sb-logo-text">
+        Portal ALS
+        <span class="sb-logo-sub">Tarificador</span>
+      </div>
+      <button class="sb-toggle" onclick="toggleSidebar()" title="Contraer menú">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <nav class="sb-nav">
+    <div class="sb-section">Principal</div>
+    <a class="sb-item active" id="nav-dashboard" onclick="showPage('dashboard')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      <span class="sb-item-label">Dashboard</span>
+    </a>
+    <a class="sb-item" id="nav-nueva" onclick="nuevaOferta()">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      <span class="sb-item-label">Nueva oferta</span>
+    </a>
+
+    <div class="sb-section">Gestión</div>
+    <a class="sb-item" id="nav-historico" onclick="showPage('historico')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span class="sb-item-label">Histórico</span>
+      <span class="sb-badge" id="sb-count" style="display:none">0</span>
+    </a>
+    <a class="sb-item" id="nav-revisiones" onclick="showPage('revisiones')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span class="sb-item-label">Revisiones</span>
+      <span class="sb-badge" id="sb-rev-count" style="display:none">!</span>
+    </a>
+
+    <div class="sb-section">Portal</div>
+    <a class="sb-item" href="index.html">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span class="sb-item-label">Ir al Portal ALS</span>
+    </a>
+  </nav>
+
+  <div class="sb-footer">
+    <div class="sb-user">
+      <div class="sb-avatar" id="sb-avatar">CW</div>
+      <div class="sb-user-info">
+        <div class="sb-user-name" id="sb-username">Cargando…</div>
+        <div class="sb-user-role">Customs Way · ALS</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ══════════ MAIN ══════════ -->
+<div class="main">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div>
+        <div class="page-title" id="page-title">Dashboard</div>
+        <div class="page-subtitle" id="page-subtitle">Resumen de ofertas</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="db-badge" onclick="loadHistory()" title="Reconectar">
+        <span class="db-dot" id="db-dot"></span>
+        <span id="db-status">Conectando…</span>
+      </span>
+    </div>
+  </header>
+
+  <div class="content">
+
+    <!-- ── PAGE: DASHBOARD ── -->
+    <div class="page" id="page-dashboard" style="display:block">
+      <div class="stats-grid" id="dash-stats">
+        <div class="stat-card">
+          <div class="stat-icon blue"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></div>
+          <div><div class="stat-num" id="d-total">—</div><div class="stat-lbl">Ofertas totales</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+          <div><div class="stat-num" id="d-clientes">—</div><div class="stat-lbl">Clientes</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon red"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+          <div><div class="stat-num" id="d-vencidas">—</div><div class="stat-lbl">Rev. vencidas</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon amber"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <div><div class="stat-num" id="d-proximas">—</div><div class="stat-lbl">Vencen 30d</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+            Últimas ofertas
+          </span>
+          <button class="btn btn-primary btn-sm" onclick="nuevaOferta()">+ Nueva oferta</button>
+        </div>
+        <div class="card-body" style="padding:0"><div id="dash-recent"></div></div>
+      </div>
+    </div>
+
+    <!-- ── PAGE: NUEVA OFERTA ── -->
+    <div class="page" id="page-nueva" style="display:none">
+      <div class="editing-notice" id="editing-notice">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+        Editando oferta guardada — pulsa "Actualizar" para guardar cambios
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 360px;gap:20px">
+        <div>
+          <!-- Datos cliente -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+              <span class="card-title">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                Datos del cliente
+              </span>
+            </div>
+            <div class="card-body">
+              <div class="form-grid">
+                <div class="form-group"><label>Cliente / Destinatario *</label><input type="text" id="client-name" placeholder="Razón social…" oninput="renderDoc()"></div>
+                <div class="form-group"><label>CIF / NIF</label><input type="text" id="client-cif" placeholder="B12345678" oninput="renderDoc()"></div>
+                <div class="form-group full"><label>Email del destinatario</label><input type="email" id="client-email" placeholder="contacto@empresa.com"></div>
+                <div class="form-group full"><label>Dirección</label><input type="text" id="client-addr" placeholder="Dirección, localidad…" oninput="renderDoc()"></div>
+                <div class="form-group"><label>Persona de contacto</label><input type="text" id="client-contact" placeholder="Nombre…" oninput="renderDoc()"></div>
+                <div class="form-group"><label>Creada por</label><input type="text" id="created-by" placeholder="Tu nombre…"></div>
+                <div class="form-group"><label>Fecha de emisión</label><input type="date" id="doc-date" oninput="renderDoc()"></div>
+                <div class="form-group"><label>Válida hasta</label><input type="text" id="validity" value="31/12/2026" oninput="renderDoc()"></div>
+                <div class="form-group full"><label>Observaciones / Condiciones especiales</label><input type="text" id="global-notes" placeholder="Descuentos, condiciones particulares…" oninput="renderDoc()"></div>
+                <div class="form-group full"><label>Condiciones Generales</label><textarea id="cond-generales" rows="3" oninput="renderDoc()">Manipulación y almacenaje incluidos con servicios logísticos propios hasta 20 días · Carga/descarga en cliente por cuenta de la mercancía · No incluye despacho en La Línea ni Gibraltar salvo contratación expresa · Precios sin IVA · Tarifas sujetas a revisión anual.</textarea></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Secciones de tarifas -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                Secciones de tarifas
+              </span>
+              <button class="btn btn-ghost btn-sm" onclick="resetSections()">↺ Restaurar defecto</button>
+            </div>
+            <div class="card-body">
+              <p style="font-size:11px;color:var(--g600);margin-bottom:6px">Activa las secciones y ajusta conceptos y precios para cada cliente. Los nombres son editables.</p>
+              <div class="sections-grid" id="sections-grid"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview sticky -->
+        <div style="position:sticky;top:68px;height:fit-content">
+          <div class="preview-wrap">
+            <div class="preview-toolbar">
+              <span>Vista previa</span>
+              <button class="mbtn mbtn-default" style="font-size:11px;padding:3px 9px" onclick="window.print()">🖨</button>
+            </div>
+            <div style="max-height:72vh;overflow-y:auto">
+              <div id="preview-doc" style="padding:1rem;font-size:10px;transform-origin:top left"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-row" style="margin-top:16px">
+        <button class="btn btn-primary" onclick="window.print()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Imprimir
+        </button>
+        <button class="btn btn-primary" id="btn-save" onclick="saveOfferUI()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Guardar
+        </button>
+        <button class="btn btn-outline" onclick="descartarEdicion()" id="btn-descartar" style="display:none">Descartar</button>
+        <button class="btn btn-ghost" onclick="resetForm()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nueva
+        </button>
+      </div>
+    </div>
+
+    <!-- ── PAGE: HISTÓRICO ── -->
+    <div class="page" id="page-historico" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+            Todas las ofertas
+          </span>
+          <button class="btn btn-ghost btn-sm" onclick="loadHistory()">↺ Actualizar</button>
+        </div>
+        <div class="card-body">
+          <div class="search-bar">
+            <div class="search-wrap">
+              <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" class="search-input" id="search-q" placeholder="Buscar cliente, referencia o CIF…" oninput="renderHistory()">
+            </div>
+            <select class="filter-select" id="filter-rev" onchange="renderHistory()">
+              <option value="">Todas</option>
+              <option value="due">Revisión vencida</option>
+              <option value="soon">Vence en 30 días</option>
+              <option value="ok">Al día</option>
+            </select>
+          </div>
+          <div id="history-container"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PAGE: REVISIONES ── -->
+    <div class="page" id="page-revisiones" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Control de revisiones anuales
+          </span>
+        </div>
+        <div class="card-body"><div id="revisiones-container"></div></div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /layout -->
+
+<!-- Modal root (inyección dinámica) -->
+<div id="modal-root"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  GUARD DE ACCESO — admin + aduanas
+// ══════════════════════════════════════════════════════
+var CU = null;
+try {
+  CU = JSON.parse(sessionStorage.getItem('als_cu') || localStorage.getItem('als_cu') || 'null');
+} catch(e) {}
+
+if (!CU || !['admin','aduanas'].includes(CU.rol)) {
+  document.body.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f8f9fa">
+      <div style="text-align:center;padding:2rem">
+        <div style="font-size:48px;margin-bottom:12px">🔒</div>
+        <h2 style="margin-bottom:8px;color:#212529">Acceso denegado</h2>
+        <p style="color:#6c757d;margin-bottom:20px">No tienes permisos para acceder al Tarificador.</p>
+        <a href="index.html" style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">← Volver al portal</a>
+      </div>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════
+//  SUPABASE
+// ══════════════════════════════════════════════════════
+const SUPA_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
+const SUPA_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
+const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+// Nombre de tabla en Supabase para ofertas del tarificador
+const TABLA = 'cw_tarifas_ofertas';
+
+// ══════════════════════════════════════════════════════
+//  DATOS DE SECCIONES POR DEFECTO
+// ══════════════════════════════════════════════════════
+const COND_DEFAULT = 'Manipulación y almacenaje incluidos con servicios logísticos propios hasta 20 días · Carga/descarga en cliente por cuenta de la mercancía · No incluye despacho en La Línea ni Gibraltar salvo contratación expresa · Precios sin IVA · Tarifas sujetas a revisión anual.';
+
+const DEFAULT_SECTIONS = [
+  {id:'transp_ll', title:'Transporte La Línea → Gibraltar', defaultOn:true,
+   note:'Servicio directo puerta a puerta. Entrega al día siguiente. Conversión: 1m³ = 270 kg.',
+   rates:[
+    {id:'tl1',label:'0 – 50 kg',price:80,unit:'€',check:true},
+    {id:'tl2',label:'51 – 100 kg',price:90,unit:'€',check:true},
+    {id:'tl3',label:'101 – 500 kg',price:105,unit:'€',check:true},
+    {id:'tl4',label:'501 – 1.200 kg',price:150,unit:'€',check:true},
+    {id:'tl5',label:'1.201 – 1.500 kg',price:210,unit:'€',check:true},
+    {id:'tl6',label:'Resto',price:'A/C',unit:'',check:true}
+  ]},
+  {id:'transp_alg', title:'Transporte Algeciras → Gibraltar', defaultOn:false,
+   note:'Conversión volumétrica: 1m³ = 270 kg.',
+   rates:[
+    {id:'ta1',label:'0 – 50 kg',price:105,unit:'€',check:true},
+    {id:'ta2',label:'51 – 100 kg',price:120,unit:'€',check:true},
+    {id:'ta3',label:'101 – 500 kg',price:150,unit:'€',check:true},
+    {id:'ta4',label:'501 – 1.200 kg',price:175,unit:'€',check:true},
+    {id:'ta5',label:'1.201 – 1.500 kg',price:250,unit:'€',check:true},
+    {id:'ta6',label:'Resto',price:'A/C',unit:'',check:true}
+  ]},
+  {id:'despacho', title:'Despacho de Aduanas', defaultOn:true, note:'',
+   rates:[
+    {id:'d1',label:'Reimportaciones de temporales',price:110,unit:'€',check:true},
+    {id:'d2',label:'Exportaciones definitivas',price:35,unit:'€',check:true},
+    {id:'d3',label:'Exportaciones temporales',price:40,unit:'€',check:true},
+    {id:'d4',label:'RPA (Régimen Perfeccionamiento Activo)',price:110,unit:'€',check:true},
+    {id:'d5',label:'Importaciones a consumo',price:110,unit:'€',check:true},
+    {id:'d6',label:'Recepción de tránsitos',price:55,unit:'€ (incl. EXS)',check:true},
+    {id:'d7',label:'Recepción de DAEs',price:25,unit:'€',check:true},
+    {id:'d8',label:'Reexportaciones y Ultimación de RPA',price:45,unit:'€',check:true},
+    {id:'d9',label:'T1 de expedición',price:150,unit:'€',check:true},
+    {id:'d10',label:'T1 expedición LL → AGP / Algeciras',price:'A/C',unit:'',check:true},
+    {id:'d11',label:'ICS2 (ENS)',price:45,unit:'€',check:true},
+    {id:'d12',label:'RMT',price:30,unit:'€',check:true},
+    {id:'d13',label:'ROSH / RAE',price:30,unit:'€',check:true},
+    {id:'d14',label:'JEMU',price:30,unit:'€',check:true},
+    {id:'d15',label:'Instancia de anulación trámite aduanero',price:30,unit:'€',check:true},
+    {id:'d16',label:'Modificación ICS2 (ENS)',price:45,unit:'€',check:true}
+  ]},
+  {id:'adt', title:'Servicios ADT / Almacén', defaultOn:false, note:'',
+   rates:[
+    {id:'a1',label:'Recepción en ADT',price:50,unit:'€',check:true},
+    {id:'a2',label:'Emisión T1 posterior LL→LL',price:100,unit:'€',check:true},
+    {id:'a3',label:'Transporte almacén → Gibraltar (1 pallet)',price:50,unit:'€',check:true},
+    {id:'a4',label:'Pallet adicional (hasta 4)',price:25,unit:'€/pallet',check:true},
+    {id:'a5',label:'Despacho aduana LL (TR)',price:45,unit:'€',check:true},
+    {id:'a6',label:'C/D ADT',price:8,unit:'€/pallet',check:true},
+    {id:'a7',label:'Almacenaje ADT',price:1,unit:'€/pallet/día',check:true}
+  ]},
+  {id:'almacenaje', title:'Almacenaje y Manipulación', defaultOn:false,
+   note:'Solo sin uso de servicios logísticos propios. Con servicio completo, incluido hasta 20 días.',
+   rates:[
+    {id:'al1',label:'Almacenaje – pallet/día',price:1.5,unit:'€',check:true},
+    {id:'al2',label:'Manipulación – pallet',price:5,unit:'€',check:true}
+  ]},
+  {id:'ups', title:'Tráfico UPS / Paquetería Express', defaultOn:false,
+   note:'Facturación mínima diaria: 40 €. Abono mínimo diario: 10 €.',
+   rates:[
+    {id:'u1',label:'1er tramo – hasta 10 docs',price:40,unit:'€/día',check:true},
+    {id:'u2',label:'2º tramo – 11 a 25 docs',price:75,unit:'€/día',check:true},
+    {id:'u3',label:'3er tramo – 26 a 50 docs',price:100,unit:'€/día',check:true},
+    {id:'u4',label:'4º tramo – 51 a 75 docs',price:120,unit:'€/día',check:true}
+  ]},
+  {id:'aeropuerto', title:'Tarifas Aeropuerto', defaultOn:false, note:'',
+   rates:[
+    {id:'ae1',label:'Gestión Comunitario AGP',price:'A/C',unit:'',check:true},
+    {id:'ae2',label:'Tránsito AGP',price:'A/C',unit:'',check:true},
+    {id:'ae3',label:'Otros aeropuertos',price:'A/C',unit:'',check:true},
+    {id:'ae4',label:'Servicio extra (fines de semana y festivos)',price:'A/C',unit:'',check:true}
+  ]},
+  {id:'honorarios', title:'Honorarios y Gestiones Varias', defaultOn:false, note:'',
+   rates:[
+    {id:'h1',label:'Apertura de expediente',price:15,unit:'€',check:true},
+    {id:'h2',label:'Minutas de gestión (hora)',price:60,unit:'€/h',check:true},
+    {id:'h3',label:'Gestión de incidencias',price:35,unit:'€',check:true},
+    {id:'h4',label:'Representación fiscal',price:'A/C',unit:'',check:true}
+  ]}
+];
+
+// ══════════════════════════════════════════════════════
+//  ESTADO GLOBAL
+// ══════════════════════════════════════════════════════
+const state = {
+  sections: JSON.parse(JSON.stringify(DEFAULT_SECTIONS)),
+  history: [],
+  editingId: null
+};
+
+let _modalOfertaId = null;
+
+// ══════════════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════════════
+function toast(msg, err=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast' + (err ? ' err' : ' ok');
+  t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// ══════════════════════════════════════════════════════
+//  UI DE SESIÓN
+// ══════════════════════════════════════════════════════
+(function initUI() {
+  if (!CU) return;
+  const ini = (CU.nombre||'CW').substring(0,2).toUpperCase();
+  document.getElementById('sb-avatar').textContent = ini;
+  document.getElementById('sb-username').textContent = CU.nombre || CU.email;
+})();
+
+// ══════════════════════════════════════════════════════
+//  NAVEGACIÓN
+// ══════════════════════════════════════════════════════
+const PAGE_META = {
+  dashboard:  {title:'Tarificador',  subtitle:'Resumen de ofertas'},
+  nueva:      {title:'Nueva oferta', subtitle:'Configura y genera una tarifa personalizada'},
+  historico:  {title:'Histórico',    subtitle:'Todas las ofertas guardadas'},
+  revisiones: {title:'Revisiones',   subtitle:'Control de revisiones anuales'},
+};
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.style.display='none');
+  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('page-'+id).style.display = 'block';
+  const nav = document.getElementById('nav-'+id);
+  if (nav) nav.classList.add('active');
+  const m = PAGE_META[id]||{};
+  document.getElementById('page-title').textContent = m.title||id;
+  document.getElementById('page-subtitle').textContent = m.subtitle||'';
+  if (id==='historico') renderHistory();
+  if (id==='revisiones') renderRevisiones();
+  if (id==='dashboard') renderDashboard();
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+function nuevaOferta() {
+  resetForm();
+  showPage('nueva');
+}
+
+// ══════════════════════════════════════════════════════
+//  SUPABASE: CARGA Y GUARDADO
+// ══════════════════════════════════════════════════════
+async function loadHistory() {
+  try {
+    const { data, error } = await supa.from(TABLA).select('*').order('created_at', {ascending:false});
+    if (error) throw error;
+    state.history = data || [];
+    updateBadges();
+    setDbStatus(true);
+    renderDashboard();
+  } catch(e) {
+    setDbStatus(false);
+    console.error('loadHistory:', e);
+  }
+}
+
+function setDbStatus(ok) {
+  document.getElementById('db-dot').className = 'db-dot' + (ok ? '' : ' off');
+  document.getElementById('db-status').textContent = ok ? 'BD conectada' : 'Sin conexión';
+}
+
+function updateBadges() {
+  const today = new Date().toISOString().split('T')[0];
+  const soon = new Date(); soon.setDate(soon.getDate()+30); const ss = soon.toISOString().split('T')[0];
+  const due = state.history.filter(e => e.next_review <= today).length;
+  const s30 = state.history.filter(e => e.next_review > today && e.next_review <= ss).length;
+  const cnt = document.getElementById('sb-count');
+  if (state.history.length > 0) { cnt.textContent=state.history.length; cnt.style.display=''; } else cnt.style.display='none';
+  const rb = document.getElementById('sb-rev-count');
+  if (due+s30 > 0) { rb.textContent=due+s30; rb.style.display=''; } else rb.style.display='none';
+}
+
+function genRef() {
+  const d = new Date();
+  const existing = state.history.map(e => { const m=(e.ref||'').match(/-(\d+)$/); return m?parseInt(m[1]):0; });
+  const nextN = (existing.length ? Math.max(...existing) : 0) + 1;
+  return 'CW-'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(nextN).padStart(4,'0');
+}
+
+async function saveOfferUI() {
+  const client = document.getElementById('client-name').value.trim();
+  if (!client) { toast('Introduce el nombre del cliente', true); return; }
+  const rawDate = document.getElementById('doc-date').value || new Date().toISOString().split('T')[0];
+  const nr = new Date(rawDate+'T00:00:00'); nr.setFullYear(nr.getFullYear()+1);
+
+  const payload = {
+    ref: state.editingId ? (state.history.find(x=>x.id===state.editingId)||{}).ref || genRef() : genRef(),
+    client,
+    client_addr: document.getElementById('client-addr').value,
+    client_contact: document.getElementById('client-contact').value,
+    client_cif: document.getElementById('client-cif').value,
+    client_email: document.getElementById('client-email').value,
+    created_by: document.getElementById('created-by').value || (CU&&CU.nombre)||'',
+    date: rawDate,
+    validity: document.getElementById('validity').value || '31/12/2026',
+    global_notes: document.getElementById('global-notes').value,
+    cond_generales: document.getElementById('cond-generales').value,
+    next_review: nr.toISOString().split('T')[0],
+    sections: state.sections
+  };
+
+  try {
+    if (state.editingId) {
+      const { error } = await supa.from(TABLA).update(payload).eq('id', state.editingId);
+      if (error) throw error;
+      toast('Oferta actualizada: '+payload.ref);
+    } else {
+      const { error } = await supa.from(TABLA).insert(payload);
+      if (error) throw error;
+      toast('Oferta guardada: '+payload.ref);
+    }
+    state.editingId = null;
+    document.getElementById('editing-notice').classList.remove('show');
+    document.getElementById('btn-save').innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Guardar';
+    document.getElementById('btn-descartar').style.display='none';
+    await loadHistory();
+  } catch(e) {
+    toast('Error al guardar: '+e.message, true);
+    console.error(e);
+  }
+}
+
+function loadOfferInForm(id) {
+  const e = state.history.find(x=>x.id===id); if(!e) return;
+  document.getElementById('client-name').value = e.client||'';
+  document.getElementById('client-addr').value = e.client_addr||'';
+  document.getElementById('client-contact').value = e.client_contact||'';
+  document.getElementById('client-cif').value = e.client_cif||'';
+  document.getElementById('client-email').value = e.client_email||'';
+  document.getElementById('created-by').value = e.created_by||'';
+  document.getElementById('doc-date').value = e.date||'';
+  document.getElementById('validity').value = e.validity||'31/12/2026';
+  document.getElementById('global-notes').value = e.global_notes||'';
+  document.getElementById('cond-generales').value = e.cond_generales||COND_DEFAULT;
+  state.sections = JSON.parse(JSON.stringify(e.sections||DEFAULT_SECTIONS));
+  state.editingId = id;
+  document.getElementById('editing-notice').classList.add('show');
+  document.getElementById('btn-save').innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Actualizar';
+  document.getElementById('btn-descartar').style.display='';
+  buildSectionsGrid(); renderDoc();
+  showPage('nueva');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function duplicateOffer(id) {
+  loadOfferInForm(id);
+  state.editingId = null;
+  document.getElementById('doc-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('editing-notice').classList.remove('show');
+  document.getElementById('btn-save').innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Guardar';
+  document.getElementById('btn-descartar').style.display='none';
+  renderDoc();
+}
+
+async function deleteOffer(id) {
+  const e = state.history.find(x=>x.id===id);
+  if (!confirm('¿Eliminar la oferta de "'+e.client+'"?')) return;
+  try {
+    const { error } = await supa.from(TABLA).delete().eq('id', id);
+    if (error) throw error;
+    if (state.editingId===id) resetForm();
+    await loadHistory();
+    toast('Oferta eliminada');
+  } catch(e) { toast('Error al eliminar', true); }
+}
+
+function descartarEdicion() {
+  if (state.editingId && !confirm('¿Descartar los cambios?')) return;
+  resetForm();
+}
+
+// ══════════════════════════════════════════════════════
+//  RENDER PÁGINAS
+// ══════════════════════════════════════════════════════
+function renderDashboard() {
+  const today = new Date().toISOString().split('T')[0];
+  const soon = new Date(); soon.setDate(soon.getDate()+30); const ss = soon.toISOString().split('T')[0];
+  const due = state.history.filter(e=>e.next_review<=today).length;
+  const s30 = state.history.filter(e=>e.next_review>today&&e.next_review<=ss).length;
+  const clients = new Set(state.history.map(e=>e.client)).size;
+  document.getElementById('d-total').textContent = state.history.length;
+  document.getElementById('d-clientes').textContent = clients;
+  document.getElementById('d-vencidas').textContent = due;
+  document.getElementById('d-proximas').textContent = s30;
+
+  const recent = state.history.slice(0,6);
+  const dr = document.getElementById('dash-recent');
+  if (!recent.length) {
+    dr.innerHTML = '<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><p>Sin ofertas aún</p><span>Crea tu primera oferta desde "Nueva oferta"</span></div>';
+    return;
+  }
+  const rows = recent.map(e => {
+    const d = e.date ? new Date(e.date+'T00:00:00').toLocaleDateString('es-ES') : '—';
+    return `<tr onclick="openModal('${e.id}')">
+      <td><span class="vbadge">${e.ref||'—'}</span></td>
+      <td style="font-weight:500">${e.client}</td>
+      <td style="color:var(--g600)">${d}</td>
+      <td><div class="td-actions">
+        <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openModal('${e.id}')">👁 Ver</button>
+        <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();loadOfferInForm('${e.id}')">Editar</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  dr.innerHTML = `<table class="htable"><thead><tr><th>Ref.</th><th>Cliente</th><th>Fecha</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderHistory() {
+  const q = (document.getElementById('search-q').value||'').toLowerCase();
+  const frev = document.getElementById('filter-rev').value;
+  const today = new Date().toISOString().split('T')[0];
+  const soon = new Date(); soon.setDate(soon.getDate()+30); const ss = soon.toISOString().split('T')[0];
+  const list = state.history.filter(e => {
+    if (q && !e.client.toLowerCase().includes(q) && !(e.ref||'').toLowerCase().includes(q) && !(e.client_cif||'').toLowerCase().includes(q)) return false;
+    if (frev==='due' && e.next_review>today) return false;
+    if (frev==='soon' && !(e.next_review>today&&e.next_review<=ss)) return false;
+    if (frev==='ok' && e.next_review<=today) return false;
+    return true;
+  });
+  const hc = document.getElementById('history-container');
+  if (!list.length) { hc.innerHTML='<div class="empty-state"><p>No hay ofertas que coincidan</p></div>'; return; }
+  const rows = list.map(e => {
+    const due=e.next_review<=today, s30=!due&&e.next_review<=ss;
+    const rev=due?`<span class="rev-due">⚠ ${e.next_review}</span>`:s30?`<span class="rev-soon">⏰ ${e.next_review}</span>`:`<span class="rev-ok">✓ ${e.next_review}</span>`;
+    const d=e.date?new Date(e.date+'T00:00:00').toLocaleDateString('es-ES'):'—';
+    const secs=(e.sections||[]).filter(s=>s.defaultOn).map(s=>s.title.split('→')[0].trim().split(' ').slice(0,2).join(' ')).join(' · ');
+    return `<tr ondblclick="openModal('${e.id}')">
+      <td><span class="vbadge">${e.ref||'—'}</span></td>
+      <td style="font-weight:500">${e.client}</td>
+      <td style="color:var(--g600);font-size:12px">${e.client_cif||'—'}</td>
+      <td style="color:var(--g600);font-size:12px">${d}</td>
+      <td style="color:var(--g600);font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${secs}</td>
+      <td>${rev}</td>
+      <td><div class="td-actions">
+        <button class="btn btn-ghost btn-xs" onclick="openModal('${e.id}')">👁</button>
+        <button class="btn btn-outline btn-xs" onclick="loadOfferInForm('${e.id}')">Editar</button>
+        <button class="btn btn-outline btn-xs" onclick="duplicateOffer('${e.id}')">Dupl.</button>
+        <button class="btn btn-danger btn-xs" onclick="deleteOffer('${e.id}')">×</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  hc.innerHTML=`<table class="htable"><thead><tr><th>Ref.</th><th>Cliente</th><th>CIF</th><th>Fecha</th><th>Secciones</th><th>Revisión</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderRevisiones() {
+  const today = new Date().toISOString().split('T')[0];
+  const soon = new Date(); soon.setDate(soon.getDate()+30); const ss = soon.toISOString().split('T')[0];
+  const due = state.history.filter(e=>e.next_review<=today);
+  const s30 = state.history.filter(e=>e.next_review>today&&e.next_review<=ss);
+  const ok  = state.history.filter(e=>e.next_review>ss);
+  let html='';
+  if (due.length) {
+    html+='<div class="section-divider">⚠ Vencidas ('+due.length+')</div>';
+    html+='<table class="htable"><thead><tr><th>Ref.</th><th>Cliente</th><th>CIF</th><th>Venció</th><th></th></tr></thead><tbody>';
+    html+=due.map(e=>`<tr><td><span class="vbadge">${e.ref||'—'}</span></td><td style="font-weight:500">${e.client}</td><td style="color:var(--g600)">${e.client_cif||'—'}</td><td><span class="rev-due">${e.next_review}</span></td><td><button class="btn btn-primary btn-xs" onclick="loadOfferInForm('${e.id}')">Revisar</button></td></tr>`).join('');
+    html+='</tbody></table>';
+  }
+  if (s30.length) {
+    html+='<div class="section-divider" style="margin-top:24px">⏰ Próximas 30 días ('+s30.length+')</div>';
+    html+='<table class="htable"><thead><tr><th>Ref.</th><th>Cliente</th><th>CIF</th><th>Vence</th><th></th></tr></thead><tbody>';
+    html+=s30.map(e=>`<tr><td><span class="vbadge">${e.ref||'—'}</span></td><td style="font-weight:500">${e.client}</td><td style="color:var(--g600)">${e.client_cif||'—'}</td><td><span class="rev-soon">${e.next_review}</span></td><td><button class="btn btn-outline btn-xs" onclick="loadOfferInForm('${e.id}')">Ver</button></td></tr>`).join('');
+    html+='</tbody></table>';
+  }
+  if (ok.length) {
+    html+='<div class="section-divider" style="margin-top:24px">✓ Al día ('+ok.length+')</div>';
+    html+='<table class="htable"><thead><tr><th>Ref.</th><th>Cliente</th><th>Próxima revisión</th></tr></thead><tbody>';
+    html+=ok.map(e=>`<tr><td><span class="vbadge">${e.ref||'—'}</span></td><td style="font-weight:500">${e.client}</td><td><span class="rev-ok">✓ ${e.next_review}</span></td></tr>`).join('');
+    html+='</tbody></table>';
+  }
+  if (!html) html='<div class="empty-state"><p>Sin ofertas en el sistema</p></div>';
+  document.getElementById('revisiones-container').innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════
+//  SECCIONES DE TARIFAS — UI
+// ══════════════════════════════════════════════════════
+function buildSectionsGrid() {
+  const g = document.getElementById('sections-grid'); g.innerHTML='';
+  state.sections.forEach((sec, si) => {
+    const d = document.createElement('div');
+    d.className = 'section-block' + (sec.defaultOn?' sec-active':'');
+    const rows = sec.rates.map((r,ri)=>
+      `<div class="rate-row">
+        <input type="checkbox" ${r.check?'checked':''} onchange="toggleRate(${si},${ri},this.checked)">
+        <input class="lbl-edit" type="text" value="${escH(r.label)}" onchange="updateLabel(${si},${ri},this.value)" oninput="renderDoc()">
+        <input class="price" type="text" value="${r.price}" onchange="updatePrice(${si},${ri},this.value)">
+        <input class="unit-edit" type="text" value="${escH(r.unit)}" onchange="updateUnit(${si},${ri},this.value)">
+        <button class="del-rate" title="Eliminar" onclick="deleteRate(${si},${ri})">×</button>
+      </div>`
+    ).join('');
+    d.innerHTML=`<h3><input type="checkbox" ${sec.defaultOn?'checked':''} onchange="toggleSection(${si},this.checked)">${escH(sec.title)}</h3>${rows}
+      <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
+        <input class="note-input" style="flex:1;margin:0" placeholder="Nota de sección…" value="${escH(sec.customNote||'')}" oninput="updateNote(${si},this.value)">
+        <button class="add-rate" onclick="addRate(${si})">+ Concepto</button>
+      </div>`;
+    g.appendChild(d);
+  });
+}
+
+function escH(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function toggleSection(si,v){
+  state.sections[si].defaultOn=v;
+  const blocks=document.querySelectorAll('.section-block');
+  if(blocks[si]) blocks[si].className='section-block'+(v?' sec-active':'');
+  renderDoc();
+}
+function toggleRate(si,ri,v){state.sections[si].rates[ri].check=v;renderDoc();}
+function updatePrice(si,ri,v){state.sections[si].rates[ri].price=v;renderDoc();}
+function updateLabel(si,ri,v){state.sections[si].rates[ri].label=v;renderDoc();}
+function updateUnit(si,ri,v){state.sections[si].rates[ri].unit=v;renderDoc();}
+function updateNote(si,v){state.sections[si].customNote=v;renderDoc();}
+function deleteRate(si,ri){
+  if(state.sections[si].rates.length<=1){toast('La sección debe tener al menos un concepto',true);return;}
+  state.sections[si].rates.splice(ri,1);buildSectionsGrid();renderDoc();
+}
+function addRate(si){
+  state.sections[si].rates.push({id:'custom_'+Date.now(),label:'Nuevo concepto',price:0,unit:'€',check:true});
+  buildSectionsGrid();renderDoc();
+  const g=document.getElementById('sections-grid');
+  const blk=g.querySelectorAll('.section-block');
+  if(blk[si]){const inp=blk[si].querySelectorAll('.lbl-edit');const last=inp[inp.length-1];if(last){last.focus();last.select();}}
+}
+function resetSections(){state.sections=JSON.parse(JSON.stringify(DEFAULT_SECTIONS));buildSectionsGrid();renderDoc();}
+
+function resetForm(){
+  ['client-name','client-addr','client-contact','client-cif','client-email','created-by','global-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('doc-date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('validity').value='31/12/2026';
+  document.getElementById('cond-generales').value=COND_DEFAULT;
+  state.sections=JSON.parse(JSON.stringify(DEFAULT_SECTIONS));state.editingId=null;
+  document.getElementById('editing-notice').classList.remove('show');
+  document.getElementById('btn-save').innerHTML='<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Guardar';
+  document.getElementById('btn-descartar').style.display='none';
+  buildSectionsGrid();renderDoc();
+}
+
+// ══════════════════════════════════════════════════════
+//  GENERACIÓN DEL DOCUMENTO HTML
+// ══════════════════════════════════════════════════════
+function buildDocHTML(secs, meta) {
+  const {client,addr,contact,cif,docDate,validity,ref,gNotes,cond}=meta;
+  let secHtml='';
+  secs.filter(s=>s.defaultOn).forEach(sec=>{
+    const active=sec.rates.filter(r=>r.check);if(!active.length)return;
+    secHtml+=`<div class="sec-title">${sec.title}</div>`;
+    secHtml+=`<table class="rates-table"><thead><tr><th style="width:56%">Concepto</th><th style="width:24%">Unidad</th><th style="width:20%;text-align:right">Tarifa</th></tr></thead><tbody>`;
+    active.forEach(r=>{
+      const ps=isNaN(r.price)?r.price:(parseFloat(r.price).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €');
+      const star=r.id==='d9'?' <span style="color:#d97706;font-weight:700">*</span>':'';
+      secHtml+=`<tr><td>${r.label}${star}</td><td style="color:#6c757d;font-size:11px">${r.unit}</td><td>${ps}</td></tr>`;
+    });
+    secHtml+='</tbody></table>';
+    if(sec.id!=='despacho'){
+      const note=(sec.customNote&&sec.customNote.trim())||sec.note;
+      if(note)secHtml+=`<p class="rates-note">* ${note}</p>`;
+    } else {
+      if(active.find(r=>r.id==='d9'))secHtml+=`<p class="rates-note">* Hasta 2 precintos incluidos. Precinto adicional: +5 € c/u.</p>`;
+    }
+  });
+  if(!secHtml)secHtml=`<p style="color:#6c757d;font-size:13px;text-align:center;padding:2rem 0">Activa al menos una sección.</p>`;
+  return `<div class="doc-body">
+    <div class="doc-header">
+      <div>
+        <div class="doc-co-name"><span>Customs</span>-Way SL</div>
+        <div class="doc-address">
+          Avda. 20 de Abril, El Bulevar, Local 16<br>
+          11300 La Línea de la Concepción (Cádiz)<br>
+          aduana@customsway.eu · Tlf. 856 035 002<br>
+          CIF B75847053
+        </div>
+        <div class="doc-validity">Válida hasta: ${validity}</div>
+      </div>
+      <div class="doc-meta">
+        <strong>Oferta de Tarifas Generales 2026</strong>
+        <span class="doc-num">${ref}</span>
+        <br>Fecha: ${docDate}
+      </div>
+    </div>
+    <div class="doc-recipient">
+      <div class="doc-recipient-label">Destinatario</div>
+      <div class="doc-recipient-name">${client}</div>
+      ${cif?`<div style="font-size:11px;color:#6c757d;margin-top:1px">CIF: ${cif}</div>`:''}
+      ${addr?`<div style="font-size:11px;color:#6c757d">${addr}</div>`:''}
+      ${contact?`<div style="font-size:11px;color:#6c757d">Attn: ${contact}</div>`:''}
+    </div>
+    ${secHtml}
+    ${gNotes?`<div class="doc-conditions"><strong>Observaciones y condiciones particulares</strong>${gNotes}</div>`:''}
+    ${cond?`<div class="doc-conditions"><strong>Condiciones Generales</strong>${cond}</div>`:''}
+  </div>`;
+}
+
+function renderDoc() {
+  const client=document.getElementById('client-name').value||'[Destinatario]';
+  const rawDate=document.getElementById('doc-date').value;
+  const docDate=rawDate?new Date(rawDate+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}):new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  const meta={
+    client,
+    addr:document.getElementById('client-addr').value||'',
+    contact:document.getElementById('client-contact').value||'',
+    cif:document.getElementById('client-cif').value||'',
+    docDate,
+    validity:document.getElementById('validity').value||'31/12/2026',
+    ref:state.editingId?(state.history.find(x=>x.id===state.editingId)||{}).ref||'(borrador)':'(borrador)',
+    gNotes:document.getElementById('global-notes').value||'',
+    cond:document.getElementById('cond-generales').value
+  };
+  document.getElementById('preview-doc').innerHTML=buildDocHTML(state.sections,meta);
+}
+
+// ══════════════════════════════════════════════════════
+//  MODAL — inyección dinámica (patrón portal)
+// ══════════════════════════════════════════════════════
+function openModal(id) {
+  const e = state.history.find(x=>x.id===id); if(!e) return;
+  _modalOfertaId = id;
+  const docDate=e.date?new Date(e.date+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}):'';
+  const meta={
+    client:e.client||'',addr:e.client_addr||'',contact:e.client_contact||'',cif:e.client_cif||'',
+    docDate,validity:e.validity||'',ref:e.ref||'',
+    gNotes:e.global_notes||'',cond:e.cond_generales||COND_DEFAULT
+  };
+  const html = buildDocHTML(e.sections||[],meta);
+  const title = (e.ref||'')+(e.client?' · '+e.client:'');
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)cerrarModal()">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <div class="modal-toolbar">
+          <span class="modal-toolbar-title">${title}</span>
+          <div class="modal-toolbar-btns">
+            <button class="mbtn mbtn-default" onclick="printModal()">🖨 Imprimir</button>
+            <button class="mbtn mbtn-pdf" id="btn-pdf" onclick="downloadPDF('${id}')">⬇ PDF</button>
+            <button class="mbtn mbtn-email" onclick="sendEmailModal('${id}')">✉ Email</button>
+            <button class="mbtn mbtn-default" onclick="cerrarModal()">✕</button>
+          </div>
+        </div>
+        <div id="modal-content" style="overflow-y:auto;max-height:82vh">${html}</div>
+      </div>
+    </div>`;
+}
+
+function cerrarModal() { document.getElementById('modal-root').innerHTML=''; _modalOfertaId=null; }
+
+function printModal() {
+  const content = document.getElementById('modal-content');
+  if (!content) return;
+  const w = window.open('','_blank');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"><style>'+
+    'body{font-family:Inter,sans-serif;font-size:12px;color:#212529;background:#fff;padding:1.5cm 2cm}'+
+    '.doc-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:2px solid #0f172a}'+
+    '.doc-co-name{font-size:20px;font-weight:700;color:#0f172a;margin-bottom:2px;letter-spacing:-.5px}'+
+    '.doc-co-name span{color:#2563eb}'+
+    '.doc-address{font-size:11px;color:#6c757d;line-height:1.8}'+
+    '.doc-meta{text-align:right;font-size:11px;color:#6c757d;line-height:1.9}'+
+    '.doc-meta strong{display:block;font-size:13px;font-weight:700;color:#0f172a;margin-bottom:4px}'+
+    '.doc-num{color:#1d4ed8;font-weight:600;font-size:12px}'+
+    '.doc-validity{display:inline-block;background:#0f172a;color:#fff;font-size:10px;padding:2px 8px;border-radius:3px;margin-top:.4rem}'+
+    '.doc-recipient{background:#e7f1ff;border-left:3px solid #3b82f6;padding:.75rem 1rem;margin-bottom:1.25rem;border-radius:0 6px 6px 0}'+
+    '.doc-recipient-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#1d4ed8;font-weight:700;margin-bottom:2px}'+
+    '.doc-recipient-name{font-size:14px;font-weight:700;color:#0f172a}'+
+    '.sec-title{font-size:13px;font-weight:700;color:#0f172a;margin:1.25rem 0 .4rem;padding-bottom:3px;border-bottom:1px solid #dee2e6}'+
+    '.rates-table{width:100%;border-collapse:collapse;margin-bottom:.35rem;font-size:12px}'+
+    '.rates-table th{background:#0f172a;color:#fff;padding:5px 10px;text-align:left;font-weight:500;font-size:10.5px;text-transform:uppercase}'+
+    '.rates-table td{padding:6px 10px;border-bottom:.5px solid #eee}'+
+    '.rates-table tr:nth-child(even) td{background:#f8f9fa}'+
+    '.rates-table td:last-child{text-align:right;font-weight:600;color:#0f172a}'+
+    '.rates-note{font-size:10.5px;color:#6c757d;margin-bottom:.35rem;font-style:italic}'+
+    '.doc-conditions{background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;padding:.75rem 1rem;margin-top:1.25rem;font-size:11px;color:#6c757d;line-height:1.8}'+
+    '.doc-conditions strong{display:block;font-size:12px;color:#212529;margin-bottom:.3rem;font-weight:600}'+
+  '</style></head><body>'+content.innerHTML+'</body></html>');
+  w.document.close();
+  setTimeout(()=>w.print(),400);
+}
+
+async function downloadPDF(id) {
+  const btn = document.getElementById('btn-pdf');
+  if(btn){btn.textContent='Generando…';btn.disabled=true;}
+  try {
+    const el = document.getElementById('modal-content');
+    const canvas = await html2canvas(el, {scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false});
+    const {jsPDF} = window.jspdf;
+    const pageW=210,pageH=297,mL=18,mR=18,mT=20,mB=20;
+    const printW=pageW-mL-mR, printH=pageH-mT-mB;
+    const origScale=canvas.width/printW;
+    const totalHmm=canvas.height/origScale;
+    const nPages=Math.ceil(totalHmm/printH);
+    const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    for(let page=0;page<nPages;page++){
+      if(page>0)pdf.addPage();
+      const srcYmm=page*printH;
+      const sliceHmm=Math.min(printH,totalHmm-srcYmm);
+      const srcYpx=Math.round(srcYmm*origScale);
+      const sliceHpx=Math.round(sliceHmm*origScale);
+      if(sliceHpx<=0)continue;
+      const strip=document.createElement('canvas');
+      strip.width=canvas.width;
+      strip.height=Math.min(sliceHpx,canvas.height-srcYpx);
+      strip.getContext('2d').drawImage(canvas,0,srcYpx,canvas.width,strip.height,0,0,canvas.width,strip.height);
+      pdf.addImage(strip.toDataURL('image/jpeg',.92),'JPEG',mL,mT,printW,strip.height/origScale);
+    }
+    const e=state.history.find(x=>x.id===id)||{};
+    const fname=((e.ref||'oferta')+'_'+(e.client||'cliente')).replace(/[^a-zA-Z0-9_-]/g,'_')+'.pdf';
+    pdf.save(fname);
+    toast('PDF descargado');
+  } catch(err) { toast('Error generando PDF: '+err.message, true); }
+  if(btn){btn.textContent='⬇ PDF';btn.disabled=false;}
+}
+
+function sendEmailModal(id) {
+  const e=state.history.find(x=>x.id===id)||{};
+  const to=encodeURIComponent(e.client_email||'');
+  const subj=encodeURIComponent('Oferta de Tarifas Customs-Way SL - '+(e.ref||''));
+  const body=encodeURIComponent('Estimado/a cliente,\r\n\r\nAdjunto encontrará la oferta de tarifas '+(e.ref||'')+' dirigida a '+(e.client||'')+
+    '.\r\n\r\nQuedamos a su disposición para cualquier consulta.\r\n\r\nUn saludo,\r\nCustoms-Way SL\r\naduana@customsway.eu | Tlf. 856 035 002');
+  window.location.href='mailto:'+to+'?subject='+subj+'&body='+body;
+}
+
+// ══════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════
+document.getElementById('doc-date').value = new Date().toISOString().split('T')[0];
+buildSectionsGrid();
+renderDoc();
+loadHistory();
+showPage('dashboard');
+</script>
+</body>
+</html>
