@@ -578,7 +578,7 @@ const DEFAULT_SECTIONS = [
     {id:'d7',label:'Recepción de DAEs',price:25,unit:'€',check:true},
     {id:'d8',label:'Reexportaciones y Ultimación de RPA',price:45,unit:'€',check:true},
     {id:'d9',label:'T1 de expedición',price:150,unit:'€',check:true},
-    {id:'d10',label:'T1 expedición LL → AGP / Algeciras',price:'A/C',unit:'',check:true},
+    {id:'d10',label:'T1 expedición AGP',price:'A/C',unit:'',check:true},
     {id:'d11',label:'ICS2 (ENS)',price:45,unit:'€',check:true},
     {id:'d12',label:'RMT',price:30,unit:'€',check:true},
     {id:'d13',label:'ROSH / RAE',price:30,unit:'€',check:true},
@@ -1281,11 +1281,35 @@ function buildOfertaPDF(oferta) {
   let y = drawDocHeader(oferta, MT);
 
   (oferta.sections||[]).filter(s=>s.defaultOn&&s.rates.some(r=>r.check)).forEach(sec => {
-    const nActive = sec.rates.filter(r=>r.check).length;
-    y = checkBreak(y, 12 + nActive*6 + 10);
+    // Cabe al menos cabecera + col header + 1 fila antes de dibujar
+    y = checkBreak(y, 6.5+5.5+6+4);
     y = drawSecHeader(sec.title.toUpperCase(), y); y+=1.5;
     y = drawTableHeader(y);
-    y = drawRates(sec.rates, y);
+
+    // Dibujar fila a fila con salto si se necesita
+    const ROW_H=5.8, W1=CW*0.57, W2=CW*0.20, W3=CW*0.23;
+    sec.rates.filter(r=>r.check).forEach((r,i) => {
+      const lns = doc.splitTextToSize(String(r.label||''), W1-5);
+      const rowH = Math.max(ROW_H, lns.length*lh(8)+2);
+      // Si no cabe esta fila, saltar página y redibujar cabeceras
+      if(y + rowH > CONTENT_MAX_Y) {
+        doc.addPage(); drawTemplate();
+        y = MT;
+        y = drawSecHeader(sec.title.toUpperCase()+' (cont.)', y); y+=1.5;
+        y = drawTableHeader(y);
+      }
+      if(i%2===1) { doc.setFillColor(...LGRAY); doc.rect(ML,y,CW,rowH,'F'); }
+      doc.setDrawColor(...BORDER); doc.setLineWidth(0.08);
+      doc.line(ML,y+rowH,ML+CW,y+rowH);
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...DARK);
+      doc.text(lns, ML+2, y+3.8);
+      doc.setTextColor(...GRAY); doc.setFontSize(7.5);
+      doc.text(String(r.unit||''), ML+W1+W2/2, y+3.8, {align:'center'});
+      doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...DARK);
+      doc.text(fmtPrice(r.price), ML+W1+W2+W3-2, y+3.8, {align:'right'});
+      y += rowH;
+    });
+
     const note=(sec.customNote&&sec.customNote.trim())||sec.note;
     if(note) {
       y = checkBreak(y, 10);
