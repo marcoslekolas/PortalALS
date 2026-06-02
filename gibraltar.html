@@ -1321,15 +1321,50 @@ function toggleAcc(el){
 }
 
 // ═══ BRIEFING ═══
+// ═══ HELPER: streaming SSE desde OpenRouter ═══
+async function streamOR({model,messages,maxTokens=8000,temperature=0.1,onChunk,signal}){
+  const r=await fetch(OR_PROXY,{
+    method:'POST',headers:{'Content-Type':'application/json'},signal,
+    body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature,stream:true})
+  });
+  if(!r.ok){const e=await r.text().catch(()=>'');throw new Error('API '+r.status+': '+e.substring(0,200));}
+  const reader=r.body.getReader(),dec=new TextDecoder();
+  let buf='',full='';
+  while(true){
+    const{done,value}=await reader.read();
+    if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    const lines=buf.split('\n'); buf=lines.pop()||'';
+    for(const line of lines){
+      if(!line.startsWith('data: ')) continue;
+      const d=line.slice(6).trim();
+      if(d==='[DONE]') continue;
+      try{ const p=JSON.parse(d),delta=p?.choices?.[0]?.delta?.content||'';
+        if(delta){full+=delta;if(onChunk) onChunk(delta,full);} }catch(_){}
+    }
+  }
+  return full;
+}
+function startTimer(el){
+  const t0=Date.now();
+  const iv=setInterval(()=>{ if(el) el.textContent=Math.floor((Date.now()-t0)/1000)+'s'; },1000);
+  return ()=>clearInterval(iv);
+}
+
 async function runBriefing(){
   const btn=document.getElementById('bbtn');
   const out=document.getElementById('brief-out');
   const lbl=document.getElementById('blbl');
-  btn.disabled=true; btn.textContent='Analizando...';
+  const ac=new AbortController();
+  btn.disabled=true;
+  btn.textContent='Cancelar';
+  btn.onclick=()=>{ ac.abort(); btn.onclick=null; };
   const now=new Date();
-  lbl.textContent='Analizando · '+now.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+now.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-  out.innerHTML='<em style="color:var(--g400)">Consultando fuentes oficiales en tiempo real...</em>';
   const today=now.toISOString().split('T')[0];
+  // Indicador de carga con contador de tiempo
+  out.innerHTML='<em style="color:var(--g400)">Consultando fuentes oficiales... <span id="btimer" style="font-family:var(--mono)">0s</span></em>';
+  const stopTimer=startTimer(document.getElementById('btimer'));
+  lbl.textContent='Analizando · '+now.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+now.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   const prompt=`Eres un analista experto en derecho aduanero y comercio exterior. Hoy es ${today}.
 
 Realiza un briefing diario exhaustivo sobre los siguientes temas específicos:
@@ -1364,34 +1399,29 @@ FORMATO:
 Si no hay novedades en una sección, escribe "Sin novedades esta semana."`;
 
   try{
-    // perplexity/sonar-pro: búsqueda web en tiempo real integrada
-    const r=await fetch(OR_PROXY,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'perplexity/sonar-pro',
-        max_tokens:4000,
-        temperature:0.1,
-        messages:[{role:'user',content:prompt}]
-      })
+    let accum='';
+    const text=await streamOR({
+      model:'perplexity/sonar-pro',
+      messages:[{role:'user',content:prompt}],
+      maxTokens:8000,
+      temperature:0.1,
+      signal:ac.signal,
+      onChunk:(_delta,full)=>{ accum=full; out.innerHTML=fmtBrief(full)+'<span style="opacity:.4;font-size:11px"> ▌</span>'; }
     });
-    if(!r.ok){
-      const errTxt=await r.text().catch(()=>'');
-      throw new Error('API '+r.status+': '+errTxt.substring(0,200));
-    }
-    const data=await r.json();
-    const text=data?.choices?.[0]?.message?.content||'';
+    stopTimer();
     out.innerHTML=fmtBrief(text||'Sin resultado.');
     try{
       const{error:saveErr}=await sb.from('cw_briefings').insert({fecha:today,contenido:text,creado_en:now.toISOString()});
-      if(saveErr) console.error('[Briefing] Error guardando en cw_briefings:',saveErr.message,saveErr.hint||'');
+      if(saveErr) console.error('[Briefing] Error guardando:',saveErr.message);
     }catch(e){ console.error('[Briefing] Excepción al guardar:',e); }
     GIB.lastBriefingDate=today; GIB.lastBriefingText=text; analyseBriefing(text);
     lbl.textContent='Actualizado: '+now.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+now.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   }catch(e){
-    console.error('Briefing error:',e);
-    out.innerHTML='<span style="color:var(--rd600)">Error: '+e.message+'</span>';
+    stopTimer();
+    if(e.name==='AbortError'){ out.innerHTML='<em style="color:var(--g400)">Consulta cancelada.</em>'; }
+    else{ console.error('Briefing error:',e); out.innerHTML='<span style="color:var(--rd600)">Error: '+e.message+'</span>'; }
   }
-  btn.disabled=false; btn.textContent='Actualizar ahora →';
+  btn.disabled=false; btn.textContent='Actualizar ahora →'; btn.onclick=null;
 }
 
 function fmtBrief(t){
@@ -1500,12 +1530,19 @@ function buildChat(){
 
 function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}
 function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\n/g,'<br>');}
-function addMsg(role,text){
+function addMsg(role,text,id){
   const box=document.getElementById('chat-msgs');
   const now=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   const d=document.createElement('div');d.className='msg'+(role==='user'?' usr':'');
-  d.innerHTML=`<div class="av ${role==='user'?'usr':'ai'}">${role==='user'?'TU':'RA'}</div><div class="mw"><div class="ml">${role==='user'?'Tú':'Repr. Aduanero · Customs-Way'} · ${now}</div><div class="bb ${role==='user'?'usr':'ai'}">${esc(text)}</div></div>`;
+  if(id) d.id=id;
+  const content=role==='user'?esc(text):mdToHtml(text);
+  d.innerHTML=`<div class="av ${role==='user'?'usr':'ai'}">${role==='user'?'TU':'RA'}</div><div class="mw"><div class="ml">${role==='user'?'Tú':'Repr. Aduanero · Customs-Way'} · ${now}</div><div class="bb ${role==='user'?'usr':'ai'}" ${id?'id="'+id+'-inner"':''}>${content}</div></div>`;
   box.appendChild(d);box.scrollTop=box.scrollHeight;
+}
+function mdToHtml(t){
+  return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\n/g,'<br>');
 }
 function showTp(){
   const box=document.getElementById('chat-msgs');
@@ -1521,25 +1558,38 @@ async function sendChat(){
   addMsg('user',text);
   CH.push({role:'user',content:text});
   saveCH(CH);
+  // Crear burbuja de respuesta vacía donde irá apareciendo el texto
+  const msgId='ai-'+Date.now();
+  addMsg('ai','',msgId);
   showTp();
+  const ac=new AbortController();
   try{
     const msgs=[{role:'system',content:SYS},...CH];
-    const r=await fetch(OR_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'anthropic/claude-sonnet-4-5',
-        max_tokens:4000,
-        temperature:0.1,
-        messages:msgs
-      })});
-    if(!r.ok){const e=await r.text().catch(()=>'');throw new Error('API '+r.status+': '+e.substring(0,150));}
-    const data=await r.json();
-    const reply=data?.choices?.[0]?.message?.content||'Sin respuesta.';
+    const reply=await streamOR({
+      model:'anthropic/claude-sonnet-4-5',
+      messages:msgs,
+      maxTokens:8000,
+      temperature:0.1,
+      signal:ac.signal,
+      onChunk:(_d,full)=>{
+        document.getElementById('tpdot')?.remove();
+        const el=document.getElementById(msgId+'-inner');
+        const box=document.getElementById('chat-msgs');
+        if(el){ el.innerHTML=mdToHtml(full)+'<span style="opacity:.4"> ▌</span>'; box.scrollTop=box.scrollHeight; }
+      }
+    });
     document.getElementById('tpdot')?.remove();
-    addMsg('ai',reply);
+    const el=document.getElementById(msgId+'-inner');
+    if(el) el.innerHTML=mdToHtml(reply);
     CH.push({role:'assistant',content:reply});
     if(CH.length>30) CH=CH.slice(-30);
     saveCH(CH);
-  }catch(e){document.getElementById('tpdot')?.remove();addMsg('ai','Error de conexión con la API.');}
+  }catch(e){
+    document.getElementById('tpdot')?.remove();
+    const el=document.getElementById(msgId);
+    if(e.name==='AbortError'){ if(el) el.innerHTML='<em style="color:var(--g400)">Cancelado.</em>'; }
+    else{ if(el) el.innerHTML='<span style="color:var(--rd600)">Error de conexión con la API.</span>'; }
+  }
   CB=false;document.getElementById('csend').disabled=false;
 }
 
@@ -1632,24 +1682,26 @@ customsway.eu · ${dateStr}
 
 FUENTES CONSULTADAS: [lista de URLs o referencias normativas verificadas]`;
 
+  const acRpt=new AbortController();
+  btn.disabled=true;
+  btn.textContent='Cancelar';
+  btn.onclick=()=>{ acRpt.abort(); btn.onclick=null; };
+  out.innerHTML='<div class="rpt-placeholder">⟳ Buscando información actualizada... <span id="rpt-timer" style="font-family:var(--mono);font-size:11px">0s</span></div>';
+  const stopRptTimer=startTimer(document.getElementById('rpt-timer'));
+
   try{
-    // perplexity/sonar-pro: verifica normativa actualizada con búsqueda web
-    const r=await fetch(OR_PROXY,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'perplexity/sonar-pro',
-        max_tokens:4000,
-        temperature:0.1,
-        messages:[{role:'user',content:prompt}]
-      })
+    const text=await streamOR({
+      model:'perplexity/sonar-pro',
+      messages:[{role:'user',content:prompt}],
+      maxTokens:12000,
+      temperature:0.1,
+      signal:acRpt.signal,
+      onChunk:(_d,full)=>{ out.innerHTML=fmtReport(full)+'<span style="opacity:.4;font-size:11px"> ▌</span>'; }
     });
-    if(!r.ok){const e=await r.text().catch(()=>'');throw new Error('API '+r.status+': '+e.substring(0,200));}
-    const data=await r.json();
-    const text=data?.choices?.[0]?.message?.content||'';
+    stopRptTimer();
     lastReportText=text;
     out.innerHTML=fmtReport(text);
     ['rpt-copy-btn','rpt-email-btn','rpt-print-btn'].forEach(id=>document.getElementById(id).disabled=false);
-    // Save to Supabase
     try{
       await sb.from('cw_informes').insert({
         referencia:refNum, fecha:now.toISOString().split('T')[0],
@@ -1658,9 +1710,11 @@ FUENTES CONSULTADAS: [lista de URLs o referencias normativas verificadas]`;
       });
     }catch(e){}
   }catch(e){
-    out.innerHTML='<span style="color:var(--rd600)">Error al generar el informe. Verifica la conexión.</span>';
+    stopRptTimer();
+    if(e.name==='AbortError'){ out.innerHTML='<em style="color:var(--g400)">Informe cancelado.</em>'; }
+    else{ out.innerHTML='<span style="color:var(--rd600)">Error al generar el informe: '+e.message+'</span>'; }
   }
-  btn.disabled=false; btn.textContent='Generar informe →';
+  btn.disabled=false; btn.textContent='Generar informe →'; btn.onclick=null;
 }
 
 function fmtReport(t){
