@@ -801,7 +801,20 @@ function loadOfferInForm(id) {
   document.getElementById('validity').value = e.validity||'31/12/2026';
   document.getElementById('global-notes').value = e.global_notes||'';
   document.getElementById('cond-generales').value = e.cond_generales||COND_DEFAULT;
-  state.sections = JSON.parse(JSON.stringify(e.sections||DEFAULT_SECTIONS));
+  // Merge: mantener secciones guardadas + añadir las nuevas de DEFAULT que no existan
+  const saved = JSON.parse(JSON.stringify(e.sections||[]));
+  const savedIds = new Set(saved.map(s=>s.id));
+  const merged = [...saved];
+  DEFAULT_SECTIONS.forEach(def => {
+    if(!savedIds.has(def.id)) {
+      // Insertar en la posición correcta según DEFAULT_SECTIONS
+      const defIdx = DEFAULT_SECTIONS.findIndex(d=>d.id===def.id);
+      const insertAfter = DEFAULT_SECTIONS.slice(0,defIdx).map(d=>d.id).reverse().find(id=>savedIds.has(id));
+      const pos = insertAfter ? merged.findIndex(s=>s.id===insertAfter)+1 : merged.length;
+      merged.splice(pos, 0, JSON.parse(JSON.stringify(def)));
+    }
+  });
+  state.sections = merged;
   state.editingId = id;
   document.getElementById('editing-notice').classList.add('show');
   document.getElementById('btn-save').innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Actualizar';
