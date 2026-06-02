@@ -228,21 +228,6 @@ if('serviceWorker' in navigator){
         </div>
       </button>
 
-      <!-- TARIFICADOR -->
-      <button type="button" class="hm-card" style="background:linear-gradient(145deg,#1e3a5f,#2563eb);position:relative" onclick="window.location.href='tarifas.html'"
-        onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.18)'"
-        onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
-        <div class="hm-card-icon">📋</div>
-        <div class="hm-card-body">
-          <div class="hm-ctitle">Tarificador</div>
-          <div class="hm-cdesc">Ofertas de tarifas a clientes</div>
-          <div class="hm-card-feats">
-            <span>💼 Ofertas</span><span>📅 Revisiones</span><span>⬇ PDF</span><span>✉ Email</span>
-          </div>
-          <div class="hm-card-cta">Entrar →</div>
-        </div>
-      </button>
-
     </div>
   </div>
 </div>
@@ -452,7 +437,6 @@ if('serviceWorker' in navigator){
         <button type="button" class="nav-item" id="nav-rpa" style="display:none" onclick="window.location.href='pendencias.html'"><span class="ni">📄</span><span class="nav-item-txt">Control RPA</span></button>
         <button type="button" class="nav-item" id="nav-airport" style="display:none" onclick="window.location.href='airport_cargo.html'"><span class="ni">✈️</span><span class="nav-item-txt">Airport Cargo</span></button>
         <button type="button" class="nav-item" id="nav-taric" style="display:none" onclick="window.location.href='taric.html'"><span class="ni">⚡</span><span class="nav-item-txt">Clasificador TARIC</span></button>
-        <button type="button" class="nav-item" id="nav-tarifas" style="display:none" onclick="window.location.href='tarifas.html'"><span class="ni">📋</span><span class="nav-item-txt">Tarificador</span></button>
         <button type="button" class="nav-item" id="nav-gibraltar" style="display:none" onclick="window.location.href='gibraltar.html'"><span class="ni">🏛</span><span class="nav-item-txt">Gibraltar</span></button>
         <!-- Configuración eliminada del sidebar — accesible solo desde home (admin) -->
       </div>
@@ -2604,11 +2588,6 @@ function showHome(){
   if(navRpa)   navRpa.style.display   = puedeRpa ? '' : 'none';
   if(navAirport) navAirport.style.display = puedeAirport ? '' : 'none';
   if(navTaric) navTaric.style.display = puedeAirport ? '' : 'none';
-
-  // ── Nav Tarificador en sidebar (admin + aduanas) ──────────────────
-  const puedeTarifas = _roles.some(r=>['admin','aduanas'].includes(r));
-  const navTarifas = document.getElementById('nav-tarifas');
-  if(navTarifas) navTarifas.style.display = puedeTarifas ? '' : 'none';
 
   // ── Nav Gibraltar (solo admin) ──────────────────────────────────
   const navGibraltar = document.getElementById('nav-gibraltar');
@@ -12681,11 +12660,83 @@ async function openExpDesdeBuque(expId,buqueId){
 // _previewEmail: muestra el email dentro de la aplicación con Para/CC/Asunto/cuerpo
 // EDITABLES; al pulsar "Enviar" lo manda con Nylas (Edge Function send-notif). No abre
 // el cliente de correo del ordenador ni descarga ningún fichero.
+// Resuelve el email FROM según el dominio del usuario logueado
+function _resolverFromEmail(){
+  const e=(typeof CU!=='undefined'&&CU?.email||'').toLowerCase();
+  if(e.endsWith('@alsalgeciras.com')) return 'als@alsalgeciras.com';
+  if(e.endsWith('@customsway.eu'))    return 'aduana@customsway.eu';
+  return 'als@alsalgeciras.com'; // fallback
+}
+
 function _previewEmail(opts){
-  // Sin ventana de previsualización — envío directo
-  _abrirEmailHTML(opts).then(ok=>{
-    if(ok && typeof opts.onSent==='function') try{ opts.onSent(); }catch(_){}
-  });
+  const fromEmail = _resolverFromEmail();
+  const fromName  = (typeof CU!=='undefined'&&CU?.nombre)||fromEmail;
+  // CC automático al buzón principal si el usuario no ES el buzón principal
+  const emailUsuario=(typeof CU!=='undefined'&&CU?.email||'').toLowerCase();
+  let autoCc='';
+  if(emailUsuario.endsWith('@alsalgeciras.com')&&emailUsuario!=='als@alsalgeciras.com') autoCc='als@alsalgeciras.com';
+  else if(emailUsuario.endsWith('@customsway.eu')&&emailUsuario!=='aduana@customsway.eu') autoCc='aduana@customsway.eu';
+  const ccInicial=[opts.cc||'',autoCc].filter(Boolean).join('; ');
+
+  const _a=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  const prev=document.getElementById('email-preview'); if(prev) prev.remove();
+  const ov=document.createElement('div');
+  ov.id='email-preview';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20004;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML=`
+    <div style="background:#fff;border-radius:16px;width:100%;max-width:760px;max-height:94vh;display:flex;flex-direction:column;box-shadow:0 12px 48px rgba(0,0,0,.35);overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--g100);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <span style="font-weight:700;font-size:14px;color:var(--g900)">📧 Previsualización de email</span>
+        <button onclick="document.getElementById('email-preview').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--g500);line-height:1">×</button>
+      </div>
+      <div style="padding:14px 18px;border-bottom:1px solid var(--g100);display:flex;flex-direction:column;gap:8px;flex-shrink:0">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px">
+          <span style="color:var(--g500);min-width:50px">De</span>
+          <span style="color:var(--g700);font-weight:600">${_a(fromName)} &lt;${_a(fromEmail)}&gt;</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <label style="color:var(--g500);font-size:13px;min-width:50px">Para</label>
+          <input id="pe-to" value="${_a(opts.to||'')}" style="flex:1;border:1px solid var(--g200);border-radius:6px;padding:6px 10px;font-size:13px;outline:none">
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <label style="color:var(--g500);font-size:13px;min-width:50px">CC</label>
+          <input id="pe-cc" value="${_a(ccInicial)}" style="flex:1;border:1px solid var(--g200);border-radius:6px;padding:6px 10px;font-size:13px;outline:none">
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <label style="color:var(--g500);font-size:13px;min-width:50px">Asunto</label>
+          <input id="pe-subj" value="${_a(opts.subject||'')}" style="flex:1;border:1px solid var(--g200);border-radius:6px;padding:6px 10px;font-size:13px;outline:none">
+        </div>
+      </div>
+      <div style="flex:1;overflow:auto;min-height:200px">
+        <iframe id="pe-frame" style="width:100%;height:100%;min-height:300px;border:none;display:block"></iframe>
+      </div>
+      <div style="padding:12px 18px;border-top:1px solid var(--g100);display:flex;justify-content:flex-end;gap:10px;flex-shrink:0">
+        <button onclick="document.getElementById('email-preview').remove()" style="background:var(--g100);border:none;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer;font-weight:600;color:var(--g700)">Cancelar</button>
+        <button id="pe-send" class="btn btn-p" style="min-height:40px;font-weight:700">📤 Enviar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  // Renderizar HTML en el iframe
+  const frame=document.getElementById('pe-frame');
+  frame.onload=()=>{};
+  const doc=frame.contentDocument||frame.contentWindow?.document;
+  if(doc){ doc.open(); doc.write(opts.html||''); doc.close(); }
+
+  const btn=document.getElementById('pe-send');
+  btn.onclick=async()=>{
+    const to=(document.getElementById('pe-to')?.value||'').trim();
+    const cc=(document.getElementById('pe-cc')?.value||'').trim();
+    const subj=(document.getElementById('pe-subj')?.value||'').trim();
+    if(!to){ showToast('⚠️ Falta el destinatario'); return; }
+    const orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Enviando…';
+    const ok=await _abrirEmailHTML({...opts, to, cc, subject:subj, _skipPreview:true});
+    if(ok){
+      ov.remove();
+      if(typeof opts.onSent==='function') try{ opts.onSent(); }catch(_){}
+    } else {
+      btn.disabled=false; btn.textContent=orig;
+    }
+  };
 }
 // Botón "📤 VisualTrans": envía los documentos adjuntos de la expedición por email a VisualTrans
 // con el número de Dossier Visual Aduana en el asunto (#EXnnnnn#). Los docs se descargan desde
@@ -12732,17 +12783,8 @@ async function enviarDocsVisualTrans(expId){
 }
 // _abrirEmailHTML: envía el email vía Edge Function (Nylas). Devuelve true si fue OK.
 async function _abrirEmailHTML(opts){
-  const to=(opts.to||'').trim(), subject=opts.subject||'', html=opts.html||'';
+  const to=(opts.to||'').trim(), cc=(opts.cc||'').trim(), subject=opts.subject||'', html=opts.html||'';
   if(!to||!html){ showToast('⚠️ Falta destinatario o contenido del email'); return false; }
-
-  // CC automático: si el usuario envía desde un dominio propio pero no desde el buzón principal,
-  // el buzón principal queda en copia para tener registro centralizado
-  const emailUsuario=((typeof CU!=='undefined'&&CU?.email)||'').toLowerCase();
-  let autoCc='';
-  if(emailUsuario.endsWith('@alsalgeciras.com') && emailUsuario!=='als@alsalgeciras.com') autoCc='als@alsalgeciras.com';
-  else if(emailUsuario.endsWith('@customsway.eu') && emailUsuario!=='aduana@customsway.eu') autoCc='aduana@customsway.eu';
-  const ccFinal=[opts.cc||'',autoCc].filter(Boolean).join(';');
-
   try{
     let token=SB_KEY;
     try{ const s=await sb.auth.getSession(); token=s?.data?.session?.access_token||SB_KEY; }catch(_){}
@@ -12750,15 +12792,14 @@ async function _abrirEmailHTML(opts){
     const resp=await fetch(SB_URL+'/functions/v1/send-notif',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
-      body:JSON.stringify({to, cc:ccFinal, subject, html,
+      body:JSON.stringify({to, cc, subject, html,
         sender_name:(typeof CU!=='undefined'&&CU?.nombre)||undefined,
-        reply_to:'als@alsalgeciras.com',
+        sender_email:_resolverFromEmail(),
         attachments:opts.attachments||undefined})
     });
     if(resp.ok){ showToast('✅ Email enviado correctamente'); return true; }
     const errBody=await resp.text().catch(()=>'');
-    let errMsg='';
-    try{ const j=JSON.parse(errBody); errMsg=j.detail||j.error||j.message||errBody; }catch(_){ errMsg=errBody; }
+    let errMsg=''; try{ const j=JSON.parse(errBody); errMsg=j.detail||j.error||j.message||errBody; }catch(_){ errMsg=errBody; }
     console.error('send-notif error',resp.status,errMsg);
     showToast('⚠️ Error '+resp.status+': '+(errMsg||'').substring(0,120));
     return false;
