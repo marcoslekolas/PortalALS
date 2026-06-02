@@ -994,7 +994,21 @@ function loadOffer(id){
   document.getElementById('global-notes').value=e.globalNotes||'';
   document.getElementById('cond-generales').value=(e.condGenerales!==undefined&&e.condGenerales!==null)?e.condGenerales:COND_DEFAULT;
   document.getElementById('client-email').value=e.clientEmail||'';
-  state.sections=JSON.parse(JSON.stringify(e.sections||SECTIONS));
+  // Cargar secciones de la oferta y añadir las nuevas que no existían
+  const loadedSecs = JSON.parse(JSON.stringify(e.sections||SECTIONS));
+  // Migrar 'despacho' antiguo a 'despacho_ll'
+  loadedSecs.forEach(s => { if(s.id==='despacho') s.id='despacho_ll'; });
+  // Merge: añadir secciones de SECTIONS que no estén en la oferta guardada
+  const loadedIds = loadedSecs.map(s=>s.id);
+  SECTIONS.forEach(masterSec => {
+    if(!loadedIds.includes(masterSec.id)) {
+      loadedSecs.push(JSON.parse(JSON.stringify(masterSec)));
+    }
+  });
+  // Ordenar según el orden de SECTIONS
+  const order = SECTIONS.map(s=>s.id);
+  loadedSecs.sort((a,b)=>order.indexOf(a.id)-order.indexOf(b.id));
+  state.sections = loadedSecs;
   state.editingId=id;
   document.getElementById('editing-notice').style.display='block';
   document.getElementById('btn-save').textContent='💾 Actualizar';
@@ -1014,7 +1028,21 @@ function duplicateOffer(id){
   document.getElementById('validity').value=e.validity||'31/12/2026';
   document.getElementById('global-notes').value=e.globalNotes||'';
   document.getElementById('cond-generales').value=(e.condGenerales!==undefined&&e.condGenerales!==null)?e.condGenerales:COND_DEFAULT;
-  state.sections=JSON.parse(JSON.stringify(e.sections||SECTIONS));
+  // Cargar secciones de la oferta y añadir las nuevas que no existían
+  const loadedSecs = JSON.parse(JSON.stringify(e.sections||SECTIONS));
+  // Migrar 'despacho' antiguo a 'despacho_ll'
+  loadedSecs.forEach(s => { if(s.id==='despacho') s.id='despacho_ll'; });
+  // Merge: añadir secciones de SECTIONS que no estén en la oferta guardada
+  const loadedIds = loadedSecs.map(s=>s.id);
+  SECTIONS.forEach(masterSec => {
+    if(!loadedIds.includes(masterSec.id)) {
+      loadedSecs.push(JSON.parse(JSON.stringify(masterSec)));
+    }
+  });
+  // Ordenar según el orden de SECTIONS
+  const order = SECTIONS.map(s=>s.id);
+  loadedSecs.sort((a,b)=>order.indexOf(a.id)-order.indexOf(b.id));
+  state.sections = loadedSecs;
   // Nunca establecer editingId — esto es una oferta NUEVA
   state.editingId=null;
   document.getElementById('editing-notice').style.display='none';
