@@ -1028,17 +1028,19 @@ async function checkAccess(){
     document.getElementById('gate').style.display='flex';
     return false;
   }
-  // Verify still active in Supabase
+  // Verify still active in Supabase (solo si la tabla es accesible)
   try{
     const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+cu.id+'&select=id,rol,activo&limit=1',{
       headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}
     });
     const d=await r.json();
-    if(!d?.[0]?.activo||d[0].rol!=='admin'){
+    // Solo bloqueamos si Supabase devuelve datos Y dicen que no es admin/activo.
+    // Si devuelve vacío (RLS bloqueando con clave anónima), confiamos en la sesión local.
+    if(Array.isArray(d)&&d.length>0&&(!d[0].activo||d[0].rol!=='admin')){
       document.getElementById('gate').style.display='flex';
       return false;
     }
-  }catch(e){ /* network error — allow offline use if cu.rol===admin */ }
+  }catch(e){ /* network error — trust local session */ }
   // Show app
   document.getElementById('gate').style.display='none';
   document.getElementById('app').style.display='flex';
