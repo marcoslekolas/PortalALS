@@ -194,7 +194,7 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
 .htable tbody tr{transition:.1s;cursor:pointer}
 .htable tbody tr:hover{background:var(--g50)}
 .htable tbody tr:last-child td{border-bottom:none}
-.vbadge{background:var(--b50);color:var(--b700);font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;font-family:monospace}
+.vbadge{background:var(--b50);color:var(--b700);font-size:13px;padding:3px 10px;border-radius:10px;font-weight:700;white-space:nowrap;font-family:monospace}
 .rev-due{color:var(--rd600);font-size:11px;font-weight:600}
 .rev-ok{color:var(--gr600);font-size:11px;font-weight:600}
 .rev-soon{color:var(--am600);font-size:11px;font-weight:600}
@@ -435,7 +435,7 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
           <div class="preview-wrap">
             <div class="preview-toolbar">
               <span>Vista previa</span>
-              <button class="mbtn mbtn-default" style="font-size:11px;padding:3px 9px" onclick="window.print()">🖨</button>
+              <button class="mbtn mbtn-default" style="font-size:11px;padding:3px 9px" onclick="printCurrentOffer()">🖨</button>
             </div>
             <div style="max-height:72vh;overflow-y:auto">
               <div id="preview-doc" style="padding:1rem;font-size:10px;transform-origin:top left"></div>
@@ -445,9 +445,9 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
       </div>
 
       <div class="btn-row" style="margin-top:16px">
-        <button class="btn btn-primary" onclick="window.print()">
+        <button class="btn btn-primary" onclick="printCurrentOffer()">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-          Imprimir
+          Imprimir / PDF
         </button>
         <button class="btn btn-primary" id="btn-save" onclick="saveOfferUI()">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
@@ -567,24 +567,41 @@ const DEFAULT_SECTIONS = [
     {id:'ta5',label:'1.201 – 1.500 kg',price:250,unit:'€',check:true},
     {id:'ta6',label:'Resto',price:'A/C',unit:'',check:true}
   ]},
-  {id:'despacho', title:'Despacho de Aduanas', defaultOn:true, note:'',
+  {id:'despacho_ll', title:'Despacho Aduanas La Línea', defaultOn:true, note:'',
    rates:[
-    {id:'d1',label:'Reimportaciones de temporales',price:110,unit:'€',check:true},
-    {id:'d2',label:'Exportaciones definitivas',price:35,unit:'€',check:true},
-    {id:'d3',label:'Exportaciones temporales',price:40,unit:'€',check:true},
-    {id:'d4',label:'RPA (Régimen Perfeccionamiento Activo)',price:110,unit:'€',check:true},
-    {id:'d5',label:'Importaciones a consumo',price:110,unit:'€',check:true},
-    {id:'d6',label:'Recepción de tránsitos',price:55,unit:'€ (incl. EXS)',check:true},
-    {id:'d7',label:'Recepción de DAEs',price:25,unit:'€',check:true},
-    {id:'d8',label:'Reexportaciones y Ultimación de RPA',price:45,unit:'€',check:true},
-    {id:'d9',label:'T1 de expedición',price:150,unit:'€',check:true},
-    {id:'d10',label:'T1 expedición AGP',price:'A/C',unit:'',check:true},
-    {id:'d11',label:'ICS2 (ENS)',price:45,unit:'€',check:true},
-    {id:'d12',label:'RMT',price:30,unit:'€',check:true},
-    {id:'d13',label:'ROSH / RAE',price:30,unit:'€',check:true},
-    {id:'d14',label:'JEMU',price:30,unit:'€',check:true},
-    {id:'d15',label:'Instancia de anulación trámite aduanero',price:30,unit:'€',check:true},
-    {id:'d16',label:'Modificación ICS2 (ENS)',price:45,unit:'€',check:true}
+    {id:'dll1',label:'Reimportaciones de temporales',price:110,unit:'€',check:true},
+    {id:'dll2',label:'Exportaciones definitivas',price:35,unit:'€',check:true},
+    {id:'dll3',label:'Exportaciones temporales',price:40,unit:'€',check:true},
+    {id:'dll4',label:'RPA (Régimen Perfeccionamiento Activo)',price:110,unit:'€',check:true},
+    {id:'dll5',label:'Importaciones a consumo',price:110,unit:'€',check:true},
+    {id:'dll6',label:'Recepción de tránsitos',price:55,unit:'€ (incl. EXS)',check:true},
+    {id:'dll7',label:'Recepción de DAEs',price:25,unit:'€',check:true},
+    {id:'dll8',label:'Reexportaciones y Ultimación de RPA',price:45,unit:'€',check:true},
+    {id:'dll9',label:'T1 de expedición',price:150,unit:'€',check:true},
+    {id:'dll10',label:'ICS2 (ENS)',price:45,unit:'€',check:true},
+    {id:'dll11',label:'RMT',price:30,unit:'€',check:true},
+    {id:'dll12',label:'ROSH / RAE',price:30,unit:'€',check:true},
+    {id:'dll13',label:'JEMU',price:30,unit:'€',check:true},
+    {id:'dll14',label:'Instancia de anulación trámite aduanero',price:30,unit:'€',check:true},
+    {id:'dll15',label:'Modificación ICS2 (ENS)',price:45,unit:'€',check:true}
+  ]},
+  {id:'despacho_agp', title:'Despacho Aduanas Algeciras', defaultOn:false, note:'',
+   rates:[
+    {id:'dagp1',label:'Reimportaciones de temporales',price:110,unit:'€',check:true},
+    {id:'dagp2',label:'Exportaciones definitivas',price:35,unit:'€',check:true},
+    {id:'dagp3',label:'Exportaciones temporales',price:40,unit:'€',check:true},
+    {id:'dagp4',label:'RPA (Régimen Perfeccionamiento Activo)',price:110,unit:'€',check:true},
+    {id:'dagp5',label:'Importaciones a consumo',price:110,unit:'€',check:true},
+    {id:'dagp6',label:'Recepción de tránsitos',price:55,unit:'€ (incl. EXS)',check:true},
+    {id:'dagp7',label:'Recepción de DAEs',price:25,unit:'€',check:true},
+    {id:'dagp8',label:'Reexportaciones y Ultimación de RPA',price:45,unit:'€',check:true},
+    {id:'dagp9',label:'T1 expedición AGP',price:150,unit:'€',check:true},
+    {id:'dagp10',label:'ICS2 (ENS)',price:45,unit:'€',check:true},
+    {id:'dagp11',label:'RMT',price:30,unit:'€',check:true},
+    {id:'dagp12',label:'ROSH / RAE',price:30,unit:'€',check:true},
+    {id:'dagp13',label:'JEMU',price:30,unit:'€',check:true},
+    {id:'dagp14',label:'Instancia de anulación trámite aduanero',price:30,unit:'€',check:true},
+    {id:'dagp15',label:'Modificación ICS2 (ENS)',price:45,unit:'€',check:true}
   ]},
   {id:'adt', title:'Servicios ADT / Almacén', defaultOn:false, note:'',
    rates:[
@@ -795,13 +812,53 @@ function loadOfferInForm(id) {
 }
 
 function duplicateOffer(id) {
-  loadOfferInForm(id);
-  state.editingId = null;
-  document.getElementById('doc-date').value = new Date().toISOString().split('T')[0];
+  const orig = state.history.find(x=>x.id===id);
+  if(!orig) return;
+  // Copiar datos del form manualmente para NO arrastrar el editingId
+  document.getElementById('client-name').value    = orig.client||'';
+  document.getElementById('client-addr').value    = orig.client_addr||'';
+  document.getElementById('client-contact').value = orig.client_contact||'';
+  document.getElementById('client-cif').value     = orig.client_cif||'';
+  document.getElementById('client-email').value   = orig.client_email||'';
+  document.getElementById('created-by').value     = orig.created_by||'';
+  document.getElementById('doc-date').value       = new Date().toISOString().split('T')[0];
+  document.getElementById('validity').value       = orig.validity||'31/12/2026';
+  document.getElementById('global-notes').value   = orig.global_notes||'';
+  document.getElementById('cond-generales').value = orig.cond_generales||'';
+  state.sections  = JSON.parse(JSON.stringify(orig.sections||DEFAULT_SECTIONS));
+  state.editingId = null;  // nueva oferta
   document.getElementById('editing-notice').classList.remove('show');
-  document.getElementById('btn-save').innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Guardar';
+  document.getElementById('btn-save').innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Guardar (copia)';
   document.getElementById('btn-descartar').style.display='none';
-  renderDoc();
+  buildSectionsGrid(); renderDoc();
+  showPage('nueva');
+  window.scrollTo({top:0,behavior:'smooth'});
+  toast('Duplicado listo — revisa y guarda como nueva oferta');
+}
+
+// Imprimir/descargar PDF desde el formulario activo (sin guardar)
+function printCurrentOffer() {
+  const client = document.getElementById('client-name').value||'(borrador)';
+  const rawDate = document.getElementById('doc-date').value;
+  const oferta = {
+    ref: state.editingId
+      ? (state.history.find(x=>x.id===state.editingId)||{}).ref||'(borrador)'
+      : '(borrador)',
+    client,
+    client_addr:    document.getElementById('client-addr').value,
+    client_contact: document.getElementById('client-contact').value,
+    client_cif:     document.getElementById('client-cif').value,
+    date:           rawDate,
+    validity:       document.getElementById('validity').value||'31/12/2026',
+    global_notes:   document.getElementById('global-notes').value,
+    cond_generales: document.getElementById('cond-generales').value,
+    sections:       state.sections
+  };
+  try {
+    const doc = buildOfertaPDF(oferta);
+    const fname = ((oferta.ref)+'_'+(client)).replace(/[^a-zA-Z0-9_-]/g,'_')+'.pdf';
+    doc.save(fname);
+  } catch(err) { toast('Error generando PDF: '+err.message, true); console.error(err); }
 }
 
 async function deleteOffer(id) {
