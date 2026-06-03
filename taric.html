@@ -3335,6 +3335,7 @@ function renderBorradorDUA(d, container, filename){
           <button class="btn btn-p btn-sm" onclick="exportarDUA()">⬇️ JSON</button>
           <button class="btn btn-s btn-sm" onclick="exportarDUACSV()">📊 CSV</button>
           <button class="btn btn-g btn-sm" onclick="exportarDUAExcel()">📊 Excel</button>
+          <button class="btn btn-p btn-sm" onclick="abrirModalVT()" style="background:linear-gradient(135deg,#0f6e3a,#1a9e50);border:none">📤 Visual Trans</button>
           <a href="https://visualtrans.com/" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📚 Visual Trans ↗</a>
         </div>
       </div>
@@ -3694,11 +3695,464 @@ async function logUsoIA(modulo, modelo){
 // ── Init DUA drop zone al cargar ─────────────────────────────────
 window.addEventListener('load', function(){
   setTimeout(setupDUADropZone, 500);
+  // Inyectar modal Visual Trans en el DOM
+  _inyectarModalVT();
 });
 
 // ── Override nav to include 'dua' ────────────────────────────────
 const _navOriginal = nav;
 // nav already handles all views generically
+
+// ══════════════════════════════════════════════════════════════
+// VISUAL TRANS — Exportación fichero plano separado por pipes |
+// ══════════════════════════════════════════════════════════════
+
+// Configuración por defecto — adaptable según la empresa
+const VT_DEFAULTS = {
+  // Cabecera
+  aduana:        'ES001131',   // Algeciras Marítima
+  representante: '',           // NIF agente/representante
+  transporte:    '1',          // 1=Marítimo, 3=Carretera, 4=Aéreo, 9=Otros
+  incoterm:      'CFR',
+  condEntrega:   '',
+  paisExpedicion:'ES',
+  paisOrigen:    'ES',
+  paisDestino:   'ES',
+  // Importación H1
+  regimen:       '40',         // régimen solicitado
+  regimenPrev:   '00',
+  // Exportación AES
+  aduanaSalida:  'ES001131',
+  // Partidas
+  regPartida:    '4000',       // 37a casilla regimen partida (H1)
+};
+
+function _inyectarModalVT(){
+  if(document.getElementById('vt-modal')) return;
+  const div = document.createElement('div');
+  div.id = 'vt-modal';
+  div.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center;padding:16px';
+  div.innerHTML = `
+    <div style="background:var(--w);border-radius:var(--rl);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:var(--shxl)">
+      <div style="padding:18px 20px 14px;border-bottom:1px solid var(--g200);display:flex;align-items:center;gap:10px">
+        <div style="width:34px;height:34px;background:linear-gradient(135deg,#0f6e3a,#1a9e50);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">📤</div>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:var(--g900)">Exportar para Visual Trans</div>
+          <div style="font-size:11px;color:var(--g500)" id="vt-modal-subtitle">Fichero plano separado por | para importación directa</div>
+        </div>
+        <button onclick="cerrarModalVT()" style="margin-left:auto;background:none;border:none;font-size:18px;cursor:pointer;color:var(--g400)">✕</button>
+      </div>
+      <div style="padding:16px 20px">
+
+        <!-- Tipo de DUA -->
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-weight:700;color:var(--g500);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:5px">Tipo de declaración</label>
+          <select id="vt-tipo" class="fi" style="width:100%" onchange="vtOnTipoChange()">
+            <option value="H1">H — Importación H1 (DUA Importación)</option>
+            <option value="AES">AES — Exportación (AES/DAE)</option>
+          </select>
+        </div>
+
+        <!-- Aduana -->
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-weight:700;color:var(--g500);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:5px">Aduana (código)</label>
+          <select id="vt-aduana" class="fi" style="width:100%">
+            <option value="ES001131">ES001131 — Algeciras Marítima</option>
+            <option value="ES001132">ES001132 — Algeciras Tráfico Rodado</option>
+            <option value="ES004801">ES004801 — Málaga</option>
+            <option value="ES000311">ES000311 — Valencia</option>
+            <option value="ES000201">ES000201 — Barcelona</option>
+            <option value="ES007600">ES007600 — Madrid Barajas</option>
+            <option value="OTRA">Otra...</option>
+          </select>
+          <input id="vt-aduana-otra" class="fi" placeholder="Código aduana (ej: ES002301)" style="display:none;width:100%;margin-top:6px" oninput="this.value=this.value.toUpperCase()">
+        </div>
+
+        <!-- Régimen (solo H1) -->
+        <div id="vt-bloque-regimen" style="margin-bottom:14px">
+          <label style="font-size:11px;font-weight:700;color:var(--g500);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:5px">Régimen solicitado / precedente</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <select id="vt-regimen" class="fi">
+              <option value="40">40 — Despacho a libre práctica</option>
+              <option value="42">42 — Despacho con exención IVA</option>
+              <option value="51">51 — Perfeccionamiento activo</option>
+              <option value="53">53 — Importación temporal</option>
+              <option value="61">61 — Reimportación</option>
+              <option value="71">71 — Depósito aduanero</option>
+            </select>
+            <input id="vt-regimen-prev" class="fi" value="00" placeholder="Régimen precedente (ej: 00)">
+          </div>
+        </div>
+
+        <!-- Transporte -->
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-weight:700;color:var(--g500);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:5px">Modo de transporte frontera</label>
+          <select id="vt-transporte" class="fi" style="width:100%">
+            <option value="1">1 — Marítimo</option>
+            <option value="3">3 — Carretera</option>
+            <option value="4">4 — Aéreo</option>
+            <option value="2">2 — Ferroviario</option>
+            <option value="9">9 — Otros</option>
+          </select>
+        </div>
+
+        <!-- Incoterm -->
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-weight:700;color:var(--g500);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:5px">Incoterm / Condiciones entrega</label>
+          <div style="display:grid;grid-template-columns:110px 1fr;gap:8px">
+            <select id="vt-incoterm" class="fi">
+              <option value="CFR">CFR</option>
+              <option value="CIF">CIF</option>
+              <option value="FOB">FOB</option>
+              <option value="EXW">EXW</option>
+              <option value="DAP">DAP</option>
+              <option value="DDP">DDP</option>
+              <option value="CPT">CPT</option>
+              <option value="FCA">FCA</option>
+            </select>
+            <input id="vt-cond-entrega" class="fi" placeholder="Lugar entrega (ej: Algeciras)">
+          </div>
+        </div>
+
+        <!-- NIF representante -->
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-weight:700;color:var(--g500);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:5px">NIF representante / agente</label>
+          <input id="vt-representante" class="fi" style="width:100%" placeholder="B75847053" oninput="this.value=this.value.toUpperCase()">
+        </div>
+
+        <!-- Pesos globales -->
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-weight:700;color:var(--g500);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:5px">Pesos totales (kg) — si no están en la factura</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            <input id="vt-bultos" class="fi" type="number" placeholder="Bultos" min="1">
+            <input id="vt-bruto" class="fi" type="number" step="0.01" placeholder="Peso bruto">
+            <input id="vt-neto" class="fi" type="number" step="0.01" placeholder="Peso neto">
+          </div>
+        </div>
+
+        <!-- Nota informativa -->
+        <div style="background:var(--b50);border:1px solid var(--b100);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--b700);line-height:1.5;margin-bottom:4px">
+          💡 Se generará un fichero <strong>.txt</strong> con separador <strong>|</strong> listo para importar en Visual Trans mediante <em>Archivo → Importar dossier</em>. Los campos extraídos de la factura se prerellenan automáticamente.
+        </div>
+
+      </div>
+      <div style="padding:12px 20px 16px;border-top:1px solid var(--g200);display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-g btn-sm" onclick="cerrarModalVT()">Cancelar</button>
+        <button class="btn btn-p btn-sm" onclick="confirmarExportVT()" style="background:linear-gradient(135deg,#0f6e3a,#1a9e50);border:none;min-width:160px">📤 Generar fichero VT</button>
+      </div>
+    </div>
+  `;
+  // listener para aduana "Otra"
+  div.querySelector('#vt-aduana').addEventListener('change', function(){
+    div.querySelector('#vt-aduana-otra').style.display = this.value==='OTRA' ? '' : 'none';
+  });
+  document.body.appendChild(div);
+}
+
+function abrirModalVT(){
+  const d = window._ultimoDUA;
+  if(!d){ showToast('⚠️ Genera primero el borrador DUA'); return; }
+  const modal = document.getElementById('vt-modal');
+  if(!modal) return;
+
+  // Auto-detectar tipo desde el DUA
+  const tipo = (d.tipo_dua||'').toLowerCase().includes('export') ||
+               (d.casilla_1_regimen?.solicitado||'').startsWith('AES') ? 'AES' : 'H1';
+  document.getElementById('vt-tipo').value = tipo;
+  vtOnTipoChange();
+
+  // Pre-rellenar desde datos del DUA / config previa
+  const df = d.datos_extraidos_factura||{};
+  const inc = d.casilla_20_condiciones_entrega?.incoterm || df.incoterm || 'CFR';
+  const lugar = d.casilla_20_condiciones_entrega?.lugar || '';
+  const transp = d.casilla_25_modo_transporte || '1';
+  document.getElementById('vt-incoterm').value = ['CFR','CIF','FOB','EXW','DAP','DDP','CPT','FCA'].includes(inc) ? inc : 'CFR';
+  document.getElementById('vt-cond-entrega').value = lugar;
+  document.getElementById('vt-transporte').value = ['1','2','3','4','9'].includes(String(transp)) ? String(transp) : '1';
+
+  // Régimen desde DUA
+  const regSol = d.casilla_1_regimen?.solicitado || '40';
+  const regPrev = d.casilla_1_regimen?.precedente || '00';
+  if(document.getElementById('vt-regimen')) document.getElementById('vt-regimen').value = regSol;
+  if(document.getElementById('vt-regimen-prev')) document.getElementById('vt-regimen-prev').value = regPrev;
+
+  modal.style.display = 'flex';
+}
+
+function cerrarModalVT(){
+  const modal = document.getElementById('vt-modal');
+  if(modal) modal.style.display = 'none';
+}
+
+function vtOnTipoChange(){
+  const tipo = document.getElementById('vt-tipo')?.value;
+  const bloqReg = document.getElementById('vt-bloque-regimen');
+  const sub = document.getElementById('vt-modal-subtitle');
+  if(tipo === 'AES'){
+    if(bloqReg) bloqReg.style.display = 'none';
+    if(sub) sub.textContent = 'Fichero AES — Exportación (separado por |)';
+  } else {
+    if(bloqReg) bloqReg.style.display = '';
+    if(sub) sub.textContent = 'Fichero H1 — Importación (separado por |)';
+  }
+}
+
+function confirmarExportVT(){
+  const tipo = document.getElementById('vt-tipo').value;
+  const aduanaSel = document.getElementById('vt-aduana').value;
+  const aduana = aduanaSel === 'OTRA'
+    ? (document.getElementById('vt-aduana-otra').value.trim() || VT_DEFAULTS.aduana)
+    : aduanaSel;
+
+  const cfg = {
+    tipo,
+    aduana,
+    representante: document.getElementById('vt-representante').value.trim(),
+    transporte:    document.getElementById('vt-transporte').value,
+    incoterm:      document.getElementById('vt-incoterm').value,
+    condEntrega:   document.getElementById('vt-cond-entrega').value.trim(),
+    regimen:       document.getElementById('vt-regimen')?.value || '40',
+    regimenPrev:   document.getElementById('vt-regimen-prev')?.value || '00',
+    bultos:        document.getElementById('vt-bultos').value || '',
+    bruto:         document.getElementById('vt-bruto').value || '',
+    neto:          document.getElementById('vt-neto').value || '',
+  };
+  cerrarModalVT();
+  _generarFicheroVT(cfg);
+}
+
+// ─── Generador principal ─────────────────────────────────────────
+function _generarFicheroVT(cfg){
+  const d = window._ultimoDUA;
+  if(!d){ showToast('❌ Sin datos DUA'); return; }
+
+  let lineas = [];
+  if(cfg.tipo === 'H1'){
+    lineas = _buildH1(d, cfg);
+  } else {
+    lineas = _buildAES(d, cfg);
+  }
+
+  const contenido = lineas.join('\n');
+  const df = d.datos_extraidos_factura||{};
+  const numFra = df.numero_factura || 'DUA';
+  const fname = `VT_${cfg.tipo}_${numFra.replace(/[^a-zA-Z0-9]/g,'_')}.txt`;
+  const blob = new Blob([contenido], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fname; a.click();
+  URL.revokeObjectURL(url);
+  showToast(`✅ Fichero ${fname} generado`);
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────
+function _vtFecha(str){
+  // Convierte cualquier fecha a DD/MM/AAAA para VT
+  if(!str) return '';
+  // Ya en formato DD/MM/YYYY
+  if(/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return str;
+  // YYYY-MM-DD
+  const m = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return str;
+}
+
+function _vtStr(v){ return String(v||'').replace(/\|/g,' ').trim(); }
+function _vtNum(v){ return String(parseFloat(v)||0).replace(',','.'); }
+
+function _paisIso(pais){
+  if(!pais) return '';
+  // Si ya es código ISO 2 letras
+  if(/^[A-Z]{2}$/.test(pais.trim())) return pais.trim();
+  // Mapeo básico de nombres comunes
+  const m = {
+    'ESPAÑA':'ES','SPAIN':'ES','NORWAY':'NO','NORUEGA':'NO',
+    'UNITED KINGDOM':'GB','UK':'GB','REINO UNIDO':'GB',
+    'GERMANY':'DE','ALEMANIA':'DE','FRANCE':'FR','FRANCIA':'FR',
+    'PORTUGAL':'PT','ITALY':'IT','ITALIA':'IT',
+    'NETHERLANDS':'NL','PAÍSES BAJOS':'NL','BELGIUM':'BE','BÉLGICA':'BE',
+    'MOROCCO':'MA','MARRUECOS':'MA','USA':'US','ESTADOS UNIDOS':'US',
+    'CHINA':'CN','JAPAN':'JP','JAPÓN':'JP',
+  };
+  return m[pais.toUpperCase().trim()] || pais.slice(0,2).toUpperCase();
+}
+
+// ─── Construcción fichero H1 ─────────────────────────────────────
+function _buildH1(d, cfg){
+  const df = d.datos_extraidos_factura || {};
+  const lineas = [];
+
+  // ── Cabecera H ──
+  // Columnas según guía H1 (separadas por |):
+  // 1:H 2:H 3:CO 4:A 5:T2LF 6:aduana 7:exportador_nombre 8:exportador_nif
+  // 9:exportador_dir 10:exportador_cp 11:exportador_pob 12:exportador_pais
+  // 13:importador_nombre 14:importador_nif 15:importador_dir 16:importador_cp
+  // 17:importador_pob 18:importador_pais 19:pais_expedicion 20:pais_destino
+  // 21:cp_destino 22:1(contenedor) 23:incoterm 24:cond_entrega
+  // 25:ident_transporte_llegada 26:bandera 27:divisa 28:nat
+  // 29:transporte_frontera 30:aduana_entrada 31:loc_aduana 32:loc_codigo
+  // 33:bultos 34:p_bruto 35:p_neto 36:referencia 37:nif_paga
+  // 38:importe_fra 39:transporte_int 40:representante 41:ref_interna
+  // 42:transporte17 43:TR 44:modo_pago 45:GC 46:CE 47:garantia
+  // 48:MRN 49:ptje_seguro 50:importe_seguro
+
+  const expNombre = _vtStr(df.proveedor || d.casilla_2_expedidor?.nombre || '');
+  const expPais   = _paisIso(df.pais_proveedor || d.casilla_2_expedidor?.pais || d.casilla_15_pais_expedicion || '');
+  const impNombre = _vtStr(d.casilla_8_importador?.nombre || df.destinatario || '');
+  const impNif    = _vtStr(d.casilla_8_importador?.nif || '');
+  const divisa    = _vtStr(d.casilla_22_moneda_importe_total?.moneda || df.moneda || 'EUROS');
+  const importe   = _vtNum(d.casilla_22_moneda_importe_total?.importe || df.valor_total || 0);
+  const numFra    = _vtStr(df.numero_factura || '');
+  const buque     = _vtStr(d.casilla_21_transporte_frontera?.id || df.vessel || '');
+  const bandera   = _vtStr(d.casilla_21_transporte_frontera?.bandera || '');
+  const bultosGlob= cfg.bultos || String((d.partidas||[]).reduce((a,p)=>a+(parseInt(p.bultos)||0),0));
+  const brutoGlob = cfg.bruto  || String((d.partidas||[]).reduce((a,p)=>a+(parseFloat(p.masa_bruta_kg)||0),0));
+  const netoGlob  = cfg.neto   || String((d.partidas||[]).reduce((a,p)=>a+(parseFloat(p.masa_neta_kg)||0),0));
+
+  const cabH = [
+    'H','H','CO','A','',
+    cfg.aduana,
+    expNombre,'',  // NIF exportador (extranjero, vacío)
+    '','','',expPais,
+    impNombre, impNif, '','','','ES',
+    expPais, 'ES', '',
+    '1',                // contenedor
+    cfg.incoterm, cfg.condEntrega,
+    buque, bandera,
+    divisa, '11',       // nat
+    cfg.transporte,
+    cfg.aduana, '', '',
+    bultosGlob, _vtNum(brutoGlob), _vtNum(netoGlob),
+    numFra,             // referencia
+    impNif,             // entidad que paga
+    importe,
+    '','',              // transporte int, nif representante interno
+    numFra,             // ref interna
+    '','','','','','',  // transporte17, TR, modo_pago, GC, CE, garantia
+    '','',''            // MRN, ptje_seguro, importe_seguro
+  ];
+  lineas.push(cabH.map(_vtStr).join('|'));
+
+  // ── Partidas ──
+  (d.partidas||[]).forEach(p => {
+    // Columnas partida H1:
+    // 1:bultos 2:bruto 3:neto 4:descripcion 5:casi41_supl_tipo 6:casi42_supl_cant
+    // 7:taric 8:valor 9:matri_ctns 10:pais_origen 11:provincia_cod
+    // 12:doc_cargo 13:doc_cargo_ptda 14:regimen 15-17:no_usar
+    // 18:tip_doc1 19:num_doc1 20:fec_doc1 ... (hasta doc11)
+    const taric    = _vtStr(p.taric||p.codigo_taric||'');
+    const desc     = _vtStr(p.descripcion_factura||p.descripcion_nc||p.descripcion||'');
+    const valor    = _vtNum(p.valor_factura||p.valor_aduanero||0);
+    const origen   = _paisIso(p.pais_origen||d.casilla_16_pais_origen||'ES');
+    const bultos   = _vtNum(p.bultos||1);
+    const bruto    = _vtNum(p.masa_bruta_kg||0);
+    const neto     = _vtNum(p.masa_neta_kg||0);
+    const regPart  = `${cfg.regimen}${cfg.regimenPrev}`;  // ej: 4000
+
+    const filaPart = [
+      bultos, bruto, neto,
+      desc,
+      '', '',          // supl_tipo, supl_cant (medidas adicionales)
+      taric,
+      valor,
+      '',              // matri_ctns
+      origen,
+      '',              // provincia_cod_inter
+      '','',           // doc_cargo, doc_cargo_ptda
+      regPart,
+      '','','',        // no_usar x3
+      // Documento factura como doc_01
+      'N380', numFra, _vtFecha(df.fecha_factura||''),
+      // Resto de docs vacíos (hasta doc11 = 11*3 = 33 campos más)
+      '','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','',''
+    ];
+    lineas.push(filaPart.map(_vtStr).join('|'));
+  });
+
+  return lineas;
+}
+
+// ─── Construcción fichero AES ─────────────────────────────────────
+function _buildAES(d, cfg){
+  const df = d.datos_extraidos_factura || {};
+  const lineas = [];
+
+  // ── Cabecera AES ──
+  const expNombre = _vtStr(d.casilla_2_expedidor?.nombre || df.proveedor || '');
+  const expNif    = _vtStr(d.casilla_2_expedidor?.nif || df.nif_proveedor || '');
+  const expPais   = _paisIso(d.casilla_2_expedidor?.pais || df.pais_proveedor || 'ES');
+  const destNombre= _vtStr(d.casilla_8_importador?.nombre || df.destinatario || '');
+  const destNif   = _vtStr(d.casilla_8_importador?.nif || '');
+  const destPais  = _paisIso(d.casilla_8_importador?.pais || 'NO');
+  const divisa    = _vtStr(d.casilla_22_moneda_importe_total?.moneda || df.moneda || 'EUROS');
+  const importe   = _vtNum(d.casilla_22_moneda_importe_total?.importe || df.valor_total || 0);
+  const numFra    = _vtStr(df.numero_factura || '');
+  const buque     = _vtStr(d.casilla_21_transporte_frontera?.id || df.vessel || '');
+  const bandera   = _vtStr(d.casilla_21_transporte_frontera?.bandera || '');
+  const bultosGlob= cfg.bultos || String((d.partidas||[]).reduce((a,p)=>a+(parseInt(p.bultos)||0),0));
+  const brutoGlob = cfg.bruto  || String((d.partidas||[]).reduce((a,p)=>a+(parseFloat(p.masa_bruta_kg)||0),0));
+  const netoGlob  = cfg.neto   || String((d.partidas||[]).reduce((a,p)=>a+(parseFloat(p.masa_neta_kg)||0),0));
+
+  // AES cabecera — estructura según guía exportación
+  const cabAES = [
+    'AES','E','CO','A','',
+    cfg.aduana,
+    expNombre, expNif, '','','', expPais,
+    destNombre, destNif, '','','', destPais,
+    expPais,      // país expedición (cas 15)
+    destPais,     // país destino (cas 17a)
+    '',           // cod postal destino
+    '1',          // contenedor
+    cfg.incoterm, cfg.condEntrega,
+    buque, bandera,
+    divisa,
+    '11',         // naturaleza transacción
+    cfg.transporte,
+    cfg.aduana,   // aduana salida
+    '','',        // loc aduana, loc codigo
+    bultosGlob, _vtNum(brutoGlob), _vtNum(netoGlob),
+    numFra,       // referencia
+    expNif,       // entidad que paga
+    importe,
+    '',           // transporte interior
+    cfg.representante,
+    numFra,       // ref interna
+    '','','','','','','','',''  // varios opcionales
+  ];
+  lineas.push(cabAES.map(_vtStr).join('|'));
+
+  // ── Partidas AES ──
+  (d.partidas||[]).forEach(p => {
+    const taric  = _vtStr(p.taric||p.codigo_taric||'');
+    const desc   = _vtStr(p.descripcion_factura||p.descripcion_nc||p.descripcion||'');
+    const valor  = _vtNum(p.valor_factura||p.valor_aduanero||0);
+    const origen = _paisIso(p.pais_origen||'ES');
+    const bultos = _vtNum(p.bultos||1);
+    const bruto  = _vtNum(p.masa_bruta_kg||0);
+    const neto   = _vtNum(p.masa_neta_kg||0);
+
+    const filaAES = [
+      bultos, bruto, neto,
+      desc,
+      '','',       // supl_tipo, supl_cant
+      taric,
+      valor,
+      '',          // matri_ctns
+      origen,
+      '',          // provincia_cod_inter
+      '','',       // doc_cargo, doc_cargo_ptda
+      '10',        // régimen partida exportación (10 = exportación definitiva)
+      '','','',    // no_usar x3
+      // doc_01 = factura
+      'N380', numFra, _vtFecha(df.fecha_factura||''),
+      // resto docs vacíos
+      '','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','',''
+    ];
+    lineas.push(filaAES.map(_vtStr).join('|'));
+  });
+
+  return lineas;
+}
 
 </script>
 </body>
