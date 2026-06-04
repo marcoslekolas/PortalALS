@@ -732,7 +732,7 @@ textarea.fi{resize:vertical;min-height:80px}
           <div style="display:flex;gap:8px;align-items:center">
             <button class="btn btn-g btn-sm" onclick="mostrarHistorialDUA()" title="Ver borradores anteriores">📋 Historial</button>
             <button class="btn btn-g btn-sm" onclick="validarTARICOnline()" id="btn-validar-taric" style="display:none" title="Verificar códigos TARIC contra base UE">🔍 Validar TARIC</button>
-            <button class="btn btn-g btn-sm" onclick="exportarDUA()" id="btn-exp-dua" style="display:none">⬇️ JSON/CSV</button>
+            <span id="btn-exp-dua" style="display:none"></span>
             <button class="btn btn-s btn-sm" onclick="limpiarDUA()">Limpiar</button>
           </div>
         </div>
@@ -3462,9 +3462,6 @@ function renderBorradorDUA(d, container, filename){
           Para automatizar la importación, consulta en VT: <em>Menú Archivo → Importar dossier</em> o contacta el soporte técnico de Visual Trans para obtener el schema XML de importación.
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-          <button class="btn btn-p btn-sm" onclick="exportarDUA()">⬇️ JSON</button>
-          <button class="btn btn-s btn-sm" onclick="exportarDUACSV()">📊 CSV</button>
-          <button class="btn btn-g btn-sm" onclick="exportarDUAExcel()">📊 Excel</button>
           <button class="btn btn-p btn-sm" onclick="abrirModalVT()" style="background:linear-gradient(135deg,#0f6e3a,#1a9e50);border:none">📤 Visual Trans</button>
           <a href="https://visualtrans.com/" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📚 Visual Trans ↗</a>
         </div>
@@ -3867,7 +3864,7 @@ function _generarFicheroVT(cfg){
   const contenido = lineas.join('\n');
   const df = d.datos_extraidos_factura||{};
   const numFra = df.numero_factura || 'DUA';
-  const fname = `VT_${cfg.tipo}_${numFra.replace(/[^a-zA-Z0-9]/g,'_')}.txt`;
+  const fname = `VT_${cfg.tipo}_${numFra.replace(/[^a-zA-Z0-9]/g,'_')}.csv`;
   const blob = new Blob([contenido], {type:'text/plain;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -3940,13 +3937,19 @@ function _buildH1(d, cfg){
   const brutoGlob = cfg.bruto  || String((d.partidas||[]).reduce((a,p)=>a+(parseFloat(p.masa_bruta_kg)||0),0));
   const netoGlob  = cfg.neto   || String((d.partidas||[]).reduce((a,p)=>a+(parseFloat(p.masa_neta_kg)||0),0));
 
+  // Casilla 1a: CO=importación, IM=introducción, EU=uso final
+  const cas1a = (cfg.vtRef==='AES') ? 'EX' : 'CO';
+  // Declarante fijo — Algeciras Logistic Solutions SL
+  const DECLARANTE_NIF = 'B72058449';
+
   const cabH = [
-    'H','H','CO','A','',
+    'H','H', cas1a,'A','',
     (cfg.aduanaCod||cfg.aduana.split('—')[0].trim()),
     expNombre,'',  // NIF exportador (extranjero, vacío)
     '','','',expPais,
     impNombre, impNif, '','','','ES',
-    expPais, 'ES', '',
+    expPais,       // C.15 país expedición = país del exportador
+    'ES', '',      // C.17a destino, C.17b CP
     '1',                // contenedor
     cfg.incoterm, cfg.condEntrega,
     buque, bandera,
@@ -3957,7 +3960,8 @@ function _buildH1(d, cfg){
     numFra,             // referencia
     impNif,             // entidad que paga
     importe,
-    '','',              // transporte int, nif representante interno
+    '',                 // transporte int
+    cfg.representante||DECLARANTE_NIF,  // NIF representante (C.14)
     numFra,             // ref interna
     '','','','','','',  // transporte17, TR, modo_pago, GC, CE, garantia
     '','',''            // MRN, ptje_seguro, importe_seguro
@@ -4025,12 +4029,15 @@ function _buildAES(d, cfg){
   const netoGlob  = cfg.neto   || String((d.partidas||[]).reduce((a,p)=>a+(parseFloat(p.masa_neta_kg)||0),0));
 
   // AES cabecera — estructura según guía exportación
+  // Declarante fijo — Algeciras Logistic Solutions SL
+  const DECLARANTE_NIF_AES = 'B72058449';
+
   const cabAES = [
-    'AES','E','CO','A','',
+    'AES','E','EX','A','',
     (cfg.aduanaCod||cfg.aduana.split('—')[0].trim()),
     expNombre, expNif, '','','', expPais,
     destNombre, destNif, '','','', destPais,
-    expPais,      // país expedición (cas 15)
+    expPais,      // C.15 país expedición = país del exportador
     destPais,     // país destino (cas 17a)
     '',           // cod postal destino
     '1',          // contenedor
@@ -4046,7 +4053,7 @@ function _buildAES(d, cfg){
     expNif,       // entidad que paga
     importe,
     '',           // transporte interior
-    cfg.representante,
+    cfg.representante||DECLARANTE_NIF_AES,  // NIF representante (C.14)
     numFra,       // ref interna
     '','','','','','','','',''  // varios opcionales
   ];
