@@ -367,8 +367,27 @@ async function cargar(){
   recalc();poblarCl();stats();render();
 }
 async function persist(r,id=null){
-  try{if(id){await sb.from(TABLE).update(r).eq('id',id);}else{await sb.from(TABLE).insert(r);}}
-  catch(e){const a=JSON.parse(localStorage.getItem('cw_rpas')||'[]');if(id){const i=a.findIndex(x=>x.id===id);if(i>=0)a[i]=r;}else a.unshift({...r,id:Date.now().toString()});localStorage.setItem('cw_rpas',JSON.stringify(a));}
+  try{
+    if(id){
+      const{error}=await sb.from(TABLE).update(r).eq('id',id);
+      if(error) throw error;
+    } else {
+      const{error}=await sb.from(TABLE).insert(r);
+      if(error) throw error;
+    }
+  } catch(e){
+    // Fallback localStorage — preservar id original en update
+    const a=JSON.parse(localStorage.getItem('cw_rpas')||'[]');
+    if(id){
+      const i=a.findIndex(x=>x.id===id);
+      if(i>=0) a[i]={...r,id:id};  // preservar id original
+      else a.unshift({...r,id:id});
+    } else {
+      a.unshift({...r,id:Date.now().toString()});
+    }
+    localStorage.setItem('cw_rpas',JSON.stringify(a));
+    console.warn('persist fallback localStorage:',e.message||e);
+  }
   await cargar();
 }
 async function del(id){
@@ -621,11 +640,14 @@ async function guardar(){
     estado:document.getElementById('f-est').value,
     duas_exportacion:editI!==null?(datos[editI].duas_exportacion||[]):[]
   };
+  const btn=document.getElementById('modal-root').querySelector('.btn-primary');
+  if(btn){btn.disabled=true;btn.textContent='Guardando...';}
   await persist(obj,editI!==null?datos[editI].id:null);
-  cerrarM();toast(editI!==null?'Registro actualizado':'Nuevo RPA creado');
+  cerrarM();
+  toast(editI!==null?'Registro actualizado ✅':'Nuevo RPA creado ✅');
 }
 async function eliminarEdit(){
-  if(!editI===null||!confirm('\xbfEliminar este registro?'))return;
+  if(editI===null||!confirm('\xbfEliminar este registro?'))return;
   const id=datos[editI].id;cerrarM();await del(id);toast('Eliminado');
 }
 
