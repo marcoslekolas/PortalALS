@@ -229,7 +229,7 @@ if('serviceWorker' in navigator){
       </button>
 
       <!-- TARIFICADOR -->
-      <button type="button" class="hm-card" style="background:linear-gradient(145deg,#4c1d95,#6d28d9)" onclick="window.location.href='tarifas.html'"
+      <button type="button" id="card-tarificador" class="hm-card" style="background:linear-gradient(145deg,#4c1d95,#6d28d9)" onclick="window.location.href='tarifas.html'"
         onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.18)'"
         onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
         <div class="hm-card-icon">💰</div>
@@ -452,6 +452,7 @@ if('serviceWorker' in navigator){
         <button type="button" class="nav-item" id="nav-rpa" style="display:none" onclick="window.location.href='pendencias.html'"><span class="ni">📄</span><span class="nav-item-txt">Control RPA</span></button>
         <button type="button" class="nav-item" id="nav-airport" style="display:none" onclick="window.location.href='airport_cargo.html'"><span class="ni">✈️</span><span class="nav-item-txt">Airport Cargo</span></button>
         <button type="button" class="nav-item" id="nav-taric" style="display:none" onclick="window.location.href='taric.html'"><span class="ni">⚡</span><span class="nav-item-txt">Clasificador TARIC</span></button>
+        <button type="button" class="nav-item" id="nav-tarifas" style="display:none" onclick="window.location.href='tarifas.html'"><span class="ni">💰</span><span class="nav-item-txt">Tarificador</span></button>
         <button type="button" class="nav-item" id="nav-gibraltar" style="display:none" onclick="window.location.href='gibraltar.html'"><span class="ni">🏛</span><span class="nav-item-txt">Gibraltar</span></button>
         <!-- Configuración eliminada del sidebar — accesible solo desde home (admin) -->
       </div>
@@ -2592,17 +2593,23 @@ function showHome(){
 
   // ── Módulos externos en sidebar — visibilidad por rol ──────────
   const _roles = CU.roles||[CU.rol];
-  const puedeAirport = _roles.some(r=>['admin','aduanas','airport_cargo'].includes(r));
-  const puedeRpa     = _roles.some(r=>['admin','aduanas','control_rpa'].includes(r));
+  const puedeAirport  = _roles.some(r=>['admin','aduanas','airport_cargo'].includes(r));
+  const puedeRpa      = _roles.some(r=>['admin','aduanas','control_rpa'].includes(r));
+  const puedeTarifas  = _roles.some(r=>['admin','aduanas','oficina'].includes(r));
   const hayExt = puedeAirport || puedeRpa;
   const secExt = document.getElementById('sb-sec-ext');
   const navRpa = document.getElementById('nav-rpa');
   const navAirport = document.getElementById('nav-airport');
   const navTaric = document.getElementById('nav-taric');
+  const navTarifas = document.getElementById('nav-tarifas');
   if(secExt)   secExt.style.display   = hayExt ? '' : 'none';
   if(navRpa)   navRpa.style.display   = puedeRpa ? '' : 'none';
   if(navAirport) navAirport.style.display = puedeAirport ? '' : 'none';
   if(navTaric) navTaric.style.display = puedeAirport ? '' : 'none';
+  if(navTarifas) navTarifas.style.display = puedeTarifas ? '' : 'none';
+  // Ocultar card Tarificador en screen-aduanas si no tiene permisos
+  const cardTarifas = document.getElementById('card-tarificador');
+  if(cardTarifas) cardTarifas.style.display = puedeTarifas ? '' : 'none';
 
   // ── Nav Gibraltar (solo admin) ──────────────────────────────────
   const navGibraltar = document.getElementById('nav-gibraltar');

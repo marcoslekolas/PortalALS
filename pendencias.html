@@ -367,20 +367,24 @@ async function cargar(){
   recalc();poblarCl();stats();render();
 }
 async function persist(r,id=null){
+  // Columnas reales de la tabla — excluir campos computados (dias_resto, etc.)
+  const DB_COLS=['dua','dossier','regimen','admision','fecha_limite','valor_aduana','importe',
+    'codigo_nc','coef_rendimiento','autorizacion','descripcion','cliente','expedidor',
+    'destinatario','situacion','liquidado','rges','estado','duas_exportacion'];
+  const obj=Object.fromEntries(DB_COLS.filter(k=>k in r).map(k=>[k,r[k]]));
   try{
     if(id){
-      const{error}=await sb.from(TABLE).update(r).eq('id',id);
+      const{error}=await sb.from(TABLE).update(obj).eq('id',id);
       if(error) throw error;
     } else {
-      const{error}=await sb.from(TABLE).insert(r);
+      const{error}=await sb.from(TABLE).insert(obj);
       if(error) throw error;
     }
   } catch(e){
-    // Fallback localStorage — preservar id original en update
     const a=JSON.parse(localStorage.getItem('cw_rpas')||'[]');
     if(id){
       const i=a.findIndex(x=>x.id===id);
-      if(i>=0) a[i]={...r,id:id};  // preservar id original
+      if(i>=0) a[i]={...r,id:id};
       else a.unshift({...r,id:id});
     } else {
       a.unshift({...r,id:Date.now().toString()});
@@ -534,9 +538,15 @@ async function aExp(idx){
   if(!dua){toast('Introduce el DUA de exportaci\xf3n');return;}
   const r=datos[idx];const ex=r.duas_exportacion||[];
   ex.push({dua:dua.toUpperCase(),fecha:document.getElementById('ne-fecha').value||null,descripcion:document.getElementById('ne-desc').value.trim()||null});
-  r.duas_exportacion=ex;await persist(r,r.id);toast('DUA exportaci\xf3n vinculada');abrirP(idx);
+  r.duas_exportacion=ex;const rid=r.id;
+  await persist(r,rid);toast('DUA exportaci\xf3n vinculada');
+  const ni=datos.findIndex(x=>x.id===rid);if(ni>=0)abrirP(ni);
 }
-async function qExp(idx,i){const r=datos[idx];r.duas_exportacion=(r.duas_exportacion||[]).filter((_,j)=>j!==i);await persist(r,r.id);abrirP(idx);}
+async function qExp(idx,i){
+  const r=datos[idx];r.duas_exportacion=(r.duas_exportacion||[]).filter((_,j)=>j!==i);
+  const rid=r.id;await persist(r,rid);
+  const ni=datos.findIndex(x=>x.id===rid);if(ni>=0)abrirP(ni);
+}
 async function cambE(idx,e){datos[idx].estado=e;await persist(datos[idx],datos[idx].id);stats();abrirP(idx);toast('Estado actualizado');}
 async function savNota(idx){
   const t=(document.getElementById('p-nota').value||'').trim();
@@ -642,9 +652,16 @@ async function guardar(){
   };
   const btn=document.getElementById('modal-root').querySelector('.btn-primary');
   if(btn){btn.disabled=true;btn.textContent='Guardando...';}
-  await persist(obj,editI!==null?datos[editI].id:null);
+  // Guardar el id antes de persist() por si el índice cambia tras el reload
+  const editId=editI!==null?datos[editI].id:null;
+  await persist(obj,editId);
   cerrarM();
-  toast(editI!==null?'Registro actualizado ✅':'Nuevo RPA creado ✅');
+  toast(editI!==null?'Registro actualizado \u2705':'Nuevo RPA creado \u2705');
+  // Reabrir la ficha con los datos actualizados si era una edición
+  if(editId){
+    const ni=datos.findIndex(x=>x.id===editId);
+    if(ni>=0) abrirP(ni);
+  }
 }
 async function eliminarEdit(){
   if(editI===null||!confirm('\xbfEliminar este registro?'))return;
