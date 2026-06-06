@@ -1342,7 +1342,18 @@ window.addEventListener('load', function(){
   initSidebar();
   initOpenRouterUI();
   try { sb = supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:true,autoRefreshToken:true}}); } catch(e){}
-  if(sb&&sb.auth){sb.auth.getSession().then(function(r){if(!(r&&r.data&&r.data.session)){location.replace('index.html');}});}
+  if(sb&&sb.auth){sb.auth.getSession().then(function(r){
+    if(!(r&&r.data&&r.data.session)){
+      // Aceptar también login vía RPC bcrypt (als_cu sin JWT de Supabase Auth)
+      try{
+        var _cu=JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null');
+        var _cuRoles=_cu?[_cu.rol].concat(_cu.roles||[]).filter(Boolean):[];
+        if(!_cu||!_cu.id||!_cuRoles.some(function(rv){return ['admin','aduanas','oficina','taric'].indexOf(rv)>=0;})){
+          location.replace('index.html');
+        }
+      }catch(e){ location.replace('index.html'); }
+    }
+  });}
   initUser();
   setupDropZone();
   loadHistorialBadge();

@@ -199,7 +199,7 @@ if('serviceWorker' in navigator){
     <div class="hm-cards" style="max-width:900px">
 
       <!-- TARIC -->
-      <button type="button" class="hm-card" style="background:linear-gradient(145deg,#0f2d6e,#312e81);position:relative" onclick="window.location.href='taric.html'"
+      <button type="button" id="card-taric" class="hm-card" style="background:linear-gradient(145deg,#0f2d6e,#312e81);position:relative" onclick="window.location.href='taric.html'"
         onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.18)'"
         onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
         <div class="hm-card-icon">🏷️</div>
@@ -214,7 +214,7 @@ if('serviceWorker' in navigator){
       </button>
 
       <!-- EORI -->
-      <button type="button" class="hm-card" style="background:linear-gradient(145deg,#065f46,#047857)" onclick="abrirBuscadorEORI()"
+      <button type="button" id="card-eori" class="hm-card" style="background:linear-gradient(145deg,#065f46,#047857)" onclick="abrirBuscadorEORI()"
         onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.18)'"
         onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
         <div class="hm-card-icon">🔎</div>
@@ -452,7 +452,6 @@ if('serviceWorker' in navigator){
         <button type="button" class="nav-item" id="nav-rpa" style="display:none" onclick="window.location.href='pendencias.html'"><span class="ni">📄</span><span class="nav-item-txt">Control RPA</span></button>
         <button type="button" class="nav-item" id="nav-airport" style="display:none" onclick="window.location.href='airport_cargo.html'"><span class="ni">✈️</span><span class="nav-item-txt">Airport Cargo</span></button>
         <button type="button" class="nav-item" id="nav-taric" style="display:none" onclick="window.location.href='taric.html'"><span class="ni">⚡</span><span class="nav-item-txt">Clasificador TARIC</span></button>
-        <button type="button" class="nav-item" id="nav-tarifas" style="display:none" onclick="window.location.href='tarifas.html'"><span class="ni">💰</span><span class="nav-item-txt">Tarificador</span></button>
         <button type="button" class="nav-item" id="nav-gibraltar" style="display:none" onclick="window.location.href='gibraltar.html'"><span class="ni">🏛</span><span class="nav-item-txt">Gibraltar</span></button>
         <!-- Configuración eliminada del sidebar — accesible solo desde home (admin) -->
       </div>
@@ -2560,7 +2559,8 @@ function showHome(){
       </div>
     </div>`;
 
-  if(['admin','operativa','aduanas','airport_cargo'].includes(CU.rol))
+  const _rolesHome = CU.roles||[CU.rol];
+  if(_rolesHome.some(r=>['admin','operativa','aduanas','airport_cargo'].includes(r)))
     c.innerHTML+=`<div class="hm-card hm-card-air" style="position:relative" onclick="window.location.href='airport_cargo.html'">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">✈️</div>
@@ -2574,8 +2574,8 @@ function showHome(){
       </div>
     </div>`;
 
-  // Módulo Aduanas — solo visible para rol 'aduanas' y 'admin'
-  if(['aduanas','admin'].includes(CU.rol))
+  // Módulo Aduanas — visible para rol aduanas/admin + sub-roles de aduanas (taric, facturacion, eori)
+  if(_rolesHome.some(r=>['aduanas','admin','taric','facturacion','eori'].includes(r)))
     c.innerHTML+=`<button type="button" class="hm-card" style="background:linear-gradient(145deg,#0c4a6e,#0369a1);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="abrirMenuAduanas()" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
       <div class="hm-card-icon">🏛️</div>
       <div class="hm-card-body">
@@ -2591,11 +2591,23 @@ function showHome(){
   cargarNotificacionesPendientes();
   iniciarPresenciaGlobal();
 
-  // ── Módulos externos en sidebar — visibilidad por rol ──────────
+  // ── Módulos externos en sidebar — visibilidad por rol y permisos usuario ──
   const _roles = CU.roles||[CU.rol];
-  const puedeAirport  = _roles.some(r=>['admin','aduanas','airport_cargo'].includes(r));
-  const puedeRpa      = _roles.some(r=>['admin','aduanas','control_rpa'].includes(r));
-  const puedeTarifas  = _roles.some(r=>['admin','aduanas','oficina'].includes(r));
+  // Si el usuario tiene modulos_permitidos definidos, solo puede ver esos módulos.
+  // NULL o array vacío = sin restricción adicional (rige solo el rol).
+  const _mp = (CU.modulos_permitidos&&CU.modulos_permitidos.length>0) ? CU.modulos_permitidos : null;
+  function _puedeModulo(modulo, rolesRequeridos){
+    const tieneRol = _roles.some(r=>rolesRequeridos.includes(r));
+    if(!tieneRol) return false;
+    if(_mp && !_mp.includes(modulo)) return false;
+    return true;
+  }
+
+  const puedeAirport = _puedeModulo('airport_cargo', ['admin','aduanas','airport_cargo']);
+  const puedeRpa     = _puedeModulo('pendencias',    ['admin','aduanas','control_rpa']);
+  const puedeTarifas = _puedeModulo('tarifas',       ['admin','aduanas','oficina','facturacion']);
+  const puedeTaricM  = _puedeModulo('taric',         ['admin','aduanas','taric']);
+  const puedeEori    = _puedeModulo('eori',          ['admin','aduanas','eori']);
   const hayExt = puedeAirport || puedeRpa;
   const secExt = document.getElementById('sb-sec-ext');
   const navRpa = document.getElementById('nav-rpa');
@@ -2605,18 +2617,22 @@ function showHome(){
   if(secExt)   secExt.style.display   = hayExt ? '' : 'none';
   if(navRpa)   navRpa.style.display   = puedeRpa ? '' : 'none';
   if(navAirport) navAirport.style.display = puedeAirport ? '' : 'none';
-  if(navTaric) navTaric.style.display = puedeAirport ? '' : 'none';
+  if(navTaric) navTaric.style.display = puedeTaricM ? '' : 'none';
   if(navTarifas) navTarifas.style.display = puedeTarifas ? '' : 'none';
-  // Ocultar card Tarificador en screen-aduanas si no tiene permisos
-  const cardTarifas = document.getElementById('card-tarificador');
-  if(cardTarifas) cardTarifas.style.display = puedeTarifas ? '' : 'none';
+  // ── Filtrar cards en screen-aduanas por sub-roles ──────────────
+  const cardTarificador = document.getElementById('card-tarificador');
+  if(cardTarificador) cardTarificador.style.display = puedeTarifas ? '' : 'none';
+  const cardTaric = document.getElementById('card-taric');
+  if(cardTaric) cardTaric.style.display = puedeTaricM ? '' : 'none';
+  const cardEori = document.getElementById('card-eori');
+  if(cardEori) cardEori.style.display = puedeEori ? '' : 'none';
 
   // ── Nav Gibraltar (solo admin) ──────────────────────────────────
   const navGibraltar = document.getElementById('nav-gibraltar');
   if(navGibraltar) navGibraltar.style.display = CU.rol==='admin' ? '' : 'none';
 
   // ── Card Control RPA (admin + aduanas + control_rpa) ───────────
-  if(['admin','aduanas','control_rpa'].includes(CU.rol))
+  if(_puedeModulo('pendencias',['admin','aduanas','control_rpa']))
     c.innerHTML+=`<button type="button" class="hm-card" style="background:linear-gradient(145deg,#134e4a,#0f766e);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="window.location.href='pendencias.html'" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
       <div class="hm-card-icon">📄</div>
       <div class="hm-card-body">
@@ -10856,6 +10872,16 @@ async function editUser(id){
     </div>
 
     <div style="margin-bottom:14px">
+      <label class="fl2">Módulos permitidos <span style="font-weight:400;color:var(--g400)">(dejar vacío = accede a todos los de su rol)</span></label>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px">
+        ${[{key:'taric',label:'Clasificador TARIC'},{key:'pendencias',label:'Control RPA'},{key:'airport_cargo',label:'Airport Cargo'},{key:'tarifas',label:'Tarificador'},{key:'gibraltar',label:'Gibraltar IA'},{key:'facturacion',label:'Facturación'}].map(m=>{
+          const chk=(u.modulos_permitidos||[]).includes(m.key);
+          return '<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--g200);border-radius:6px;cursor:pointer;background:'+(chk?'var(--am50)':'var(--w)')+'"><input type="checkbox" name="eu-modulos" value="'+m.key+'" '+(chk?'checked':'')+' style="accent-color:var(--am600);width:14px;height:14px;flex-shrink:0"><span style="font-size:12px;font-weight:600">'+m.label+'</span></label>';
+        }).join('')}
+      </div>
+      <div style="font-size:11px;color:var(--g400);margin-top:4px">Sin selección = el usuario accede a todo lo que permite su rol.</div>
+    </div>
+    <div style="margin-bottom:14px">
       <label class="fl2">Estado</label>
       <div style="display:flex;gap:16px;margin-top:6px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -10998,7 +11024,9 @@ async function saveUser(id){
   const PRIO=['admin','aduanas','operativa','almacen','transportista','airport_cargo','control_rpa'];
   const rolPrimario=PRIO.find(r=>rolesSeleccionados.includes(r))||rolesSeleccionados[0];
 
-  const obj={nombre:nuevoNombre,email:gv('eu-e')||null,rol:rolPrimario,activo:document.getElementById('eu-activo')?.checked!==false};
+  const modulosMarcados=[...document.querySelectorAll('input[name="eu-modulos"]:checked')].map(cb=>cb.value);
+  const obj={nombre:nuevoNombre,email:gv('eu-e')||null,rol:rolPrimario,activo:document.getElementById('eu-activo')?.checked!==false,
+    modulos_permitidos:modulosMarcados.length>0?modulosMarcados:null};
   const p=gv('eu-p');
   if(p) obj.password_hash=p;
   try{ const mcp=document.getElementById('eu-mcp'); if(mcp) obj.must_change_password=p?true:(mcp.checked||false); }catch(e){}
@@ -11053,6 +11081,15 @@ async function saveUser(id){
   }
 
   await logAct('usuarios',id,nuevoNombre,'editar','rol',null,`${nuevoNombre} · [${rolesSeleccionados.join(',')}]`);
+
+  // 3b. Si se cambió contraseña y el usuario tiene email, actualizar también en auth.users
+  if(p && obj.email){
+    try{
+      // Solo funciona si el admin está editando su propio usuario (sesión activa)
+      const {error:authPwErr}=await sb.auth.updateUser({password:p});
+      if(authPwErr) console.warn('auth.updateUser password:',authPwErr.message);
+    }catch(ae){ console.warn('auth.updateUser exception:',ae?.message); }
+  }
   // Si se editó el propio usuario, actualizar sesión
   if(id===CU?.id){
     CU.nombre=nuevoNombre; CU.email=obj.email; CU.rol=rolPrimario; CU.roles=rolesSeleccionados;
@@ -11891,19 +11928,38 @@ const MODALS={
   after:()=>setTimeout(()=>setupFotos('gl-fi','gl-fpv','gl-fst'),100)
 },
 'nuevo-usuario':{t:'👤 Nuevo usuario',btn:'👤 Crear usuario',
-  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre o email"></div><div class="fg2"><label class="fl2">Email <span style="font-weight:400;color:var(--g400)">(opcional)</span></label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="operativa">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
+  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre o email"></div><div class="fg2"><label class="fl2">Email * <span style="font-size:11px;color:var(--b600);font-weight:500">(obligatorio para acceso JWT)</span></label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="operativa">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
   action:async()=>{
   const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');
   if(!n||!p){alert('Nombre y contraseña son obligatorios');return;}
-  // Usar RPC con SECURITY DEFINER para saltarse RLS en INSERT
+  if(!e){alert('El email es obligatorio para que el usuario pueda acceder correctamente al portal.');return;}
+
+  // 1. Crear en auth.users (Supabase Auth — genera JWT para sesión)
+  let authUserId=null;
+  try{
+    const {data:au,error:ae}=await sb.auth.signUp({email:e.toLowerCase(),password:p,options:{data:{nombre:n}}});
+    if(ae){
+      if(ae.message&&ae.message.includes('already registered')){
+        showToast('⚠️ Este email ya existe en Auth. Se creará solo en la tabla de usuarios.');
+      } else {
+        console.warn('auth.signUp error:',ae.message);
+        showToast('⚠️ Auth: '+ae.message+' — El usuario se crea sin JWT (acceso limitado).');
+      }
+    } else if(au?.user){
+      authUserId=au.user.id;
+    }
+  }catch(ae){ console.warn('auth.signUp exception:',ae?.message); }
+
+  // 2. Crear en tabla usuarios (bcrypt fallback + datos de perfil)
   const {data,error}=await sb.rpc('crear_usuario',{
     p_nombre:n, p_email:e||null, p_password:p, p_rol:r
   });
   if(error){
     // Fallback: INSERT directo si la RPC no existe aún
-    if(error.message && (error.message.includes('crear_usuario') || error.code==='42883')){
+    if(error.message&&(error.message.includes('crear_usuario')||error.code==='42883')){
       const obj={nombre:n,rol:r,password_hash:p};
       if(e)obj.email=e;
+      if(authUserId)obj.id=authUserId; // sincronizar ID con auth.users
       const {error:e2}=await sb.from('usuarios').insert(obj);
       if(e2){alert('Error al crear usuario: '+e2.message+'\n\nEjecuta el SQL fix_rls_usuarios.sql en Supabase.');return;}
     } else {
@@ -11911,7 +11967,8 @@ const MODALS={
     }
   }
   await logAct('usuarios',null,n,'crear','nombre',null,`${n} · ${r}`);
-  showToast('✅ Usuario creado: '+n);closeModal();loadView(CV);
+  showToast('✅ Usuario creado: '+n+(authUserId?' (Auth ✓)':' (sin JWT — revisa Auth)'));
+  closeModal();loadView(CV);
 }
 },
 'nueva-empresa':{t:'🏢 Nueva empresa',btn:'🏢 Crear empresa',
