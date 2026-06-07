@@ -11051,46 +11051,62 @@ async function saveUser(id){
     const r2=await sb.from('usuarios').update(obj).eq('id',id).select();
     saveErr=r2.error; saved=r2.data;
   }
+  // Retry sin modulos_permitidos si la columna no existe aún en el schema
+  if(saveErr&&saveErr.message&&saveErr.message.includes('modulos_permitidos')){
+    console.warn('⚠️ Columna modulos_permitidos no existe — ejecuta permisos_sistema.sql en Supabase');
+    delete obj.modulos_permitidos;
+    const r3=await sb.from('usuarios').update(obj).eq('id',id).select();
+    saveErr=r3.error; saved=r3.data;
+    if(!saveErr) showToast('⚠️ Guardado sin modulos_permitidos — ejecuta permisos_sistema.sql en Supabase','warn');
+  }
   if(saveErr){showToast('❌ Error al guardar: '+saveErr.message);return;}
   if(!saved||!saved.length){showToast('❌ No se actualizó ningún usuario — comprueba la conexión');return;}
 
   // 2. Sincronizar als_usuario_roles: eliminar los que ya no están, insertar los nuevos
-  const {data:rolesActuales}=await sb.from('als_usuario_roles').select('rol').eq('usuario_id',id);
-  const actualesSet=new Set((rolesActuales||[]).map(r=>r.rol));
   const nuevosSet=new Set(rolesSeleccionados);
-  const aEliminar=[...actualesSet].filter(r=>!nuevosSet.has(r));
-  const aInsertar=[...nuevosSet].filter(r=>!actualesSet.has(r));
-  if(aEliminar.length) await sb.from('als_usuario_roles').delete().eq('usuario_id',id).in('rol',aEliminar);
-  if(aInsertar.length) await sb.from('als_usuario_roles').insert(aInsertar.map(r=>({usuario_id:id,rol:r})));
+  try{
+    const {data:rolesActuales,error:reErr}=await sb.from('als_usuario_roles').select('rol').eq('usuario_id',id);
+    if(reErr) throw reErr;
+    const actualesSet=new Set((rolesActuales||[]).map(r=>r.rol));
+    const aEliminar=[...actualesSet].filter(r=>!nuevosSet.has(r));
+    const aInsertar=[...nuevosSet].filter(r=>!actualesSet.has(r));
+    if(aEliminar.length){ const {error:delRErr}=await sb.from('als_usuario_roles').delete().eq('usuario_id',id).in('rol',aEliminar); if(delRErr) throw delRErr; }
+    if(aInsertar.length){ const {error:insRErr}=await sb.from('als_usuario_roles').insert(aInsertar.map(r=>({usuario_id:id,rol:r}))); if(insRErr) throw insRErr; }
+  }catch(e){
+    console.warn('als_usuario_roles sync error:',e.message,'ejecuta permisos_sistema.sql');
+  }
 
-  // 3. Guardar permisos personalizados del usuario
+  // 3. Guardar permisos personalizados del usuario en als_usuario_permisos
   const COLS=['puede_ver','puede_crear','puede_editar','puede_eliminar','puede_exportar'];
   const permCbs=document.querySelectorAll('#eu-perms-table input[type=checkbox][data-mod]');
   if(permCbs.length){
-    // Agrupar por módulo
-    const permsPorMod={};
-    permCbs.forEach(cb=>{
-      const mod=cb.dataset.mod; const col=cb.dataset.col;
-      if(!permsPorMod[mod]) permsPorMod[mod]={};
-      permsPorMod[mod][col]=cb.checked;
-    });
-    // Comparar con valores de rol para guardar solo donde hay override
-    const rolesActualesArr=[...nuevosSet];
-    const {data:rolRef}=rolesActualesArr.length ? await sb.from('als_permisos_rol').select('*').in('rol',rolesActualesArr) : {data:[]};
-    const rolRefMap={};
-    (rolRef||[]).forEach(p=>{ if(!rolRefMap[p.modulo]) rolRefMap[p.modulo]={}; COLS.forEach(col=>{ rolRefMap[p.modulo][col]=rolRefMap[p.modulo][col]||!!p[col]; }); });
-
-    // Filas donde al menos un valor difiere del rol → guardar como override
-    const overrides=[];
-    Object.entries(permsPorMod).forEach(([mod,perms])=>{
-      const rolMod=rolRefMap[mod]||{};
-      const tieneOverride=COLS.some(col=>perms[col]!==(rolMod[col]||false));
-      if(tieneOverride) overrides.push({usuario_id:id,modulo:mod,...Object.fromEntries(COLS.map(c=>[c,perms[c]]))});
-    });
-
-    // Eliminar overrides previos y reinsertar los actuales
-    await sb.from('als_usuario_permisos').delete().eq('usuario_id',id);
-    if(overrides.length) await sb.from('als_usuario_permisos').insert(overrides);
+    try{
+      const permsPorMod={};
+      permCbs.forEach(cb=>{
+        const mod=cb.dataset.mod; const col=cb.dataset.col;
+        if(!permsPorMod[mod]) permsPorMod[mod]={};
+        permsPorMod[mod][col]=cb.checked;
+      });
+      const rolesActualesArr=[...nuevosSet];
+      const {data:rolRef}=rolesActualesArr.length ? await sb.from('als_permisos_rol').select('*').in('rol',rolesActualesArr) : {data:[]};
+      const rolRefMap={};
+      (rolRef||[]).forEach(p=>{ if(!rolRefMap[p.modulo]) rolRefMap[p.modulo]={}; COLS.forEach(col=>{ rolRefMap[p.modulo][col]=rolRefMap[p.modulo][col]||!!p[col]; }); });
+      const overrides=[];
+      Object.entries(permsPorMod).forEach(([mod,perms])=>{
+        const rolMod=rolRefMap[mod]||{};
+        const tieneOverride=COLS.some(col=>perms[col]!==(rolMod[col]||false));
+        if(tieneOverride) overrides.push({usuario_id:id,modulo:mod,...Object.fromEntries(COLS.map(c=>[c,perms[c]]))});
+      });
+      const {error:delPErr}=await sb.from('als_usuario_permisos').delete().eq('usuario_id',id);
+      if(delPErr) throw delPErr;
+      if(overrides.length){
+        const {error:insPErr}=await sb.from('als_usuario_permisos').insert(overrides);
+        if(insPErr) throw insPErr;
+      }
+    }catch(e){
+      console.warn('als_usuario_permisos save error:',e.message,'ejecuta permisos_sistema.sql');
+      showToast('Permisos personalizados no guardados: '+e.message,'warn');
+    }
   }
 
   await logAct('usuarios',id,nuevoNombre,'editar','rol',null,`${nuevoNombre} · [${rolesSeleccionados.join(',')}]`);
