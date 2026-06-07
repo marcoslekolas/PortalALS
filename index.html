@@ -1156,7 +1156,7 @@ if('serviceWorker' in navigator){
 // ── Load Supabase SDK then boot app ──
 (function(){
   var s=document.createElement('script');
-  s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+  s.src='https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js';
   s.onload=function(){ 
     // SDK listo — inicializar cliente Supabase
     try{
@@ -2070,16 +2070,23 @@ function iniciarVerificacionSesion(){
   setInterval(async function(){
     if(!CU||!CU.id) return;
     try {
-      const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id+'&select=id,activo&limit=1',{
-        headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}
-      });
-      if(!r.ok){ doLogout(); return; }
-      const data=await r.json();
-      // Si el usuario no existe o está desactivado, cerrar sesión
-      if(!data||!data.length||data[0].activo===false){
-        showToast('Sesión expirada. Vuelve a iniciar sesión.');
-        setTimeout(doLogout, 2000);
+      // Verificar si la sesión Supabase Auth sigue activa
+      const {data:sessionData}=await sb.auth.getSession();
+      if(sessionData&&sessionData.session){
+        // Sesión JWT activa — verificar activo en usuarios con el JWT del usuario
+        const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id+'&select=id,activo&limit=1',{
+          headers:{apikey:SB_KEY,Authorization:'Bearer '+sessionData.session.access_token}
+        });
+        if(r.ok){
+          const data=await r.json();
+          if(data&&data.length&&data[0].activo===false){
+            showToast('Tu cuenta ha sido desactivada.');
+            setTimeout(doLogout,2000);
+          }
+        }
+        // Si da 400 (UUID no sincronizado), no cerrar sesión — simplemente ignorar
       }
+      // Si no hay JWT (login vía bcrypt), no cerrar sesión — es un acceso legítimo
     } catch(e){ /* sin conexión — no cerrar sesión */ }
   }, 30*60*1000); // cada 30 minutos
 }
@@ -2560,7 +2567,10 @@ function showHome(){
     </div>`;
 
   const _rolesHome = CU.roles||[CU.rol];
-  if(_rolesHome.some(r=>['admin','operativa','aduanas','airport_cargo'].includes(r)))
+  // Airport: usar _puedeModulo si ya está calculado, sino calcular aquí
+  const _puedeAirportHome = _rolesHome.some(r=>['admin','aduanas','airport_cargo'].includes(r)) &&
+    (!((CU.modulos_permitidos&&CU.modulos_permitidos.length>0)) || (CU.modulos_permitidos||[]).includes('airport_cargo'));
+  if(_puedeAirportHome)
     c.innerHTML+=`<div class="hm-card hm-card-air" style="position:relative" onclick="window.location.href='airport_cargo.html'">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">✈️</div>
@@ -2575,7 +2585,10 @@ function showHome(){
     </div>`;
 
   // Módulo Aduanas — visible para rol aduanas/admin + sub-roles de aduanas (taric, facturacion, eori)
-  if(_rolesHome.some(r=>['aduanas','admin','taric','facturacion','eori'].includes(r)))
+  // Y sólo si modulos_permitidos no existe O incluye al menos un módulo de aduanas
+  const _mpHome = (CU.modulos_permitidos&&CU.modulos_permitidos.length>0) ? CU.modulos_permitidos : null;
+  const _tieneAlgunModuloAduanas = !_mpHome || _mpHome.some(m=>['taric','tarifas','eori','dua'].includes(m));
+  if(_rolesHome.some(r=>['aduanas','admin','taric','facturacion','eori'].includes(r)) && _tieneAlgunModuloAduanas)
     c.innerHTML+=`<button type="button" class="hm-card" style="background:linear-gradient(145deg,#0c4a6e,#0369a1);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="abrirMenuAduanas()" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
       <div class="hm-card-icon">🏛️</div>
       <div class="hm-card-body">
