@@ -1162,6 +1162,7 @@ if('serviceWorker' in navigator){
   try {
     // 1. PortalGuard carga el SDK y crea sb. window.sb queda asignado.
     await PortalGuard.bootstrap();
+    sb = PortalGuard.sb || window.sb;  // sincronizar referencia local
 
     // 2. ¿Hay sesión JWT válida?
     if (await PortalGuard.hasSession()) {
@@ -1898,8 +1899,9 @@ const APP_VERSION_DATE = '04/04/2026';
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 
-// ── Cliente Supabase — inicializado en s.onload tras cargar el SDK ────
-let sb;
+// ── Cliente Supabase — inicializado por PortalGuard.bootstrap() ────
+// var (no let) para que coincida con window.sb que asigna PortalGuard
+var sb;
 
 // ── REST helper directo (no depende del SDK) ───────────────
 async function sbREST(table,params='',method='GET',body=null){
@@ -2183,6 +2185,7 @@ async function doLogin(){
   try{
     // Asegurar que PortalGuard ha cargado el SDK
     await PortalGuard.bootstrap();
+    sb = PortalGuard.sb || window.sb;  // sincronizar referencia local
 
     // ── Login UNIFICADO: solo Supabase Auth (sin fallback bcrypt) ────────
     const ar = await sb.auth.signInWithPassword({ email: email.toLowerCase(), password: pass });
