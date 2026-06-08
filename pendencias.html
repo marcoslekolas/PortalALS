@@ -6,6 +6,7 @@
 <title>Customs Way · Control RPA</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="auth-guard.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -322,21 +323,6 @@ td.clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0}
 
 <script>
 'use strict';
-// ── GUARD ────────────────────────────────────────────────────────
-var CU_GLOBAL = null;
-try{ CU_GLOBAL = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null'); }catch(e){}
-if(!CU_GLOBAL || !['admin','aduanas'].includes(CU_GLOBAL.rol)){
-  document.body.innerHTML =
-    '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--g50)">'+
-    '<div style="text-align:center;max-width:380px;padding:40px;background:var(--w);border-radius:16px;border:1px solid var(--g200);box-shadow:0 8px 32px rgba(0,0,0,.08)">'+
-    '<div style="font-size:40px;margin-bottom:16px">&#128274;</div>'+
-    '<div style="font-size:20px;font-weight:800;color:var(--g900);margin-bottom:8px">Acceso restringido</div>'+
-    '<div style="font-size:13px;color:var(--g600);margin-bottom:24px;line-height:1.6">'+
-    'El m&#243;dulo <strong>Control RPA</strong> requiere sesi&#243;n activa<br>con rol <strong>Administrador</strong> o <strong>Aduanas</strong>.</div>'+
-    '<a href="index.html" style="display:inline-flex;align-items:center;gap:8px;background:var(--b600);color:#fff;text-decoration:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:700">'+
-    '&#8592; Iniciar sesi&#243;n</a></div></div>';
-}
-
 // ── Supabase ─────────────────────────────────────────────────────
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
@@ -346,19 +332,28 @@ const AGENTE={nombre:'Algeciras Logistic Solutions SL',nif:'B72058449',titulo:'R
 const EL={archivado:'Archivado',liquidado:'Liquidado',e_liquidacion:'E.Liquidaci\xf3n',prorroga:'Pr\xf3rroga',urgente:'Urgente',vencido:'Vencido',sin_fecha:'Sin fecha',en_tiempo:'En tiempo'};
 let sb,datos=[],fE='all',oC='fecha_limite',oD=1,selI=null,editI=null;
 let _orKey=localStorage.getItem('als_openrouter_key')||'';
-try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});}catch(e){}
-if(sb&&sb.auth){sb.auth.getSession().then(function(r){if(!(r&&r.data&&r.data.session)){location.replace('index.html');}});}
+var CU_GLOBAL = null;
 
-// ── Header usuario ───────────────────────────────────────────────
-if(CU_GLOBAL){
-  const init=(CU_GLOBAL.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-  const av=document.getElementById('hdr-av');if(av)av.textContent=init;
-  const nm=document.getElementById('hdr-name');if(nm)nm.textContent=(CU_GLOBAL.nombre||'').split(' ').slice(0,2).join(' ');
-  if(CU_GLOBAL.rol==='admin'){
-    const hr=document.querySelector('.hdr-r');
-    if(hr){const a=document.createElement('a');a.href='despacho.html';a.className='hdr-a';a.textContent='\uD83D\uDCC5 Despacho';hr.insertBefore(a,hr.querySelector('.hdr-a'));}
+// ── GUARD vía PortalGuard ────────────────────────────────────────
+(async function(){
+  const ok = await PortalGuard.require('control_rpa');
+  if(!ok) return;  // ya redirigió o mostró acceso denegado
+  sb = PortalGuard.sb;
+  CU_GLOBAL = PortalGuard.CU;
+
+  // ── Header usuario ───────────────────────────────────────────────
+  if(CU_GLOBAL){
+    const init=(CU_GLOBAL.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const av=document.getElementById('hdr-av');if(av)av.textContent=init;
+    const nm=document.getElementById('hdr-name');if(nm)nm.textContent=(CU_GLOBAL.nombre||'').split(' ').slice(0,2).join(' ');
+    if(PortalGuard.esAdmin){
+      const hr=document.querySelector('.hdr-r');
+      if(hr){const a=document.createElement('a');a.href='despacho.html';a.className='hdr-a';a.textContent='\uD83D\uDCC5 Despacho';hr.insertBefore(a,hr.querySelector('.hdr-a'));}
+    }
   }
-}
+  // Inicializar app
+  if(typeof cargar==='function') cargar();
+})();
 
 // ── Supabase CRUD ────────────────────────────────────────────────
 async function cargar(){
@@ -745,7 +740,7 @@ document.addEventListener('keydown',e=>{
   }
 });
 
-cargar();
+// cargar() se llama desde el async IIFE del guard cuando sb esté listo
 </script>
 </body>
 </html>

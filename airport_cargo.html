@@ -18,6 +18,7 @@
   document.head.appendChild(lnk);
 })();
 </script>
+<script src="auth-guard.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -504,26 +505,13 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 let sb;
-// Usuario logado — leído de sessionStorage (igual que el portal principal)
 var CU=null;
-try{CU=JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null');}catch(e){}
-(function(){
-  const s=document.createElement('script');
-  s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-  s.onload=function(){
-    sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
-    // Guard de sesión: sin JWT de Auth, volver al login (index.html)
-    sb.auth.getSession().then(function(res){
-      var sess=res&&res.data&&res.data.session;
-      if(sess){ init(); }
-      else {
-        var base=window.location.href.replace(/\/airport_cargo\.html.*$/,'');
-        window.location.replace(base+'/index.html');
-      }
-    }).catch(function(){ init(); });
-  };
-  s.onerror=function(){document.body.innerHTML='<p style="padding:40px;color:red">Error cargando SDK</p>';};
-  document.head.appendChild(s);
+(async function(){
+  const ok = await PortalGuard.require('airport_cargo');
+  if(!ok) return;  // ya redirigió o mostró acceso denegado
+  sb = PortalGuard.sb;
+  CU = PortalGuard.CU;
+  init();
 })();
 
 // ── NAVEGACIÓN ───────────────────────────────────────────

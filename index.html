@@ -1152,48 +1152,69 @@ if('serviceWorker' in navigator){
 </div>
 <div id="toast" class="toast"></div>
 
+<!-- AUTH GUARD: centraliza autenticación, permisos e inactividad. -->
+<!-- DEBE cargarse antes que cualquier otro JS del portal. -->
+<script src="auth-guard.js"></script>
+
 <script type="text/javascript" id="als-js">
-// ── Load Supabase SDK then boot app ──
-(function(){
-  var s=document.createElement('script');
-  s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-  s.onload=function(){ 
-    // SDK listo — inicializar cliente Supabase
-    try{
-      sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
-    }catch(e){ console.warn('SDK createClient:',e); }
-    function _navPendiente(){
-      if(window._pendingMod){
-        var dest=window._pendingMod; window._pendingMod=null;
-        if(dest==='operativa') enterMod('operativa');
-        else if(dest==='almacen') enterMod('almacen');
-        else showHome();
-      }
-    }
-    // Guard de sesión: exigir JWT de Auth. Sin sesión, limpiar estado y mostrar login
-    // (evita "UI logueada sin JWT" que, tras el cierre de seguridad, deja todo en blanco).
-    if(sb && sb.auth && sb.auth.getSession){
-      sb.auth.getSession().then(function(res){
-        var sess = res && res.data && res.data.session;
-        if(sess){ _navPendiente(); }
-        else {
-          try{ if(typeof clearSession==='function') clearSession(); }catch(_){}
-          CU=null; window._pendingMod=null;
-          try{ var ap=document.getElementById('app'); if(ap) ap.style.display='none'; }catch(_){}
-          try{ var sh=document.getElementById('screen-home'); if(sh) sh.style.display='none'; }catch(_){}
-          var sl=document.getElementById('screen-login'); if(sl) sl.style.display='flex';
+// ── Load Supabase SDK and bootstrap session via PortalGuard ──
+(async function(){
+  try {
+    // 1. PortalGuard carga el SDK y crea sb. window.sb queda asignado.
+    await PortalGuard.bootstrap();
+
+    // 2. ¿Hay sesión JWT válida?
+    if (await PortalGuard.hasSession()) {
+      // Sí: cargar perfil + permisos completos
+      const result = await PortalGuard.refresh();
+      if (result.ok) {
+        CU = PortalGuard.CU;
+        // Sincronizar last_activity y arrancar inactividad
+        // (PortalGuard.require() lo haría, pero aquí estamos en el hub principal
+        //  donde el "módulo" es null → solo verificar sesión y arrancar inactividad)
+        try { localStorage.setItem('als_last_activity', String(Date.now())); } catch(e){}
+        // Si había un módulo pendiente (deep-link), navegarlo; sino, mostrar home
+        if (window._pendingMod) {
+          const dest = window._pendingMod; window._pendingMod = null;
+          if (dest === 'operativa') enterMod('operativa');
+          else if (dest === 'almacen') enterMod('almacen');
+          else showHome();
+        } else {
+          showHome();
         }
-      }).catch(function(){ _navPendiente(); });
-    } else { _navPendiente(); }
-    // Ping silencioso de conectividad (vista pública, accesible sin sesión)
-    fetch(SB_URL+'/rest/v1/tracking_publico?select=id&limit=1',{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}})
-      .catch(function(e){ console.warn('Ping:',e); });
-  };
-  s.onerror=function(){
-    var e=document.getElementById('li-err');
-    if(e){e.style.color='red';e.textContent='⚠️ Error cargando SDK. Verifica tu conexión.';}
-  };
-  document.head.appendChild(s);
+        // Iniciar verificación periódica y notificaciones push
+        if (typeof iniciarVerificacionSesion === 'function') iniciarVerificacionSesion();
+        if (typeof solicitarPermisoPush === 'function') solicitarPermisoPush();
+      } else {
+        // JWT inválido o usuario sin perfil activo → forzar logout
+        try { await sb.auth.signOut(); } catch(e){}
+        try { if (typeof clearSession === 'function') clearSession(); } catch(_){}
+        CU = null; window._pendingMod = null;
+        try { document.getElementById('app').style.display = 'none'; } catch(_){}
+        try { document.getElementById('screen-home').style.display = 'none'; } catch(_){}
+        const sl = document.getElementById('screen-login');
+        if (sl) sl.style.display = 'flex';
+      }
+    } else {
+      // Sin sesión: mostrar login
+      try { if (typeof clearSession === 'function') clearSession(); } catch(_){}
+      CU = null; window._pendingMod = null;
+      try { document.getElementById('app').style.display = 'none'; } catch(_){}
+      try { document.getElementById('screen-home').style.display = 'none'; } catch(_){}
+      const sl = document.getElementById('screen-login');
+      if (sl) sl.style.display = 'flex';
+    }
+
+    // Ping silencioso de conectividad (vista pública)
+    fetch(SB_URL+'/rest/v1/tracking_publico?select=id&limit=1', {
+      headers: { apikey: SB_KEY, Authorization: 'Bearer '+SB_KEY }
+    }).catch(function(e){ console.warn('Ping:', e); });
+
+  } catch(err) {
+    console.error('Bootstrap error:', err);
+    const e = document.getElementById('li-err');
+    if (e) { e.style.color = 'red'; e.textContent = '⚠️ Error cargando aplicación. Verifica tu conexión.'; }
+  }
 })();
 
 // ── ALS App Code (global scope) ──
@@ -2155,51 +2176,20 @@ async function doLogin(){
       if(errEl) errEl.innerHTML='⛔ Demasiados intentos. Espera '+mins+' min.<br><button onclick="showRecuperarPass()" style="margin-top:8px;background:var(--b600);color:#fff;border:none;border-radius:var(--r);padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;width:100%;font-family:var(--f)">🔑 Restablecer contraseña</button>';
       return;
     }
-    if(rl.blocked && now >= rl.blocked){
-      localStorage.removeItem(rlKey); // reset after block expires
-    }
+    if(rl.blocked && now >= rl.blocked){ localStorage.removeItem(rlKey); }
   } catch(e){}
 
   if(btn){btn.textContent='Conectando…';btn.disabled=true;}
   try{
-    let rows=null;
+    // Asegurar que PortalGuard ha cargado el SDK
+    await PortalGuard.bootstrap();
 
-    // 1. Supabase Auth (JWT) — el acceso es por EMAIL
-    try{
-      const ar=await sb.auth.signInWithPassword({ email: email.toLowerCase(), password: pass });
-      if(!ar.error && ar.data && ar.data.user){
-        const { data: perfil } = await sb.from('usuarios').select('*').eq('email', email.toLowerCase()).maybeSingle();
-        if(perfil && perfil.activo!==false){ try{ delete perfil.password_hash; delete perfil.password; }catch(e){} rows=[perfil]; console.log('✅ Login vía Supabase Auth (JWT)'); }
-        else if(perfil && perfil.activo===false){ try{ await sb.auth.signOut(); }catch(e){} }
-      }
-    }catch(e){ console.warn('Auth signIn:',e); }
+    // ── Login UNIFICADO: solo Supabase Auth (sin fallback bcrypt) ────────
+    const ar = await sb.auth.signInWithPassword({ email: email.toLowerCase(), password: pass });
 
-    // 2. Fallback transitorio: RPC bcrypt (se retira en la Fase 2 del cierre de seguridad)
-    if(!rows||!rows.length){
-      try{
-        const rpcR=await fetch(SB_URL+'/rest/v1/rpc/verificar_password',{
-          method:'POST',
-          headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Accept:'application/json'},
-          body:JSON.stringify({p_nombre:email,p_password:pass})
-        });
-        if(rpcR.ok){ const data=await rpcR.json(); if(data&&data.length>0) rows=data; }
-        if(!rows||!rows.length){
-          const rpcR2=await fetch(SB_URL+'/rest/v1/rpc/verificar_password_email',{
-            method:'POST',
-            headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Accept:'application/json'},
-            body:JSON.stringify({p_email:email,p_password:pass})
-          });
-          if(rpcR2.ok){ const data2=await rpcR2.json(); if(data2&&data2.length>0) rows=data2; }
-        }
-        if(rows&&rows.length) console.warn('⚠️ Login vía RPC bcrypt (sin JWT). Revisa la importación a Supabase Auth para este usuario.');
-      }catch(rpcErr){ console.warn('RPC fallback:',rpcErr.message); }
-    }
-
-    if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
-    if(!rows||rows.length===0){
-      // Log intento fallido
-      logAuth('login_fail', null, email, 'Credenciales incorrectas');
-      // Increment failed attempts
+    if(ar.error || !ar.data || !ar.data.user){
+      // Login fallido — incrementar contador y mostrar mensaje
+      logAuth('login_fail', null, email, ar.error ? ar.error.message : 'Credenciales incorrectas');
       try {
         const rl=JSON.parse(localStorage.getItem('als_login_rl')||'{}');
         rl.attempts=(rl.attempts||0)+1;
@@ -2218,44 +2208,48 @@ async function doLogin(){
       if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
       return;
     }
-    // Login OK — reset rate limit + log
+
+    // ── Login OK: cargar perfil + permisos vía PortalGuard ───────────────
+    const result = await PortalGuard.refresh();
+    if(!result.ok){
+      // Auth válido pero usuario no encontrado en tabla usuarios o inactivo
+      try{ await sb.auth.signOut(); }catch(e){}
+      if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;}
+      if(errEl){
+        if(result.reason==='profile_not_found') errEl.textContent='Usuario sin perfil activo. Contacta con el administrador.';
+        else if(result.reason==='rpc_error') errEl.textContent='Error de configuración del servidor. Contacta con el administrador.';
+        else errEl.textContent='No se pudo cargar tu perfil.';
+      }
+      logAuth('login_fail', null, email, 'profile_load_failed: '+result.reason);
+      return;
+    }
+
+    CU = PortalGuard.CU;
     try { localStorage.removeItem('als_login_rl'); } catch(e){}
-    logAuth('login_ok', rows[0].id, rows[0].nombre||email, rows[0].rol||'');
-    // Pedir permiso para notificaciones del sistema (silencioso, sin modal)
+    logAuth('login_ok', CU.id, CU.nombre||email, CU.rol||'');
+    saveSession(CU);  // persistir mínimo para compatibilidad con módulos antiguos
     pedirPermisoNotif().catch(()=>{});
-    CU=rows[0];
-    try{ delete CU.password_hash; delete CU.password; }catch(e){}
-    saveSession(CU);
-    // Init SDK (best effort)
-    if(!sb){try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});}catch(e3){console.warn('SDK init:',e3);}}
-    // Cargar roles del usuario (multi-rol) desde als_usuario_roles
-    try{
-      const {data:rD}=await sb.from('als_usuario_roles').select('rol').eq('usuario_id',CU.id);
-      CU.roles = rD&&rD.length ? rD.map(r=>r.rol) : (CU.rol?[CU.rol]:[]);
-    }catch(e){ CU.roles = CU.rol?[CU.rol]:[]; }
-    // Mantener CU.rol como rol primario (el de mayor nivel para comprobaciones admin)
-    if(!CU.roles.includes(CU.rol) && CU.roles.length) CU.rol = CU.roles.includes('admin')?'admin':CU.roles[0];
-    saveSession(CU);
-    // Cargar permisos efectivos (unión de roles + overrides de usuario)
-    await cargarPermisosUsuario(CU.id, CU.roles);
-    // Update last access
-    fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,{method:'PATCH',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({ultimo_acceso:new Date().toISOString()})}).catch(()=>{});
-    // Registrar sesión única: si hay otra sesión activa del mismo usuario, la invalida
+
+    // Actualizar ultimo_acceso (best effort, ya no necesita JWT manual)
+    sb.from('usuarios').update({ultimo_acceso:new Date().toISOString()}).eq('id',CU.id).then(()=>{},()=>{});
+
+    // Registrar sesión única
     _registrarSesionUnica(CU.id);
-    if(typeof window._inactivityStart==='function') window._inactivityStart();
-    // Check if must change password
-    if(CU.must_change_password){showChangePwd();return;}
+
+    // Cambio de password obligatorio
+    if(CU.must_change_password){ showChangePwd(); return; }
+
     iniciarVerificacionSesion();
-    solicitarPermisoPush(); // solicitar permiso notificaciones push
-    // Onboarding — solo si es la primera vez
+    solicitarPermisoPush();
+
+    // Onboarding
     try{
       const onbKey = 'als_onb_'+CU.id;
-      if(!localStorage.getItem(onbKey)){
-        setTimeout(()=>iniciarOnboarding(), 800);
-      }
+      if(!localStorage.getItem(onbKey)) setTimeout(()=>iniciarOnboarding(), 800);
     }catch(e){}
-    // Morning Briefing — mostrar antes de navegar al módulo
-    if(['admin','operativa','aduanas'].includes(CU.rol)){
+
+    // Morning Briefing — solo para roles operativos
+    if(CU.roles && (CU.roles.includes('admin')||CU.roles.includes('operativa')||CU.roles.includes('aduanas'))){
       cargarMorningBriefing();
     }
     showHome();
@@ -3890,15 +3884,21 @@ function abrirTrackingAWB(awb){
 }
 
 function doLogout(){
-  if(typeof window._inactivityStop==='function') window._inactivityStop();
   detenerRealtime();
   logAuth('logout', CU?.id, CU?.nombre, CU?.rol||'');
-  try{ if(sb&&sb.auth) sb.auth.signOut(); }catch(e){}
-  CU=null;MOD=null;clearSession();
-  document.getElementById('app').style.display='none';
-  document.getElementById('screen-home').style.display='none';
-  document.getElementById('screen-login').style.display='flex';
-  document.getElementById('li-pass').value='';
+  // PortalGuard.logout() hace: signOut, limpia localStorage,
+  // dispara listeners y redirige al login. Limpia primero el estado UI.
+  CU=null; MOD=null; clearSession();
+  try {
+    document.getElementById('app').style.display='none';
+    document.getElementById('screen-home').style.display='none';
+    document.getElementById('screen-login').style.display='flex';
+    document.getElementById('li-pass').value='';
+  } catch(e) {}
+  // PortalGuard hará signOut + redirect, pero como estamos en index.html
+  // sería un loop. Solo signOut local.
+  try { if(window.PortalGuard && window.PortalGuard.sb && window.PortalGuard.sb.auth) window.PortalGuard.sb.auth.signOut(); } catch(e) {}
+  try { localStorage.removeItem('als_last_activity'); } catch(e) {}
 }
 
 // ── PUNTO 20: Log de autenticación ───────────────────────────
@@ -3924,60 +3924,36 @@ async function logAuth(evento, usuarioId, usuarioNombre, detalles){
 // ── PUNTO 19+20: Permisos por rol ────────────────────────────
 // Inicializar con acceso total hasta que se carguen los permisos reales
 // Esto evita bloquear al usuario si los permisos tardan en cargar
-let _permisos = {__admin: true}; // permisivo por defecto
-let _permisosListos = false;
+// ── Sistema de permisos: delegado a PortalGuard ──────────────
+// PortalGuard mantiene el estado real (perfil, roles, modulos_permitidos
+// y matriz de permisos por módulo/acción) en sincronía con Supabase via
+// la RPC app_get_session_data(). No hay fallback permisivo:
+// si los permisos no están cargados, puedeAcceder() devuelve FALSE.
 
-// Wrapper de compatibilidad — usa cargarPermisosUsuario internamente
-async function cargarPermisosRol(rol){
-  const roles = CU?.roles?.length ? CU.roles : (rol ? [rol] : []);
-  await cargarPermisosUsuario(CU?.id, roles);
+// Wrapper de compatibilidad para código antiguo
+async function cargarPermisosRol(_rol){
+  await PortalGuard.refresh();
+  if (window.PortalGuard.CU) CU = window.PortalGuard.CU;
 }
 
-// Carga permisos efectivos: unión de roles + overrides personalizados de usuario
-async function cargarPermisosUsuario(usuarioId, roles){
-  if(!roles || !roles.length){ _permisosListos=true; return; }
-  if(roles.includes('admin')){
-    _permisos={__admin:true}; _permisosListos=true; return;
-  }
-  if(!sb){ _permisos={}; _permisosListos=true; return; }
-  const COLS=['puede_ver','puede_crear','puede_editar','puede_eliminar','puede_exportar'];
-  try{
-    // 1. Permisos de todos los roles (unión: si CUALQUIER rol lo permite, el usuario lo tiene)
-    const {data:rolPerms} = await sb.from('als_permisos_rol').select('*').in('rol', roles);
-    _permisos={};
-    if(rolPerms && rolPerms.length){
-      rolPerms.forEach(p=>{
-        if(!_permisos[p.modulo]) _permisos[p.modulo]={puede_ver:false,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false};
-        COLS.forEach(col=>{ _permisos[p.modulo][col] = _permisos[p.modulo][col] || !!p[col]; });
-      });
-    } else {
-      // Fallback sin datos en BD
-      _permisos={'*':{puede_ver:true,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false}};
-    }
-    // 2. Overrides personalizados del usuario (null=heredar, true/false=forzar)
-    if(usuarioId){
-      const {data:userPerms} = await sb.from('als_usuario_permisos').select('*').eq('usuario_id', usuarioId);
-      (userPerms||[]).forEach(p=>{
-        if(!_permisos[p.modulo]) _permisos[p.modulo]={puede_ver:false,puede_crear:false,puede_editar:false,puede_eliminar:false,puede_exportar:false};
-        COLS.forEach(col=>{ if(p[col]!==null && p[col]!==undefined) _permisos[p.modulo][col]=p[col]; });
-      });
-    }
-  }catch(e){
-    console.warn('cargarPermisosUsuario error:',e.message);
-    _permisos={__admin:false};
-  }
-  _permisosListos=true;
+async function cargarPermisosUsuario(_usuarioId, _roles){
+  await PortalGuard.refresh();
+  if (window.PortalGuard.CU) CU = window.PortalGuard.CU;
 }
 
-function puedeAcceder(modulo, accion = 'ver'){
-  // Si los permisos no están listos aún, dar acceso (evitar bloqueo por timing)
-  if(!_permisosListos) return true;
-  if(_permisos.__admin) return true;
-  const p = _permisos[modulo] || _permisos['*'];
-  if(!p) return false;
-  const mapa = {ver:'puede_ver', crear:'puede_crear', editar:'puede_editar', eliminar:'puede_eliminar', exportar:'puede_exportar'};
-  return p[mapa[accion]] === true;
+function puedeAcceder(modulo, accion){
+  return window.PortalGuard ? window.PortalGuard.puedeAcceder(modulo, accion||'ver') : false;
 }
+
+// Getter compatibilidad (algunos sitios leen _permisos)
+Object.defineProperty(window, '_permisos', {
+  get(){ return window.PortalGuard ? window.PortalGuard.permisos : {}; },
+  configurable: true
+});
+Object.defineProperty(window, '_permisosListos', {
+  get(){ return window.PortalGuard ? window.PortalGuard.ready : false; },
+  configurable: true
+});
 
 
 // ── Log de operación con módulo ───────────────────────────────
@@ -14392,80 +14368,12 @@ async function _sesionDesplazada(){
 }
 
 // ── Cierre automático por inactividad ─────────────────────────────────────────
-// 30 min sin actividad → aviso. 5 min más sin actividad → cierre de sesión.
-(function(){
-  const WARN_MS  = 30 * 60 * 1000;
-  const CLOSE_MS = 35 * 60 * 1000;
-  let _warnTimer, _closeTimer, _warnEl, _lastReset = 0;
-
-  function _clearTimers(){
-    clearTimeout(_warnTimer);
-    clearTimeout(_closeTimer);
-  }
-
-  function _startTimers(){
-    _clearTimers();
-    _warnTimer  = setTimeout(_showWarn, WARN_MS);
-    _closeTimer = setTimeout(_logout,   CLOSE_MS);
-  }
-
-  // Debounce: solo resetea si han pasado al menos 10 segundos desde el último reset
-  function _onActivity(){
-    if(!CU) return;
-    const now = Date.now();
-    if(now - _lastReset < 10000) return; // ignorar si resetó hace <10s
-    _lastReset = now;
-    if(_warnEl){ _warnEl.remove(); _warnEl = null; }
-    _startTimers();
-  }
-
-  function _showWarn(){
-    if(_warnEl || !CU) return;
-    _warnEl = document.createElement('div');
-    _warnEl.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;background:#1e293b;color:#fff;border-radius:14px;padding:16px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(0,0,0,.45);font-size:14px;max-width:420px;width:90%';
-    _warnEl.innerHTML = '<span style="font-size:22px">⏱️</span><div style="flex:1"><div style="font-weight:700;margin-bottom:2px">Sesión a punto de cerrarse</div><div style="opacity:.75;font-size:12px">Tu sesión se cerrará en 5 minutos por inactividad.</div></div><button onclick="window._inactivityKeepAlive()" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer">Seguir</button>';
-    document.body.appendChild(_warnEl);
-  }
-
-  function _logout(){
-    _clearTimers();
-    if(_warnEl){ _warnEl.remove(); _warnEl = null; }
-    if(!CU) return;
-    if(typeof showToast==='function') showToast('🔒 Sesión cerrada por inactividad');
-    setTimeout(()=>{ if(typeof doLogout==='function') doLogout(); }, 800);
-  }
-
-  window._inactivityKeepAlive = function(){
-    if(_warnEl){ _warnEl.remove(); _warnEl = null; }
-    _lastReset = 0; // forzar reset inmediato
-    _onActivity();
-  };
-
-  // Arrancar/parar los timers cuando cambia el estado de sesión
-  window._inactivityStart = function(){
-    _lastReset = 0;
-    _onActivity();
-  };
-  window._inactivityStop = function(){
-    _clearTimers();
-    if(_warnEl){ _warnEl.remove(); _warnEl = null; }
-  };
-
-  // Eventos de actividad del usuario
-  ['mousedown','keydown','touchstart','scroll','click'].forEach(ev=>
-    document.addEventListener(ev, _onActivity, {passive:true})
-  );
-  // mousemove con throttle adicional (evento muy frecuente)
-  document.addEventListener('mousemove', ()=>{
-    if(!CU || Date.now() - _lastReset < 30000) return;
-    _onActivity();
-  }, {passive:true});
-
-  // Detectar login: arrancar cuando CU se establece
-  const _iv = setInterval(()=>{
-    if(CU){ clearInterval(_iv); window._inactivityStart(); }
-  }, 1000);
-})();
+// Gestionado por PortalGuard (auth-guard.js). Persiste last_activity en
+// localStorage, sobrevive recargas y se sincroniza entre pestañas.
+// Stubs de compatibilidad para código antiguo que llamaba _inactivityStart/Stop.
+window._inactivityStart = function(){ /* PortalGuard ya está activo tras require() */ };
+window._inactivityStop  = function(){ /* el logout cierra inactividad */ };
+window._inactivityKeepAlive = function(){ /* PortalGuard captura clicks/eventos */ };
 async function renderDashCharts(exps){
   // ── Barras por semana ──
   const wrap = document.getElementById('dash-chart-wrap');

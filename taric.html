@@ -1015,6 +1015,7 @@ textarea.fi{resize:vertical;min-height:80px}
 
 <div id="toast"></div>
 
+<script src="auth-guard.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 'use strict';
@@ -1337,23 +1338,16 @@ let historialData = [];
 let ultimaClasificacion = null;
 
 // ── Init ──────────────────────────────────────────────────────
-window.addEventListener('load', function(){
+window.addEventListener('load', async function(){
   initDarkMode();
   initSidebar();
   initOpenRouterUI();
-  try { sb = supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:true,autoRefreshToken:true}}); } catch(e){}
-  if(sb&&sb.auth){sb.auth.getSession().then(function(r){
-    if(!(r&&r.data&&r.data.session)){
-      // Aceptar también login vía RPC bcrypt (als_cu sin JWT de Supabase Auth)
-      try{
-        var _cu=JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null');
-        var _cuRoles=_cu?[_cu.rol].concat(_cu.roles||[]).filter(Boolean):[];
-        if(!_cu||!_cu.id||!_cuRoles.some(function(rv){return ['admin','aduanas','oficina','taric'].indexOf(rv)>=0;})){
-          location.replace('index.html');
-        }
-      }catch(e){ location.replace('index.html'); }
-    }
-  });}
+
+  // ── Guard unificado: PortalGuard verifica JWT + permisos + arranca inactividad
+  const ok = await PortalGuard.require('taric');
+  if(!ok) return;  // ya redirigió o mostró acceso denegado
+  sb = PortalGuard.sb;
+
   initUser();
   setupDropZone();
   loadHistorialBadge();
@@ -1365,23 +1359,19 @@ window.addEventListener('load', function(){
 });
 
 function initUser(){
-  try {
-    const cu = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'{}');
-    if(cu && cu.nombre){
-      const init = cu.nombre.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-      const av = document.getElementById('sb-av');
-      const nm = document.getElementById('sb-name');
-      if(av) av.textContent = init;
-      if(nm) nm.textContent = cu.nombre.split(' ').slice(0,2).join(' ');
-      // Avatar header
-      const hdrAv = document.getElementById('hdr-av');
-      const hdrNm = document.getElementById('hdr-user-name');
-      const hdrRl = document.getElementById('hdr-user-role');
-      if(hdrAv) hdrAv.textContent = init;
-      if(hdrNm) hdrNm.textContent = cu.nombre.split(' ').slice(0,2).join(' ');
-      if(hdrRl) hdrRl.textContent = cu.rol || '← Inicio';
-    }
-  } catch(e){}
+  const cu = PortalGuard.CU;
+  if(!cu || !cu.nombre) return;
+  const init = cu.nombre.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const av = document.getElementById('sb-av');
+  const nm = document.getElementById('sb-name');
+  if(av) av.textContent = init;
+  if(nm) nm.textContent = cu.nombre.split(' ').slice(0,2).join(' ');
+  const hdrAv = document.getElementById('hdr-av');
+  const hdrNm = document.getElementById('hdr-user-name');
+  const hdrRl = document.getElementById('hdr-user-role');
+  if(hdrAv) hdrAv.textContent = init;
+  if(hdrNm) hdrNm.textContent = cu.nombre.split(' ').slice(0,2).join(' ');
+  if(hdrRl) hdrRl.textContent = cu.rol || '← Inicio';
 }
 
 // ── Navigation ────────────────────────────────────────────────

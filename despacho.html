@@ -6,6 +6,7 @@
 <title>Customs Way · Despacho Personal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="auth-guard.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -235,29 +236,37 @@ select.ctl:focus{border-color:var(--b500)}
 'use strict';
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
-let sb;try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});}catch(e){}
-if(sb&&sb.auth){sb.auth.getSession().then(function(r){if(!(r&&r.data&&r.data.session)){location.replace('index.html');}});}
-
-// ── GUARD: solo admin ───────────────────────────────────────────
+let sb;
 var CU_ADM = null;
-try{ CU_ADM = JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null'); }catch(e){}
-if(!CU_ADM || CU_ADM.rol !== 'admin'){
-  document.body.innerHTML =
-    '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--g50)">'+
-    '<div style="text-align:center;max-width:380px;padding:40px;background:var(--w);border-radius:16px;border:1px solid var(--g200);box-shadow:0 8px 32px rgba(0,0,0,.08)">'+
-    '<div style="font-size:40px;margin-bottom:16px">&#128274;</div>'+
-    '<div style="font-size:20px;font-weight:800;color:var(--g900);margin-bottom:8px">Acceso restringido</div>'+
-    '<div style="font-size:13px;color:var(--g600);margin-bottom:24px;line-height:1.6">'+
-    'El <strong>Despacho Personal</strong> es una herramienta privada<br>accesible &#250;nicamente para el administrador.</div>'+
-    '<a href="index.html" style="display:inline-flex;align-items:center;gap:8px;background:var(--b600);color:#fff;text-decoration:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:700">'+
-    '&#8592; Volver al portal</a></div></div>';
-}
-// Header: iniciales + nombre
-if(CU_ADM){
+
+// ── GUARD vía PortalGuard: requiere rol admin (módulo "despacho_personal") ─────
+(async function(){
+  // Despacho personal: el módulo "configuracion" en la matriz cubre admin
+  // pero conceptualmente es una herramienta del admin. Verificamos via esAdmin.
+  const ok = await PortalGuard.require(null);  // solo auth, sin módulo concreto
+  if(!ok) return;
+
+  if(!PortalGuard.esAdmin){
+    document.body.innerHTML =
+      '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--g50)">'+
+      '<div style="text-align:center;max-width:380px;padding:40px;background:var(--w);border-radius:16px;border:1px solid var(--g200);box-shadow:0 8px 32px rgba(0,0,0,.08)">'+
+      '<div style="font-size:40px;margin-bottom:16px">&#128274;</div>'+
+      '<div style="font-size:20px;font-weight:800;color:var(--g900);margin-bottom:8px">Acceso restringido</div>'+
+      '<div style="font-size:13px;color:var(--g600);margin-bottom:24px;line-height:1.6">'+
+      'El <strong>Despacho Personal</strong> es una herramienta privada<br>accesible &#250;nicamente para el administrador.</div>'+
+      '<a href="index.html" style="display:inline-flex;align-items:center;gap:8px;background:var(--b600);color:#fff;text-decoration:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:700">'+
+      '&#8592; Volver al portal</a></div></div>';
+    return;
+  }
+
+  sb = PortalGuard.sb;
+  CU_ADM = PortalGuard.CU;
+
+  // Header: iniciales + nombre
   const init=(CU_ADM.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   const av=document.getElementById('hdr-av');if(av)av.textContent=init;
   const nm=document.getElementById('hdr-name');if(nm)nm.textContent=(CU_ADM.nombre||'').split(' ').slice(0,2).join(' ');
-}
+})();
 
 // ── Festivos España 2025-2026 (Andalucía) ─────────────────────────
 const FESTIVOS=new Set(['2025-01-01','2025-01-06','2025-02-28','2025-04-17','2025-04-18','2025-05-01','2025-06-24','2025-08-15','2025-10-12','2025-11-01','2025-12-06','2025-12-08','2025-12-25','2026-01-01','2026-01-06','2026-02-28','2026-04-02','2026-04-03','2026-05-01','2026-06-24','2026-08-15','2026-10-12','2026-11-01','2026-12-06','2026-12-08','2026-12-25']);
