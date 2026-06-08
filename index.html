@@ -1301,14 +1301,15 @@ function renderHomeBrief(){
 }
 function renderHomeQuickLinks(){
   const el=document.getElementById('hm-quick'); if(!el||!CU) return;
-  const role=CU.rol;
   const links=[];
   links.push({t:'Buscar',a:'abrirBusquedaGlobal()',i:'⌕'});
-  if(['admin','operativa','aduanas'].includes(role)) links.push({t:'Dashboard',a:"enterMod('operativa')",i:'⌂'});
-  if(['admin','operativa','aduanas','almacen','transportista'].includes(role)) links.push({t:'Fotos almacén',a:"enterMod('almacen')",i:'▣'});
-  if(['admin','aduanas'].includes(role)) links.push({t:'Aduanas',a:'abrirMenuAduanas()',i:'◇'});
-  if(['admin','aduanas','airport_cargo'].includes(role)) links.push({t:'Airport',a:"window.location.href='airport_cargo.html'",i:'✈'});
-  if(role==='admin') links.push({t:'Usuarios',a:"enterMod('configuracion')",i:'⚙'});
+  if(puedeAcceder('expediciones','ver')) links.push({t:'Dashboard',a:"enterMod('operativa')",i:'⌂'});
+  if(puedeAcceder('almacen','ver'))      links.push({t:'Fotos almacén',a:"enterMod('almacen')",i:'▣'});
+  if(puedeAcceder('taric','ver') || puedeAcceder('dua','ver'))
+    links.push({t:'Aduanas',a:'abrirMenuAduanas()',i:'◇'});
+  if(puedeAcceder('airport_cargo','ver')) links.push({t:'Airport',a:"window.location.href='airport_cargo.html'",i:'✈'});
+  if(puedeAcceder('usuarios','ver') || (window.PortalGuard && window.PortalGuard.esAdmin))
+    links.push({t:'Usuarios',a:"enterMod('configuracion')",i:'⚙'});
   el.innerHTML=links.map(l=>`<button class="hm-qbtn" onclick="${l.a}"><span>${l.i}</span>${l.t}</button>`).join('');
 }
 function showOnboardingRole(force){
@@ -1349,14 +1350,15 @@ function syncAreaSwitch(value){
 }
 function updateAreaSwitchOptions(){
   const sel=document.getElementById('hdr-area-switch'); if(!sel||!CU) return;
+  const esAdm = window.PortalGuard && window.PortalGuard.esAdmin;
   [...sel.options].forEach(o=>{
     if(!o.value){ o.hidden=false; return; }
     o.hidden =
-      (o.value==='operativa' && !['admin','operativa','aduanas'].includes(CU.rol)) ||
-      (o.value==='almacen' && !['admin','operativa','aduanas','almacen','transportista'].includes(CU.rol)) ||
-      (o.value==='aduanas' && !['admin','aduanas'].includes(CU.rol)) ||
-      (o.value==='airport' && !['admin','aduanas','airport_cargo'].includes(CU.rol)) ||
-      (o.value==='configuracion' && CU.rol!=='admin');
+      (o.value==='operativa'    && !puedeAcceder('expediciones','ver')) ||
+      (o.value==='almacen'      && !puedeAcceder('almacen','ver')) ||
+      (o.value==='aduanas'      && !(puedeAcceder('taric','ver')||puedeAcceder('dua','ver'))) ||
+      (o.value==='airport'      && !puedeAcceder('airport_cargo','ver')) ||
+      (o.value==='configuracion'&& !esAdm);
   });
 }
 function handleAreaSwitch(value){
@@ -1700,7 +1702,7 @@ function iniciarRealtime(){
           const autor  = payload.new?.usuario_nombre || '';
           if(autor === CU.nombre) return; // ignorar propios
           if(accion === 'alerta_llegada'){
-            if(['admin','operativa','aduanas'].includes(CU.rol)){
+            if(puedeAcceder('expediciones','ver')){
               mostrarBanner('📦 Llegada al almacén: '+ref+' — '+autor, 'amber');
               notifSistema('📦 Llegada al almacén', ref);
               if(CV === 'alertas') loadAlertas();
@@ -2534,7 +2536,7 @@ function showHome(){
   renderHomeQuickLinks();
   updateAreaSwitchOptions();
 
-  if(['admin','operativa','aduanas'].includes(CU.rol))
+  if(puedeAcceder('expediciones','ver'))
     c.innerHTML+=`<button type="button" class="hm-card hm-card-op" onclick="enterMod('operativa')">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">🏢</div>
@@ -2549,7 +2551,7 @@ function showHome(){
     </button>`;
 
 
-  if(['admin','operativa','aduanas','almacen','transportista'].includes(CU.rol))
+  if(puedeAcceder('almacen','ver'))
     c.innerHTML+=`<div class="hm-card hm-card-alm" onclick="enterMod('almacen')">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">📦</div>
@@ -2563,11 +2565,7 @@ function showHome(){
       </div>
     </div>`;
 
-  const _rolesHome = CU.roles||[CU.rol];
-  // Airport: usar _puedeModulo si ya está calculado, sino calcular aquí
-  const _puedeAirportHome = _rolesHome.some(r=>['admin','aduanas','airport_cargo'].includes(r)) &&
-    (!((CU.modulos_permitidos&&CU.modulos_permitidos.length>0)) || (CU.modulos_permitidos||[]).includes('airport_cargo'));
-  if(_puedeAirportHome)
+  if(puedeAcceder('airport_cargo','ver'))
     c.innerHTML+=`<div class="hm-card hm-card-air" style="position:relative" onclick="window.location.href='airport_cargo.html'">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">✈️</div>
@@ -2581,11 +2579,8 @@ function showHome(){
       </div>
     </div>`;
 
-  // Módulo Aduanas — visible para rol aduanas/admin + sub-roles de aduanas (taric, facturacion, eori)
-  // Y sólo si modulos_permitidos no existe O incluye al menos un módulo de aduanas
-  const _mpHome = (CU.modulos_permitidos&&CU.modulos_permitidos.length>0) ? CU.modulos_permitidos : null;
-  const _tieneAlgunModuloAduanas = !_mpHome || _mpHome.some(m=>['taric','tarifas','eori','dua'].includes(m));
-  if(_rolesHome.some(r=>['aduanas','admin','taric','facturacion','eori'].includes(r)) && _tieneAlgunModuloAduanas)
+  // Módulo Aduanas — visible si tiene permiso a cualquier sub-módulo aduanero
+  if(puedeAcceder('taric','ver') || puedeAcceder('dua','ver') || puedeAcceder('facturacion','ver'))
     c.innerHTML+=`<button type="button" class="hm-card" style="background:linear-gradient(145deg,#0c4a6e,#0369a1);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="abrirMenuAduanas()" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
       <div class="hm-card-icon">🏛️</div>
       <div class="hm-card-body">
@@ -2601,23 +2596,14 @@ function showHome(){
   cargarNotificacionesPendientes();
   iniciarPresenciaGlobal();
 
-  // ── Módulos externos en sidebar — visibilidad por rol y permisos usuario ──
-  const _roles = CU.roles||[CU.rol];
-  // Si el usuario tiene modulos_permitidos definidos, solo puede ver esos módulos.
-  // NULL o array vacío = sin restricción adicional (rige solo el rol).
-  const _mp = (CU.modulos_permitidos&&CU.modulos_permitidos.length>0) ? CU.modulos_permitidos : null;
-  function _puedeModulo(modulo, rolesRequeridos){
-    const tieneRol = _roles.some(r=>rolesRequeridos.includes(r));
-    if(!tieneRol) return false;
-    if(_mp && !_mp.includes(modulo)) return false;
-    return true;
-  }
-
-  const puedeAirport = _puedeModulo('airport_cargo', ['admin','aduanas','airport_cargo']);
-  const puedeRpa     = _puedeModulo('pendencias',    ['admin','aduanas','control_rpa']);
-  const puedeTarifas = _puedeModulo('tarifas',       ['admin','aduanas','oficina','facturacion']);
-  const puedeTaricM  = _puedeModulo('taric',         ['admin','aduanas','taric']);
-  const puedeEori    = _puedeModulo('eori',          ['admin','aduanas','eori']);
+  // ── Módulos externos en sidebar — TODOS usan puedeAcceder() de PortalGuard ──
+  // PortalGuard ya considera roles + modulos_permitidos + overrides personales.
+  const esAdm = window.PortalGuard && window.PortalGuard.esAdmin;
+  const puedeAirport = puedeAcceder('airport_cargo','ver');
+  const puedeRpa     = puedeAcceder('control_rpa','ver');
+  const puedeTarifas = puedeAcceder('facturacion','ver');  // tarifas se gestiona en módulo facturacion
+  const puedeTaricM  = puedeAcceder('taric','ver');
+  const puedeEori    = puedeTaricM;  // EORI vive bajo el rol TARIC en BD
   const hayExt = puedeAirport || puedeRpa;
   const secExt = document.getElementById('sb-sec-ext');
   const navRpa = document.getElementById('nav-rpa');
@@ -2639,10 +2625,10 @@ function showHome(){
 
   // ── Nav Gibraltar (solo admin) ──────────────────────────────────
   const navGibraltar = document.getElementById('nav-gibraltar');
-  if(navGibraltar) navGibraltar.style.display = CU.rol==='admin' ? '' : 'none';
+  if(navGibraltar) navGibraltar.style.display = esAdm ? '' : 'none';
 
-  // ── Card Control RPA (admin + aduanas + control_rpa) ───────────
-  if(_puedeModulo('pendencias',['admin','aduanas','control_rpa']))
+  // ── Card Control RPA ───────────────────────────────────────────
+  if(puedeRpa)
     c.innerHTML+=`<button type="button" class="hm-card" style="background:linear-gradient(145deg,#134e4a,#0f766e);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="window.location.href='pendencias.html'" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
       <div class="hm-card-icon">📄</div>
       <div class="hm-card-body">
@@ -2657,7 +2643,7 @@ function showHome(){
 
 
   // ── Card Gibraltar (solo admin) ─────────────────────────────────
-  if(CU.rol==='admin')
+  if(esAdm)
     c.innerHTML+=`<button type="button" class="hm-card" style="background:linear-gradient(145deg,#0f2d6e,#1e3a8a,#312e81);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="window.location.href='gibraltar.html'" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'" title="Solo accesible para administrador">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">🏛</div>
@@ -2671,7 +2657,7 @@ function showHome(){
       </div>
     </button>`;
 
-  if(CU.rol==='admin')
+  if(esAdm || puedeAcceder('configuracion','ver'))
     c.innerHTML+=`<div class="hm-card hm-card-cfg" onclick="enterMod('configuracion')">
       <div class="hm-card-bg"></div>
       <div class="hm-card-icon">⚙️</div>
@@ -2686,7 +2672,7 @@ function showHome(){
     </div>`;
 
   // ── Card Despacho Personal (solo admin, invisible para el resto) ─
-  if(CU.rol==='admin')
+  if(esAdm)
     c.innerHTML+=`<button type="button" class="hm-card" style="background:linear-gradient(145deg,#1e1b4b,#312e81);position:relative;border-radius:20px;padding:0;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden" onclick="window.location.href='despacho.html'" onmouseenter="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 36px rgba(0,0,0,.15)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'">
       <div class="hm-card-icon">📅</div>
       <div class="hm-card-body">
@@ -2718,10 +2704,12 @@ function enterMod(mod){
       cargarPermisosUsuario(CU.id, CU.roles).catch(()=>{ _permisosListos=true; });
     } else { showHome(); return; }
   }
-  const puedeOperativa=['admin','operativa','aduanas'];
-  const esExclusivoAlmacen=['almacen','transportista'].includes(CU.rol);
-  if(mod==='operativa'&&!puedeOperativa.includes(CU.rol)) mod='almacen';
-  if(mod==='configuracion'&&CU.rol!=='admin'){ showHome(); return; }
+  const esAdmEM = window.PortalGuard && window.PortalGuard.esAdmin;
+  const esExclusivoAlmacen = !puedeAcceder('expediciones','ver') && puedeAcceder('almacen','ver');
+  // Si pide operativa pero no puede → redirigir a almacén (que sí puede)
+  if(mod==='operativa' && !puedeAcceder('expediciones','ver')) mod = 'almacen';
+  // Configuración solo para admin (o quien tenga permiso configuracion)
+  if(mod==='configuracion' && !esAdmEM && !puedeAcceder('configuracion','ver')){ showHome(); return; }
 
   // Módulo configuración: abre directamente Operativa con nav-adm visible
   if(mod==='configuracion'){
@@ -2747,7 +2735,7 @@ function enterMod(mod){
     const btnAirport=document.getElementById('btn-to-airport');
     const btnOperativa=document.getElementById('btn-to-operativa');
     if(btnAlmacen) btnAlmacen.style.display='';
-    if(btnAirport) btnAirport.style.display=puedeOperativa.includes(CU.rol)?'':'none';
+    if(btnAirport) btnAirport.style.display=puedeAcceder('airport_cargo','ver')?'':'none';
     if(btnOperativa) btnOperativa.style.display='';
     const btnConfig=document.getElementById('btn-to-config');
     if(btnConfig) btnConfig.style.display='none';
@@ -2772,7 +2760,7 @@ function enterMod(mod){
   const rolLabels={admin:'Administrador',oficina:'Oficina',almacen:'Almacén',aduanas:'Aduanas',transportista:'Transportista'};
   document.getElementById('sb-role').textContent=rolLabels[CU.rol]||CU.rol;
 
-  const puedeAirport=puedeOperativa.includes(CU.rol);
+  const puedeAirport=puedeAcceder('airport_cargo','ver');
   const btnAlmacen=document.getElementById('btn-to-almacen');
   const btnAirport=document.getElementById('btn-to-airport');
   const btnOperativa=document.getElementById('btn-to-operativa');
@@ -2789,13 +2777,13 @@ function enterMod(mod){
     document.getElementById('cmenu-buque').style.display=puedeBuque?'flex':'none';
     document.getElementById('cmenu-exp').style.display=puedeExp?'flex':'none';
     document.getElementById('bc-mod').textContent='Operativa';
-    if(btnAlmacen){btnAlmacen.style.display='';btnAlmacen.title='Almacén & Embarque';}
+    if(btnAlmacen){btnAlmacen.style.display=puedeAcceder('almacen','ver')?'':'none';btnAlmacen.title='Almacén & Embarque';}
     if(btnAirport) btnAirport.style.display=puedeAirport?'':'none';
     const btnTaric=document.getElementById('btn-to-taric');
-    if(btnTaric) btnTaric.style.display=['admin','operativa','aduanas'].includes(CU.rol)?'flex':'none';
+    if(btnTaric) btnTaric.style.display=puedeAcceder('taric','ver')?'flex':'none';
     if(btnOperativa) btnOperativa.style.display='none';
     const btnConfig=document.getElementById('btn-to-config');
-    if(btnConfig) btnConfig.style.display=CU.rol==='admin'?'':'none';
+    if(btnConfig) btnConfig.style.display=esAdmEM?'':'none';
     nav('dashboard',document.querySelector('#nav-op .nav-item'));
     showMobOpBar();
     setTimeout(loadFactBadge, 800);
@@ -2808,9 +2796,9 @@ function enterMod(mod){
     document.getElementById('bc-mod').textContent='Almacén & Embarque';
     if(btnAlmacen) btnAlmacen.style.display='none';
     if(btnAirport) btnAirport.style.display=(!esExclusivoAlmacen&&puedeAirport)?'':'none';
-    if(btnOperativa) btnOperativa.style.display=esExclusivoAlmacen?'none':'';
+    if(btnOperativa) btnOperativa.style.display=esExclusivoAlmacen?'none':(puedeAcceder('expediciones','ver')?'':'none');
     const btnConfig=document.getElementById('btn-to-config');
-    if(btnConfig) btnConfig.style.display=CU.rol==='admin'?'':'none';
+    if(btnConfig) btnConfig.style.display=esAdmEM?'':'none';
     // En móvil: ir directamente a Fotos & Confirmar con la barra visible
     if(window.innerWidth<=768){
       nav('alm-fotos',document.querySelector('#nav-alm .nav-item:nth-child(2)'));
@@ -14013,7 +14001,7 @@ document.addEventListener('keydown', function(e){
     case 'k': if(MOD==='operativa') nav('kanban', null); break;
     case 'u': if(MOD==='operativa') nav('ubicaciones', null); break;
     case 'n':
-      if(MOD==='operativa' && ['admin','operativa'].includes(CU.rol)){
+      if(MOD==='operativa' && puedeAcceder('expediciones','crear')){
         e.preventDefault();
         openModal('nueva-expedicion');
       }
@@ -14179,21 +14167,22 @@ function toggleMenuUsuario(){
   const modulos = document.getElementById('hdr-menu-modulos');
   const configBtn = document.getElementById('hdr-menu-config');
   if(modulos && CU){
+    const esAdmHM = window.PortalGuard && window.PortalGuard.esAdmin;
     const items = [];
-    if(['admin','operativa','aduanas'].includes(CU.rol))
+    if(puedeAcceder('expediciones','ver'))
       items.push({icon:'🏢', lbl:'Operativa', fn:"enterMod('operativa');cerrarMenuUsuario()"});
-    if(['admin','operativa','almacen','transportista'].includes(CU.rol))
+    if(puedeAcceder('almacen','ver'))
       items.push({icon:'📦', lbl:'Almacén', fn:"enterMod('almacen');cerrarMenuUsuario()"});
-    if(['admin','operativa','aduanas'].includes(CU.rol))
+    if(puedeAcceder('airport_cargo','ver'))
       items.push({icon:'✈️', lbl:'Airport Cargo', fn:"window.location.href='airport_cargo.html'"});
-    if(['admin','aduanas'].includes(CU.rol))
+    if(puedeAcceder('taric','ver') || puedeAcceder('dua','ver'))
       items.push({icon:'🏛️', lbl:'Módulo Aduanas', fn:"abrirMenuAduanas();cerrarMenuUsuario()"});
     modulos.innerHTML = items.map(i=>
       `<button onclick="${i.fn}" style="width:100%;background:none;border:none;padding:10px 16px;font-size:13px;color:var(--g600);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;font-family:var(--f)">
         ${i.icon} ${i.lbl}
       </button>`
     ).join('');
-    if(configBtn) configBtn.style.display = CU.rol==='admin' ? 'flex' : 'none';
+    if(configBtn) configBtn.style.display = esAdmHM ? 'flex' : 'none';
   }
 
   menu.style.display = 'block';
