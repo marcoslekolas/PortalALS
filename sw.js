@@ -34,6 +34,13 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
+  // IGNORAR: requests que no son http(s) — extensiones del navegador
+  // (chrome-extension://, moz-extension://), blob:, data:, etc.
+  // Si intentamos cache.put() sobre estos esquemas, el browser lanza error.
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return; // dejar pasar al browser sin interceptar
+  }
+
   // Supabase, OpenRouter, CDN externos → siempre Network (sin caché)
   if (
     url.hostname.includes('supabase.co') ||
@@ -45,8 +52,9 @@ self.addEventListener('fetch', event => {
     return; // dejar pasar al browser sin interceptar
   }
 
-  // Solo manejar GET
+  // Solo manejar GET (y mismo origen — defensa extra contra extensiones)
   if (event.request.method !== 'GET') return;
+  if (url.origin !== self.location.origin) return;
 
   // Para el index.html y assets propios: Network First, fallback a caché
   event.respondWith(

@@ -117,6 +117,8 @@
     const lStr = localStorage.getItem(ACTIVITY_KEY);
     const lLast = lStr ? parseInt(lStr, 10) : 0;
     if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
+      // Marcar el motivo del cierre para que la próxima carga muestre mensaje claro
+      try { localStorage.setItem('als_logout_reason', 'inactivity'); } catch(e) {}
       try { await sb.auth.signOut({ scope: 'local' }); } catch(e) {}
       try { localStorage.removeItem(ACTIVITY_KEY); } catch(e) {}
       try {
@@ -147,6 +149,7 @@
     const lStr = localStorage.getItem(ACTIVITY_KEY);
     const lLast = lStr ? parseInt(lStr, 10) : 0;
     if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
+      try { localStorage.setItem('als_logout_reason', 'inactivity'); } catch(e) {}
       try { await sb.auth.signOut({ scope: 'local' }); } catch(e) {}
       try { localStorage.removeItem(ACTIVITY_KEY); } catch(e) {}
       return { ok: false, reason: 'inactivity_expired' };
@@ -202,12 +205,10 @@
   function bumpActivity(force){
     const now = Date.now();
     // CRÍTICO: comprobar EXPIRACIÓN antes de cualquier actualización.
-    // Si la pestaña estuvo dormida 35+ min, el setTimeout no se disparó
-    // pero el localStorage sigue con el timestamp antiguo. Al interactuar
-    // ahora detectamos y cerramos sesión INMEDIATAMENTE.
     const lastStr0 = localStorage.getItem(ACTIVITY_KEY);
     const last0 = lastStr0 ? parseInt(lastStr0, 10) : 0;
     if (last0 > 0 && (now - last0) >= CLOSE_MS) {
+      try { localStorage.setItem('als_logout_reason', 'inactivity'); } catch(e) {}
       forceLogout('inactivity_bump');
       return;
     }
@@ -225,7 +226,11 @@
     const last = lastStr ? parseInt(lastStr, 10) : Date.now();
     const elapsed = Date.now() - last;
 
-    if (elapsed >= CLOSE_MS) { forceLogout('inactivity'); return; }
+    if (elapsed >= CLOSE_MS) {
+      try { localStorage.setItem('als_logout_reason', 'inactivity'); } catch(e) {}
+      forceLogout('inactivity');
+      return;
+    }
 
     if (warnDialog && elapsed < WARN_MS) {
       // Si había aviso pero ahora hay actividad reciente → quitar
@@ -359,6 +364,7 @@
       const lStr = localStorage.getItem(ACTIVITY_KEY);
       const lLast = lStr ? parseInt(lStr, 10) : 0;
       if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
+        try { localStorage.setItem('als_logout_reason', 'inactivity'); } catch(e) {}
         forceLogout('inactivity_visibility');
       } else {
         resetTimers();
@@ -370,17 +376,17 @@
       const lStr = localStorage.getItem(ACTIVITY_KEY);
       const lLast = lStr ? parseInt(lStr, 10) : 0;
       if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
+        try { localStorage.setItem('als_logout_reason', 'inactivity'); } catch(e) {}
         forceLogout('inactivity_focus');
       }
     });
 
-    // RED DE SEGURIDAD: verificación periódica cada 60 seg. Si setTimeout
-    // fue suspendido por background, este intervalo (al volver visible)
-    // detectará la expiración y cerrará sesión sin esperar interacción.
+    // RED DE SEGURIDAD: verificación periódica cada 60 seg.
     setInterval(() => {
       const lStr = localStorage.getItem(ACTIVITY_KEY);
       const lLast = lStr ? parseInt(lStr, 10) : 0;
       if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
+        try { localStorage.setItem('als_logout_reason', 'inactivity'); } catch(e) {}
         forceLogout('inactivity_periodic');
       }
     }, 60000);

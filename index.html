@@ -1159,36 +1159,37 @@ if('serviceWorker' in navigator){
 <script type="text/javascript" id="als-js">
 // ── Load Supabase SDK and bootstrap session via PortalGuard ──
 (async function(){
-  try {
-    // 1. PortalGuard carga el SDK y crea sb. window.sb queda asignado.
-    await PortalGuard.bootstrap();
-    sb = PortalGuard.sb || window.sb;  // sincronizar referencia local
-
-    // Si llegamos con ?reason=inactivity*, mostrar mensaje claro en el login.
-    // PortalGuard.hasSession() ya habrá invalidado la sesión vieja, pero
-    // queremos que el usuario sepa por qué tiene que volver a teclear.
+  // Helper: muestra mensaje de inactividad en el campo de error del login
+  function _mostrarMotivoLogin(){
     try {
       const urlReason = new URLSearchParams(window.location.search).get('reason');
-      if (urlReason && urlReason.indexOf('inactivity') === 0) {
+      const lsReason  = localStorage.getItem('als_logout_reason');
+      const reason = urlReason || lsReason;
+      if (reason && reason.indexOf('inactivity') === 0) {
         const ee = document.getElementById('li-err');
         if (ee) {
           ee.style.color = 'var(--am700, #b45309)';
           ee.textContent = '🔒 Sesión cerrada por inactividad. Vuelve a iniciar sesión.';
         }
       }
+      try { localStorage.removeItem('als_logout_reason'); } catch(_){}
     } catch(_){}
+  }
+
+  try {
+    // 1. PortalGuard carga el SDK y crea sb. window.sb queda asignado.
+    await PortalGuard.bootstrap();
+    sb = PortalGuard.sb || window.sb;
 
     // 2. ¿Hay sesión JWT válida Y no expirada por inactividad?
+    // hasSession() es quien marca als_logout_reason si invalida por inactividad,
+    // así que llamamos a _mostrarMotivoLogin DESPUÉS de hasSession.
     if (await PortalGuard.hasSession()) {
-      // Sí: cargar perfil + permisos completos
       const result = await PortalGuard.refresh();
       if (result.ok) {
         CU = PortalGuard.CU;
-        // Sincronizar last_activity y arrancar inactividad
         try { localStorage.setItem('als_last_activity', String(Date.now())); } catch(e){}
-        // Activar el watcher de inactividad (visibilitychange, focus, periodic check)
         try { if (PortalGuard._startInactivity) PortalGuard._startInactivity(); } catch(_){}
-        // Si había un módulo pendiente (deep-link), navegarlo; sino, mostrar home
         if (window._pendingMod) {
           const dest = window._pendingMod; window._pendingMod = null;
           if (dest === 'operativa') enterMod('operativa');
@@ -1197,11 +1198,9 @@ if('serviceWorker' in navigator){
         } else {
           showHome();
         }
-        // Iniciar verificación periódica y notificaciones push
         if (typeof iniciarVerificacionSesion === 'function') iniciarVerificacionSesion();
         if (typeof solicitarPermisoPush === 'function') solicitarPermisoPush();
       } else {
-        // JWT inválido o usuario sin perfil activo → forzar logout
         try { await sb.auth.signOut(); } catch(e){}
         try { if (typeof clearSession === 'function') clearSession(); } catch(_){}
         CU = null; window._pendingMod = null;
@@ -1209,15 +1208,17 @@ if('serviceWorker' in navigator){
         try { document.getElementById('screen-home').style.display = 'none'; } catch(_){}
         const sl = document.getElementById('screen-login');
         if (sl) sl.style.display = 'flex';
+        _mostrarMotivoLogin();
       }
     } else {
-      // Sin sesión: mostrar login
+      // Sin sesión: mostrar login con motivo si lo hay
       try { if (typeof clearSession === 'function') clearSession(); } catch(_){}
       CU = null; window._pendingMod = null;
       try { document.getElementById('app').style.display = 'none'; } catch(_){}
       try { document.getElementById('screen-home').style.display = 'none'; } catch(_){}
       const sl = document.getElementById('screen-login');
       if (sl) sl.style.display = 'flex';
+      _mostrarMotivoLogin();
     }
 
     // Ping silencioso de conectividad (vista pública)
@@ -2252,8 +2253,8 @@ async function doLogin(){
     // Actualizar ultimo_acceso (best effort, ya no necesita JWT manual)
     sb.from('usuarios').update({ultimo_acceso:new Date().toISOString()}).eq('id',CU.id).then(()=>{},()=>{});
 
-    // Registrar sesión única
-    _registrarSesionUnica(CU.id);
+    // Registrar sesión única — usa auth_user_id para que el RLS (auth.uid() = user_id) funcione
+    _registrarSesionUnica(CU.auth_user_id || CU.id);
 
     // Cambio de password obligatorio
     if(CU.must_change_password){ showChangePwd(); return; }
@@ -17187,8 +17188,12 @@ async function mostrarEventosHoy(){
   comprobarAlarmas();
   setInterval(comprobarAlarmas,30000);
 
-  // Actualizar badge de eventos al cargar
-  setTimeout(actualizarBadgeEventos,3000);
+  // Actualizar badge de eventos al cargar — solo si hay sesión activa (RLS bloquea anon)
+  setTimeout(() => {
+    if (window.PortalGuard && PortalGuard.ready && PortalGuard.CU) {
+      actualizarBadgeEventos();
+    }
+  }, 3000);
 })();
 </script>
 
