@@ -111,7 +111,25 @@
   async function hasSession(){
     await bootstrap();
     const { data: { session } } = await sb.auth.getSession();
-    return !!session;
+    if (!session) return false;
+    // El JWT está vivo, pero ¿ha expirado por INACTIVIDAD según nuestro reloj?
+    // Si sí, lo invalidamos AHORA para evitar el bug del "auto-relogin tras dormir".
+    const lStr = localStorage.getItem(ACTIVITY_KEY);
+    const lLast = lStr ? parseInt(lStr, 10) : 0;
+    if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
+      try { await sb.auth.signOut({ scope: 'local' }); } catch(e) {}
+      try { localStorage.removeItem(ACTIVITY_KEY); } catch(e) {}
+      try {
+        const claves = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('sb-') || k === 'als_cu' || k.startsWith('supabase.auth.'))) claves.push(k);
+        }
+        claves.forEach(k => { try { localStorage.removeItem(k); } catch(e) {} });
+      } catch(e) {}
+      return false;
+    }
+    return true;
   }
 
   async function loadSession(){
@@ -124,6 +142,15 @@
       return { ok: false, reason: 'session_error' };
     }
     if (!session) return { ok: false, reason: 'no_session' };
+
+    // 1b. Aunque el JWT siga vivo, ¿ha expirado por inactividad?
+    const lStr = localStorage.getItem(ACTIVITY_KEY);
+    const lLast = lStr ? parseInt(lStr, 10) : 0;
+    if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
+      try { await sb.auth.signOut({ scope: 'local' }); } catch(e) {}
+      try { localStorage.removeItem(ACTIVITY_KEY); } catch(e) {}
+      return { ok: false, reason: 'inactivity_expired' };
+    }
 
     // 2. Cargar perfil + roles + permisos via RPC
     const { data, error } = await sb.rpc('app_get_session_data');
@@ -174,6 +201,16 @@
   // ╚══════════════════════════════════════════════════════════════════════╝
   function bumpActivity(force){
     const now = Date.now();
+    // CRÍTICO: comprobar EXPIRACIÓN antes de cualquier actualización.
+    // Si la pestaña estuvo dormida 35+ min, el setTimeout no se disparó
+    // pero el localStorage sigue con el timestamp antiguo. Al interactuar
+    // ahora detectamos y cerramos sesión INMEDIATAMENTE.
+    const lastStr0 = localStorage.getItem(ACTIVITY_KEY);
+    const last0 = lastStr0 ? parseInt(lastStr0, 10) : 0;
+    if (last0 > 0 && (now - last0) >= CLOSE_MS) {
+      forceLogout('inactivity_bump');
+      return;
+    }
     if (!force && now - lastBump < ACTIVITY_THROTTLE_MS) return;
     lastBump = now;
     try { localStorage.setItem(ACTIVITY_KEY, String(now)); } catch(e) {}
@@ -247,14 +284,31 @@
 
     await logAuth(reason === 'inactivity' ? 'inactivity_logout' : 'logout', reason);
 
-    try { if (sb) await sb.auth.signOut(); } catch(e) {}
-    try { localStorage.removeItem(ACTIVITY_KEY); } catch(e) {}
-    try { localStorage.removeItem('als_cu'); } catch(e) {}
+    // 1. Cerrar sesión en Supabase Auth (scope=local elimina solo este cliente)
+    try { if (sb) await sb.auth.signOut({ scope: 'local' }); } catch(e) {}
+
+    // 2. Limpieza AGRESIVA: borrar TODAS las keys que Supabase Auth pueda
+    // haber dejado en localStorage. Si signOut() falló silenciosamente, esto
+    // garantiza que la siguiente carga no vea un JWT válido.
+    try {
+      const claves = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (k.startsWith('sb-') ||
+            k === ACTIVITY_KEY ||
+            k === 'als_cu' ||
+            k.startsWith('supabase.auth.')) {
+          claves.push(k);
+        }
+      }
+      claves.forEach(k => { try { localStorage.removeItem(k); } catch(e) {} });
+    } catch(e) {}
     try { sessionStorage.removeItem('als_cu'); } catch(e) {}
 
     listeners.logout.forEach(fn => { try { fn(reason); } catch(e) {} });
 
-    // Redirigir al login. URL relativa para funcionar en cualquier subpath.
+    // 3. Redirigir al login. URL relativa para funcionar en cualquier subpath.
     const path = window.location.pathname;
     const dir  = path.substring(0, path.lastIndexOf('/') + 1);
     const target = dir + 'index.html' + (reason ? ('?reason=' + encodeURIComponent(reason)) : '');
@@ -296,6 +350,40 @@
         }
       }
     });
+
+    // VISIBILITY: cuando la pestaña vuelve a estar visible tras estar en
+    // background, comprobar la expiración INMEDIATAMENTE sin esperar a que
+    // el usuario interactúe. Los setTimeout pueden estar suspendidos.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      const lStr = localStorage.getItem(ACTIVITY_KEY);
+      const lLast = lStr ? parseInt(lStr, 10) : 0;
+      if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
+        forceLogout('inactivity_visibility');
+      } else {
+        resetTimers();
+      }
+    });
+
+    // Mismo chequeo en focus (algunos browsers no disparan visibilitychange)
+    window.addEventListener('focus', () => {
+      const lStr = localStorage.getItem(ACTIVITY_KEY);
+      const lLast = lStr ? parseInt(lStr, 10) : 0;
+      if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
+        forceLogout('inactivity_focus');
+      }
+    });
+
+    // RED DE SEGURIDAD: verificación periódica cada 60 seg. Si setTimeout
+    // fue suspendido por background, este intervalo (al volver visible)
+    // detectará la expiración y cerrará sesión sin esperar interacción.
+    setInterval(() => {
+      const lStr = localStorage.getItem(ACTIVITY_KEY);
+      const lLast = lStr ? parseInt(lStr, 10) : 0;
+      if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
+        forceLogout('inactivity_periodic');
+      }
+    }, 60000);
 
     resetTimers();
   }
@@ -376,6 +464,7 @@
     refresh,
     logout,
     hasSession,
+    _startInactivity: startInactivity,  // permite arrancar manualmente desde index.html
     // estado (getters dinámicos)
     get sb()        { return sb; },
     get CU()        { return CU; },

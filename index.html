@@ -1164,16 +1164,30 @@ if('serviceWorker' in navigator){
     await PortalGuard.bootstrap();
     sb = PortalGuard.sb || window.sb;  // sincronizar referencia local
 
-    // 2. ¿Hay sesión JWT válida?
+    // Si llegamos con ?reason=inactivity*, mostrar mensaje claro en el login.
+    // PortalGuard.hasSession() ya habrá invalidado la sesión vieja, pero
+    // queremos que el usuario sepa por qué tiene que volver a teclear.
+    try {
+      const urlReason = new URLSearchParams(window.location.search).get('reason');
+      if (urlReason && urlReason.indexOf('inactivity') === 0) {
+        const ee = document.getElementById('li-err');
+        if (ee) {
+          ee.style.color = 'var(--am700, #b45309)';
+          ee.textContent = '🔒 Sesión cerrada por inactividad. Vuelve a iniciar sesión.';
+        }
+      }
+    } catch(_){}
+
+    // 2. ¿Hay sesión JWT válida Y no expirada por inactividad?
     if (await PortalGuard.hasSession()) {
       // Sí: cargar perfil + permisos completos
       const result = await PortalGuard.refresh();
       if (result.ok) {
         CU = PortalGuard.CU;
         // Sincronizar last_activity y arrancar inactividad
-        // (PortalGuard.require() lo haría, pero aquí estamos en el hub principal
-        //  donde el "módulo" es null → solo verificar sesión y arrancar inactividad)
         try { localStorage.setItem('als_last_activity', String(Date.now())); } catch(e){}
+        // Activar el watcher de inactividad (visibilitychange, focus, periodic check)
+        try { if (PortalGuard._startInactivity) PortalGuard._startInactivity(); } catch(_){}
         // Si había un módulo pendiente (deep-link), navegarlo; sino, mostrar home
         if (window._pendingMod) {
           const dest = window._pendingMod; window._pendingMod = null;
@@ -16731,8 +16745,20 @@ async function confirmarCargaManual(expId, ref){
 
 // Restaurar sesión si venimos de otro módulo (airport_cargo, etc.)
 checkSession();
-// Pre-cargar plantillas email
-if(typeof sb!=="undefined"&&sb){loadEmailPlantillas();}else{setTimeout(()=>{if(sb)loadEmailPlantillas();},2000);}
+// Pre-cargar plantillas email: solo si hay sesión activa (requiere JWT por RLS)
+(function _bootEmailPlantillas(){
+  function _try(){
+    if(window.PortalGuard && PortalGuard.ready && PortalGuard.CU){
+      try{ loadEmailPlantillas(); }catch(e){}
+    }
+  }
+  // Intento inicial tras 2s (da tiempo al bootstrap y posible login)
+  setTimeout(_try, 2000);
+  // Suscripción a evento ready: recarga tras login exitoso
+  if(window.PortalGuard && typeof PortalGuard.onReady==='function'){
+    PortalGuard.onReady(_try);
+  }
+})();
 
 
 
