@@ -891,7 +891,6 @@ if('serviceWorker' in navigator){
         <li>💡 Autocompletado inteligente en nueva expedición — historial por empresa</li>
         <li>📊 Panel de rendimiento del equipo por usuario (Admin)</li>
         <li>🌗 Modo oscuro automático con botón "seguir al sistema"</li>
-        <li>🧠 Morning Briefing: resumen operativo personalizado al iniciar sesión</li>
         <li>📋 Línea de vida: historial cronológico completo de cada expedición con fotos</li>
         <li>🔍 Detector de anomalías: expediciones con tiempo en almacén fuera de lo normal</li>
         <li>📊 Dashboard Ejecutivo: comparativa ▲/▼ vs mismo período año anterior</li>
@@ -2268,10 +2267,6 @@ async function doLogin(){
       if(!localStorage.getItem(onbKey)) setTimeout(()=>iniciarOnboarding(), 800);
     }catch(e){}
 
-    // Morning Briefing — solo para roles operativos
-    if(CU.roles && (CU.roles.includes('admin')||CU.roles.includes('operativa')||CU.roles.includes('aduanas'))){
-      cargarMorningBriefing();
-    }
     showHome();
     setTimeout(()=>showToast('👋 Bienvenido, '+CU.nombre.split(' ')[0]), 600);
   }catch(e){
@@ -13400,136 +13395,8 @@ async function abrirLineaVida(expId, expRef){
 }
 
 
-// ── Morning Briefing — popup al login ───────────────────────────────
-async function cargarMorningBriefing(){
-  // Mostrar overlay INMEDIATAMENTE — sin esperar async
-  const ov = document.getElementById('brief-overlay');
-  if(!ov){ console.warn('[Briefing] brief-overlay no encontrado en DOM'); return; }
-  const body  = document.getElementById('brief-body');
-  const sal   = document.getElementById('brief-saludo');
-  const fecha = document.getElementById('brief-fecha');
-
-  // Personalizar saludo y mostrar popup de inmediato
-  const hora = new Date().getHours();
-  const nombre = (CU?.nombre||'').split(' ')[0];
-  if(sal) sal.textContent = (hora<12?'Buenos días':hora<19?'Buenas tardes':'Buenas noches')+', '+nombre+' 👋';
-  if(fecha) fecha.innerHTML = new Date().toLocaleDateString('es-ES',{weekday:'long',day:'2-digit',month:'long'})+
-    '<br><span style="font-size:10px">'+new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})+'</span>';
-
-  ov.style.display = 'flex';
-  console.log('[Briefing] Popup mostrado para:', CU?.nombre, '| rol:', CU?.rol);
-
-  try {
-    // Datos para el resumen
-    const hoy     = new Date().toISOString().slice(0,10);
-    const en7dias = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
-    const en48h   = new Date(Date.now()+48*3600000).toISOString();
-
-    const rol = CU?.rol || 'operativa';
-
-    // Queries según rol
-    const [
-      {data:buquesProx},
-      {data:expFmax},
-      {data:expSinUbicar},
-      {data:expSinMrn},
-      {data:expAutorizadas},
-      {data:incAbiertas}
-    ] = await Promise.all([
-      // Buques próximos 48h — todos los roles
-      sb.from('buques').select('nombre,eta_buque')
-        .neq('estado_operacion','Finalizado')
-        .lte('eta_buque', en48h).gte('eta_buque', hoy).order('eta_buque'),
-      // F. máx. despacho — operativa y aduanas
-      sb.from('expediciones').select('nº_expedicion,fecha_max_despacho')
-        .neq('tramite_aduanero','Despachado').neq('ubicacion','Pendiente recibir')
-        .lte('fecha_max_despacho', en7dias).gte('fecha_max_despacho', hoy)
-        .not('fecha_max_despacho','is',null),
-      // Sin ubicar — almacén
-      sb.from('expediciones').select('id').eq('ubicacion','Almacén-Sin Ubicar')
-        .neq('estado_semaforo','🚢 EMBARCADO'),
-      // Sin MRN en almacén — aduanas
-      sb.from('expediciones').select('id,nº_expedicion')
-        .is('nº_mrn',null).neq('tramite_aduanero','Despachado')
-        .neq('ubicacion','Pendiente recibir').neq('estado_semaforo','🚢 EMBARCADO'),
-      // Autorizadas esperando carga — almacén
-      sb.from('expediciones').select('id,nº_expedicion,buques(nombre)')
-        .eq('estado_carga','✅ AUTORIZADO'),
-      // Incidencias abiertas — todos
-      sb.from('incidencias').select('id').eq('estado','Abierta')
-    ]);
-
-    const nBuques    = (buquesProx||[]).length;
-    const nFmax      = (expFmax||[]).length;
-    const nSinUbic   = (expSinUbicar||[]).length;
-    const nSinMrn    = (expSinMrn||[]).length;
-    const nAuth      = (expAutorizadas||[]).length;
-    const nInc       = (incAbiertas||[]).length;
-    const nombresBuques = (buquesProx||[]).map(b=>b.nombre).join(', ');
-
-    // Construir contexto según rol
-    let contexto = [];
-    if(rol === 'almacen'){
-      if(nAuth)     contexto.push(`${nAuth} expedición${nAuth>1?'es':''} autorizadas pendientes de carga en camión`);
-      if(nSinUbic)  contexto.push(`${nSinUbic} expedición${nSinUbic>1?'es':''} en almacén sin ubicar`);
-      if(nBuques)   contexto.push(`${nBuques} buque${nBuques>1?'s':''} con ETA en 48h: ${nombresBuques}`);
-    } else if(rol === 'aduanas'){
-      if(nSinMrn)   contexto.push(`${nSinMrn} expedición${nSinMrn>1?'es':''} sin MRN pendientes de despacho`);
-      if(nFmax)     contexto.push(`${nFmax} expedición${nFmax>1?'es':''} con fecha máxima de despacho esta semana`);
-      if(nBuques)   contexto.push(`${nBuques} buque${nBuques>1?'s':''} con ETA en 48h: ${nombresBuques}`);
-    } else {
-      // operativa / admin
-      if(nBuques)   contexto.push(`${nBuques} buque${nBuques>1?'s':''} con ETA en 48h: ${nombresBuques}`);
-      if(nSinMrn)   contexto.push(`${nSinMrn} expedición${nSinMrn>1?'es':''} sin MRN`);
-      if(nFmax)     contexto.push(`${nFmax} con fecha máxima de despacho esta semana`);
-      if(nInc)      contexto.push(`${nInc} incidencia${nInc>1?'s':''} abierta${nInc>1?'s':''}`);
-    }
-
-    if(!contexto.length){
-      body.innerHTML = `<p style="font-size:14px;color:var(--g700);line-height:1.7">
-        ✅ <strong>Todo en orden.</strong> No hay alertas operativas para hoy. Puedes comenzar la jornada sin pendientes urgentes.
-      </p>`;
-      return;
-    }
-
-    // Llamada a IA
-    const orKey = await getOrKey();
-    if(!orKey){
-      body.innerHTML = `<p style="font-size:14px;color:var(--g700);line-height:1.7">${contexto.join('. ')}.</p>`;
-      return;
-    }
-
-    const rolDesc = rol==='almacen' ? 'operario de almacén' : rol==='aduanas' ? 'agente de aduanas' : 'coordinador de operaciones';
-    const prompt = `Eres el asistente operativo de ALS Algeciras (agencia de aduanas y logística portuaria).
-Redacta un resumen diario conciso y profesional en español para ${nombre}, ${rolDesc}, en 2-3 frases máximo, en tono directo y operativo.
-Datos del día: ${contexto.join('; ')}.
-No uses listas, solo texto fluido. No empieces con saludos.`;
-
-    const resp = await fetch('https://openrouter.ai/api/v1/chat/completions',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+orKey,'Content-Type':'application/json',
-        'HTTP-Referer':'https://marcoslekolas.github.io','X-Title':'ALS Portal'},
-      body:JSON.stringify({
-        model:'mistralai/mistral-small-3.2-24b-instruct',
-        max_tokens:150,
-        messages:[{role:'user',content:prompt}]
-      })
-    });
-    const data = await resp.json();
-    const texto = data.choices?.[0]?.message?.content?.trim() || contexto.join('. ')+'.';
-
-    body.innerHTML = `<p style="font-size:14px;color:var(--g700);line-height:1.8;margin:0">${texto}</p>`;
-
-  } catch(ex){
-    console.warn('Morning Briefing:', ex);
-    body.innerHTML = `<p style="font-size:13px;color:var(--g500)">No se pudo cargar el resumen operativo.</p>`;
-  }
-}
-
-function cerrarBriefing(){
-  const ov = document.getElementById('brief-overlay');
-  if(ov) ov.style.display = 'none';
-}
+// Morning Briefing eliminado: el popup de bienvenida ya no se usa.
+function cerrarBriefing(){ /* no-op */ }
 
 // Helper para obtener clave OpenRouter
 async function getOrKey(){
@@ -13919,7 +13786,7 @@ const _onbPasos = {
     {icon:'📊',title:'Dashboard Ejecutivo',txt:'Analiza KPIs con comparativa vs año anterior. El <strong>Informe semanal</strong> (en Configuración) genera un resumen ejecutivo con IA.'},
   ],
   oficina: [
-    {icon:'🏢',title:'Tu espacio de trabajo',txt:'Gestionas expediciones, buques y alertas operativas. El Morning Briefing al entrar te da el resumen del día actualizado.'},
+    {icon:'🏢',title:'Tu espacio de trabajo',txt:'Gestionas expediciones, buques y alertas operativas desde el panel principal.'},
     {icon:'📦',title:'Expediciones',txt:'Crea, edita y filtra expediciones. Usa <strong>Ctrl+K</strong> para búsqueda global instantánea, incluyendo búsqueda con IA semántica.'},
     {icon:'💬',title:'Notas internas',txt:'Dentro de cada expedición puedes dejar notas para el equipo. Usa @nombre para mencionar a un compañero y reciba notificación push.'},
     {icon:'📧',title:'Notificaciones al cliente',txt:'Al confirmar embarque se genera automáticamente un email al cliente. Desde la ficha del buque puedes notificar individualmente.'},
@@ -13997,8 +13864,6 @@ document.addEventListener('keydown', function(e){
     if(bg){ cerrarBusquedaGlobal(); return; }
     const onb = document.getElementById('onboarding-overlay');
     if(onb?.style.display!=='none'){ cerrarOnboarding(); return; }
-    const brief = document.getElementById('brief-overlay');
-    if(brief?.style.display!=='none'){ cerrarBriefing(); return; }
     return;
   }
   if(modalAbierto) return; // resto de atajos no funcionan con modal abierto
@@ -17196,30 +17061,6 @@ async function mostrarEventosHoy(){
   }, 3000);
 })();
 </script>
-
-<!-- ── Morning Briefing Modal ──────────────────────────── -->
-<div id="brief-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30000;align-items:center;justify-content:center;padding:20px">
-  <div style="background:var(--w);border-radius:20px;width:100%;max-width:520px;box-shadow:0 16px 60px rgba(0,0,0,.25);overflow:hidden">
-    <div style="background:linear-gradient(135deg,#1d4ed8,#2563eb);padding:20px 24px 16px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Resumen operativo</div>
-          <div style="font-size:18px;font-weight:800;color:#fff" id="brief-saludo">Buenos días</div>
-        </div>
-        <div style="font-size:11px;color:rgba(255,255,255,.6);text-align:right;line-height:1.6" id="brief-fecha"></div>
-      </div>
-    </div>
-    <div style="padding:22px 24px;min-height:100px" id="brief-body">
-      <div style="display:flex;align-items:center;gap:10px;color:var(--g400);font-size:13px">
-        <div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;flex-shrink:0"></div>
-        Preparando tu resumen del día…
-      </div>
-    </div>
-    <div style="padding:8px 24px 20px;display:flex;justify-content:flex-end">
-      <button onclick="cerrarBriefing()" class="btn btn-p" style="min-width:130px;min-height:44px;font-size:15px">Comenzar →</button>
-    </div>
-  </div>
-</div>
 
 <!-- ── Onboarding Modal ──────────────────────────────────── -->
 <div id="onboarding-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:31000;align-items:center;justify-content:center;padding:20px">
