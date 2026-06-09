@@ -229,18 +229,8 @@ td.clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0}
 </head>
 <body>
 
-<div id="hdr">
-  <div class="hdr-logo">CW</div>
-  <span class="hdr-sep"></span>
-  <div class="hdr-title">Control RPA</div>
-  <span class="hdr-sep"></span>
-  <span class="hdr-mod">R&eacute;gimen 51 &middot; Perfeccionamiento Activo</span>
-  <div class="hdr-r">
-    <div class="hdr-user"><div class="hdr-av" id="hdr-av">?</div><span id="hdr-name" style="font-size:12px;color:var(--g700);font-weight:500"></span></div>
-    <a href="taric.html" class="hdr-a">&#9889; TARIC</a>
-    <a href="index.html" class="hdr-a primary">&#127968; Men&uacute; principal</a>
-  </div>
-</div>
+<!-- Header unificado: PortalGuard.mountHeader -->
+<div id="pg-header-app"></div>
 
 <div id="app">
   <div id="sbar">
@@ -334,24 +324,13 @@ let sb,datos=[],fE='all',oC='fecha_limite',oD=1,selI=null,editI=null;
 let _orKey=localStorage.getItem('als_openrouter_key')||'';
 var CU_GLOBAL = null;
 
-// ── GUARD vía PortalGuard ────────────────────────────────────────
 (async function(){
   const ok = await PortalGuard.require('control_rpa');
-  if(!ok) return;  // ya redirigió o mostró acceso denegado
+  if(!ok) return;
   sb = PortalGuard.sb;
   CU_GLOBAL = PortalGuard.CU;
-
-  // ── Header usuario ───────────────────────────────────────────────
-  if(CU_GLOBAL){
-    const init=(CU_GLOBAL.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    const av=document.getElementById('hdr-av');if(av)av.textContent=init;
-    const nm=document.getElementById('hdr-name');if(nm)nm.textContent=(CU_GLOBAL.nombre||'').split(' ').slice(0,2).join(' ');
-    if(PortalGuard.esAdmin){
-      const hr=document.querySelector('.hdr-r');
-      if(hr){const a=document.createElement('a');a.href='despacho.html';a.className='hdr-a';a.textContent='\uD83D\uDCC5 Despacho';hr.insertBefore(a,hr.querySelector('.hdr-a'));}
-    }
-  }
-  // Inicializar app
+  // Montar header unificado
+  try { PortalGuard.mountHeader({mount:'#pg-header-app', module:'Aduanas', section:'Control RPA'}); } catch(e){}
   if(typeof cargar==='function') cargar();
 })();
 

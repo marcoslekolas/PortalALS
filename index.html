@@ -138,30 +138,8 @@ if('serviceWorker' in navigator){
 
 <!-- HOME -->
 <div id="screen-home">
-  <div class="hm-hdr">
-    <div class="hm-dual-logos">
-      <div class="hm-als-pill">
-        <div class="pill-mark">ALS</div>
-        <div class="pill-txt">Algeciras Logistic</div>
-      </div>
-      <div class="hm-cw-pill">
-        <div class="pill-mark">CW</div>
-        <div class="pill-txt">Customs Way</div>
-      </div>
-    </div>
-    <div style="font-size:10px;color:var(--g400);font-family:var(--mono);padding:4px 8px;background:var(--g100);border-radius:var(--r);margin-right:8px" title="Versión del portal ALS" id="hm-version">—</div><div class="hm-contact">
-      <span>📞 +34 956 58 13 16</span>
-      <span>📠 +34 956 676591</span>
-      <span>✉️ <a href="/cdn-cgi/l/email-protection#355459467554594654595250565c4754461b565a58" style="color:inherit;text-decoration:none"><span class="__cf_email__" data-cfemail="3b5a57487b5a57485a575c5e5852495a4815585456">[email&#160;protected]</span></a></span>
-      <span>📍 36.183099, -5.433061</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px">
-      <button id="hm-dark-btn" onclick="toggleDarkMode()" style="background:none;border:1px solid var(--g200);border-radius:var(--r);padding:4px 8px;cursor:pointer;font-size:13px;color:var(--g500);margin-right:8px" title="Modo oscuro/claro">🌙</button><div class="hm-cert">ISO 9001 · ISO 14001<br>BUREAU VERITAS</div>
-      
-      <button id="pwa-install-btn" onclick="installPWA()" style="display:none;align-items:center;gap:6px;background:var(--b600);color:#fff;border:none;padding:7px 14px;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer">📲 Instalar app</button>
-      <div class="hm-user"><div class="hm-av" id="hm-av">?</div><span id="hm-name">—</span><button class="hm-logout" onclick="doLogout()">🚪 Cerrar sesión</button></div>
-    </div>
-  </div>
+  <!-- Header unificado renderizado por PortalGuard.mountHeader({home:true}) -->
+  <div id="pg-header-home"></div>
   <div class="hm-body">
     <div class="hm-greeting" id="hm-greeting">Buenos días</div>
     <div class="hm-title" id="hm-name-big">Portal ALS · CW</div>
@@ -170,6 +148,10 @@ if('serviceWorker' in navigator){
     <div class="hm-brief" id="hm-brief"></div>
     <div class="hm-quick" id="hm-quick"></div>
     <div class="hm-cards" id="hm-cards"></div>
+
+    <div style="text-align:center;padding:32px 16px 24px;font-size:11px;color:var(--g400);font-family:var(--mono);letter-spacing:.3px">
+      <span id="hm-version-pie">—</span> · BBDD en Supabase
+    </div>
   </div>
 </div>
 
@@ -321,96 +303,74 @@ if('serviceWorker' in navigator){
 
 <!-- APP -->
 <div id="app">
-  <header id="app-hdr">
-    <div class="hdr-top">
-      <!-- Hamburger solo en móvil -->
-      <button class="hamburger" onclick="toggleSB()" aria-label="Abrir menú lateral">☰</button>
-      <button class="hdr-home-btn" onclick="volverHome()" title="Inicio" aria-label="Volver al inicio">⌂</button>
+  <!-- Header unificado: renderizado por PortalGuard.mountHeader() -->
+  <div id="pg-header-app"></div>
 
-      <!-- Breadcrumb sección actual -->
-      <div class="hdr-breadcrumb">
-        <span class="hdr-bc-mod" id="bc-mod" onclick="volverHome()" style="cursor:pointer">Inicio</span>
-        <span class="hdr-bc-sep">›</span>
-        <span class="hdr-bc-cur" id="bc-page">—</span>
-        <span id="bc-filtro" style="font-size:11px;color:var(--b600);font-weight:500;margin-left:4px"></span>
-      </div>
+  <!-- Subbarra de herramientas específicas del módulo (área-switch, búsqueda, crear, notifs) -->
+  <div id="app-toolbar" style="display:flex;align-items:center;gap:10px;padding:6px 16px;background:var(--w);border-bottom:1px solid var(--g100);min-height:42px">
+    <select id="hdr-area-switch" class="hdr-area-switch" onchange="handleAreaSwitch(this.value)" title="Cambiar de área">
+      <option value="">Área</option>
+      <option value="operativa">Operativa</option>
+      <option value="almacen">Almacén</option>
+      <option value="aduanas">Aduanas</option>
+      <option value="airport">Airport</option>
+      <option value="configuracion">Admin</option>
+    </select>
 
-      <div class="h-right">
-        <select id="hdr-area-switch" class="hdr-area-switch" onchange="handleAreaSwitch(this.value)" title="Cambiar de área">
-          <option value="">Área</option>
-          <option value="operativa">Operativa</option>
-          <option value="almacen">Almacén</option>
-          <option value="aduanas">Aduanas</option>
-          <option value="airport">Airport</option>
-          <option value="configuracion">Admin</option>
-        </select>
+    <!-- Sub-breadcrumb opcional (filtros activos, etc.) -->
+    <span id="bc-filtro" style="font-size:11px;color:var(--b600);font-weight:500"></span>
+    <span id="bc-page" style="display:none"></span>
 
-        <!-- Búsqueda global -->
-        <div id="global-search-wrap" style="display:none">
-          <button class="hdr-icon-btn" onclick="abrirBusquedaGlobal()" title="Búsqueda global (Ctrl+K)" id="btn-busqueda-global"
-            style="display:flex;align-items:center;gap:6px;padding:0 10px;width:auto;font-size:12px;color:var(--g500);border-color:var(--g200)">
-            🔍 <span class="nav-item-txt" style="font-size:12px">Buscar</span>
-            <kbd style="font-size:10px;background:var(--g100);border:1px solid var(--g200);border-radius:4px;padding:1px 5px;color:var(--g400);font-family:var(--mono)">⌘K</kbd>
-          </button>
-        </div>
+    <div style="flex:1"></div>
 
-        <!-- Indicador Realtime -->
-        <div id="rt-indicator" title="Realtime: desconectado" style="width:8px;height:8px;border-radius:50%;background:var(--g300);flex-shrink:0;cursor:pointer;transition:background .4s;display:none" onclick="mostrarEstadoRealtime()"></div>
-        <span id="rt-last-update" style="font-size:10px;color:var(--g400);display:none;white-space:nowrap"></span>
-        <div id="hdr-presencia-global" style="display:flex;gap:3px;align-items:center" title="Usuarios conectados ahora"></div>
-        <button id="btn-recientes" onclick="mostrarRecientes()" title="Vistos recientemente" style="background:none;border:none;cursor:pointer;font-size:16px;padding:4px;color:var(--g400);display:none">🕐</button>
+    <!-- Búsqueda global -->
+    <div id="global-search-wrap" style="display:none">
+      <button class="hdr-icon-btn" onclick="abrirBusquedaGlobal()" title="Búsqueda global (Ctrl+K)" id="btn-busqueda-global"
+        style="display:flex;align-items:center;gap:6px;padding:5px 10px;width:auto;font-size:12px;color:var(--g600);border:1px solid var(--g200);background:var(--w);border-radius:8px;cursor:pointer">
+        🔍 <span style="font-size:12px">Buscar</span>
+        <kbd style="font-size:10px;background:var(--g100);border:1px solid var(--g200);border-radius:4px;padding:1px 5px;color:var(--g500);font-family:var(--mono)">⌘K</kbd>
+      </button>
+    </div>
 
-        <!-- Modo compacto/espacioso -->
-        <button id="density-toggle" onclick="toggleDensity()" title="Modo compacto" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--g400);padding:2px 6px;font-family:var(--mono);font-weight:600;letter-spacing:-.5px">Cómodo</button>
-        <!-- Modo oscuro automático -->
-        <button onclick="setDarkAuto()" title="Modo automático (sistema)" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--g400);padding:2px 4px" id="dark-auto-btn">🌗</button>
-        <div class="hdr-tools">
-          <button class="hdr-icon-btn" onclick="toggleHeaderTools(event)" title="Más opciones" aria-label="Más opciones">⋯</button>
-          <div id="hdr-tools-menu" class="hdr-tools-menu">
-            <button onclick="toggleDensity();closeHeaderTools()">Vista cómoda/compacta</button>
-            <button onclick="setDarkAuto();closeHeaderTools()">Modo según sistema</button>
-            <button onclick="mostrarRecientes();closeHeaderTools()">Vistos recientemente</button>
-            <button onclick="showOnboardingRole(true);closeHeaderTools()">Guía rápida</button>
-          </div>
-        </div>
+    <!-- Indicador Realtime -->
+    <div id="rt-indicator" title="Realtime: desconectado" style="width:8px;height:8px;border-radius:50%;background:var(--g300);flex-shrink:0;cursor:pointer;transition:background .4s;display:none" onclick="mostrarEstadoRealtime()"></div>
+    <span id="rt-last-update" style="font-size:10px;color:var(--g400);display:none;white-space:nowrap"></span>
+    <div id="hdr-presencia-global" style="display:flex;gap:3px;align-items:center" title="Usuarios conectados ahora"></div>
+    <button id="btn-recientes" onclick="mostrarRecientes()" title="Vistos recientemente" style="background:none;border:none;cursor:pointer;font-size:16px;padding:4px;color:var(--g400);display:none">🕐</button>
 
-        <!-- Botón único de creación — Buque / Expedición / Evento -->
-        <div style="position:relative" id="btn-crear-wrap" style="display:none">
-          <button class="btn btn-p btn-sm" id="btn-crear-main" onclick="toggleCrearMenu(event)" style="display:none">+ Crear ▾</button>
-          <div id="crear-menu" style="display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--w);border:1px solid var(--g200);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:6px;min-width:180px;z-index:9000">
-            <div onclick="openModal('nuevo-buque');cerrarCrearMenu()" id="cmenu-buque" style="display:none;padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background='none'">🚢 Nuevo buque</div>
-            <div onclick="openModal('nueva-expedicion');cerrarCrearMenu()" id="cmenu-exp" style="display:none;padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background='none'">📦 Nueva expedición</div>
-            <div style="height:1px;background:var(--g100);margin:4px 6px"></div>
-            <div onclick="abrirNuevoEvento();cerrarCrearMenu()" style="padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background='none'">📅 Nuevo evento</div>
-          </div>
-        </div>
-
-        <!-- Centro de notificaciones -->
-        <button id="hdr-notif-btn" onclick="abrirCentroNotificaciones()" title="Notificaciones" style="position:relative;background:none;border:none;cursor:pointer;padding:4px 6px;font-size:20px;line-height:1;display:none" aria-label="Notificaciones">
-          🔔
-          <span id="hdr-notif-badge" style="display:none;position:absolute;top:0;right:0;background:#ef4444;color:#fff;font-size:9px;font-weight:800;border-radius:50%;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 2px;pointer-events:none"></span>
-        </button>
-
-        <!-- Avatar → volver a inicio -->
-        <div class="hdr-user" id="hdr-user-btn" onclick="volverHome()" title="Ir a inicio" style="cursor:pointer">
-          <div class="hdr-av" id="hdr-av">?</div>
-          <div class="hdr-user-info nav-item-txt">
-            <div class="hdr-user-name" id="hdr-user-name">—</div>
-            <div class="hdr-user-role" id="hdr-user-role">—</div>
-          </div>
-        </div>
-        <button class="hdr-icon-btn hdr-logout" onclick="doLogout()" title="Cerrar sesión">🚪</button>
-
-        <!-- Elementos ocultos para compatibilidad JS -->
-        <span id="btn-to-operativa" style="display:none"></span>
-        <span id="btn-to-almacen" style="display:none"></span>
-        <span id="btn-to-airport" style="display:none"></span>
-        <span id="btn-to-taric" style="display:none"></span>
-        <span id="btn-to-config" style="display:none"></span>
-        <button id="dark-toggle" style="display:none" onclick="toggleDarkMode()"></button>
+    <!-- Botón único de creación -->
+    <div style="position:relative" id="btn-crear-wrap">
+      <button class="btn btn-p btn-sm" id="btn-crear-main" onclick="toggleCrearMenu(event)" style="display:none">+ Crear ▾</button>
+      <div id="crear-menu" style="display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--w);border:1px solid var(--g200);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:6px;min-width:180px;z-index:9000">
+        <div onclick="openModal('nuevo-buque');cerrarCrearMenu()" id="cmenu-buque" style="display:none;padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background='none'">🚢 Nuevo buque</div>
+        <div onclick="openModal('nueva-expedicion');cerrarCrearMenu()" id="cmenu-exp" style="display:none;padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background='none'">📦 Nueva expedición</div>
+        <div style="height:1px;background:var(--g100);margin:4px 6px"></div>
+        <div onclick="abrirNuevoEvento();cerrarCrearMenu()" style="padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background='none'">📅 Nuevo evento</div>
       </div>
     </div>
-  </header>
+
+    <!-- Centro de notificaciones -->
+    <button id="hdr-notif-btn" onclick="abrirCentroNotificaciones()" title="Notificaciones" style="position:relative;background:none;border:none;cursor:pointer;padding:4px 6px;font-size:18px;line-height:1;display:none" aria-label="Notificaciones">
+      🔔
+      <span id="hdr-notif-badge" style="display:none;position:absolute;top:0;right:0;background:#ef4444;color:#fff;font-size:9px;font-weight:800;border-radius:50%;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 2px;pointer-events:none"></span>
+    </button>
+
+    <!-- Hamburger solo en móvil (para abrir sidebar) -->
+    <button class="hamburger" onclick="toggleSB()" aria-label="Abrir menú lateral" style="background:none;border:1px solid var(--g200);border-radius:8px;padding:4px 8px;cursor:pointer;font-size:18px">☰</button>
+
+    <!-- Elementos ocultos para compatibilidad JS -->
+    <span id="bc-mod" style="display:none"></span>
+    <span id="hdr-av" style="display:none">?</span>
+    <span id="hdr-user-name" style="display:none"></span>
+    <span id="hdr-user-role" style="display:none"></span>
+    <span id="btn-to-operativa" style="display:none"></span>
+    <span id="btn-to-almacen" style="display:none"></span>
+    <span id="btn-to-airport" style="display:none"></span>
+    <span id="btn-to-taric" style="display:none"></span>
+    <span id="btn-to-config" style="display:none"></span>
+    <button id="dark-toggle" style="display:none" onclick="toggleDarkMode()"></button>
+  </div>
+
   <!-- Barra de progreso de carga -->
   <div id="load-bar-wrap" style="height:3px;background:transparent;position:relative;flex-shrink:0;overflow:hidden">
     <div id="load-bar" style="height:100%;width:0%;background:var(--b500);border-radius:0 2px 2px 0;transition:width .25s ease;position:absolute;left:0;top:0"></div>
@@ -2493,9 +2453,13 @@ async function doResetPass(){
 }
 
 function showHome(){
-  // Actualizar versión en la pantalla de inicio
+  // Actualizar versión en pie + header unificado del home
   const vEl = document.getElementById('hm-version');
   if(vEl) vEl.textContent = APP_VERSION;
+  const vPie = document.getElementById('hm-version-pie');
+  if(vPie) vPie.textContent = 'Portal ALS · CW ' + APP_VERSION;
+  // Montar el header común
+  try { if (window.PortalGuard && PortalGuard.mountHeader) PortalGuard.mountHeader({ mount:'#pg-header-home', home:true }); } catch(e) { console.warn('mountHeader home:', e); }
   // Detectar si airport_cargo solicitó navegar a un módulo específico
   try {
     var gotoMod = localStorage.getItem('als_goto_mod');
@@ -2731,6 +2695,7 @@ function enterMod(mod){
     document.getElementById('screen-login').style.display='none';
     document.getElementById('screen-home').style.display='none';
     document.getElementById('app').style.display='flex';
+    try { if(window.PortalGuard) PortalGuard.mountHeader({mount:'#pg-header-app', module:'Configuración'}); } catch(e){}
     const init=(CU.nombre||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     document.getElementById('sb-av').textContent=init;
     document.getElementById('sb-name').textContent=CU.nombre||'—';
@@ -2777,6 +2742,7 @@ function enterMod(mod){
 
   if(mod==='operativa'){
     syncAreaSwitch('operativa');
+    try { if(window.PortalGuard) PortalGuard.mountHeader({mount:'#pg-header-app', module:'Operativa'}); } catch(e){}
     document.getElementById('nav-op').style.display='flex';
     document.getElementById('nav-alm').style.display='none';
     document.getElementById('nav-adm').style.display='none';
@@ -2799,6 +2765,7 @@ function enterMod(mod){
     setTimeout(loadFactBadge, 800);
   } else {
     syncAreaSwitch('almacen');
+    try { if(window.PortalGuard) PortalGuard.mountHeader({mount:'#pg-header-app', module:'Almacén & Embarque'}); } catch(e){}
     document.getElementById('nav-op').style.display='none';
     document.getElementById('nav-alm').style.display='flex';
     document.getElementById('nav-adm').style.display='none';
@@ -3984,6 +3951,13 @@ function nav(view,el){
   if(el)el.classList.add('active');
   document.getElementById('bc-page').textContent=PG[view]||view;
   document.getElementById('bc-filtro').textContent='';
+  // Actualizar también el breadcrumb del header unificado
+  try {
+    if(window.PortalGuard && PortalGuard.updateBreadcrumb){
+      const modLabel = MOD==='almacen' ? 'Almacén & Embarque' : 'Operativa';
+      PortalGuard.updateBreadcrumb(modLabel, PG[view]||view);
+    }
+  } catch(e){}
   CV=view;
   if(MOD==='operativa'){ showMobOpBar(); syncMobOpActive(view); }
   else hideMobOpBar();

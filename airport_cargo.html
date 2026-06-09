@@ -311,20 +311,14 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 </head>
 <body>
 <div id="app">
-  <header id="hdr">
-    <button class="hamburger" onclick="toggleSB()">☰</button>
-    <!-- Breadcrumb -->
-    <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">
-      <span style="font-size:13px;color:rgba(255,255,255,.6);font-weight:500">Portal ALS</span>
-      <span style="color:rgba(255,255,255,.3);font-size:14px">›</span>
-      <span style="font-size:13px;color:#fff;font-weight:600">✈️ Airport Cargo</span>
-    </div>
-    <!-- Actions -->
-    <button class="hdr-btn" onclick="openNueva()">+ Nueva</button>
-    <button id="dark-toggle" onclick="toggleDarkMode()" class="hdr-icon-btn-air" title="Modo oscuro/claro">🌙</button>
-    <button class="hdr-icon-btn-air" onclick="goTo('home')" title="Volver al Portal ALS">🏠</button>
-    <button class="hdr-icon-btn-air hdr-logout-air" onclick="exitApp()" title="Salir">🚪</button>
-  </header>
+  <!-- Header unificado: PortalGuard.mountHeader -->
+  <div id="pg-header-app"></div>
+  <!-- Subtoolbar con acción específica del módulo -->
+  <div style="display:flex;align-items:center;gap:8px;padding:6px 16px;background:var(--w);border-bottom:1px solid var(--g100);min-height:42px">
+    <button class="hamburger" onclick="toggleSB()" style="background:none;border:1px solid var(--g200);border-radius:8px;padding:4px 8px;cursor:pointer;font-size:16px">☰</button>
+    <div style="flex:1"></div>
+    <button class="btn btn-p" onclick="openNueva()" style="padding:6px 14px;font-size:13px;font-weight:600">+ Nueva entrada</button>
+  </div>
   <div id="body">
     <nav id="sidebar">
       <!-- Sidebar header con logo y toggle -->
@@ -508,9 +502,11 @@ let sb;
 var CU=null;
 (async function(){
   const ok = await PortalGuard.require('airport_cargo');
-  if(!ok) return;  // ya redirigió o mostró acceso denegado
+  if(!ok) return;
   sb = PortalGuard.sb;
   CU = PortalGuard.CU;
+  // Montar el header unificado
+  try { PortalGuard.mountHeader({mount:'#pg-header-app', module:'Airport Cargo'}); } catch(e){}
   init();
 })();
 

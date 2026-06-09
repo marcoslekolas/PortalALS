@@ -436,33 +436,8 @@ textarea.fi{resize:vertical;min-height:80px}
 <body>
 <div id="app">
   <!-- HEADER -->
-  <header id="hdr">
-    <button class="hamburger" onclick="toggleSB()">☰</button>
-    <div class="hdr-mark" style="font-weight:900;font-size:14px;letter-spacing:-.5px;color:#fff">CW</div>
-    <div class="hdr-divider"></div>
-    <div class="hdr-title-wrap">
-      <div style="display:flex;flex-direction:column;gap:1px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:7px;padding:2px 7px;font-size:10px;font-weight:800;letter-spacing:.3px;color:rgba(255,255,255,.9);font-family:monospace">CW</div>
-          <div class="hdr-title">Customs Way · Clasificador TARIC</div>
-          <div style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:1px 6px;font-size:9px;font-weight:700;color:rgba(255,255,255,.6);font-family:monospace">v3.1</div>
-        </div>
-        <div class="hdr-subtitle">Representación Aduanera UE · Algeciras Marítima · La Línea</div>
-      </div>
-    </div>
-    <div class="hdr-spacer"></div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <button onclick="setDarkAuto()" title="Modo automático (sistema)" style="background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px">🌗</button>
-      <!-- Avatar con menú contextual -->
-            <button id="dark-toggle" class="hdr-icon-btn-air" onclick="toggleDarkMode()" title="Modo oscuro">🌙</button>
-      <div id="hdr-user-btn" onclick="goHome()" title="Ir a inicio" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 8px;border-radius:8px;transition:background .15s" onmouseenter="this.style.background='rgba(255,255,255,.1)'" onmouseleave="this.style.background='transparent'">
-        <div id="hdr-av" style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">CW</div>
-        <div style="display:flex;flex-direction:column;line-height:1.2" class="nav-item-txt">
-          <span id="hdr-user-name" style="font-size:12px;font-weight:600;color:#fff">—</span>
-          <span id="hdr-user-role" style="font-size:10px;color:rgba(255,255,255,.6)">← Inicio</span>
-        </div>
-      </div>
-  </header>
+  <!-- Header unificado: PortalGuard.mountHeader -->
+  <div id="pg-header-app"></div>
 
   <div id="body">
     <!-- SIDEBAR -->
@@ -1359,6 +1334,9 @@ window.addEventListener('load', async function(){
 });
 
 function initUser(){
+  // Montar el header unificado para TARIC
+  try { if(window.PortalGuard) PortalGuard.mountHeader({mount:'#pg-header-app', module:'Aduanas', section:'Clasificador TARIC'}); } catch(e){}
+  // Sidebar (si existe)
   const cu = PortalGuard.CU;
   if(!cu || !cu.nombre) return;
   const init = cu.nombre.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
@@ -1366,12 +1344,6 @@ function initUser(){
   const nm = document.getElementById('sb-name');
   if(av) av.textContent = init;
   if(nm) nm.textContent = cu.nombre.split(' ').slice(0,2).join(' ');
-  const hdrAv = document.getElementById('hdr-av');
-  const hdrNm = document.getElementById('hdr-user-name');
-  const hdrRl = document.getElementById('hdr-user-role');
-  if(hdrAv) hdrAv.textContent = init;
-  if(hdrNm) hdrNm.textContent = cu.nombre.split(' ').slice(0,2).join(' ');
-  if(hdrRl) hdrRl.textContent = cu.rol || '← Inicio';
 }
 
 // ── Navigation ────────────────────────────────────────────────
