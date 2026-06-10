@@ -781,6 +781,12 @@
       _applyTheme(t);
     } catch(e) {}
 
+    // CRÍTICO: eliminar cualquier header anterior. Pueden existir varios
+    // mount-points (#pg-header-home, #pg-header-app, etc.) y si quedan dos
+    // con los mismos IDs (pg-user-btn, pg-user-menu) el dropdown apunta al
+    // header oculto y nada se despliega visualmente.
+    document.querySelectorAll('.pg-header').forEach(h => h.remove());
+
     // Buscar el contenedor donde inyectar el header
     let mount;
     if (typeof opts.mount === 'string') {

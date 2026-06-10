@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="auth-guard.js"></script>
 
 <!-- jsPDF para generar PDF con plantilla CW -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -333,11 +334,13 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
 <div class="main">
 
   <!-- Topbar -->
-  <header class="topbar">
+  <!-- Header unificado: PortalGuard.mountHeader -->
+  <div id="pg-header-app"></div>
+  <header class="topbar" style="background:var(--w,#fff);border-bottom:1px solid var(--g100,#f1f3f5);padding:10px 24px;display:flex;align-items:center;justify-content:space-between">
     <div class="topbar-left">
       <div>
-        <div class="page-title" id="page-title">Dashboard</div>
-        <div class="page-subtitle" id="page-subtitle">Resumen de ofertas</div>
+        <div class="page-title" id="page-title" style="font-size:18px;font-weight:700;color:#0f172a">Dashboard</div>
+        <div class="page-subtitle" id="page-subtitle" style="font-size:12px;color:#64748b">Resumen de ofertas</div>
       </div>
     </div>
     <div class="topbar-right">
@@ -538,6 +541,15 @@ if (!CU || !_cuRolesTar.some(function(r){return ['admin','aduanas','oficina','fa
 const SUPA_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SUPA_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+// Guard + header unificado
+(async function(){
+  if(window.PortalGuard){
+    const ok = await PortalGuard.require('facturacion');
+    if(!ok) return;
+    try { PortalGuard.mountHeader({mount:'#pg-header-app', module:'Aduanas', section:'Tarificador'}); } catch(e){}
+  }
+})();
 
 // Nombre de tabla en Supabase para ofertas del tarificador
 const TABLA = 'cw_tarifas_ofertas';

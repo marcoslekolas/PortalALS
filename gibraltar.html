@@ -332,21 +332,8 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
 <!-- ═══ APP ═══ -->
 <div id="app">
 
-<!-- HEADER -->
-<div id="hdr">
-  <button class="hburg" onclick="toggleSB()">☰</button>
-  <div class="hm">GIB</div>
-  <div class="hd"></div>
-  <div><div class="ht">Gibraltar · Admin</div><div class="hs">Customs-Way SL · Acuerdo UE-RU · Uso exclusivo admin</div></div>
-  <div class="hsp"></div>
-  <span class="hpill" id="hdr-status">⚠ Aplic. provisional: 15/07/2026</span>
-  <div class="huser" id="hdr-user">
-    <div class="huser-av" id="huser-av">—</div>
-    <div><div class="huser-name" id="huser-name">—</div><div class="huser-role">⚡ Admin</div></div>
-  </div>
-  <button class="hibtn" onclick="toggleDark()" title="Modo oscuro">🌙</button>
-  <button class="hibtn" onclick="window.location.href='index.html'" title="Portal Customs-Way">🏠</button>
-</div>
+<!-- Header unificado: PortalGuard.mountHeader -->
+<div id="pg-header-app"></div>
 
 <div id="body">
 <!-- SIDEBAR -->
@@ -749,11 +736,24 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
 </div><!-- /app -->
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="auth-guard.js"></script>
 <script>
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY='sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
 const sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
-if(sb&&sb.auth){sb.auth.getSession().then(function(r){if(!(r&&r.data&&r.data.session)){location.replace('index.html');}});}
+
+// Guard vía PortalGuard (solo admin)
+(async function(){
+  if(window.PortalGuard){
+    const ok = await PortalGuard.require('configuracion');
+    if(!ok) return;
+    // Montar header unificado
+    try { PortalGuard.mountHeader({mount:'#pg-header-app', module:'Gibraltar', section:'Admin'}); } catch(e){}
+  } else {
+    // Fallback: comprobar sesión directamente
+    sb.auth.getSession().then(function(r){if(!(r&&r.data&&r.data.session)){location.replace('index.html');}});
+  }
+})();
 
 // ── Proxy URL (CORS: el browser no puede llamar a Anthropic directamente) ──
 const OR_PROXY='https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/openrouter-proxy'; // openrouter-proxy ya desplegado en TARIC
