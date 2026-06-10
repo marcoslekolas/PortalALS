@@ -945,11 +945,20 @@
     '\u{1F1EA}\u{1F1FA}': _svg('<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'), // 🇪🇺
     '\u{1F4DC}': _svg('<path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/>'),                     // 📜
     '\u2705':    _svg('<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>'),                                              // ✅
-    '\u{1F4E7}': _svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>')                                 // 📧
+    '\u{1F4E7}': _svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>'),
+    '\u{1F4F0}': _svg('<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8V6Z"/>'),
+    '\u{1F5C2}': _svg('<path d="M22 20V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2Z"/><path d="M2 10h20"/>'),
+    '\u{1F4C1}': _svg('<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
+    '\u{1F9E0}': _svg('<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/>'),
+    '\u{1F4D1}': _svg('<path d="M16 8.7c0-1-.8-1.7-1.7-1.7H6.7C5.8 7 5 7.8 5 8.7v10.6c0 .9.8 1.7 1.7 1.7h7.6c.9 0 1.7-.8 1.7-1.7Z"/><path d="M19 15.3V5.7c0-1-.8-1.7-1.7-1.7H9.7"/>'),
+    '\u{1F0CF}': _svg('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h.01M15 16h.01M12 12h.01"/>'),
+    '\u{1F5FA}': _svg('<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/>'),
+    '\u{1F4AC}': _svg('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+    '\u{1F4E8}': _svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="M2 7l4 4"/>')                                 // 📧
   };
   function iconize(root){
     try {
-      (root || document).querySelectorAll('.ni, .hm-card-icon').forEach(el => {
+      (root || document).querySelectorAll('.ni, .hm-card-icon, .ic').forEach(el => {
         if (el.querySelector('svg')) return;
         const t = (el.textContent || '').trim();
         const svg = _ICONMAP[t] || _ICONMAP[t.replace(/\uFE0F/g,'')] || _ICONMAP[t + '\uFE0F'];
