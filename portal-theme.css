@@ -80,6 +80,8 @@
   transform:none !important;
 }
 #sidebar .nav-item.active, #sb .ni.active, .sidebar .sb-item.active{
+  /* FUSIÓN CON EL PANEL: mismo color que el fondo del contenido,
+     pegado al borde derecho, con curvas de transición (notches) */
   background:var(--g50) !important;
   color:var(--pgt-nav-active-txt) !important;
   font-weight:600 !important;
@@ -88,36 +90,35 @@
   border-radius:12px 0 0 12px !important;
   position:relative !important;
   overflow:visible !important;
-  z-index:2;
+  z-index:1;
 }
-/* Notches: curva grande (18px) que conecta el item claro con el sidebar navy.
-   Pintan el color NAVY del sidebar; el radial transparente deja ver el item
-   claro en el centro y navy en la esquina → efecto "llave" de airport. */
-
-/* Esquina superior: el cuadrado es del color del PANEL (g50) y un círculo
-   transparente en su esquina interior deja ver el navy del sidebar.
-   Resultado: una muesca cóncava que curva el item hacia el sidebar. */
+/* Notches cóncavos que crean el efecto "llave" de airport_cargo.
+   Sobresalen del item hacia la zona navy (arriba/abajo). Para que NO los
+   recorte el overflow del contenedor en index/tarifas, ese overflow se
+   neutraliza más abajo (sección scroll). */
+#sidebar .nav-item.active::before, #sb .ni.active::before, .sidebar .sb-item.active::before,
+#sidebar .nav-item.active::after,  #sb .ni.active::after,  .sidebar .sb-item.active::after{
+  content:'' !important;
+  position:absolute !important;
+  right:0 !important;
+  width:14px !important;
+  height:14px !important;
+  pointer-events:none !important;
+  border:none !important;
+  z-index:3 !important;
+}
 #sidebar .nav-item.active::before, #sb .ni.active::before, .sidebar .sb-item.active::before{
-  content:'' !important; position:absolute !important; right:0 !important;
-  width:12px !important; height:12px !important; z-index:2 !important;
-  background:var(--g50) !important; border:none !important; pointer-events:none !important;
-  top:-12px !important;
-  -webkit-mask:radial-gradient(circle 12px at bottom left,#000 0 11.5px,transparent 12px) !important;
-          mask:radial-gradient(circle 12px at bottom left,#000 0 11.5px,transparent 12px) !important;
+  top:-14px !important;
+  background:radial-gradient(circle at 0 0, transparent 0 13.5px, var(--g50) 14px) !important;
 }
 #sidebar .nav-item.active::after, #sb .ni.active::after, .sidebar .sb-item.active::after{
-  content:'' !important; position:absolute !important; right:0 !important;
-  width:12px !important; height:12px !important; z-index:2 !important;
-  background:var(--g50) !important; border:none !important; pointer-events:none !important;
-  bottom:-12px !important;
-  -webkit-mask:radial-gradient(circle 12px at top left,#000 0 11.5px,transparent 12px) !important;
-          mask:radial-gradient(circle 12px at top left,#000 0 11.5px,transparent 12px) !important;
+  bottom:-14px !important;
+  background:radial-gradient(circle at 0 100%, transparent 0 13.5px, var(--g50) 14px) !important;
 }
 
-/* Texto del item activo siempre claro (el fondo es navy en ambos modos) */
+/* Texto e iconos del item activo en navy (claro) / claro (dark) */
 :root.dark #sidebar .nav-item.active, :root.dark #sb .ni.active, :root.dark .sidebar .sb-item.active{
   color:var(--g900) !important;
-  background:var(--g50) !important;
 }
 /* Sidebar colapsado: mantener la fusión */
 #sidebar.collapsed .nav-item.active{
@@ -133,17 +134,13 @@
   color:var(--pgt-nav-txt-dim) !important;
 }
 /* Contenedores de navegación de index (#nav-op,#nav-alm,#nav-adm):
-   su overflow-y:auto inline recorta los notches. Forzamos visible con alta
-   especificidad (nav#sidebar) y damos el scroll al propio #sidebar. */
-nav#sidebar > #nav-op,
-nav#sidebar > #nav-alm,
-nav#sidebar > #nav-adm,
-#sidebar > [id^="nav-"]{
+   su overflow-y:auto inline recorta los notches. Lo neutralizamos a 'visible'
+   y damos el scroll al propio #sidebar (como hace airport_cargo). */
+#sidebar [id^="nav-"]{
   overflow:visible !important;
   flex:0 0 auto !important;
-  min-height:auto !important;
 }
-nav#sidebar, #sidebar{
+#sidebar{
   overflow-y:auto !important;
   overflow-x:visible !important;
 }
@@ -403,16 +400,3 @@ tbody tr:hover{ background:var(--g50) !important; }
 .cal-continuo::-webkit-scrollbar{ width:8px; }
 .cal-continuo::-webkit-scrollbar-thumb{ background:var(--g300); border-radius:6px; }
 .cal-continuo::-webkit-scrollbar-thumb:hover{ background:var(--g400); }
-
-/* ── 11. ICONOS DUOTONE EN CARDS DEL HOME ───────────────────────────────
-   Los SVG duotone que inyecta iconize necesitan respirar (sin drop-shadow
-   pesado) y heredar el blanco de la card navy. */
-.hm-card-icon{
-  filter:none !important;
-  color:#fff !important;
-  opacity:.95;
-}
-.hm-card-icon svg{
-  width:40px !important;
-  height:40px !important;
-}
