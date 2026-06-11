@@ -94,6 +94,7 @@ if('serviceWorker' in navigator){
 })();
 </script>
 <link rel="stylesheet" href="portal-theme.css"><!-- PORTAL THEME: eliminar esta línea para desactivar el tema -->
+<link rel="stylesheet" href="almacen-movil.css"><!-- ALMACÉN MÓVIL: capa táctil ≤768px -->
 </head>
 <body>
 <a href="#screen-home" class="skip-link">Saltar al contenido principal</a>
@@ -2716,6 +2717,7 @@ function enterMod(mod){
   if(mod==='operativa'){
     syncAreaSwitch('operativa');
     try { if(window.PortalGuard) PortalGuard.mountHeader({mount:'#pg-header-app', module:'Operativa'}); } catch(e){}
+    try { if(window.PortalGuard && PortalGuard.AlmMovil) PortalGuard.AlmMovil.desactivar(); } catch(e){}
     document.getElementById('nav-op').style.display='flex';
     document.getElementById('nav-alm').style.display='none';
     document.getElementById('nav-adm').style.display='none';
@@ -2739,6 +2741,7 @@ function enterMod(mod){
   } else {
     syncAreaSwitch('almacen');
     try { if(window.PortalGuard) PortalGuard.mountHeader({mount:'#pg-header-app', module:'Almacén & Embarque'}); } catch(e){}
+    try { if(window.PortalGuard && PortalGuard.AlmMovil) PortalGuard.AlmMovil.activar(); } catch(e){}
     document.getElementById('nav-op').style.display='none';
     document.getElementById('nav-alm').style.display='flex';
     document.getElementById('nav-adm').style.display='none';
@@ -2763,6 +2766,7 @@ function irAAlmacen(){ enterMod('almacen'); }
 function irAOperativa(){ enterMod('operativa'); }
 
 function volverHome(){
+  try { if(window.PortalGuard && PortalGuard.AlmMovil) PortalGuard.AlmMovil.desactivar(); } catch(e){}
   document.getElementById('app').style.display='none';
   hideMobAlmBar();
   hideMobOpBar();
@@ -8507,13 +8511,42 @@ async function abrirIncidenciaOCR(expId, ref, difBultos, difKilos){
 }
 
 async function confirmLlegada(id){
+  const AM = window.PortalGuard && PortalGuard.AlmMovil;
+  const enMovil = AM && AM.esMovil() && document.body.classList.contains('alm-movil');
   const {data:e}=await sb.from('expediciones').select('nº_expedicion,buques(nombre)').eq('id',id).single();
+  if(enMovil){
+    const ok = await AM.confirmar({
+      icon:'✅', title:'¿Confirmar llegada?',
+      sub:'Expedición '+(e?.nº_expedicion||'')+(e?.buques?.nombre?' · '+e.buques.nombre:''),
+      okText:'Sí, ha llegado', okIcon:'✅'
+    });
+    if(!ok) return;
+  }
   await sb.from('expediciones').update({ubicacion:'Almacén-Sin Ubicar',notif_llegada_sent:true}).eq('id',id);
   await logAct('expediciones',id,e?.nº_expedicion||'','editar','ubicacion','Pendiente recibir','Almacén-Sin Ubicar');
   await alertarOperativa(id,e?.nº_expedicion||'',e?.buques?.nombre||'');
+  if(enMovil) AM.exito({icon:'✅', text:'Llegada confirmada', sub:e?.nº_expedicion||''});
   await loadAlmacen();
 }
-async function marcarCarg(id){if(!confirm('¿Confirmar carga en camión?'))return;const ts=new Date().toISOString();await sb.from('expediciones').update({hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'}).eq('id',id);await logAct('expediciones',id,'','editar','hora_de_carga',null,ts);await loadAlmacen();}
+async function marcarCarg(id){
+  const AM = window.PortalGuard && PortalGuard.AlmMovil;
+  const enMovil = AM && AM.esMovil() && document.body.classList.contains('alm-movil');
+  if(enMovil){
+    const ok = await AM.confirmar({
+      icon:'🚛', title:'¿Cargar en camión?',
+      sub:'Se marcará la expedición como cargada en el camión.',
+      okText:'Sí, cargar', okIcon:'🚛'
+    });
+    if(!ok) return;
+  } else {
+    if(!confirm('¿Confirmar carga en camión?')) return;
+  }
+  const ts=new Date().toISOString();
+  await sb.from('expediciones').update({hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'}).eq('id',id);
+  await logAct('expediciones',id,'','editar','hora_de_carga',null,ts);
+  if(enMovil) AM.exito({icon:'🚛', text:'Cargado', sub:'Expedición en camión'});
+  await loadAlmacen();
+}
 
 // ── DASHBOARD ALMACÉN ──────────────────────────────────────
 async function loadAlmDash(){

@@ -980,4 +980,74 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _iconizeBoot);
   else _iconizeBoot();
 
+
+  // ╔══════════════════════════════════════════════════════════════════════╗
+  // ║ 9. ALMACÉN MÓVIL — confirmaciones full-screen + háptica + alto contr. ║
+  // ║ Activa la clase body.alm-movil solo en ≤768px dentro del almacén.    ║
+  // ╚══════════════════════════════════════════════════════════════════════╝
+  const AlmMovil = {
+    esMovil(){ return window.matchMedia('(max-width:768px)').matches; },
+    activar(){
+      if(document.body) document.body.classList.add('alm-movil');
+      this._injectHCToggle();
+    },
+    desactivar(){
+      if(document.body){ document.body.classList.remove('alm-movil'); document.body.classList.remove('alm-hc'); }
+      const t = document.getElementById('alm-hc-toggle'); if(t) t.remove();
+    },
+    _injectHCToggle(){
+      if(!this.esMovil() || document.getElementById('alm-hc-toggle')) return;
+      const b = document.createElement('button');
+      b.id = 'alm-hc-toggle';
+      b.title = 'Alto contraste (sol)';
+      b.textContent = '\u2600\uFE0F';
+      b.onclick = () => {
+        document.body.classList.toggle('alm-hc');
+        try{ localStorage.setItem('als_alm_hc', document.body.classList.contains('alm-hc')?'1':'0'); }catch(e){}
+        AlmMovil.vibrar(15);
+      };
+      document.body.appendChild(b);
+      try{ if(localStorage.getItem('als_alm_hc')==='1') document.body.classList.add('alm-hc'); }catch(e){}
+    },
+    vibrar(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms||20); }catch(e){} },
+    // Confirmación a pantalla completa. Devuelve Promise<boolean>.
+    confirmar(opts){
+      opts = opts || {};
+      return new Promise(resolve => {
+        const ov = document.createElement('div');
+        ov.className = 'alm-confirm-overlay';
+        ov.innerHTML =
+          '<div class="alm-confirm-card">' +
+            '<div class="alm-confirm-icon">' + (opts.icon || '\u2753') + '</div>' +
+            '<div class="alm-confirm-title">' + (opts.title || '\u00bfConfirmar?') + '</div>' +
+            (opts.sub ? '<div class="alm-confirm-sub">' + opts.sub + '</div>' : '') +
+            '<div class="alm-confirm-btns">' +
+              '<button class="alm-cf-ok">' + (opts.okIcon||'') + ' ' + (opts.okText || 'Confirmar') + '</button>' +
+              '<button class="alm-cf-cancel">' + (opts.cancelText || 'Cancelar') + '</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(ov);
+        AlmMovil.vibrar(12);
+        const close = (val) => { ov.remove(); resolve(val); };
+        ov.querySelector('.alm-cf-ok').onclick = () => { AlmMovil.vibrar(25); close(true); };
+        ov.querySelector('.alm-cf-cancel').onclick = () => close(false);
+        ov.addEventListener('click', e => { if(e.target === ov) close(false); });
+      });
+    },
+    // Flash de éxito a pantalla completa (se auto-cierra)
+    exito(opts){
+      opts = opts || {};
+      const fl = document.createElement('div');
+      fl.className = 'alm-success-flash';
+      fl.innerHTML =
+        '<div class="icon">' + (opts.icon || '\u2705') + '</div>' +
+        '<div class="txt">' + (opts.text || 'Hecho') + '</div>' +
+        (opts.sub ? '<div class="sub">' + opts.sub + '</div>' : '');
+      document.body.appendChild(fl);
+      AlmMovil.vibrar([20,40,20]);
+      setTimeout(() => { fl.style.transition='opacity .25s'; fl.style.opacity='0'; setTimeout(()=>fl.remove(),250); }, opts.duration || 1100);
+    }
+  };
+  window.PortalGuard.AlmMovil = AlmMovil;
+
 })();
