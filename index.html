@@ -702,7 +702,7 @@ if('serviceWorker' in navigator){
           <button class="fotos-tab active" data-tab="llegadas" onclick="switchFotosTab('llegadas',this)" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid var(--b600);font-family:var(--f);font-size:13px;font-weight:600;color:var(--b600);cursor:pointer;white-space:nowrap;margin-bottom:-2px">📥 Llegadas</button>
           <button class="fotos-tab" data-tab="carga" onclick="switchFotosTab('carga',this)" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;font-family:var(--f);font-size:13px;font-weight:600;color:var(--g500);cursor:pointer;white-space:nowrap;margin-bottom:-2px">🚛 Carga camión</button>
           <button class="fotos-tab" data-tab="embarque" onclick="switchFotosTab('embarque',this)" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;font-family:var(--f);font-size:13px;font-weight:600;color:var(--g500);cursor:pointer;white-space:nowrap;margin-bottom:-2px">🚢 Embarque</button>
-          <button class="fotos-tab" data-tab="landed" onclick="switchFotosTab('landed',this)" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;font-family:var(--f);font-size:13px;font-weight:600;color:var(--g500);cursor:pointer;white-space:nowrap;margin-bottom:-2px">⚓ Landed</button>
+          <button class="fotos-tab" data-tab="landed" onclick="switchFotosTab('landed',this)" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;font-family:var(--f);font-size:13px;font-weight:600;color:var(--g500);cursor:pointer;white-space:nowrap;margin-bottom:-2px">⚓ Desembarque</button>
         </div>
         <div id="fotos-tab-content"></div>
       </div>
@@ -1046,16 +1046,13 @@ if('serviceWorker' in navigator){
     <span class="mob-icon">🚛</span><span class="mob-lbl">Carga</span>
   </button>
   <button class="mob-alm-btn" id="mab-scanner" onclick="abrirScannerQR()" style="position:relative;overflow:visible">
-    <span style="display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:var(--b600);color:#fff;box-shadow:0 4px 14px rgba(10,163,126,.55);font-size:24px;margin-top:-4px">📷</span><span class="mob-lbl" style="color:var(--b700);font-weight:800;font-size:10px">Escáner</span>
+    <span class="mob-icon"></span><span class="mob-lbl" style="color:var(--b700);font-weight:800">Escáner</span>
   </button>
   <button class="mob-alm-btn" id="mab-embarque" onclick="switchFotosTab('embarque',this);navAlmMob(this)">
     <span class="mob-icon">🚢</span><span class="mob-lbl">Embarque</span>
   </button>
   <button class="mob-alm-btn" id="mab-landed" onclick="switchFotosTab('landed',this);navAlmMob(this)">
-    <span class="mob-icon">⚓</span><span class="mob-lbl">Landed</span>
-  </button>
-  <button class="mob-alm-btn" id="mab-home" onclick="navAlmMobHome()">
-    <span class="mob-icon">🏠</span><span class="mob-lbl">Inicio</span>
+    <span class="mob-icon">⚓</span><span class="mob-lbl">Desembarque</span>
   </button>
 </div>
 
@@ -2508,7 +2505,7 @@ function showHome(){
         <div class="hm-ctitle">Almacén & Embarque</div>
         <div class="hm-cdesc">Llegadas · Fotos · Embarque</div>
         <div class="hm-card-feats">
-          <span>📸 Fotos</span><span>🚛 Carga</span><span>🚢 Embarque</span><span>⚓ Landed</span>
+          <span>📸 Fotos</span><span>🚛 Carga</span><span>🚢 Embarque</span><span>⚓ Desembarque</span>
         </div>
         <div class="hm-card-cta">Entrar →</div>
       </div>
@@ -3750,44 +3747,6 @@ function navAlmMob(el){
     nav('alm-fotos', document.querySelector('#nav-alm .nav-item:nth-child(2)'));
   }
 }
-function navAlmMobHome(){
-  // Ir al dashboard de almacén SIN ocultar la barra
-  document.querySelectorAll('.mob-alm-btn').forEach(function(b){b.classList.remove('active');});
-  var homeBtn=document.getElementById('mab-home');
-  if(homeBtn) homeBtn.classList.add('active');
-  nav('alm-dashboard', null);
-  // La barra sigue visible — el usuario puede volver a las pestañas
-}
-
-
-// ── AWB TRACKING — enlace directo al portal de la aerolínea ──
-const AWB_PORTALS={
-  '001':'https://www.aacargo.com/track/?awb=',           // American Airlines
-  '006':'https://lufthansa-cargo.com/tracking?awb=',     // Lufthansa
-  '012':'https://cargo.flysas.com/tracking?awb=',        // SAS
-  '014':'https://www.airtransat.com/',
-  '020':'https://lufthansa-cargo.com/tracking?awb=',     // Lufthansa
-  '023':'https://aircargo.united.com/us/en/tracking?awb=',// United
-  '052':'https://cargo.iberia.com/tracking?awb=',        // Iberia
-  '055':'https://www.afklcargo.com/tracking?awb=',       // Air France
-  '057':'https://www.afklcargo.com/tracking?awb=',       // KLM
-  '074':'https://www.aacargo.com/track/?awb=',           // American
-  '083':'https://www.cathaycargo.com/en-us/track-and-trace.html?awb=', // Cathay
-  '086':'https://www.lufthansa-cargo.com/tracking?awb=',
-  '098':'https://cargo.britishairways.com/tracking?awb=',// British Airways
-  '125':'https://cargo.bru.iberia.com/tracking?awb=',    // Vueling
-  '139':'https://cargo.flyone.am/tracking?awb=',
-  '172':'https://www.emiratesgroup.com/tracking?awb=',   // Emirates
-  '176':'https://cargo.etihadairways.com/tracking?awb=', // Etihad
-  '180':'https://www.corendon.com/',
-  '232':'https://cargo.delta.com/track?awb=',            // Delta
-  '235':'https://cargo.turkish.com/tracking?awb=',       // Turkish
-  '297':'https://www.singaporeair.com/cargo/tracking?awb=',
-  '369':'https://cargo.turkishairlines.com/tracking?awb=',
-  '618':'https://cargo.finnair.com/tracking?awb=',       // Finnair
-  '724':'https://cargo.iberia.com/tracking?awb=',        // Iberia
-  '783':'https://cargo.ryanair.com/',
-};
 
 function awbTrackingUrl(awb){
   if(!awb) return null;
@@ -8755,6 +8714,14 @@ function _almChipLleg(e){
   return '<span style="background:var(--am50);color:var(--am700);font-size:12px;font-weight:600;padding:3px 9px;border-radius:8px;flex-shrink:0">Pendiente</span>';
 }
 function cerrarAccionAlm(){ const ov=document.getElementById('alm-sheet'); if(ov) ov.remove(); }
+function toggleMasOpcionesLlegada(expId){
+  const box=document.getElementById('mas-op-'+expId);
+  const chev=document.getElementById('mas-op-chev-'+expId);
+  if(!box) return;
+  const abrir=box.style.display==='none';
+  box.style.display=abrir?'':'none';
+  if(chev) chev.textContent=abrir?'▴':'▾';
+}
 function abrirAccionLlegada(expId){
   const e=(window._almLlegMap||{})[expId];
   if(!e){ showToast('No se pudo abrir la expedición'); return; }
@@ -8793,12 +8760,17 @@ function abrirAccionLlegada(expId){
           </div>
           <div class="foto-prev" id="fl-pv-${e.id}"></div>
         </div>
-        <div style="margin-top:14px">
-          <textarea id="fl-nota-${e.id}" class="fi" placeholder="Notas de llegada: marcas, condición del embalaje…" style="min-height:60px;font-size:14px;resize:vertical;width:100%"></textarea>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="btn btn-s" style="flex:1;min-height:50px;font-size:14px" onclick="imprimirQRLlegada('${e.id}','${refEsc}')">📱 QR</button>
-          <button class="btn btn-s" style="flex:1;min-height:50px;font-size:14px" onclick="leerAlbaranOCR('${e.id}','${refEsc}',${e.bultos||0},${e.kilos||0})">📄 Albarán</button>
+        <button type="button" onclick="toggleMasOpcionesLlegada('${e.id}')" style="width:100%;margin-top:14px;padding:11px 12px;background:none;border:1px dashed var(--g300);border-radius:10px;font-family:var(--f);font-size:13px;font-weight:600;color:var(--g500);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+          Más opciones <span id="mas-op-chev-${e.id}">▾</span>
+        </button>
+        <div id="mas-op-${e.id}" style="display:none">
+          <div style="margin-top:14px">
+            <textarea id="fl-nota-${e.id}" class="fi" placeholder="Notas de llegada: marcas, condición del embalaje…" style="min-height:60px;font-size:14px;resize:vertical;width:100%"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            <button class="btn btn-s" style="flex:1;min-height:50px;font-size:14px" onclick="imprimirQRLlegada('${e.id}','${refEsc}')">📱 QR</button>
+            <button class="btn btn-s" style="flex:1;min-height:50px;font-size:14px" onclick="leerAlbaranOCR('${e.id}','${refEsc}',${e.bultos||0},${e.kilos||0})">📄 Albarán</button>
+          </div>
         </div>
       </div>
       <div style="position:sticky;bottom:0;background:var(--w);border-top:1px solid var(--g100);padding:12px 16px">
@@ -9447,6 +9419,17 @@ function selEstado(expId, val, btn){
   // Mostrar aviso si hay daño
   const aviso = document.getElementById('aviso-estado-'+expId);
   if(aviso) aviso.style.display = val !== 'ok' ? '' : 'none';
+
+  // Con daño, desplegar "Más opciones" (solo existe en el sheet móvil) para
+  // que las notas de la incidencia queden a la vista sin un toque extra
+  if(val !== 'ok'){
+    const masOp = document.getElementById('mas-op-'+expId);
+    if(masOp && masOp.style.display==='none'){
+      masOp.style.display='';
+      const chev=document.getElementById('mas-op-chev-'+expId);
+      if(chev) chev.textContent='▴';
+    }
+  }
 }
 
 // (#1/#2) Diálogo de bultos recibidos: permite dar entrada parcial y generar incidencia

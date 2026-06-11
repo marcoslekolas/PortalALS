@@ -44,10 +44,39 @@
   const SUPABASE_JS   = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
 
   // ── Inactividad ────────────────────────────────────────────────────────
-  const WARN_MS              = 30 * 60 * 1000;   // 30 min → mostrar aviso
-  const CLOSE_MS             = 35 * 60 * 1000;   // 35 min → cierre forzado
+  // Política por rol: oficina 30/35 min; almacén y transportista trabajan a
+  // pie de muelle con pausas largas entre acciones → ventana de jornada (12 h,
+  // re-autenticación diaria). La ventana aplicada se persiste en localStorage
+  // para que el chequeo pre-RPC (antes de conocer el rol) use la correcta.
+  let   WARN_MS              = 30 * 60 * 1000;   // 30 min → mostrar aviso
+  let   CLOSE_MS             = 35 * 60 * 1000;   // 35 min → cierre forzado
+  const ROLES_JORNADA        = ['almacen', 'transportista'];
+  const JORNADA_CLOSE_MS     = 12 * 60 * 60 * 1000;            // 12 h
+  const JORNADA_WARN_MS      = JORNADA_CLOSE_MS - 5 * 60 * 1000;
+  const INACT_CLOSE_KEY      = 'als_inact_close_ms';
   const ACTIVITY_KEY         = 'als_last_activity';
   const ACTIVITY_THROTTLE_MS = 5000;             // máx 1 escritura cada 5s
+
+  // Aplicar ventana persistida de la sesión anterior (si la hay)
+  try {
+    const _persisted = parseInt(localStorage.getItem(INACT_CLOSE_KEY) || '', 10);
+    if (_persisted === JORNADA_CLOSE_MS) { CLOSE_MS = JORNADA_CLOSE_MS; WARN_MS = JORNADA_WARN_MS; }
+  } catch(e) {}
+
+  function _ajustarInactividadPorRol(cu){
+    try {
+      const roles = (cu && (Array.isArray(cu.roles) && cu.roles.length ? cu.roles : [cu.rol])) || [];
+      if (roles.some(r => ROLES_JORNADA.includes(r))) {
+        CLOSE_MS = JORNADA_CLOSE_MS;
+        WARN_MS  = JORNADA_WARN_MS;
+        try { localStorage.setItem(INACT_CLOSE_KEY, String(JORNADA_CLOSE_MS)); } catch(e) {}
+      } else {
+        CLOSE_MS = 35 * 60 * 1000;
+        WARN_MS  = 30 * 60 * 1000;
+        try { localStorage.removeItem(INACT_CLOSE_KEY); } catch(e) {}
+      }
+    } catch(e) {}
+  }
 
   // ── Estado interno ─────────────────────────────────────────────────────
   let sb            = null;
@@ -120,7 +149,7 @@
       // Marcar el motivo del cierre para que la próxima carga muestre mensaje claro
       try { localStorage.setItem('als_logout_reason', 'inactivity'); } catch(e) {}
       try { await sb.auth.signOut({ scope: 'local' }); } catch(e) {}
-      try { localStorage.removeItem(ACTIVITY_KEY); } catch(e) {}
+      try { localStorage.removeItem(ACTIVITY_KEY); localStorage.removeItem(INACT_CLOSE_KEY); } catch(e) {}
       try {
         const claves = [];
         for (let i = 0; i < localStorage.length; i++) {
@@ -151,7 +180,7 @@
     if (lLast > 0 && Date.now() - lLast >= CLOSE_MS) {
       try { localStorage.setItem('als_logout_reason', 'inactivity'); } catch(e) {}
       try { await sb.auth.signOut({ scope: 'local' }); } catch(e) {}
-      try { localStorage.removeItem(ACTIVITY_KEY); } catch(e) {}
+      try { localStorage.removeItem(ACTIVITY_KEY); localStorage.removeItem(INACT_CLOSE_KEY); } catch(e) {}
       return { ok: false, reason: 'inactivity_expired' };
     }
 
@@ -171,6 +200,7 @@
     permisos = data.permisos || {};
     esAdmin  = data.es_admin === true;
     ready    = true;
+    _ajustarInactividadPorRol(CU);
 
     // Compatibilidad con código existente que lee window.CU
     try { window.CU = CU; } catch(e) {}
@@ -899,8 +929,9 @@
     // eventos
     onReady (fn){ listeners.ready.push(fn);  if (ready) try { fn(CU); } catch(e) {} },
     onLogout(fn){ listeners.logout.push(fn); },
-    // constantes (por si index.html necesita conocerlas)
-    WARN_MS, CLOSE_MS
+    // valores vigentes (ahora dinámicos por rol)
+    get WARN_MS(){ return WARN_MS; },
+    get CLOSE_MS(){ return CLOSE_MS; }
   };
 
   // ╔══════════════════════════════════════════════════════════════════════╗
