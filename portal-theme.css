@@ -92,25 +92,30 @@
   overflow:visible !important;
   z-index:1;
 }
-/* Notches cóncavos: la curva que une el item con el panel */
+/* Notches cóncavos que crean el efecto "llave" de airport_cargo.
+   Sobresalen del item hacia la zona navy (arriba/abajo). Para que NO los
+   recorte el overflow del contenedor en index/tarifas, ese overflow se
+   neutraliza más abajo (sección scroll). */
 #sidebar .nav-item.active::before, #sb .ni.active::before, .sidebar .sb-item.active::before,
 #sidebar .nav-item.active::after,  #sb .ni.active::after,  .sidebar .sb-item.active::after{
   content:'' !important;
-  position:absolute;
-  right:0;
-  width:12px;
-  height:12px;
-  pointer-events:none;
+  position:absolute !important;
+  right:0 !important;
+  width:14px !important;
+  height:14px !important;
+  pointer-events:none !important;
   border:none !important;
+  z-index:3 !important;
 }
 #sidebar .nav-item.active::before, #sb .ni.active::before, .sidebar .sb-item.active::before{
-  top:-12px;
-  background:radial-gradient(circle at 0 0, transparent 11.5px, var(--g50) 12px);
+  top:-14px !important;
+  background:radial-gradient(circle at 0 0, transparent 0 13.5px, var(--g50) 14px) !important;
 }
 #sidebar .nav-item.active::after, #sb .ni.active::after, .sidebar .sb-item.active::after{
-  bottom:-12px;
-  background:radial-gradient(circle at 0 100%, transparent 11.5px, var(--g50) 12px);
+  bottom:-14px !important;
+  background:radial-gradient(circle at 0 100%, transparent 0 13.5px, var(--g50) 14px) !important;
 }
+
 /* Texto e iconos del item activo en navy (claro) / claro (dark) */
 :root.dark #sidebar .nav-item.active, :root.dark #sb .ni.active, :root.dark .sidebar .sb-item.active{
   color:var(--g900) !important;
@@ -128,8 +133,15 @@
 #sidebar .sb-sec, #sb .sb-tag{
   color:var(--pgt-nav-txt-dim) !important;
 }
-/* Los contenedores de navegación no deben recortar los notches del activo */
-#sidebar nav, #sidebar .nav, #sb nav{
+/* Contenedores de navegación de index (#nav-op,#nav-alm,#nav-adm):
+   su overflow-y:auto inline recorta los notches. Lo neutralizamos a 'visible'
+   y damos el scroll al propio #sidebar (como hace airport_cargo). */
+#sidebar [id^="nav-"]{
+  overflow:visible !important;
+  flex:0 0 auto !important;
+}
+#sidebar{
+  overflow-y:auto !important;
   overflow-x:visible !important;
 }
 
@@ -347,3 +359,44 @@ tbody tr:hover{ background:var(--g50) !important; }
 #sidebar .nav-item.active::after,  #sb .ni.active::after,  .sidebar .sb-item.active::after{
   animation:pgt-notch-in .28s ease .08s both;
 }
+
+/* ── 10. VISTA CALENDARIO CONTINUO ──────────────────────────────────────
+   Tira vertical de semanas con scroll, sin saltos de mes. */
+.cal-continuo{
+  max-height:calc(100vh - 240px);
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:4px;
+  scroll-behavior:smooth;
+}
+.cal-continuo .cal-cont-mes{
+  position:sticky;
+  top:0;
+  z-index:5;
+  background:linear-gradient(90deg,var(--b600),var(--b700));
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  letter-spacing:.03em;
+  padding:7px 14px;
+  border-radius:8px;
+  margin:14px 0 6px;
+  box-shadow:0 2px 8px rgba(20,30,55,.15);
+}
+.cal-continuo .cal-cont-mes:first-child{ margin-top:0; }
+.cal-continuo .cal-cont-row{
+  margin-bottom:3px;
+}
+/* Días de otro mes en la tira: atenuados pero operativos para drag&drop */
+.cal-continuo .cal-day.om{
+  opacity:.5;
+  background:var(--g100);
+}
+.cal-continuo .cal-day.today{
+  outline:2px solid var(--b500);
+  outline-offset:-2px;
+}
+/* Scrollbar fino para la tira continua */
+.cal-continuo::-webkit-scrollbar{ width:8px; }
+.cal-continuo::-webkit-scrollbar-thumb{ background:var(--g300); border-radius:6px; }
+.cal-continuo::-webkit-scrollbar-thumb:hover{ background:var(--g400); }
