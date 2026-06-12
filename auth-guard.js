@@ -41,7 +41,10 @@
   // ── Configuración Supabase ─────────────────────────────────────────────
   const SUPABASE_URL  = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
   const SUPABASE_KEY  = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
-  const SUPABASE_JS   = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+  // Versión FIJADA (no '@2' flotante) + integridad SRI verificada: si el CDN
+  // sirviera un fichero alterado, el navegador lo rechaza en vez de ejecutarlo.
+  const SUPABASE_JS   = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.107.0/dist/umd/supabase.js';
+  const SUPABASE_JS_SRI = 'sha384-CQbEv3UOeYwlaBLdPF5KqEagCP39Q1KpvJC6Gwa3UGjZAwMvpA+0TFxSSnrgb4MX';
 
   // ── Inactividad ────────────────────────────────────────────────────────
   // Política por rol: oficina 30/35 min; almacén y transportista trabajan a
@@ -102,6 +105,8 @@
       if (window.supabase && window.supabase.createClient) return resolve();
       const s = document.createElement('script');
       s.src = SUPABASE_JS;
+      s.integrity = SUPABASE_JS_SRI;   // verificación de integridad (SRI)
+      s.crossOrigin = 'anonymous';     // requerido para que SRI valide cross-origin
       s.async = true;
       s.onload = () => resolve();
       s.onerror = () => reject(new Error('No se pudo cargar Supabase SDK'));
