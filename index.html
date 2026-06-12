@@ -1,8 +1,15 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<script>
+/* Anti-clickjacking (frame-buster). Sustituye a 'frame-ancestors', que GitHub
+   Pages no puede aplicar al no permitir cabeceras HTTP. Si el portal se carga
+   dentro de un iframe ajeno, rompe el encuadre llevandolo a primer plano. */
+(function(){ try{ if(window.top!==window.self){ window.top.location=window.self.location; } }catch(e){ document.documentElement.style.display='none'; try{ window.top.location=window.self.location; }catch(_){} } })();
+</script>
+
 <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net https://openrouter.ai https://*.openrouter.ai https://api.anthropic.com https://corsproxy.io https://api.allorigins.win https://api.opencorporates.com https://en.wikipedia.org https://www.wikidata.org; font-src https://fonts.gstatic.com; worker-src 'self' blob:; manifest-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-src 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net https://openrouter.ai https://*.openrouter.ai https://api.anthropic.com https://corsproxy.io https://api.allorigins.win https://api.opencorporates.com https://en.wikipedia.org https://www.wikidata.org; font-src https://fonts.gstatic.com; worker-src 'self' blob:; manifest-src 'self' blob:; base-uri 'self'; form-action 'self'; object-src 'none'; frame-src 'none';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#2563eb">
 <meta name="mobile-web-app-capable" content="yes">
@@ -5677,25 +5684,21 @@ function _buildCuerpoEmailCamion(c, porBuque, esTransportista){
 // almacenista identifique a qué expedición pertenece cada documento.
 async function _cargarDocsExpediciones(exps){
   const out=[];
-  console.log('[camión docs] expediciones recibidas:', (exps||[]).map(e=>({id:e.id, ref:e.nº_expedicion})));
   for(const e of (exps||[])){
-    const {data:docs, error}=await sb.from('expedicion_docs').select('*').eq('expedicion_id',e.id).order('created_at');
-    if(error){ console.warn('[camión docs] ERROR consulta exp', e.nº_expedicion, e.id, '→', error.message); }
-    console.log('[camión docs] exp', e.nº_expedicion, '('+e.id+') →', (docs||[]).length, 'documento(s)');
+    const {data:docs}=await sb.from('expedicion_docs').select('*').eq('expedicion_id',e.id).order('created_at');
     for(const doc of (docs||[])){
       try{
         const {data:su}=await sb.storage.from(DOCS_BUCKET).createSignedUrl(doc.file_path,600);
-        if(!su?.signedUrl){ console.warn('[camión docs] sin signedUrl para', doc.file_path); continue; }
+        if(!su?.signedUrl) continue;
         const resp=await fetch(su.signedUrl);
-        if(!resp.ok){ console.warn('[camión docs] fetch falló', resp.status, doc.file_path); continue; }
+        if(!resp.ok) continue;
         const blob=await resp.blob();
         const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(blob); });
         const base=doc.nombre_original||'documento.pdf';
         out.push({filename:(e.nº_expedicion?e.nº_expedicion+'_':'')+base, content_type:blob.type||'application/pdf', content:b64});
-      }catch(err){ console.warn('[camión docs] excepción', doc.file_path, err); }
+      }catch(err){ console.warn('docs camión:',err); }
     }
   }
-  console.log('[camión docs] TOTAL adjuntos preparados:', out.length);
   return out;
 }
 
@@ -5809,10 +5812,8 @@ async function notifAlmacenistaCamion(camionId){
   const subject = 'Aviso de entrega — '+c.referencia+' · '+(c.fecha_prevista||'sin fecha');
   const html = _buildEmailHtmlCamion(c, porBuque, false);
   showToast('⏳ Adjuntando documentación de las expediciones…');
-  console.log('[camión docs] datos.exps =', exps);
   const preAttachments = await _cargarDocsExpediciones(exps);
-  showToast(`📎 Diagnóstico: ${(exps||[]).length} expedición(es) · ${preAttachments.length} documento(s) cargado(s)`);
-  if(!preAttachments.length) showToast('ℹ️ No se cargó ningún documento. Abre la consola (F12) y dime qué muestra "[camión docs]".');
+  if(!preAttachments.length) showToast('ℹ️ Ninguna expedición tiene documentos adjuntos; puedes añadirlos a mano.');
   _previewEmailCamion({to:emailAlm, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html, preAttachments,
     onSent: async ()=>{ await sb.from('camiones_consolidados').update({notif_almacenista_sent:true}).eq('id',camionId); await loadCamiones(); }});
 }
