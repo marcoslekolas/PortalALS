@@ -5672,6 +5672,82 @@ function _buildCuerpoEmailCamion(c, porBuque, esTransportista){
   );
 }
 
+// Previsualización con adjuntos (estilo airport_cargo): permite revisar/editar
+// y ANEXAR documentación antes de enviar. El envío real reutiliza _abrirEmailHTML
+// (SMTP, remitente por dominio). opts: {to, cc, subject, html, onSent}.
+function _previewEmailCamion(opts){
+  const fromEmail=_resolverFromEmail();
+  const fromName=(typeof CU!=='undefined'&&CU?.nombre)?CU.nombre+' · ALS':'Departamento de Operaciones';
+  const _a=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  const prev=document.getElementById('email-prev-cam');if(prev)prev.remove();
+  const st0=document.getElementById('email-cam-style');if(st0)st0.remove();
+  const st=document.createElement('style');st.id='email-cam-style';
+  st.textContent='#email-prev-cam{border:none;border-radius:14px;padding:0;max-width:860px;width:calc(100vw - 32px);max-height:92vh;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.3)}#email-prev-cam::backdrop{background:rgba(0,0,0,.75)}';
+  document.head.appendChild(st);
+  const dlg=document.createElement('dialog');
+  dlg.id='email-prev-cam';
+  dlg.innerHTML=
+    '<div style="display:flex;flex-direction:column;max-height:92vh">'+
+      '<div style="padding:13px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'+
+        '<div style="font-size:15px;font-weight:800;color:#111">✉️ Previsualizar y enviar</div>'+
+        '<button id="epc-close" style="background:#f3f4f6;border:none;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer;line-height:1">✕</button>'+
+      '</div>'+
+      '<div style="padding:14px 18px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">De</div>'+
+        '<div style="font-size:13px;font-weight:600;margin-bottom:10px;color:#374151">'+_a(fromName)+' &lt;'+_a(fromEmail)+'&gt;</div>'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">Para</div>'+
+        '<input id="epc-dest" value="'+_a(opts.to||'')+'" placeholder="email@empresa.com" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;margin-bottom:10px;box-sizing:border-box">'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">CC <span style="font-size:10px">(separa varios con comas)</span></div>'+
+        '<input id="epc-cc" value="'+_a(opts.cc||'')+'" placeholder="cc@empresa.com" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;margin-bottom:10px;box-sizing:border-box">'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">Asunto</div>'+
+        '<input id="epc-subject" value="'+_a(opts.subject||'')+'" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;margin-bottom:10px;box-sizing:border-box">'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">Cuerpo <span style="font-size:10px">— editable, haz clic para modificar</span></div>'+
+        '<div id="epc-body" contenteditable="true" style="border:1px solid #d1d5db;border-radius:8px;padding:14px;max-height:40vh;overflow-y:auto;background:#fff;font-size:12px;line-height:1.5;outline:none">'+(opts.html||'')+'</div>'+
+        '<div style="margin-top:12px">'+
+          '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">📎 Adjuntos <span style="font-size:10px">(PDF, Word, Excel, imágenes…)</span></div>'+
+          '<input id="epc-files" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.gif,.zip,.txt" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:12px;cursor:pointer;box-sizing:border-box">'+
+          '<div id="epc-files-list" style="font-size:11px;color:#6b7280;margin-top:4px"></div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:flex-end;gap:10px;background:#f9fafb;flex-shrink:0">'+
+        '<button id="epc-cancel" style="background:#f3f4f6;color:#374151;border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Cancelar</button>'+
+        '<button id="epc-send" style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📤 Enviar</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(dlg);
+
+  const epFiles=document.getElementById('epc-files');
+  epFiles.addEventListener('change',function(){
+    const fl=document.getElementById('epc-files-list');
+    if(fl) fl.innerHTML=Array.from(epFiles.files).map(f=>'📄 '+f.name+' ('+(f.size/1024).toFixed(0)+' KB)').join('<br>');
+  });
+  function cerrar(){dlg.close();dlg.remove();}
+  document.getElementById('epc-close').onclick=cerrar;
+  document.getElementById('epc-cancel').onclick=cerrar;
+  dlg.addEventListener('click',function(ev){if(ev.target===dlg)cerrar();});
+
+  document.getElementById('epc-send').onclick=async function(){
+    const btn=document.getElementById('epc-send');
+    const to=(document.getElementById('epc-dest').value||'').trim();
+    const cc=(document.getElementById('epc-cc').value||'').trim();
+    const subj=(document.getElementById('epc-subject').value||'').trim();
+    const html=document.getElementById('epc-body').innerHTML;
+    if(!to){ showToast('⚠️ Introduce al menos un destinatario'); return; }
+    const attachments=[];
+    if(epFiles&&epFiles.files&&epFiles.files.length){
+      for(const file of epFiles.files){
+        const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
+        attachments.push({filename:file.name, content_type:file.type||'application/octet-stream', content:b64});
+      }
+    }
+    btn.disabled=true; const _t=btn.textContent; btn.textContent='⏳ Enviando…';
+    const ok=await _abrirEmailHTML({to, cc, subject:subj, html, attachments:attachments.length?attachments:undefined});
+    if(ok){ cerrar(); if(typeof opts.onSent==='function') try{ await opts.onSent(); }catch(_){} }
+    else { btn.disabled=false; btn.textContent=_t; }
+  };
+  dlg.showModal();
+}
+
 async function notifTransportistaCamion(camionId){
   const datos = await _loadDatosCamion(camionId);
   if(!datos){ showToast('Error cargando datos'); return; }
@@ -5679,10 +5755,8 @@ async function notifTransportistaCamion(camionId){
   if(!c.transportista?.email_confronta){ showToast('⚠️ El transportista no tiene email configurado'); return; }
   const subject = 'Notificación de carga — '+c.referencia+' · '+(c.fecha_prevista||'sin fecha');
   const html = _buildEmailHtmlCamion(c, porBuque, true);
-  const ok = await _abrirEmailHTML({to:c.transportista.email_confronta, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html});
-  if(!ok) return;
-  await sb.from('camiones_consolidados').update({notif_transportista_sent:true}).eq('id',camionId);
-  await loadCamiones();
+  _previewEmailCamion({to:c.transportista.email_confronta, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html,
+    onSent: async ()=>{ await sb.from('camiones_consolidados').update({notif_transportista_sent:true}).eq('id',camionId); await loadCamiones(); }});
 }
 
 async function notifAlmacenistaCamion(camionId){
@@ -5693,10 +5767,8 @@ async function notifAlmacenistaCamion(camionId){
   if(!emailAlm){ showToast('⚠️ El almacenista no tiene email configurado'); return; }
   const subject = 'Aviso de entrega — '+c.referencia+' · '+(c.fecha_prevista||'sin fecha');
   const html = _buildEmailHtmlCamion(c, porBuque, false);
-  const ok = await _abrirEmailHTML({to:emailAlm, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html});
-  if(!ok) return;
-  await sb.from('camiones_consolidados').update({notif_almacenista_sent:true}).eq('id',camionId);
-  await loadCamiones();
+  _previewEmailCamion({to:emailAlm, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html,
+    onSent: async ()=>{ await sb.from('camiones_consolidados').update({notif_almacenista_sent:true}).eq('id',camionId); await loadCamiones(); }});
 }
 
 // FIN MÓDULO CAMIONES CONSOLIDADOS
