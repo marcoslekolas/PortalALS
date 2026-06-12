@@ -5575,6 +5575,59 @@ async function _loadDatosCamion(camionId){
   return {c, exps, porBuque};
 }
 
+// Versión HTML con tablas (estilo airport_cargo): agrupa por buque, filas alternas.
+function _buildEmailHtmlCamion(c, porBuque, esTransportista){
+  const _e=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const TS='border:1px solid #999;padding:5px 7px;text-align:left;font-size:11px;';
+  const TH=TS+'background:#e5e7eb;font-weight:700;';
+  const fecha = c.fecha_prevista ? new Date(c.fecha_prevista).toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}) : 'por confirmar';
+
+  let totalBlt=0, totalKg=0, totalExps=0;
+  const bloques = Object.entries(porBuque).map(([buque,bExps])=>{
+    const bBlt=bExps.reduce((a,e)=>a+(e.bultos||0),0);
+    const bKg =bExps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+    totalBlt+=bBlt; totalKg+=bKg; totalExps+=bExps.length;
+    const filas=bExps.map((e,i)=>{
+      const bg=i%2===1?' background:#f9f9f9;':'';
+      const celdas=[
+        _e(e.nº_expedicion), _e(e.empresas?.nombre||'—'),
+        (e.bultos||0)+' btos', (parseFloat(e.kilos)||0)+' kg',
+        _e(e.ubicacion||'—'), _e(e.status_aduanero||'—'), _e(e.nº_mrn||'—')
+      ];
+      return '<tr>'+celdas.map(cl=>'<td style="'+TS+bg+'">'+cl+'</td>').join('')+'</tr>';
+    }).join('');
+    return '<p style="font-size:13px;font-weight:700;margin:16px 0 6px;color:#1e3a5f">BUQUE: '+_e(buque)+'</p>'+
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">'+
+      '<thead><tr>'+['Expedición','Empresa','Bultos','Kilos','Ubicación','Status Aduana','MRN']
+        .map(h=>'<th style="'+TH+'">'+h+'</th>').join('')+'</tr></thead>'+
+      '<tbody>'+filas+'</tbody></table>'+
+      '<p style="font-size:11px;color:#555;margin:0 0 4px">Subtotal: <strong>'+bBlt+'</strong> bultos · <strong>'+bKg+'</strong> kg</p>';
+  }).join('');
+
+  const intro = esTransportista
+    ? 'Les comunicamos los detalles de la carga del siguiente camión:'
+    : 'Les comunicamos la llegada prevista de mercancía consolidada:';
+  const filasCab=[
+    ['Referencia', _e(c.referencia)],
+    ['Fecha entrega', _e(fecha)],
+    esTransportista ? ['Destino', _e(c.almacenista?.nombre||'—')] : ['Transportista', _e(c.transportista?.nombre||'—')],
+  ];
+  if(c.notas) filasCab.push(['Notas', _e(c.notas)]);
+  const cabecera='<table style="border-collapse:collapse;margin-bottom:16px">'+
+    filasCab.map(([k,v])=>'<tr><td style="'+TS+'background:#f3f4f6;font-weight:600">'+k+'</td><td style="'+TS+'">'+v+'</td></tr>').join('')+
+    '</table>';
+
+  return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5">'+
+    '<p>Estimados señores,</p><p>'+intro+'</p>'+
+    cabecera+
+    '<p style="font-size:13px;font-weight:700;color:#1e3a5f;margin:0 0 4px">EXPEDICIONES ('+totalExps+') · '+totalBlt+' bultos · '+totalKg+' kg</p>'+
+    bloques+
+    '<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr>'+
+    '<td style="'+TH+'background:#1e3a5f;color:#fff">TOTAL: '+totalExps+' expediciones · '+totalBlt+' bultos · '+totalKg+' kg</td></tr></table>'+
+    '<p style="margin-top:16px;white-space:pre-line">'+_e(FIRMA_ALS_CAM)+'</p>'+
+    '</div>';
+}
+
 function _buildCuerpoEmailCamion(c, porBuque, esTransportista){
   const fecha = c.fecha_prevista ? new Date(c.fecha_prevista).toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}) : 'por confirmar';
   const sep = '═'.repeat(52);
@@ -5624,13 +5677,11 @@ async function notifTransportistaCamion(camionId){
   if(!datos){ showToast('Error cargando datos'); return; }
   const {c, porBuque} = datos;
   if(!c.transportista?.email_confronta){ showToast('⚠️ El transportista no tiene email configurado'); return; }
-  const asunto = encodeURIComponent('Notificación de carga — '+c.referencia+' · '+(c.fecha_prevista||'sin fecha'));
-  const cuerpo = encodeURIComponent(_buildCuerpoEmailCamion(c, porBuque, true));
-  const bcc = encodeURIComponent('als@alsalgeciras.com,aduana@customsway.eu');
-  const mailtoUrl = 'mailto:'+c.transportista.email_confronta+'?subject='+asunto+'&body='+cuerpo+'&bcc='+bcc;
-  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
+  const subject = 'Notificación de carga — '+c.referencia+' · '+(c.fecha_prevista||'sin fecha');
+  const html = _buildEmailHtmlCamion(c, porBuque, true);
+  const ok = await _abrirEmailHTML({to:c.transportista.email_confronta, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html});
+  if(!ok) return;
   await sb.from('camiones_consolidados').update({notif_transportista_sent:true}).eq('id',camionId);
-  showToast('📧 Abriendo email para transportista…');
   await loadCamiones();
 }
 
@@ -5640,13 +5691,11 @@ async function notifAlmacenistaCamion(camionId){
   const {c, porBuque} = datos;
   const emailAlm = c.almacenista?.email_almacenista || c.almacenista?.email_confronta;
   if(!emailAlm){ showToast('⚠️ El almacenista no tiene email configurado'); return; }
-  const asunto = encodeURIComponent('Aviso de entrega — '+c.referencia+' · '+(c.fecha_prevista||'sin fecha'));
-  const cuerpo = encodeURIComponent(_buildCuerpoEmailCamion(c, porBuque, false));
-  const bcc = encodeURIComponent('als@alsalgeciras.com,aduana@customsway.eu');
-  const mailtoUrl = 'mailto:'+emailAlm+'?subject='+asunto+'&body='+cuerpo+'&bcc='+bcc;
-  const a=document.createElement('a');a.href=mailtoUrl;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
+  const subject = 'Aviso de entrega — '+c.referencia+' · '+(c.fecha_prevista||'sin fecha');
+  const html = _buildEmailHtmlCamion(c, porBuque, false);
+  const ok = await _abrirEmailHTML({to:emailAlm, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html});
+  if(!ok) return;
   await sb.from('camiones_consolidados').update({notif_almacenista_sent:true}).eq('id',camionId);
-  showToast('📧 Abriendo email para almacenista…');
   await loadCamiones();
 }
 
