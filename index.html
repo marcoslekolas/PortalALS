@@ -5672,6 +5672,29 @@ function _buildCuerpoEmailCamion(c, porBuque, esTransportista){
   );
 }
 
+// Descarga los PDFs de cada expedición del camión y los devuelve como adjuntos
+// base64. El nombre lleva el nº de expedición como prefijo para que el
+// almacenista identifique a qué expedición pertenece cada documento.
+async function _cargarDocsExpediciones(exps){
+  const out=[];
+  for(const e of (exps||[])){
+    const {data:docs}=await sb.from('expedicion_docs').select('*').eq('expedicion_id',e.id).order('created_at');
+    for(const doc of (docs||[])){
+      try{
+        const {data:su}=await sb.storage.from(DOCS_BUCKET).createSignedUrl(doc.file_path,600);
+        if(!su?.signedUrl) continue;
+        const resp=await fetch(su.signedUrl);
+        if(!resp.ok) continue;
+        const blob=await resp.blob();
+        const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(blob); });
+        const base=doc.nombre_original||'documento.pdf';
+        out.push({filename:(e.nº_expedicion?e.nº_expedicion+'_':'')+base, content_type:blob.type||'application/pdf', content:b64});
+      }catch(err){ console.warn('docs camión fetch:',err); }
+    }
+  }
+  return out;
+}
+
 // Previsualización con adjuntos (estilo airport_cargo): permite revisar/editar
 // y ANEXAR documentación antes de enviar. El envío real reutiliza _abrirEmailHTML
 // (SMTP, remitente por dominio). opts: {to, cc, subject, html, onSent}.
@@ -5717,10 +5740,24 @@ function _previewEmailCamion(opts){
   document.body.appendChild(dlg);
 
   const epFiles=document.getElementById('epc-files');
-  epFiles.addEventListener('change',function(){
+  const preAtt=opts.preAttachments||[];
+  const _kb=n=>(n/1024).toFixed(0)+' KB';
+  function renderLista(){
     const fl=document.getElementById('epc-files-list');
-    if(fl) fl.innerHTML=Array.from(epFiles.files).map(f=>'📄 '+f.name+' ('+(f.size/1024).toFixed(0)+' KB)').join('<br>');
-  });
+    if(!fl) return;
+    const pre=preAtt.map(a=>{
+      const bytes=Math.round((a.content||'').length*0.75);
+      return '📎 '+a.filename+' <span style="color:#9ca3af">('+_kb(bytes)+' · de las expediciones)</span>';
+    });
+    const picked=Array.from(epFiles.files||[]).map(f=>'📄 '+f.name+' ('+_kb(f.size)+')');
+    let totalBytes=preAtt.reduce((s,a)=>s+Math.round((a.content||'').length*0.75),0)
+                  +Array.from(epFiles.files||[]).reduce((s,f)=>s+f.size,0);
+    let aviso='';
+    if(totalBytes>20*1024*1024) aviso='<div style="color:#b45309;margin-top:4px">⚠️ '+_kb(totalBytes/1024)+' MB en total — algunos servidores rechazan emails de más de 20-25 MB. Considera reducir adjuntos.</div>';
+    fl.innerHTML=(pre.concat(picked).join('<br>')||'<span style="color:#9ca3af">Sin adjuntos</span>')+aviso;
+  }
+  epFiles.addEventListener('change',renderLista);
+  renderLista(); // pinta los adjuntos precargados al abrir la ventana
   function cerrar(){dlg.close();dlg.remove();}
   document.getElementById('epc-close').onclick=cerrar;
   document.getElementById('epc-cancel').onclick=cerrar;
@@ -5733,7 +5770,7 @@ function _previewEmailCamion(opts){
     const subj=(document.getElementById('epc-subject').value||'').trim();
     const html=document.getElementById('epc-body').innerHTML;
     if(!to){ showToast('⚠️ Introduce al menos un destinatario'); return; }
-    const attachments=[];
+    const attachments=[...preAtt];
     if(epFiles&&epFiles.files&&epFiles.files.length){
       for(const file of epFiles.files){
         const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
@@ -5762,12 +5799,15 @@ async function notifTransportistaCamion(camionId){
 async function notifAlmacenistaCamion(camionId){
   const datos = await _loadDatosCamion(camionId);
   if(!datos){ showToast('Error cargando datos'); return; }
-  const {c, porBuque} = datos;
+  const {c, exps, porBuque} = datos;
   const emailAlm = c.almacenista?.email_almacenista || c.almacenista?.email_confronta;
   if(!emailAlm){ showToast('⚠️ El almacenista no tiene email configurado'); return; }
   const subject = 'Aviso de entrega — '+c.referencia+' · '+(c.fecha_prevista||'sin fecha');
   const html = _buildEmailHtmlCamion(c, porBuque, false);
-  _previewEmailCamion({to:emailAlm, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html,
+  showToast('⏳ Adjuntando documentación de las expediciones…');
+  const preAttachments = await _cargarDocsExpediciones(exps);
+  if(!preAttachments.length) showToast('ℹ️ Ninguna expedición tiene documentos adjuntos; puedes añadirlos a mano.');
+  _previewEmailCamion({to:emailAlm, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html, preAttachments,
     onSent: async ()=>{ await sb.from('camiones_consolidados').update({notif_almacenista_sent:true}).eq('id',camionId); await loadCamiones(); }});
 }
 
