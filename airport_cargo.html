@@ -955,6 +955,17 @@ async function init(){
   document.addEventListener('click', function(ev){
     var chk = ev.target.closest('input[type=checkbox]');
     if(chk) return;
+    // Botón AEAT: abre la consulta G4 de la Agencia Tributaria pasando el AWB
+    // (sin guiones ni espacios) en el parámetro fConoG4. El servlet lo acepta
+    // por URL y ejecuta la búsqueda automáticamente — equivale a pulsar Buscar.
+    var aeatBtn = ev.target.closest('button.awb-aeat-btn');
+    if(aeatBtn){
+      ev.stopPropagation();
+      var awbClean=(aeatBtn.getAttribute('data-awb')||'').replace(/[-\s]/g,'');
+      if(!awbClean){ window.open('https://www1.agenciatributaria.gob.es/wlpl/ADDS-JDIT/QG4PartSede','_blank'); return; }
+      window.open('https://www1.agenciatributaria.gob.es/wlpl/ADDS-JDIT/QG4PartSede?fConoG4='+encodeURIComponent(awbClean),'_blank');
+      return;
+    }
     // Botón de tracking AWB
     var alsTrackBtn = ev.target.closest('button.als-track-btn');
   if(alsTrackBtn){
@@ -1397,7 +1408,7 @@ function renderRows(list, tbodyId){
     var rowStyle=e.confirmacion_llegada?' style="background:#ffedd5;border-left:3px solid #f97316"':'';
     return'<tr'+rowStyle+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="updateSel()"></label></td>'+
-      '<td style="font-family:var(--mono);white-space:nowrap">'+formatAwb(e.awb||'—')+(e.awb?('<button class="awb-track-btn" data-awb="'+e.awb+'" style="background:var(--b100);border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:var(--b700);margin-left:4px" title="Rastrear AWB externo">✈️</button>'):'')+(e.id?('<button class="als-track-btn" data-id="'+e.id+'" style="background:#e0f2fe;border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:#0369a1;margin-left:3px" title="Tracking ALS">🔍</button>'):'')+'</td>'+
+      '<td style="font-family:var(--mono);white-space:nowrap">'+formatAwb(e.awb||'—')+(e.awb?('<button class="awb-track-btn" data-awb="'+e.awb+'" style="background:var(--b100);border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:var(--b700);margin-left:4px" title="Rastrear AWB externo">✈️</button>'):'')+(e.awb?('<button class="awb-aeat-btn" data-awb="'+e.awb+'" style="background:#fef3c7;border:none;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:800;letter-spacing:.3px;cursor:pointer;color:#92400e;margin-left:3px" title="Consultar partida en Agencia Tributaria (G4)">AEAT</button>'):'')+'</td>'+
       '<td style="cursor:pointer;font-size:12px;color:var(--g500)">'+( e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--g400)">🏢 '+e.cliente+'</div>':'')+'</td>'+
       '<td style="cursor:pointer;font-size:13px;font-weight:700;color:var(--g900)">'+( e.buque||'—')+'</td>'+
       '<td><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
