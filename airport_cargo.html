@@ -1994,9 +1994,10 @@ async function showForm(e, prefill){
     '<div class="fg"><label class="fl">Buque</label><input id="f-buque" class="fi" value="'+(e?e.buque||'':'')+'" placeholder="Nombre del buque"></div>'+
     '<div class="fg"><label class="fl">Aeropuerto</label><select id="f-apto" class="fi fs">'+aptOpts+'</select></div>'+
     '</div>'+
-    '<div class="fr2">'+
+    '<div class="fr3">'+
     '<div class="fg"><label class="fl">Handler *</label><select id="f-handler" class="fi fs" onchange="onHC();liveCalc()">'+handlerOpts+'</select></div>'+
     '<div class="fg"><label class="fl">Status aduanero</label><select id="f-status" class="fi fs">'+statusOpts+'</select></div>'+
+    '<div class="fg"><label class="fl">Sumaria (MRN) <span style="font-size:10px;color:var(--g400)">(opcional)</span></label><input id="f-sumaria" class="fi" value="'+(e?e.sumaria||'':'')+'" placeholder="Ej: 26ESG4A001917722U2" style="text-transform:uppercase"></div>'+
     '</div>'+
     '<div class="fr3">'+
     '<div class="fg"><label class="fl">Fecha llegada <span style="font-size:10px;color:var(--g400)">(puede dejarse en blanco)</span></label><input id="f-ll" class="fi" type="date" value="'+(e?e.fecha_llegada||'':'')+'" oninput="liveCalc()"></div>'+
@@ -2128,9 +2129,11 @@ function buildObj(){
 //   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS fecha_caducidad_t1 date;
 //   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS t1_sellado boolean DEFAULT false;
 //   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS aplica_mismo_dia boolean DEFAULT false;
+//   ALTER TABLE airport_cargo ADD COLUMN IF NOT EXISTS sumaria text;
 function buildObjExtended(){
   return{
     aplica_mismo_dia:gc('f-md'),
+    sumaria:gv('f-sumaria').trim().toUpperCase()||null,
     vuelo:gv('f-vuelo').trim()||null,
     hora_llegada:gv('f-hora')||null,
     eta_buque:gv('f-eta-buque')||null,
@@ -2276,6 +2279,7 @@ async function crearExpedicionDesdeAC(acId){
     ['Bultos',e.bultos||'—'],
     ['Kilos',e.kilos_tasables||'—'],
     ['Status aduanero',e.status||'—'],
+    ['Sumaria (MRN)',e.sumaria||'—'],
     ['Ubicación',e.ubicacion||'Aeropuerto'],
     ['Vuelo',e.vuelo||'—'],
     ['Hora llegada',e.hora_llegada||'—'],
