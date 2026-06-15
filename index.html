@@ -13482,7 +13482,8 @@ async function revertirCarga(expId, expRef){
   await sb.from('expediciones').update({
     estado_semaforo: '✅ AUTORIZADO',
     estado_carga: '✅ AUTORIZADO',
-    ubicacion: ubicAnt
+    ubicacion: ubicAnt,
+    predelivery_ok: false   // los bultos se movieron al revertir: re-verificar en pre-delivery
     // hora_de_carga se mantiene — sirve como registro de intento fallido (se muestra en ámbar)
   }).eq('id', expId);
 
@@ -15324,51 +15325,65 @@ async function portadaBuque(buqueId){
 async function imprimirPreDelivery(buqueId){
   showToast('📋 Generando hoja pre-delivery…');
   const {data:b}=await sb.from('buques').select('nombre,nº_escala,ec:cliente_id(nombre),en:consignatario_id(nombre)').eq('id',buqueId).single();
-  const {data:exps}=await sb.from('expediciones').select('nº_expedicion,bultos,remitente,empresas!empresa_id(nombre)').eq('buque_id',buqueId).eq('estado_carga','✅ AUTORIZADO');
-  const {data:bultos}=await sb.from('carga_bultos').select('codigo,num,total,expedicion_id').eq('buque_id',buqueId);
-  if(!b||!bultos?.length){ showToast('⚠️ No hay bultos QR registrados para este buque'); return; }
+  const {data:exps}=await sb.from('expediciones').select('nº_expedicion,bultos,remitente,empresas!empresa_id(nombre)').eq('buque_id',buqueId).eq('estado_carga','✅ AUTORIZADO').order('nº_expedicion');
+  if(!b){ showToast('❌ No se pudo cargar el buque'); return; }
+  if(!exps?.length){ showToast('⚠️ No hay expediciones autorizadas para carga en este buque'); return; }
   const _esc=s=>String(s==null?'':s).replace(/</g,'&lt;');
-  // Generar QR data URLs para cada bulto
-  const bultosConQR=[];
-  for(const bl of bultos){
-    const url=await generarQRDataURL(bl.codigo,120);
-    bultosConQR.push({...bl,qrUrl:url});
-  }
-  const expMap={}; (exps||[]).forEach(e=>{expMap[e.id]=e;});
   const fecha=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const totalBultos=(exps||[]).reduce((s,e)=>s+(parseInt(e.bultos)||0),0);
   const w=window.open('','_blank','width=820,height=1060');
   if(!w){showToast('⚠️ Permite ventanas emergentes para imprimir');return;}
-  const bultosHTML=bultosConQR.map(bl=>{
-    const exp=expMap[bl.expedicion_id];
-    return `<div class="bulto-item"><img src="${bl.qrUrl}" width="90" height="90"><div class="bl-info"><div class="bl-ref">${_esc(bl.codigo)}</div><div class="bl-exp">${exp?_esc(exp.nº_expedicion):'—'} · Bulto ${bl.num}/${bl.total}</div><div class="bl-rem">${exp?_esc(exp.remitente||exp.empresas?.nombre||'—'):'—'}</div></div><div class="bl-check">□</div></div>`;
+  // Una fila por expedición autorizada. Sin QR: el escaneo se hace sobre las
+  // etiquetas físicas de cada bulto. Las casillas (una por bulto) permiten al
+  // mozo ir marcando manualmente conforme localiza y escanea.
+  const expsHTML=exps.map((e,i)=>{
+    const nb=parseInt(e.bultos)||0;
+    const casillas=Array.from({length:nb}).map(()=>'<span class="bx">□</span>').join('');
+    return `<div class="exp-item">
+      <div class="exp-n">${i+1}</div>
+      <div class="exp-info">
+        <div class="exp-ref">${_esc(e.nº_expedicion||'—')}</div>
+        <div class="exp-rem">${_esc(e.remitente||e.empresas?.nombre||'—')}</div>
+      </div>
+      <div class="exp-blt"><span class="blt-num">${nb}</span> bulto${nb!==1?'s':''}</div>
+      <div class="exp-check">${casillas}</div>
+    </div>`;
   }).join('');
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pre-Delivery ${_esc(b.nombre)}</title>
   <style>@media print{body{margin:0}}body{font-family:Arial,sans-serif;font-size:12px;padding:18px;color:#111}
-  .hdr{display:flex;align-items:center;gap:14px;border-bottom:3px solid #1565c0;padding-bottom:10px;margin-bottom:12px}
+  .hdr{display:flex;align-items:center;gap:14px;border-bottom:3px solid #1565c0;padding-bottom:10px;margin-bottom:10px}
   .logo{font-size:22px;font-weight:900;color:#1565c0;letter-spacing:-1px}
-  .sub{font-size:10px;color:#555}h2{font-size:16px;margin:0 0 2px}
-  .meta{display:flex;gap:20px;margin-bottom:12px;font-size:12px}
+  .sub{font-size:10px;color:#555}h2{font-size:15px;margin:0 0 2px}
+  .buque-box{background:#1e3a5f;color:#fff;border-radius:8px;padding:10px 16px;margin-bottom:10px;display:flex;align-items:baseline;gap:12px}
+  .buque-box .bq-lbl{font-size:11px;letter-spacing:1px;opacity:.8;text-transform:uppercase}
+  .buque-box .bq-name{font-size:26px;font-weight:900;letter-spacing:.5px;line-height:1}
+  .meta{display:flex;flex-wrap:wrap;gap:18px;margin-bottom:10px;font-size:12px}
   .meta span b{color:#1565c0}
-  .bulto-item{display:flex;align-items:center;gap:10px;border:1px solid #ddd;border-radius:6px;padding:8px;margin-bottom:6px;break-inside:avoid}
-  .bl-info{flex:1;min-width:0}.bl-ref{font-family:monospace;font-size:11px;color:#555}
-  .bl-exp{font-weight:700;font-size:13px}.bl-rem{font-size:11px;color:#777}
-  .bl-check{font-size:22px;color:#ccc;flex-shrink:0}
+  .warn{font-size:11px;color:#b91c1c;margin-bottom:10px;padding:6px 10px;background:#fef2f2;border-radius:6px;border-left:3px solid #ef4444}
+  .exp-head{display:flex;align-items:center;gap:10px;font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:0 8px 4px}
+  .exp-item{display:flex;align-items:center;gap:10px;border:1px solid #ddd;border-radius:6px;padding:9px 8px;margin-bottom:6px;break-inside:avoid}
+  .exp-n{width:24px;height:24px;flex-shrink:0;background:#1e3a5f;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+  .exp-info{flex:1;min-width:0}.exp-ref{font-weight:800;font-size:15px;letter-spacing:.3px}
+  .exp-rem{font-size:11px;color:#777;margin-top:1px}
+  .exp-blt{flex-shrink:0;font-size:11px;color:#555;text-align:center;min-width:64px}
+  .exp-blt .blt-num{font-size:20px;font-weight:900;color:#1e3a5f;display:block}
+  .exp-check{flex-shrink:0;max-width:200px;text-align:right}
+  .exp-check .bx{font-size:18px;color:#bbb;margin-left:3px}
   .total{border-top:2px solid #1565c0;margin-top:10px;padding-top:8px;font-weight:bold;font-size:14px}
   .firma{margin-top:30px;border-top:1px solid #ccc;padding-top:10px;display:flex;gap:40px}
   .firma div{flex:1;font-size:11px;color:#555}</style></head><body>
-  <div class="hdr"><div class="logo">ALS</div><div><h2>HOJA PRE-DELIVERY</h2><div class="sub">ALGECIRAS LOGISTIC SOLUTIONS · Verificación bultos antes de la entrega</div></div></div>
+  <div class="hdr"><div class="logo">ALS</div><div><h2>HOJA PRE-DELIVERY</h2><div class="sub">ALGECIRAS LOGISTIC SOLUTIONS · Verificación de carga antes de la entrega</div></div></div>
+  <div class="buque-box"><span class="bq-lbl">🚢 Buque</span><span class="bq-name">${_esc(b.nombre)}</span></div>
   <div class="meta">
-    <span>🚢 <b>Buque:</b> ${_esc(b.nombre)}</span>
     ${b.nº_escala?`<span>🔢 <b>Escala:</b> ${_esc(b.nº_escala)}</span>`:''}
     ${b.ec?.nombre?`<span>🏢 <b>Cliente:</b> ${_esc(b.ec.nombre)}</span>`:''}
     ${b.en?.nombre?`<span>📋 <b>Consig.:</b> ${_esc(b.en.nombre)}</span>`:''}
     <span>📅 <b>Fecha:</b> ${fecha}</span>
   </div>
-  <div style="font-size:11px;color:#b91c1c;margin-bottom:10px;padding:6px 10px;background:#fef2f2;border-radius:6px;border-left:3px solid #ef4444">
-    ⚠️ Escanear cada QR para verificar. El albarán no se puede imprimir hasta completar la verificación al 100%.
-  </div>
-  ${bultosHTML}
-  <div class="total">Total: ${bultos.length} bulto${bultos.length!==1?'s':''} · ${(exps||[]).length} expedición${(exps||[]).length!==1?'es':''}</div>
+  <div class="warn">⚠️ El mozo debe localizar cada expedición y escanear el QR de TODOS sus bultos. El albarán no se habilita hasta completar la verificación al 100%. Las casillas son una ayuda manual; el control real es el escaneo.</div>
+  <div class="exp-head"><span style="width:24px"></span><span style="flex:1">Expedición · Remitente</span><span style="min-width:64px;text-align:center">Bultos</span><span style="max-width:200px;text-align:right">Control bulto a bulto</span></div>
+  ${expsHTML}
+  <div class="total">Total: ${exps.length} expedición${exps.length!==1?'es':''} · ${totalBultos} bulto${totalBultos!==1?'s':''} a verificar</div>
   <div class="firma">
     <div>Operario: ____________________________<br>Firma y nombre</div>
     <div>Transportista: ____________________________<br>Firma y matrícula</div>
@@ -15396,10 +15411,28 @@ function _showPredeliveryRequired(buqueId, buqueNombre){
 }
 
 async function abrirPredelivery(buqueId){
-  const {data:bultos}=await sb.from('carga_bultos').select('codigo,num,total').eq('buque_id',buqueId);
-  if(!bultos?.length){showToast('ℹ️ Sin bultos QR — pre-delivery no requerido');return;}
-  const total=bultos.length;
-  const validSet=new Set(bultos.map(b=>b.codigo));
+  // Verificación POR EXPEDICIÓN: solo se exigen las autorizadas aún sin
+  // verificar (predelivery_ok != true). Las ya verificadas se reconocen pero
+  // no cuentan (el mozo puede reescanearlas sin error).
+  const {data:exps}=await sb.from('expediciones').select('id,nº_expedicion,bultos,predelivery_ok').eq('buque_id',buqueId).eq('estado_carga','✅ AUTORIZADO');
+  if(!exps?.length){showToast('ℹ️ No hay expediciones autorizadas para verificar');return;}
+  const pendientes=exps.filter(e=>e.predelivery_ok!==true);
+  if(!pendientes.length){showToast('✅ Todas las expediciones autorizadas ya están verificadas');return;}
+  const validSet=new Set();   // bultos pendientes → cuentan para completar
+  const knownSet=new Set();   // bultos de cualquier autorizada → reconocidos
+  const infoMap={};
+  const expBultos={};         // idExp → {ref,total,scanned} para marcar al completar
+  exps.forEach(e=>{
+    const nb=Math.max(parseInt(e.bultos)||1,1);
+    for(let n=1;n<=nb;n++){
+      const code=`ALS-BLT:${e.id}:${n}:${nb}`;
+      knownSet.add(code);
+      infoMap[code]={expId:e.id,ref:e.nº_expedicion,num:n,total:nb};
+      if(e.predelivery_ok!==true) validSet.add(code);
+    }
+  });
+  pendientes.forEach(e=>{ expBultos[e.id]={ref:e.nº_expedicion,total:Math.max(parseInt(e.bultos)||1,1),scanned:new Set()}; });
+  const total=validSet.size;
   let escaneados=0; const scanned=new Set();
   const ov=document.createElement('div');
   ov.id='scanner-overlay';
@@ -15449,22 +15482,37 @@ async function abrirPredelivery(buqueId){
                 const pct=Math.round(escaneados/total*100);
                 document.getElementById('pd-count').textContent=escaneados+'/'+total;
                 document.getElementById('pd-bar').style.width=pct+'%';
-                const bl=bultos.find(b=>b.codigo===qr);
+                const bl=infoMap[qr];
                 const log=document.getElementById('pd-log');
-                log.innerHTML='<div style="color:#4ade80">✅ '+qr+(bl?' — Bulto '+bl.num+'/'+bl.total:'')+'</div>'+log.innerHTML;
+                log.innerHTML='<div style="color:#4ade80">✅ '+(bl?escHTML(bl.ref)+' · Bulto '+bl.num+'/'+bl.total:qr)+'</div>'+log.innerHTML;
                 if(navigator.vibrate) navigator.vibrate(80);
+                // Marcar la expedición como verificada cuando se completan TODOS sus bultos
+                if(bl){
+                  const eb=expBultos[bl.expId];
+                  if(eb){ eb.scanned.add(qr);
+                    if(eb.scanned.size>=eb.total){
+                      try{ await sb.from('expediciones').update({predelivery_ok:true,predelivery_fecha:new Date().toISOString(),predelivery_user:CU?.nombre||'—'}).eq('id',bl.expId); }catch(_){}
+                      log.innerHTML='<div style="color:#22c55e;font-weight:700">✔ Expedición '+escHTML(eb.ref)+' VERIFICADA al completo</div>'+log.innerHTML;
+                    }
+                  }
+                }
                 if(escaneados>=total){
-                  // Pre-delivery completado
+                  // Todas las expediciones pendientes quedan verificadas
                   if(stream) stream.getTracks().forEach(t=>t.stop());
                   cancelAnimationFrame(rafId);
-                  await sb.from('buques').update({predelivery_ok:true,predelivery_fecha:new Date().toISOString(),predelivery_user:CU?.nombre||'—'}).eq('id',buqueId);
                   ov.remove();
                   showToast('✅ Pre-Delivery completado — '+total+' bultos verificados. Ya puedes imprimir el albarán.');
                   return;
                 }
-              } else if(!validSet.has(qr)){
+              } else if(scanned.has(qr)){
+                // ya escaneado en esta sesión — ignorar en silencio
+              } else if(knownSet.has(qr)){
                 const log=document.getElementById('pd-log');
-                log.innerHTML='<div style="color:#f87171">⚠️ QR no reconocido: '+qr+'</div>'+log.innerHTML;
+                log.innerHTML='<div style="color:#9ca3af">ℹ️ Bulto de expedición ya verificada</div>'+log.innerHTML;
+              } else {
+                if(typeof beepError==='function')beepError();
+                const log=document.getElementById('pd-log');
+                log.innerHTML='<div style="color:#f87171">⚠️ Bulto NO autorizado o de otro buque</div>'+log.innerHTML;
               }
             }
           }
@@ -15484,9 +15532,14 @@ async function abrirPredelivery(buqueId){
 async function impAlb(buqueId){
   const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').eq('id',buqueId).single();
   if(!b) return;
-  // Comprobar si hay bultos QR registrados (carga_bultos) y si el pre-delivery está hecho
-  const {data:bultos}=await sb.from('carga_bultos').select('codigo').eq('buque_id',buqueId);
-  if(bultos?.length && !b.predelivery_ok){
+  // El albarán recoge SOLO autorizadas. Se exige que TODAS las autorizadas
+  // estén verificadas en pre-delivery (predelivery_ok). Si entra una entrega
+  // nueva, nace sin verificar y vuelve a exigir el control — sin reescanear
+  // las ya verificadas.
+  const {data:autoriz}=await sb.from('expediciones').select('id,predelivery_ok').eq('buque_id',buqueId).eq('estado_carga','✅ AUTORIZADO');
+  if(!autoriz?.length){ showToast('⚠️ No hay expediciones autorizadas: nada que albaranar todavía'); return; }
+  const pendientes=autoriz.filter(e=>e.predelivery_ok!==true);
+  if(pendientes.length){
     _showPredeliveryRequired(buqueId, b.nombre);
     return;
   }
