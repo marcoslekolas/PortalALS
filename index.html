@@ -9990,7 +9990,7 @@ function _imprimirEtiquetasCarga(buqueNombre, total, etiquetas){
   .toolbar{position:sticky;top:0;background:#fff;padding:10px;text-align:center;border-bottom:1px solid #ddd}
   .btn{min-height:44px;font-size:14px;padding:10px 22px;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;margin:0 4px}
   @media print{.toolbar{display:none!important}@page{margin:6mm;size:80mm auto}}</style></head><body>
-  <div class="toolbar"><button class="btn" style="background:var(--b600)" onclick="window.print()">🖨️ Imprimir ${total} etiqueta${total!==1?'s':''}</button><button class="btn" style="background:#6b7280" onclick="window.close()">✕ Cerrar</button></div>
+  <div class="toolbar"><button class="btn" style="background:#1e3a5f" onclick="window.print()">🖨️ Imprimir ${total} etiqueta${total!==1?'s':''}</button><button class="btn" style="background:#6b7280" onclick="window.close()">✕ Cerrar</button></div>
   ${labels}</body></html>`);
   w.document.close();
   setTimeout(()=>{try{w.print();}catch(e){}},800);
@@ -15534,36 +15534,49 @@ async function imprimirQRLlegada(expId, ref){
   const esc=s=>String(s||'').replace(/</g,'&lt;');
   const labelsHTML=etiquetas.map(et=>`
     <div class="label">
-      <div class="logo">● ALS PORTAL OPERATIVO</div>
-      <div class="buque">${esc(buqueNombre)}</div>
-      <div class="ref">${esc(refTxt)}</div>
-      <div class="bulto">Bulto ${et.n} / ${total}</div>
-      <div class="qr-wrap">${et.url?`<img src="${et.url}" alt="QR ${esc(refTxt)} B${et.n}">`:'<div style="padding:40px;color:#c00">QR error</div>'}</div>
-      <div class="cod">${et.data}</div>
-      <div class="fecha">Generado: ${fecha}</div>
+      <div class="zone top">
+        <div class="logo">● ALS PORTAL OPERATIVO</div>
+        <div class="buque">${esc(buqueNombre)}</div>
+        <div class="ref">${esc(refTxt)}</div>
+      </div>
+      <div class="zone mid">
+        <div class="bulto">BULTO ${et.n} / ${total}</div>
+        <div class="qr-wrap">${et.url?`<img src="${et.url}" alt="QR ${esc(refTxt)} B${et.n}">`:'<div style="padding:40px;color:#c00">QR error</div>'}</div>
+      </div>
+      <div class="zone bot">
+        <div class="cod">${et.data}</div>
+        <div class="fecha">Generado: ${fecha}</div>
+      </div>
     </div>`).join('');
 
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Etiquetas QR — ${esc(refTxt)}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;background:#fff;color:#111}
-      .label{text-align:center;padding:16px;border-bottom:1px dashed #bbb;page-break-inside:avoid;page-break-after:always}
-      .label:last-child{border-bottom:none;page-break-after:auto}
-      .logo{font-size:10px;font-weight:700;letter-spacing:1px;color:var(--b600);margin-bottom:4px}
-      .buque{font-size:26px;font-weight:900;letter-spacing:.5px;line-height:1.1;margin:2px 0}
-      .ref{font-size:18px;font-weight:800;margin:4px 0;letter-spacing:.5px}
-      .bulto{font-size:16px;font-weight:800;color:#1e3a5f;margin:4px 0}
-      .qr-wrap{display:inline-block;border:2px solid #e5e7eb;border-radius:8px;padding:8px;margin:6px 0}
+      body{font-family:Arial,sans-serif;background:#e9e9e9;color:#111}
+      /* Etiqueta 10 (ancho) × 14 (alto) cm, vertical — como en la foto.
+         Si tu etiqueta entra apaisada (14 ancho × 10 alto), cambia el @page a
+         "140mm 100mm" y .label a width:140mm;height:100mm */
+      .label{width:100mm;height:140mm;margin:6mm auto;background:#fff;
+        display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+        text-align:center;padding:7mm 5mm;page-break-inside:avoid;page-break-after:always;overflow:hidden}
+      .label:last-child{page-break-after:auto}
+      .zone{width:100%;display:flex;flex-direction:column;align-items:center}
+      .logo{font-size:13px;font-weight:700;letter-spacing:1.5px;color:#1e3a5f;margin-bottom:3mm}
+      .buque{font-size:42px;font-weight:900;letter-spacing:.5px;line-height:1.02;margin:1mm 0;word-break:break-word}
+      .ref{font-size:25px;font-weight:800;letter-spacing:.5px;margin-top:2mm}
+      .bulto{font-size:38px;font-weight:900;color:#fff;background:#1e3a5f;border-radius:10px;
+        padding:3mm 9mm;margin-bottom:4mm;line-height:1;letter-spacing:.5px}
+      .qr-wrap{display:inline-block;border:2px solid #e5e7eb;border-radius:8px;padding:6px}
       .qr-wrap img{display:block;width:200px;height:200px}
-      .cod{font-size:9px;color:#9ca3af;font-family:monospace;word-break:break-all}
-      .fecha{font-size:9px;color:#6b7280;margin-top:4px}
+      .cod{font-size:10px;color:#9ca3af;font-family:monospace;word-break:break-all}
+      .fecha{font-size:10px;color:#6b7280;margin-top:1mm}
       .toolbar{position:sticky;top:0;background:#fff;padding:10px;text-align:center;border-bottom:1px solid #ddd}
       .btn{min-height:44px;font-size:14px;padding:10px 22px;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;margin:0 4px}
-      @media print{.toolbar{display:none!important} @page{margin:6mm;size:80mm auto}}
+      @media print{body{background:#fff}.label{margin:0 auto}.toolbar{display:none!important} @page{margin:0;size:100mm 140mm}}
     </style>
   </head><body>
     <div class="toolbar">
-      <button class="btn" style="background:var(--b600)" onclick="window.print()">🖨️ Imprimir ${total} etiqueta${total!==1?'s':''}</button>
+      <button class="btn" style="background:#1e3a5f" onclick="window.print()">🖨️ Imprimir ${total} etiqueta${total!==1?'s':''}</button>
       <button class="btn" style="background:#6b7280" onclick="window.close()">✕ Cerrar</button>
     </div>
     ${labelsHTML}
