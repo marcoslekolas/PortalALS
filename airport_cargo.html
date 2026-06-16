@@ -653,7 +653,8 @@ var TRF_GF_2025={
   fi:{min:138.9,u:0},
   ex:{min:70.01,u:0.23},
   cc:{min:108.94,u:1.15},
-  ap:{min:383.33,u:1.72,fijo:80.74}
+  ap:{min:383.33,u:1.72,fijo:80.74},
+  rc:{min:0,u:31.60}
 };
 
 // Tarifas Groundforce AGP 2026 — THC válido desde 01.04.2026
@@ -666,6 +667,7 @@ var TRF_GF_2026={
   ex:{min:67.87,u:0.142},             // 2.12 Handling express
   cc:{min:50.60,u:0.127},             // 3.7C Carga/descarga camiones (contrato)
   ap:{min:88.82,u:0.189,fijo:0}       // 7.10A Entrega fuera horario operativo (import)
+  ,rc:{min:0,u:31.60}                 // Recargo continuidad servicio (automático por AWB)
 };
 
 var TRF_DEFAULT={
@@ -678,7 +680,8 @@ var TRF_DEFAULT={
     fi:{min:0,u:148.63},
     ex:{min:74.91,u:0.25},
     cc:{min:71.9,u:0.11},
-    ap:{min:0,u:150,fijo:0}
+    ap:{min:0,u:150,fijo:0},
+    dgr:{min:0,u:85.81}           // Manipulación DGR (manual, por AWB)
   },
   "Groundforce AGP": TRF_GF_2026
 };
@@ -698,7 +701,7 @@ async function loadTarifasDB(){
     var res=await sb.from('tarifas_handling').select('*').order('year_validity,proveedor,concepto_es');
     var data=res.data;
     if(!data||!data.length)return;
-    var MAP={'Almacenaje General (Tramo 1)':'alm','Gestión Documental (Mismo Día)':'gd','Gestión Documental':'gd','Tasa Utilización Recinto':'tr','Tasa Mantenimiento de Servicio':'tm','Tasa Mantenimiento Servicio':'tm','Entrega Fin de Semana / Festivos':'fi','Entrega Fin de Semana':'fi','Handling Express':'ex','Carga Camión':'cc','Acceso y Uso de Recinto (Carga Camión)':'cc','Apertura Fuera Horario':'ap'};
+    var MAP={'Almacenaje General (Tramo 1)':'alm','Gestión Documental (Mismo Día)':'gd','Gestión Documental':'gd','Tasa Utilización Recinto':'tr','Tasa Mantenimiento de Servicio':'tm','Tasa Mantenimiento Servicio':'tm','Entrega Fin de Semana / Festivos':'fi','Entrega Fin de Semana':'fi','Handling Express':'ex','Carga Camión':'cc','Acceso y Uso de Recinto (Carga Camión)':'cc','Apertura Fuera Horario':'ap','Manipulación DGR':'dgr','Recargo Continuidad Servicio':'rc'};
     var years={};
     data.forEach(function(r){
       var yr=r.year_validity;
@@ -757,20 +760,22 @@ function calcFi(ap,h,yr){var t=getH(h,yr);if(!ap||!t||!t.fi)return 0;return Math
 function calcEx(ap,kg,h,yr){var t=getH(h,yr);if(!ap||!t||!t.ex)return 0;return Math.max(kg*t.ex.u,t.ex.min);}
 function calcCC(ap,kg,h,yr){var t=getH(h,yr);if(!ap||!t||!t.cc)return 0;return Math.max(kg*t.cc.u,t.cc.min);}
 function calcAp(ap,kg,h,yr){var t=getH(h,yr);if(!ap||!t||!t.ap)return 0;var fijo=t.ap.fijo||0;return Math.max(fijo+kg*t.ap.u,t.ap.min);}
+function calcDgr(dgr,h,yr){if(!dgr)return 0;var t=getH(h,yr);if(!t||!t.dgr)return 0;return t.dgr.u||0;}
+function calcRC(h,yr){var t=getH(h,yr);if(!t||!t.rc)return 0;return t.rc.u||0;}
 function calcTotal(e){
   if(!e.handling||!hasH(e.handling))return parseFloat(e.coste_manual)||0;
   if(!e.fecha_retirada)return 0;
   var yr=new Date(e.fecha_retirada).getFullYear();
   var kg=parseFloat(e.kilos_tasables)||0;
   var d=diasFact(e.fecha_llegada,e.fecha_retirada,e.handling);
-  return calcAlm(kg,d,e.handling,yr)+calcGD(e.handling,yr)+calcMD(e.aplica_mismo_dia,e.handling,yr)+calcTR(kg,e.handling,yr)+calcTM(e.handling,yr)+calcFi(e.aplica_finde,e.handling,yr)+calcEx(e.aplica_express,kg,e.handling,yr)+calcCC(e.aplica_carga_camion,kg,e.handling,yr)+calcAp(e.aplica_apertura,kg,e.handling,yr);
+  return calcAlm(kg,d,e.handling,yr)+calcGD(e.handling,yr)+calcMD(e.aplica_mismo_dia,e.handling,yr)+calcTR(kg,e.handling,yr)+calcTM(e.handling,yr)+calcFi(e.aplica_finde,e.handling,yr)+calcEx(e.aplica_express,kg,e.handling,yr)+calcCC(e.aplica_carga_camion,kg,e.handling,yr)+calcAp(e.aplica_apertura,kg,e.handling,yr)+calcDgr(e.aplica_dgr,e.handling,yr)+calcRC(e.handling,yr);
 }
 function desglose(e){
   if(!e.handling||!hasH(e.handling)||!e.fecha_retirada)return null;
   var kg=parseFloat(e.kilos_tasables)||0,h=e.handling;
   var yr=new Date(e.fecha_retirada).getFullYear();
   var d=diasFact(e.fecha_llegada,e.fecha_retirada,h);
-  return{yr:yr,dias:d,alm:calcAlm(kg,d,h,yr),gd:calcGD(h,yr),md:calcMD(e.aplica_mismo_dia,h,yr),tr:calcTR(kg,h,yr),tm:calcTM(h,yr),fi:calcFi(e.aplica_finde,h,yr),ex:calcEx(e.aplica_express,kg,h,yr),cc:calcCC(e.aplica_carga_camion,kg,h,yr),ap:calcAp(e.aplica_apertura,kg,h,yr),total:calcTotal(e)};
+  return{yr:yr,dias:d,alm:calcAlm(kg,d,h,yr),gd:calcGD(h,yr),md:calcMD(e.aplica_mismo_dia,h,yr),tr:calcTR(kg,h,yr),tm:calcTM(h,yr),fi:calcFi(e.aplica_finde,h,yr),ex:calcEx(e.aplica_express,kg,h,yr),cc:calcCC(e.aplica_carga_camion,kg,h,yr),ap:calcAp(e.aplica_apertura,kg,h,yr),dgr:calcDgr(e.aplica_dgr,h,yr),rc:calcRC(h,yr),total:calcTotal(e)};
 }
 
 // ── DATOS ────────────────────────────────────────────────
@@ -1532,7 +1537,9 @@ function showTarifas(prov,el,yearOv){
     {k:'fi',lb:'Fin de Semana / Festivos',ap:'Opcional',base:'fijo AWB'},
     {k:'ex',lb:'Handling Express',ap:'Opcional',base:'por kg'},
     {k:'cc',lb:'Carga Camión',ap:'Opcional',base:'por kg'},
-    {k:'ap',lb:'Apertura Fuera Horario',ap:'Opcional',base:'fijo + kg'}
+    {k:'ap',lb:'Apertura Fuera Horario',ap:'Opcional',base:'fijo + kg'},
+    {k:'dgr',lb:'Manipulación DGR',ap:'Opcional',base:'fijo AWB'},
+    {k:'rc',lb:'Recargo Continuidad Servicio',ap:'Automático',base:'fijo AWB'}
   ];
   var inDB=TRF_YEARS[year]&&year!==2026;
   var hdr='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">'+
@@ -1567,7 +1574,9 @@ function editTarifas(year,prov){
     {k:'fi',lb:'Fin de Semana',dl:false,fijo:false},
     {k:'ex',lb:'Handling Express',dl:false,fijo:false},
     {k:'cc',lb:'Carga Camión',dl:false,fijo:false},
-    {k:'ap',lb:'Apertura Fuera Horario',dl:false,fijo:true}
+    {k:'ap',lb:'Apertura Fuera Horario',dl:false,fijo:true},
+    {k:'dgr',lb:'Manipulación DGR',dl:false,fijo:false},
+    {k:'rc',lb:'Recargo Continuidad Servicio',dl:false,fijo:false}
   ];
   var fields=CONC.map(function(row){
     var v=t[row.k]||{};
@@ -2031,6 +2040,7 @@ async function showForm(e, prefill){
     '<label class="toggle-row"><input type="checkbox" id="f-ex" '+(e&&e.aplica_express?'checked':'')+' onchange="liveCalc()"> ⚡ Handling Express</label>'+
     '<label class="toggle-row"><input type="checkbox" id="f-cc" '+(e&&e.aplica_carga_camion?'checked':'')+' onchange="liveCalc()"> 🚛 Carga Camión</label>'+
     '<label class="toggle-row"><input type="checkbox" id="f-ap" '+(e&&e.aplica_apertura?'checked':'')+' onchange="liveCalc()"> 🔓 Apertura fuera de horario</label>'+
+     '<label class="toggle-row"><input type="checkbox" id="f-dgr" '+(e&&e.aplica_dgr?'checked':'')+' onchange="liveCalc()"> ☢️ Manipulación DGR</label>'+
     '</div>'+
     '<div id="man" '+((h&&!isAuto)?'':'style="display:none"')+'>'+
     '<div class="fg" style="margin-top:10px"><label class="fl">Coste total manual €</label>'+
@@ -2090,7 +2100,7 @@ function liveCalc(){
   if(!h||!rt||!kg){el.innerHTML='';return;}
   if(!hasH(h)){el.innerHTML='<div style="font-size:11px;color:var(--g400);padding:8px 0">Sin tarifa automática para este handler — introduce el coste manualmente.</div>';return;}
   var yr=new Date(rt).getFullYear();
-  var tmpE={handling:h,fecha_llegada:ll,fecha_retirada:rt,kilos_tasables:kg,aplica_mismo_dia:gc('f-md'),aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap')};
+  var tmpE={handling:h,fecha_llegada:ll,fecha_retirada:rt,kilos_tasables:kg,aplica_mismo_dia:gc('f-md'),aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap'),aplica_dgr:gc('f-dgr')};
   var d=desglose(tmpE);if(!d){el.innerHTML='';return;}
   el.innerHTML='<div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:12px">'+
     '<div class="sect" style="margin-top:0;color:var(--b600)">Vista previa — '+h+' '+yr+'</div>'+
@@ -2103,6 +2113,8 @@ function liveCalc(){
     (d.ex?'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gr600);padding:2px 0"><span>+ Express:</span><span>'+fc(d.ex)+'</span></div>':'')+
     (d.cc?'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gr600);padding:2px 0"><span>+ Carga camión:</span><span>'+fc(d.cc)+'</span></div>':'')+
     (d.ap?'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gr600);padding:2px 0"><span>+ Apertura:</span><span>'+fc(d.ap)+'</span></div>':'')+
+    (d.dgr?'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gr600);padding:2px 0"><span>+ Manipulación DGR:</span><span>'+fc(d.dgr)+'</span></div>':'')+
+    (d.rc?'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gr600);padding:2px 0"><span>+ Recargo continuidad:</span><span>'+fc(d.rc)+'</span></div>':'')+
     '<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;color:var(--b700);border-top:1px solid var(--b200);padding-top:8px;margin-top:6px"><span>TOTAL:</span><strong>'+fc(d.total)+'</strong></div>'+
     '</div>';
 }
@@ -2115,7 +2127,7 @@ function buildObj(){
     fecha_llegada:gv('f-ll')||null,fecha_retirada:rt,kilos_tasables:parseFloat(gv('f-kg'))||0,
     bultos:parseInt(gv('f-blt'))||null,
     aplica_finde:gc('f-fi'),aplica_express:gc('f-ex'),
-    aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap'),
+    aplica_carga_camion:gc('f-cc'),aplica_apertura:gc('f-ap'),aplica_dgr:gc('f-dgr'),
     coste_manual:(!isAuto&&h)?parseFloat(gv('f-man'))||null:null,
     observaciones:gv('f-obs').trim()||null,mes_operacion:calcMes(rt),
     operation_year:rt?new Date(rt).getFullYear():null};
