@@ -9922,7 +9922,7 @@ async function guardarIncidenciaLlegada(){
 }
 function onCargaFoto(bid){const f=document.getElementById('cg-fi-'+bid)?.files;if(f&&f.length>0){const btn=document.getElementById('cg-btn-'+bid);if(btn)btn.style.display='';setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);}}
 // ── #7a: Reempaquetado de carga y reimpresión de etiquetas QR únicas ──
-function abrirReempaquetado(bid, buqueNombre, totalPrevisto){
+function abrirReempaquetado(bid, buqueNombre, totalPrevisto, tandaId){
   const ov=document.createElement('div');
   ov.id='reemp-overlay';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:21000;display:flex;align-items:center;justify-content:center;padding:20px';
@@ -9934,7 +9934,7 @@ function abrirReempaquetado(bid, buqueNombre, totalPrevisto){
     <div style="font-size:11px;color:var(--g400);margin:8px 0 16px">Se imprimirá una etiqueta QR única por cada bulto resultante. Estas etiquetas serán las que se escaneen al embarcar.</div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="document.getElementById('reemp-overlay').remove()" style="background:var(--g100);color:var(--g600);border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Omitir</button>
-      <button onclick="generarEtiquetasReempaque('${bid}','${(buqueNombre||'').replace(/'/g,"\\'")}')" style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer">🖨️ Generar e imprimir</button>
+      <button onclick="generarEtiquetasReempaque('${bid}','${(buqueNombre||'').replace(/'/g,"\\'")}','${tandaId||''}')" style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer">🖨️ Generar e imprimir</button>
     </div>
   </div>`;
   ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
@@ -9942,16 +9942,24 @@ function abrirReempaquetado(bid, buqueNombre, totalPrevisto){
   setTimeout(()=>{ const i=document.getElementById('reemp-n'); if(i){ i.focus(); i.select(); } }, 80);
 }
 
-async function generarEtiquetasReempaque(bid, buqueNombre){
+async function generarEtiquetasReempaque(bid, buqueNombre, tandaId){
   const n=parseInt(document.getElementById('reemp-n')?.value)||0;
   if(n<1){ showToast('⚠️ Introduce un número de bultos válido'); return; }
+  tandaId=(tandaId&&tandaId!=='null'&&tandaId!=='')?tandaId:null;
+  // Identificador que va en el QR: la tanda si existe, si no el buque (compat.)
+  const qrId = tandaId || bid;
   document.getElementById('reemp-overlay')?.remove();
   showToast('⏳ Generando '+n+' etiqueta'+(n!==1?'s':'')+'…');
-  // Persistir bultos reempaquetados (reemplaza los anteriores de este buque)
+  // Persistir bultos reempaquetados de ESTA tanda (reemplaza los previos de la tanda)
   try{
-    await sb.from('carga_bultos').delete().eq('buque_id', bid);
+    if(tandaId){
+      await sb.from('carga_bultos').delete().eq('tanda_id', tandaId);
+      await sb.from('tandas_embarque').update({num_bultos:n}).eq('id', tandaId);
+    }else{
+      await sb.from('carga_bultos').delete().eq('buque_id', bid);
+    }
     const filas=[];
-    for(let i=1;i<=n;i++) filas.push({buque_id:bid, codigo:`ALS-CARGA:${bid}:${i}:${n}`, num:i, total:n, escaneado:false});
+    for(let i=1;i<=n;i++) filas.push({buque_id:bid, tanda_id:tandaId, codigo:`ALS-CARGA:${qrId}:${i}:${n}`, num:i, total:n, escaneado:false});
     await sb.from('carga_bultos').insert(filas);
     try{ await sb.from('buques').update({bultos_cargados:n}).eq('id',bid); }catch(e2){}
     await logAct('buques',bid,buqueNombre,'editar','bultos_cargados','—',String(n)+' bultos reempaquetados');
@@ -9959,7 +9967,7 @@ async function generarEtiquetasReempaque(bid, buqueNombre){
   // Generar e imprimir etiquetas
   const etiquetas=[];
   for(let i=1;i<=n;i++){
-    const data=`ALS-CARGA:${bid}:${i}:${n}`;
+    const data=`ALS-CARGA:${qrId}:${i}:${n}`;
     const url=await generarQRDataURL(data,250);
     etiquetas.push({n:i,data,url});
   }
@@ -10010,8 +10018,15 @@ async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin
     if(urls.length) fotoUrl=urls[0];
   }
   const ts=new Date().toISOString();
+  // Crear la TANDA de embarque: agrupa las expediciones de esta entrega.
+  let tandaId=null;
+  try{
+    const {data:tanda}=await sb.from('tandas_embarque').insert({buque_id:bid,estado:'pendiente'}).select('id').single();
+    tandaId=tanda?.id||null;
+  }catch(exT){ console.warn('tanda', exT); }
   for(const e of data){
     const upd={hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'};
+    if(tandaId) upd.tanda_id=tandaId;
     if(fotoUrl) upd.foto_carga_url=fotoUrl;
     await sb.from('expediciones').update(upd).eq('id',e.id);
     await logAct('expediciones',e.id,e.nº_expedicion,'editar','ubicacion','—','Camión cargado'+( fotoUrl?' [con foto]':''));
@@ -10021,8 +10036,8 @@ async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin
   const {data:bqn}=await sb.from('buques').select('nombre').eq('id',bid).single();
   await loadAlmFotos('carga');
   if(document.getElementById('alm-sheet')) cerrarAccionAlm();
-  // #7a: reempaquetado — preguntar nº de bultos resultante e imprimir nuevas etiquetas QR únicas
-  abrirReempaquetado(bid, bqn?.nombre||'', totalPrevisto);
+  // #7a: reempaquetado — preguntar nº de bultos resultante e imprimir nuevas etiquetas QR únicas de la TANDA
+  abrirReempaquetado(bid, bqn?.nombre||'', totalPrevisto, tandaId);
 }
 // ── #7b: Gate de embarque — escaneo de bultos reempaquetados antes de la foto ──
 window._embScan = window._embScan || {};
@@ -10032,12 +10047,22 @@ function _embGateUnlock(bid){
   const s=document.getElementById('emb-scan-status-'+bid); if(s){ s.textContent='✅ Bultos verificados — adjunta la foto y confirma'; s.style.color='var(--gr700)'; s.style.fontWeight='700'; }
 }
 async function abrirScannerEmbarque(bid, buqueNombre){
-  const {data:bultos}=await sb.from('carga_bultos').select('codigo,num,total').eq('buque_id',bid);
+  // Buscar la tanda PENDIENTE de este buque (la entrega que se va a embarcar).
+  // Si no hay tandas (flujo antiguo), cae al modo por buque.
+  let tandaId=null;
+  try{
+    const {data:tandas}=await sb.from('tandas_embarque').select('id').eq('buque_id',bid).eq('estado','pendiente').order('created_at',{ascending:true});
+    if(tandas&&tandas.length) tandaId=tandas[0].id;
+  }catch(_){}
+  let q=sb.from('carga_bultos').select('codigo,num,total');
+  q = tandaId ? q.eq('tanda_id',tandaId) : q.eq('buque_id',bid);
+  const {data:bultos}=await q;
   if(!bultos||!bultos.length){ showToast('ℹ️ Sin bultos reempaquetados; puedes adjuntar foto y confirmar'); _embGateUnlock(bid); return; }
   const total=bultos.length;
   const validSet=new Set(bultos.map(b=>b.codigo));
+  const scanId = tandaId || bid;  // lo que va en m[1] del QR
   if(!window._embScan[bid]) window._embScan[bid]={escaneados:0,total,set:new Set()};
-  const estado=window._embScan[bid]; estado.total=total;
+  const estado=window._embScan[bid]; estado.total=total; estado.tandaId=tandaId; estado.scanId=scanId;
   const ov=document.createElement('div');
   ov.id='scanner-overlay';
   ov.style.cssText='position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column';
@@ -10071,16 +10096,21 @@ function _procesarQREmbarque(texto,bid,buqueNombre,total,validSet){
   if(texto===_ultimoQRCarga&&ahora-_ultimoQRCargaTs<2000)return;
   _ultimoQRCarga=texto;_ultimoQRCargaTs=ahora;
   const estado=window._embScan[bid];if(!estado)return;
+  const scanId=estado.scanId||bid;
   const m=texto.match(/^ALS-CARGA:([a-f0-9-]{36}):(\d+):(\d+)$/i);
   if(!m){ if(typeof beepError==='function')beepError(); _mostrarMensajeScan('⚠️ QR no válido para embarque','#fbbf24'); return; }
-  if(m[1]!==bid || !validSet.has(texto)){
+  if(m[1]!==scanId || !validSet.has(texto)){
     if(typeof beepError==='function')beepError(); if(navigator.vibrate)navigator.vibrate([100,50,100]);
-    _mostrarMensajeScan('🚫 Bulto de OTRO buque o no reconocido','#ef4444'); return;
+    _mostrarMensajeScan('🚫 Bulto de OTRA entrega o no reconocido','#ef4444'); return;
   }
   if(estado.set.has(texto)){ if(typeof beepError==='function')beepError(); _mostrarMensajeScan('⚠️ Bulto '+m[2]+' ya escaneado','#fbbf24'); return; }
   estado.set.add(texto); estado.escaneados++;
   if(typeof beepOK==='function')beepOK(); if(navigator.vibrate)navigator.vibrate(80);
-  sb.from('carga_bultos').update({escaneado:true}).eq('buque_id',bid).eq('codigo',texto).then(()=>{},()=>{});
+  if(estado.tandaId){
+    sb.from('carga_bultos').update({escaneado:true}).eq('tanda_id',estado.tandaId).eq('codigo',texto).then(()=>{},()=>{});
+  }else{
+    sb.from('carga_bultos').update({escaneado:true}).eq('buque_id',bid).eq('codigo',texto).then(()=>{},()=>{});
+  }
   const countEl=document.getElementById('emb-scan-count'); if(countEl)countEl.textContent=`${estado.escaneados} / ${total}`;
   if(estado.escaneados>=total){
     if(typeof beepCompletado==='function')beepCompletado(); if(navigator.vibrate)navigator.vibrate([200,100,200]);
@@ -10333,7 +10363,12 @@ async function enviarEmailFacturacionAuto(buqueId){
 }
 
 async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
-  if(!await confirmarAccion('¿Marcar el buque como EMBARCADO? Las expediciones pasarán a "A bordo" (excepto las Landed).'))return;
+  // Resolver la tanda que se está embarcando (la pendiente del buque)
+  let tandaId = window._embScan?.[bid]?.tandaId || null;
+  if(!tandaId){
+    try{ const {data:tt}=await sb.from('tandas_embarque').select('id').eq('buque_id',bid).eq('estado','pendiente').order('created_at',{ascending:true}); if(tt&&tt.length) tandaId=tt[0].id; }catch(_){}
+  }
+  if(!await confirmarAccion(tandaId?'¿Confirmar la entrega a bordo de esta tanda? Sus expediciones pasarán a "A bordo".':'¿Marcar el buque como EMBARCADO? Las expediciones pasarán a "A bordo" (excepto las Landed).'))return;
   // Subir fotos de embarque
   const prevEl=document.getElementById('embt-pv-'+bid);
   const files=prevEl?._files||[];
@@ -10344,29 +10379,46 @@ async function confirmarEmbarqueTab(bid){if(!checkOnline()){showToast("⚠️ Si
     if(urls.length) fotoUrl=urls[0];
   }
   const lugarEntrega=(document.getElementById('emb-lugar-'+bid)?.value||'').trim();
-  const _updB={estado_operacion:'Finalizado'};
-  if(lugarEntrega) _updB.lugar_entrega=lugarEntrega;
-  await sb.from('buques').update(_updB).eq('id',bid);
-  const {data:exps}=await sb.from('expediciones').select('id,ubicacion').eq('buque_id',bid);
+  if(lugarEntrega) await sb.from('buques').update({lugar_entrega:lugarEntrega}).eq('id',bid);
+
+  // Determinar qué expediciones se embarcan: las de la tanda (o, sin tanda, todas menos Landed)
+  let expsQuery = sb.from('expediciones').select('id,ubicacion,tanda_id').eq('buque_id',bid);
+  expsQuery = tandaId ? expsQuery.eq('tanda_id',tandaId) : expsQuery;
+  const {data:exps}=await expsQuery;
+  const embarcadasIds=[];
   for(const e of exps||[]){
     if(e.ubicacion==='Landed') continue;
     const upd={estado_semaforo:'🚢 EMBARCADO',ubicacion:'A bordo'};
     if(fotoUrl) upd.foto_embarque_url=fotoUrl;
     await sb.from('expediciones').update(upd).eq('id',e.id);
+    embarcadasIds.push(e.id);
   }
-  await logAct('buques',bid,'','editar','estado_operacion','En proceso','Embarcado por '+CU?.nombre+(fotoUrl?' [con foto]':''));
-  showToast('¡Embarcado! ✅'+(fotoUrl?' 📸':''));
-  // Auto-notificar a facturación si hay email configurado
-  await sb.from('buques').update({estado_facturacion:'pendiente'}).eq('id',bid);
-  enviarEmailFacturacionAuto(bid);
-  // Email automático al cliente con confirmación de embarque
-  await enviarEmailEmbarqueCliente(bid, fotoUrl);
+  if(tandaId){
+    await sb.from('tandas_embarque').update({estado:'embarcada',embarcada_at:new Date().toISOString(),embarcada_por:CU?.nombre||'—'}).eq('id',tandaId);
+  }
+  if(window._embScan) delete window._embScan[bid];
+  await logAct('buques',bid,'','editar','embarque',tandaId?'tanda':'buque','Entrega a bordo por '+CU?.nombre+(fotoUrl?' [con foto]':''));
+
+  // Email al cliente con las expediciones de ESTA entrega
+  await enviarEmailEmbarqueCliente(bid, fotoUrl, embarcadasIds);
+
+  // ¿Quedan expediciones del buque pendientes de embarcar (no Landed, no a bordo)?
+  const {data:rest}=await sb.from('expediciones').select('id,estado_semaforo,ubicacion').eq('buque_id',bid);
+  const pendientes=(rest||[]).filter(e=> e.ubicacion!=='Landed' && e.estado_semaforo!=='🚢 EMBARCADO');
+  if(pendientes.length===0){
+    // Buque completo: finalizar y disparar facturación
+    await sb.from('buques').update({estado_operacion:'Finalizado',estado_facturacion:'pendiente'}).eq('id',bid);
+    enviarEmailFacturacionAuto(bid);
+    showToast('¡Buque embarcado al completo! ✅'+(fotoUrl?' 📸':''));
+  }else{
+    showToast('✅ Tanda embarcada — quedan '+pendientes.length+' expedición(es) por entregar a bordo');
+  }
   await loadAlmFotos('embarque');
   if(document.getElementById('alm-sheet')) cerrarAccionAlm();
 }
 
 // ── Email automático al cliente al confirmar embarque ─────────────────
-async function enviarEmailEmbarqueCliente(buqueId, fotoUrl){
+async function enviarEmailEmbarqueCliente(buqueId, fotoUrl, embarcadasIds){
   try{
     const {data:b} = await sb.from('buques')
       .select('nombre,nº_escala,eta_buque,lugar_entrega,ec:cliente_id(nombre,email_confronta,otros_emails)')
@@ -10374,11 +10426,14 @@ async function enviarEmailEmbarqueCliente(buqueId, fotoUrl){
     if(!b) return;
     const emailCliente = b.ec?.email_confronta;
     if(!emailCliente){ showToast('ℹ️ Sin email cliente para notif. embarque'); return; }
-    const {data:exps} = await sb.from('expediciones')
+    // Expediciones de ESTA entrega (por id). Si no se pasan, cae a todas las embarcadas.
+    let eq = sb.from('expediciones')
       .select('nº_expedicion,remitente,bultos,kilos,nº_mrn')
       .eq('buque_id',buqueId)
       .eq('estado_semaforo','🚢 EMBARCADO')
       .neq('ubicacion','Landed');
+    if(embarcadasIds&&embarcadasIds.length) eq = eq.in('id',embarcadasIds);
+    const {data:exps} = await eq;
     const hoy = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
     const totalBultos = (exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
     const totalKilos  = (exps||[]).reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
