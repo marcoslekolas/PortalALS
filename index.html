@@ -2199,9 +2199,6 @@ async function doLogin(){
     // Registrar sesión única — usa auth_user_id para que el RLS (auth.uid() = user_id) funcione
     _registrarSesionUnica(CU.auth_user_id || CU.id);
 
-    // Cambio de password obligatorio
-    if(CU.must_change_password){ showChangePwd(); return; }
-
     iniciarVerificacionSesion();
     solicitarPermisoPush();
 
@@ -2250,42 +2247,11 @@ async function doChangePwd(){
   if(!p1||p1.length<6){err.textContent='Mínimo 6 caracteres';return;}
   if(p1!==p2){err.textContent='Las contraseñas no coinciden';return;}
   err.textContent='Guardando…';
-  // PRIMARIO: actualizar la contraseña en Supabase Auth (JWT)
-  let authOk=false;
+  // Actualizar la contraseña en Supabase Auth (JWT)
   try{
-    if(sb&&sb.auth){ const {error:aerr}=await sb.auth.updateUser({ password: p1 }); if(!aerr) authOk=true; else console.warn('Auth updateUser:',aerr.message); }
-  }catch(e){ console.warn('Auth updateUser ex:',e); }
-  // Intentar PATCH con el id del usuario actual
-  const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(CU.id),{
-    method:'PATCH',
-    headers:{
-      apikey:SB_KEY,
-      Authorization:'Bearer '+SB_KEY,
-      'Content-Type':'application/json',
-      Prefer:'return=representation'
-    },
-    body:JSON.stringify({password_hash:p1})
-  });
-  // Intentar también con la función segura bcrypt
-  if(sb){
-    try{
-      await sb.rpc('cambiar_password',{p_usuario_id:CU.id,p_nueva:p1});
-    }catch(e2){
-      // Fallback SDK
-      if(!r.ok){
-        let {error}=await sb.from('usuarios').update({password_hash:p1,must_change_password:false}).eq('id',CU.id);
-      if(error && error.message && error.message.includes('must_change_password')){
-        const r2=await sb.from('usuarios').update({password_hash:p1}).eq('id',CU.id);
-        error=r2.error;
-      }
-        if(error && !authOk){err.textContent='Error al guardar: '+error.message;return;}
-      }
-    }
-  } else if(!r.ok && !authOk){
-    err.textContent='Error al guardar. Verifica la conexión.';return;
-  }
-  CU.must_change_password=false;
-  CU.password_hash=p1;
+    const {error:aerr}=await sb.auth.updateUser({ password: p1 });
+    if(aerr){ err.textContent='Error al guardar: '+aerr.message; return; }
+  }catch(e){ err.textContent='Error al guardar. Verifica la conexión.'; return; }
   saveSession(CU);
   document.getElementById('screen-changepwd').style.display='none';
   showToast('✅ Contraseña actualizada correctamente');
@@ -2370,12 +2336,15 @@ async function verificarIdentidad(){
       return;
     }
 
-    // Identidad verificada — guardar ID temporalmente y mostrar paso 2
+    // Identidad verificada — enviar enlace de restablecimiento al email (vía segura de Auth)
     window._recUserId = match.id;
-    errEl.textContent = '';
-    document.getElementById('rec-step1').style.display = 'none';
-    document.getElementById('rec-step2').style.display = 'block';
-    setTimeout(()=>document.getElementById('rec-p1')?.focus(), 100);
+    errEl.textContent = 'Enviando enlace…';
+    try{
+      await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    }catch(_){}
+    errEl.style.color = 'var(--gr600)';
+    errEl.textContent = '✅ Te hemos enviado un enlace a '+email+' para restablecer tu contraseña. Revisa tu correo (y la carpeta de spam) y sigue el enlace.';
+    const b1=document.getElementById('rec-step1')?.querySelector('button'); if(b1) b1.disabled=true;
 
   } catch(e){
     errEl.textContent = '❌ Error de conexión: '+e.message;
@@ -2383,57 +2352,16 @@ async function verificarIdentidad(){
 }
 
 async function doResetPass(){
-  const p1    = document.getElementById('rec-p1')?.value||'';
-  const p2    = document.getElementById('rec-p2')?.value||'';
+  // El restablecimiento se hace por enlace de email (Supabase Auth), no en línea.
+  // Esta función queda como reenvío del enlace por si se llega a este punto.
   const errEl = document.getElementById('rec-err2');
-  const uid   = window._recUserId;
-
-  if(!uid){ errEl.textContent='Error: sesión de recuperación expirada. Vuelve a empezar.'; return; }
-  if(!p1 || p1.length < 6){ errEl.textContent='Mínimo 6 caracteres'; return; }
-  if(p1 !== p2){ errEl.textContent='Las contraseñas no coinciden'; return; }
-
-  errEl.textContent = 'Guardando…';
+  const email = (document.getElementById('rec-email')?.value||'').trim().toLowerCase();
+  if(!email){ if(errEl) errEl.textContent='Vuelve a empezar e introduce tu email.'; return; }
+  if(errEl) errEl.textContent='Reenviando enlace…';
   try{
-    // Intentar via RPC bcrypt (igual que showChangePwd)
-    let ok = false;
-    if(sb){
-      try{
-        await sb.rpc('cambiar_password', { p_usuario_id: uid, p_nueva: p1 });
-        ok = true;
-      } catch(e2){
-        // Fallback: update directo
-        const {error} = await sb.from('usuarios').update({
-          password_hash: p1,
-          must_change_password: false
-        }).eq('id', uid);
-        if(!error) ok = true;
-        else{ errEl.textContent='Error al guardar: '+error.message; return; }
-      }
-    } else {
-      const r = await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(uid),{
-        method:'PATCH',
-        headers:{ apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json', Prefer:'return=minimal' },
-        body: JSON.stringify({ password_hash: p1, must_change_password: false })
-      });
-      ok = r.ok;
-    }
-
-    if(ok){
-      window._recUserId = null;
-      cerrarRecuperar();
-      // Limpiar bloqueo y mostrar mensaje en login
-      try{ localStorage.removeItem('als_login_rl'); }catch(e){}
-      const errLogin = document.getElementById('li-err');
-      if(errLogin){
-        errLogin.style.color='var(--gr600)';
-        errLogin.textContent='✅ Contraseña actualizada. Ya puedes entrar con tu nueva contraseña.';
-      }
-    } else {
-      errEl.textContent='Error desconocido al guardar. Contacta con el administrador.';
-    }
-  } catch(e){
-    errEl.textContent='Error: '+e.message;
-  }
+    await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    if(errEl){ errEl.style.color='var(--gr600)'; errEl.textContent='✅ Enlace reenviado a '+email+'. Revisa tu correo.'; }
+  }catch(e){ if(errEl) errEl.textContent='Error: '+(e?.message||e); }
 }
 
 function showHome(){
@@ -9799,7 +9727,7 @@ async function imprimirEtiquetasBultos(expId, ref, numBultos){
     <style>
       :root{--b600:#1e3a5f}
       *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;background:#f5f5f5}
+      body{font-family:Arial,sans-serif;background:#f5f5f5;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 
       /* Barra de acciones — solo en pantalla */
       .acciones{
@@ -9846,8 +9774,8 @@ async function imprimirEtiquetasBultos(expId, ref, numBultos){
         line-height:1.1;word-break:break-all
       }
       .bulto-num{
-        font-size:11pt;font-weight:700;color:#fff;
-        background:var(--b600);border-radius:4mm;
+        font-size:11pt;font-weight:700;color:#1e3a5f;
+        background:#eef2ff;border:2px solid #1e3a5f;border-radius:4mm;
         padding:2mm 6mm;letter-spacing:.5px
       }
       .qr-wrap{
@@ -11003,7 +10931,6 @@ async function loadUsuarios(){
             ${u.nombre}
             ${isMe?'<span class="badge bg" style="font-size:10px">Tú</span>':''}
             ${inactivo?'<span class="badge" style="font-size:10px;background:var(--g200);color:var(--g600)">Inactivo</span>':''}
-            ${u.must_change_password?'<span class="badge ba" style="font-size:10px">⚠️ cambiar pwd</span>':''}
           </div>
           <div style="font-size:12px;color:var(--g500);margin-top:1px">
             ${u.email||'Sin email'}
@@ -11123,10 +11050,6 @@ async function editUser(id){
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="eu-activo" ${u.activo!==false?'checked':''} style="accent-color:var(--gr600);width:16px;height:16px">
           <span style="font-size:13px">Usuario activo</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="eu-mcp" ${u.must_change_password?'checked':''} style="accent-color:var(--am600);width:16px;height:16px">
-          <span style="font-size:13px">Forzar cambio de contraseña</span>
         </label>
       </div>
     </div>
@@ -11264,19 +11187,12 @@ async function saveUser(id){
   const obj={nombre:nuevoNombre,email:gv('eu-e')||null,rol:rolPrimario,activo:document.getElementById('eu-activo')?.checked!==false,
     modulos_permitidos:modulosMarcados.length>0?modulosMarcados:null};
   const p=gv('eu-p');
-  if(p) obj.password_hash=p;
-  try{ const mcp=document.getElementById('eu-mcp'); if(mcp) obj.must_change_password=p?true:(mcp.checked||false); }catch(e){}
 
   // 1. Actualizar tabla usuarios
   // NOTA: usamos update() SIN .select() — el RLS filtraría filas de otros usuarios
   // aunque el UPDATE haya ocurrido, el SELECT subsiguiente devolvería 0 filas.
   // Verificamos por error: si saveErr===null, el update fue correcto.
   let {error:saveErr}=await sb.from('usuarios').update(obj).eq('id',id);
-  if(saveErr&&saveErr.message&&saveErr.message.includes('must_change_password')){
-    delete obj.must_change_password;
-    const r2=await sb.from('usuarios').update(obj).eq('id',id);
-    saveErr=r2.error;
-  }
   // Retry sin modulos_permitidos si la columna no existe aún en el schema
   if(saveErr&&saveErr.message&&saveErr.message.includes('modulos_permitidos')){
     console.warn('⚠️ Columna modulos_permitidos no existe — ejecuta permisos_sistema.sql en Supabase');
@@ -11336,13 +11252,28 @@ async function saveUser(id){
 
   await logAct('usuarios',id,nuevoNombre,'editar','rol',null,`${nuevoNombre} · [${rolesSeleccionados.join(',')}]`);
 
-  // 3b. Si se cambió contraseña y el usuario tiene email, actualizar también en auth.users
-  if(p && obj.email){
-    try{
-      // Solo funciona si el admin está editando su propio usuario (sesión activa)
-      const {error:authPwErr}=await sb.auth.updateUser({password:p});
-      if(authPwErr) console.warn('auth.updateUser password:',authPwErr.message);
-    }catch(ae){ console.warn('auth.updateUser exception:',ae?.message); }
+  // 3b. Si se cambió contraseña: el propio usuario vía Auth; otro usuario vía Edge Function admin
+  if(p){
+    if(id===CU?.id){
+      try{
+        const {error:authPwErr}=await sb.auth.updateUser({password:p});
+        if(authPwErr){ showToast('⚠️ Datos guardados, pero la contraseña no se actualizó: '+authPwErr.message); }
+      }catch(ae){ showToast('⚠️ Datos guardados, pero falló el cambio de contraseña'); }
+    } else if(obj.email){
+      try{
+        let token=SB_KEY;
+        try{ const s=await sb.auth.getSession(); token=s?.data?.session?.access_token||SB_KEY; }catch(_){}
+        const resp=await fetch(SB_URL+'/functions/v1/crear-usuario',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
+          body:JSON.stringify({accion:'reset_password',email:obj.email,password:p})
+        });
+        const rb=await resp.json();
+        if(!resp.ok||rb?.error){ showToast('⚠️ Datos guardados, pero la contraseña no se cambió: '+(rb?.error||('HTTP '+resp.status))); }
+      }catch(ae){ showToast('⚠️ Datos guardados, pero falló el cambio de contraseña'); }
+    } else {
+      showToast('⚠️ Para cambiar la contraseña, el usuario debe tener email.');
+    }
   }
   // Si se editó el propio usuario, actualizar sesión
   if(id===CU?.id){
@@ -12245,10 +12176,16 @@ const MODALS={
     if(!oldP||!newP||!confP){alert('Rellena todos los campos');return;}
     if(newP!==confP){alert('Las contraseñas no coinciden');return;}
     if(newP.length<6){alert('La contraseña debe tener al menos 6 caracteres');return;}
-    if(oldP!==CU.password_hash){alert('La contraseña actual no es correcta');return;}
-    const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,{method:'PATCH',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({password_hash:newP})});
-    if(!r.ok){alert('Error al guardar. Inténtalo de nuevo.');return;}
-    CU.password_hash=newP;showToast('Contraseña actualizada ✅');closeModal();
+    // Verificar la contraseña actual re-autenticando contra Supabase Auth
+    showToast('⏳ Verificando…');
+    try{
+      const {error:vErr}=await sb.auth.signInWithPassword({email:(CU.email||'').toLowerCase(),password:oldP});
+      if(vErr){alert('La contraseña actual no es correcta');return;}
+    }catch(_){alert('No se pudo verificar la contraseña actual');return;}
+    // Cambiar la contraseña en Auth
+    const {error:uErr}=await sb.auth.updateUser({password:newP});
+    if(uErr){alert('Error al guardar: '+uErr.message);return;}
+    showToast('Contraseña actualizada ✅');closeModal();
   }
 }};
 
@@ -15655,7 +15592,7 @@ async function imprimirQRLlegada(expId, ref){
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Etiquetas QR — ${esc(refTxt)}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;background:#e9e9e9;color:#111}
+      body{font-family:Arial,sans-serif;background:#e9e9e9;color:#111;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       /* Etiqueta 10 (ancho) × 14 (alto) cm, vertical — como en la foto.
          Si tu etiqueta entra apaisada (14 ancho × 10 alto), cambia el @page a
          "140mm 100mm" y .label a width:140mm;height:100mm */
@@ -15667,7 +15604,7 @@ async function imprimirQRLlegada(expId, ref){
       .logo{font-size:13px;font-weight:700;letter-spacing:1.5px;color:#1e3a5f;margin-bottom:3mm}
       .buque{font-size:42px;font-weight:900;letter-spacing:.5px;line-height:1.02;margin:1mm 0;word-break:break-word}
       .ref{font-size:25px;font-weight:800;letter-spacing:.5px;margin-top:2mm}
-      .bulto{font-size:38px;font-weight:900;color:#fff;background:#1e3a5f;border-radius:10px;
+      .bulto{font-size:38px;font-weight:900;color:#1e3a5f;background:#eef2ff;border:3px solid #1e3a5f;border-radius:10px;
         padding:3mm 9mm;margin-bottom:4mm;line-height:1;letter-spacing:.5px}
       .qr-wrap{display:inline-block;border:2px solid #e5e7eb;border-radius:8px;padding:6px}
       .qr-wrap img{display:block;width:200px;height:200px}
