@@ -1118,6 +1118,7 @@ if('serviceWorker' in navigator){
     // 1. PortalGuard carga el SDK y crea sb. window.sb queda asignado.
     await PortalGuard.bootstrap();
     sb = PortalGuard.sb || window.sb;
+    _engancharRecuperacionPassword();
 
     // 2. ¿Hay sesión JWT válida Y no expirada por inactividad?
     // hasSession() es quien marca als_logout_reason si invalida por inactividad,
@@ -2146,6 +2147,7 @@ async function doLogin(){
     // Asegurar que PortalGuard ha cargado el SDK
     await PortalGuard.bootstrap();
     sb = PortalGuard.sb || window.sb;  // sincronizar referencia local
+    _engancharRecuperacionPassword();
 
     // ── Login UNIFICADO: solo Supabase Auth (sin fallback bcrypt) ────────
     const ar = await sb.auth.signInWithPassword({ email: email.toLowerCase(), password: pass });
@@ -2215,6 +2217,67 @@ async function doLogin(){
     console.error('Login exception:',e);
     if(errEl)errEl.textContent='Error inesperado: '+e.message;
   }
+}
+
+// ── Recuperación de contraseña: al volver desde el enlace del email ──
+let _recoveryHooked=false;
+function _engancharRecuperacionPassword(){
+  if(_recoveryHooked || !sb || !sb.auth) return;
+  _recoveryHooked=true;
+  // Supabase emite PASSWORD_RECOVERY al detectar el token del enlace en la URL
+  try{
+    sb.auth.onAuthStateChange((event)=>{
+      if(event==='PASSWORD_RECOVERY'){ mostrarFijarPassword(); }
+    });
+  }catch(_){}
+  // Respaldo: detectar el tipo recovery directamente en el hash de la URL
+  try{
+    const h=(window.location.hash||'');
+    if(h.indexOf('type=recovery')!==-1){ setTimeout(mostrarFijarPassword, 300); }
+  }catch(_){}
+}
+
+function mostrarFijarPassword(){
+  const lg=document.getElementById('screen-login'); if(lg) lg.style.display='none';
+  let scr=document.getElementById('screen-recoverypwd');
+  if(!scr){
+    scr=document.createElement('div');
+    scr.id='screen-recoverypwd';
+    scr.style.cssText='position:fixed;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px';
+    scr.innerHTML=`<div style="width:100%;max-width:400px">
+      <div style="font-size:22px;font-weight:700;margin-bottom:6px">🔑 Nueva contraseña</div>
+      <div style="font-size:14px;color:var(--g500);margin-bottom:24px">Has llegado desde el enlace de recuperación. Establece tu nueva contraseña.</div>
+      <div class="li-card">
+        <div class="fg2"><label class="fl2">Nueva contraseña *</label><input id="rp-p1" class="fi" type="password" placeholder="Mínimo 6 caracteres"></div>
+        <div class="fg2"><label class="fl2">Confirmar contraseña *</label><input id="rp-p2" class="fi" type="password" placeholder="Repite la contraseña" onkeydown="if(event.key==='Enter')doFijarPassword()"></div>
+        <div id="rp-err" style="color:var(--rd600);font-size:12px;min-height:16px;margin-top:4px"></div>
+        <button class="btn btn-p btn-full" style="margin-top:16px" onclick="doFijarPassword()">Guardar contraseña →</button>
+      </div>
+    </div>`;
+    document.body.appendChild(scr);
+  }
+  scr.style.display='flex';
+  setTimeout(()=>document.getElementById('rp-p1')?.focus(), 100);
+}
+
+async function doFijarPassword(){
+  const p1=document.getElementById('rp-p1').value;
+  const p2=document.getElementById('rp-p2').value;
+  const err=document.getElementById('rp-err');
+  if(!p1||p1.length<6){err.textContent='Mínimo 6 caracteres';return;}
+  if(p1!==p2){err.textContent='Las contraseñas no coinciden';return;}
+  err.textContent='Guardando…';
+  try{
+    const {error:aerr}=await sb.auth.updateUser({ password: p1 });
+    if(aerr){ err.textContent='Error al guardar: '+aerr.message; return; }
+  }catch(e){ err.textContent='Error al guardar. Verifica la conexión.'; return; }
+  // Cerrar la sesión de recuperación y volver al login para entrar con la nueva contraseña
+  try{ await sb.auth.signOut(); }catch(_){}
+  try{ history.replaceState(null,'',window.location.pathname); }catch(_){}
+  const scr=document.getElementById('screen-recoverypwd'); if(scr) scr.style.display='none';
+  const lg=document.getElementById('screen-login'); if(lg) lg.style.display='';
+  const liErr=document.getElementById('li-err');
+  if(liErr){ liErr.style.color='var(--gr600)'; liErr.textContent='✅ Contraseña actualizada. Ya puedes entrar con tu nueva contraseña.'; }
 }
 
 function showChangePwd(){
