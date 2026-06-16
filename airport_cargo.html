@@ -1545,8 +1545,8 @@ async function loadResumen(){
 // ── CONTROL DE COSTES (previsión por periodo vs factura) ──────────────
 var COSTE_CONC=[
   {k:'alm',lb:'Almacenaje'},
-  {k:'gd', lb:'Gestión documental / Entrega base'},
-  {k:'md', lb:'Entrega mismo día'},
+  {k:'ent_md', lb:'Entrega mismo día (incl. gestión doc.)'},
+  {k:'ent_od', lb:'Gestión documental / Entrega otro día'},
   {k:'tr', lb:'Tasa recinto / Terminal'},
   {k:'tm', lb:'Mantenimiento'},
   {k:'fi', lb:'Fin de semana / Festivos'},
@@ -1574,7 +1574,12 @@ async function loadCostes(){
   var totalPrev=0;
   lista.forEach(function(e){
     var d=desglose(e); if(!d)return;
-    COSTE_CONC.forEach(function(c){ sum[c.k]+=(d[c.k]||0); });
+    sum.alm+=(d.alm||0); sum.tr+=(d.tr||0); sum.tm+=(d.tm||0); sum.fi+=(d.fi||0);
+    sum.ex+=(d.ex||0); sum.cc+=(d.cc||0); sum.ap+=(d.ap||0); sum.dgr+=(d.dgr||0); sum.rc+=(d.rc||0);
+    // Entrega agrupada como en el resumen de la factura:
+    //  mismo día (2215) = gestión doc. + suplemento mismo día;  otro día (2374) = gestión doc. sola.
+    if((d.md||0)>0){ sum.ent_md+=(d.gd||0)+(d.md||0); }
+    else { sum.ent_od+=(d.gd||0); }
     totalPrev+=(d.total||0);
   });
   // Construir tabla (solo conceptos con previsión > 0, más todos los demás para teclear facturado)
