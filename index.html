@@ -9759,8 +9759,14 @@ function ofrecerEtiquetasBultos(expId, ref, numBultos){
 }
 
 async function imprimirEtiquetasBultos(expId, ref, numBultos){
-  let buqueNombre='';
-  try{ const {data:e}=await sb.from('expediciones').select('buques(nombre)').eq('id',expId).single(); buqueNombre=(e&&e.buques&&e.buques.nombre)||''; }catch(_){}
+  let buqueNombre='', esAC=false;
+  try{
+    const {data:e}=await sb.from('expediciones').select('buques(nombre),ac_vuelo,ac_fecha_llegada,ac_status,ac_remitente').eq('id',expId).single();
+    buqueNombre=(e&&e.buques&&e.buques.nombre)||'';
+    esAC=!!(e&&(e.ac_vuelo||e.ac_fecha_llegada||e.ac_status||e.ac_remitente));
+  }catch(_){}
+  // En expediciones de aeropuerto, la referencia es un AWB: se prefija para identificarlo.
+  const refTxt = esAC ? ('AWB '+ref) : ref;
   const qrPromises = [];
   for(let i = 1; i <= numBultos; i++){
     const qrData = `ALS-BLT:${expId}:${i}:${numBultos}`;
@@ -9776,7 +9782,7 @@ async function imprimirEtiquetasBultos(expId, ref, numBultos){
     <div class="etiq${i < etiquetas.length-1 ? ' salto' : ''}">
       <div class="empresa">ALGECIRAS LOGISTIC SOLUTIONS</div>
       ${buqueNombre?`<div class="buque">${buqueNombre}</div>`:''}
-      <div class="ref">${ref}</div>
+      <div class="ref">${refTxt}</div>
       <div class="bulto-num">BULTO ${n} / ${numBultos}</div>
       <div class="qr-wrap">
         ${url
@@ -9791,6 +9797,7 @@ async function imprimirEtiquetasBultos(expId, ref, numBultos){
     <meta charset="utf-8">
     <title>Etiquetas — ${ref}</title>
     <style>
+      :root{--b600:#1e3a5f}
       *{margin:0;padding:0;box-sizing:border-box}
       body{font-family:Arial,sans-serif;background:#f5f5f5}
 
@@ -12181,40 +12188,28 @@ const MODALS={
   if(!n||!p){alert('Nombre y contraseña son obligatorios');return;}
   if(!e){alert('El email es obligatorio para que el usuario pueda acceder correctamente al portal.');return;}
 
-  // 1. Crear en auth.users (Supabase Auth — genera JWT para sesión)
-  let authUserId=null;
+  // Crear vía Edge Function con API admin: no cambia la sesión del admin,
+  // no tiene el límite de signup (429) y no usa password_hash.
+  showToast('⏳ Creando usuario…');
+  let token=SB_KEY;
+  try{ const s=await sb.auth.getSession(); token=s?.data?.session?.access_token||SB_KEY; }catch(_){}
+  let resp, body;
   try{
-    const {data:au,error:ae}=await sb.auth.signUp({email:e.toLowerCase(),password:p,options:{data:{nombre:n}}});
-    if(ae){
-      if(ae.message&&ae.message.includes('already registered')){
-        showToast('⚠️ Este email ya existe en Auth. Se creará solo en la tabla de usuarios.');
-      } else {
-        console.warn('auth.signUp error:',ae.message);
-        showToast('⚠️ Auth: '+ae.message+' — El usuario se crea sin JWT (acceso limitado).');
-      }
-    } else if(au?.user){
-      authUserId=au.user.id;
-    }
-  }catch(ae){ console.warn('auth.signUp exception:',ae?.message); }
+    resp=await fetch(SB_URL+'/functions/v1/crear-usuario',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
+      body:JSON.stringify({nombre:n,email:e.toLowerCase(),password:p,rol:r})
+    });
+    body=await resp.json();
+  }catch(netErr){ alert('Error de red al crear usuario: '+(netErr?.message||netErr)); return; }
 
-  // 2. Crear en tabla usuarios (bcrypt fallback + datos de perfil)
-  const {data,error}=await sb.rpc('crear_usuario',{
-    p_nombre:n, p_email:e||null, p_password:p, p_rol:r
-  });
-  if(error){
-    // Fallback: INSERT directo si la RPC no existe aún
-    if(error.message&&(error.message.includes('crear_usuario')||error.code==='42883')){
-      const obj={nombre:n,rol:r,password_hash:p};
-      if(e)obj.email=e;
-      if(authUserId)obj.id=authUserId; // sincronizar ID con auth.users
-      const {error:e2}=await sb.from('usuarios').insert(obj);
-      if(e2){alert('Error al crear usuario: '+e2.message+'\n\nEjecuta el SQL fix_rls_usuarios.sql en Supabase.');return;}
-    } else {
-      alert('Error: '+error.message);return;
-    }
+  if(!resp.ok||body?.error){
+    alert('No se pudo crear el usuario: '+(body?.error||('HTTP '+resp.status))
+      +'\n\nSi el error menciona la función «crear-usuario», despliégala en Supabase (ver crear-usuario.ts).');
+    return;
   }
   await logAct('usuarios',null,n,'crear','nombre',null,`${n} · ${r}`);
-  showToast('✅ Usuario creado: '+n+(authUserId?' (Auth ✓)':' (sin JWT — revisa Auth)'));
+  showToast('✅ Usuario creado: '+n+' (Auth ✓)');
   closeModal();loadView(CV);
 }
 },
