@@ -343,6 +343,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div class="nav-item" onclick="nav('finalizadas',this)"><span class="ni">✅</span><span class="nav-item-txt">Finalizadas / Historial</span></div>
         <div class="nav-item" onclick="nav('resumen',this)"><span class="ni">📊</span><span class="nav-item-txt">Resumen mensual</span></div>
         <div class="nav-item" onclick="nav('tarifas',this)"><span class="ni">💰</span><span class="nav-item-txt">Tarifas por año</span></div>
+        <div class="nav-item" onclick="nav('costes',this)"><span class="ni">⚖️</span><span class="nav-item-txt">Control de costes</span></div>
         <div class="sb-sec">Acciones</div>
         <div class="nav-item" onclick="abrirEmail()"><span class="ni">📧</span><span class="nav-item-txt">Notificar consignatario</span></div>
         <div class="nav-item" onclick="abrirEmailCliente()"><span class="ni">👤</span><span class="nav-item-txt">Notificar cliente</span></div>
@@ -474,6 +475,28 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
           <button class="tab-btn" onclick="showTarifas('Groundforce AGP',this)">✈️ Groundforce AGP</button>
         </div>
         <div id="tar-content"></div>
+      </div>
+      <!-- CONTROL DE COSTES -->
+      <div class="view" id="view-costes">
+        <div class="ph">
+          <div class="pt">⚖️ Control de costes</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="co-handler" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadCostes()">
+              <option value="Swissport Cargo">✈️ Swissport Cargo</option>
+              <option value="Groundforce AGP">✈️ Groundforce AGP</option>
+            </select>
+            <select id="co-year" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadCostes()">
+              <option value="2026">2026</option><option value="2025">2025</option>
+            </select>
+            <select id="co-month" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadCostes()">
+              <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+              <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+              <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+              <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+            </select>
+          </div>
+        </div>
+        <div id="co-content"><p style="color:var(--g500);font-size:13px;padding:8px">Selecciona handler y mes para comparar tu previsión con la factura.</p></div>
       </div>
       <!-- ALERTAS -->
       <div class="view" id="view-alertas">
@@ -632,6 +655,7 @@ function nav(v,el){
   else if(v==='finalizadas')loadFinalizadas();
   else if(v==='resumen')loadResumen();
   else if(v==='tarifas')loadTarifasView();
+  else if(v==='costes')loadCostes();
   else if(v==='alertas')loadAlertas();
 }
 
@@ -1518,6 +1542,214 @@ async function loadResumen(){
 }
 
 // ── TARIFAS ──────────────────────────────────────────────
+// ── CONTROL DE COSTES (previsión por periodo vs factura) ──────────────
+var COSTE_CONC=[
+  {k:'alm',lb:'Almacenaje'},
+  {k:'gd', lb:'Gestión documental / Entrega base'},
+  {k:'md', lb:'Entrega mismo día'},
+  {k:'tr', lb:'Tasa recinto / Terminal'},
+  {k:'tm', lb:'Mantenimiento'},
+  {k:'fi', lb:'Fin de semana / Festivos'},
+  {k:'ex', lb:'Handling exprés'},
+  {k:'cc', lb:'Carga camión'},
+  {k:'ap', lb:'Apertura fuera horario'},
+  {k:'dgr',lb:'Manipulación DGR'},
+  {k:'rc', lb:'Recargo continuidad'}
+];
+var _coExtra=0;
+
+async function loadCostes(){
+  var cont=document.getElementById('co-content'); if(!cont)return;
+  var h=gv('co-handler'), yr=parseInt(gv('co-year')), mes=parseInt(gv('co-month'));
+  cont.innerHTML='<p style="color:var(--g500);font-size:13px;padding:8px">Calculando previsión…</p>';
+  if(!ALL||!ALL.length){ await loadAll(); }
+  // AWB del handler retirados en el mes/año elegidos
+  var lista=(ALL||[]).filter(function(e){
+    if(e.handling!==h || !e.fecha_retirada) return false;
+    var d=new Date(e.fecha_retirada);
+    return d.getFullYear()===yr && (d.getMonth()+1)===mes;
+  });
+  // Sumar la previsión por concepto
+  var sum={}; COSTE_CONC.forEach(function(c){sum[c.k]=0;});
+  var totalPrev=0;
+  lista.forEach(function(e){
+    var d=desglose(e); if(!d)return;
+    COSTE_CONC.forEach(function(c){ sum[c.k]+=(d[c.k]||0); });
+    totalPrev+=(d.total||0);
+  });
+  // Construir tabla (solo conceptos con previsión > 0, más todos los demás para teclear facturado)
+  var filas=COSTE_CONC.map(function(c){
+    var prev=sum[c.k]||0;
+    return '<tr>'+
+      '<td style="padding:6px 8px">'+c.lb+'</td>'+
+      '<td style="padding:6px 8px;text-align:right" data-prev="'+prev.toFixed(2)+'">'+fc(prev)+'</td>'+
+      '<td style="padding:4px 8px;text-align:right"><input type="number" step="0.01" min="0" class="fi co-fact" data-k="'+c.k+'" oninput="recalcCostes()" style="width:110px;text-align:right;padding:5px"></td>'+
+      '<td class="co-dif" style="padding:6px 8px;text-align:right;font-weight:600">—</td>'+
+    '</tr>';
+  }).join('');
+  cont.innerHTML=
+    '<div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:12px;margin-bottom:14px;font-size:13px;color:var(--g700)">'+
+      '<strong>'+lista.length+'</strong> AWB de <strong>'+h+'</strong> retirados en '+gv('co-month')+'/'+yr+'. '+
+      'Teclea los importes del resumen de la factura para comparar.'+
+    '</div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'+
+      '<thead><tr style="background:var(--g100)">'+
+        '<th style="padding:8px;text-align:left">Concepto</th>'+
+        '<th style="padding:8px;text-align:right">Previsto</th>'+
+        '<th style="padding:8px;text-align:right">Facturado</th>'+
+        '<th style="padding:8px;text-align:right">Diferencia</th>'+
+      '</tr></thead>'+
+      '<tbody id="co-tbody">'+filas+'</tbody>'+
+      '<tbody id="co-extra"></tbody>'+
+      '<tfoot><tr style="border-top:2px solid var(--g300);font-weight:700">'+
+        '<td style="padding:8px">TOTAL</td>'+
+        '<td id="co-tprev" style="padding:8px;text-align:right" data-prev="'+totalPrev.toFixed(2)+'">'+fc(totalPrev)+'</td>'+
+        '<td id="co-tfact" style="padding:8px;text-align:right">—</td>'+
+        '<td id="co-tdif" style="padding:8px;text-align:right">—</td>'+
+      '</tr>'+
+      '<tr><td colspan="4" id="co-desvio" style="padding:6px 8px;text-align:right;font-size:12px;color:var(--g500)"></td></tr>'+
+      '</tfoot>'+
+    '</table></div>'+
+    '<div style="margin-top:10px"><button class="btn btn-s btn-sm" onclick="addCosteRow()">+ Añadir concepto de factura</button>'+
+    '<span style="font-size:11px;color:var(--g400);margin-left:10px">Para conceptos que la factura cobra y tu previsión no contempla (p. ej. pallets, entrega otro día).</span></div>'+
+    '<div style="margin-top:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+      '<button class="btn btn-p btn-sm" onclick="guardarCostes()">💾 Guardar conciliación</button>'+
+      '<span id="co-saved" style="font-size:12px;color:var(--g500)"></span>'+
+    '</div>'+
+    '<div id="co-historico" style="margin-top:22px"></div>';
+  // Precargar conciliación guardada (si existe) para este handler/año/mes
+  try{
+    var rec=await sb.from('costes_conciliacion').select('*').eq('handler',h).eq('anio',yr).eq('mes',mes).maybeSingle();
+    if(rec&&rec.data){
+      var det=rec.data.detalle||{};
+      document.querySelectorAll('#co-tbody .co-fact').forEach(function(inp){
+        var k=inp.getAttribute('data-k');
+        if(det[k]&&det[k].fact!=null) inp.value=det[k].fact;
+      });
+      (det.extras||[]).forEach(function(ex){
+        addCosteRow();
+        var rows=document.querySelectorAll('#co-extra tr');
+        var tr=rows[rows.length-1];
+        tr.querySelector('input[type=text]').value=ex.lb||'';
+        tr.querySelector('.co-fact').value=ex.fact!=null?ex.fact:'';
+      });
+      var sv=document.getElementById('co-saved');
+      if(sv) sv.textContent='Guardado el '+fd(rec.data.actualizado_at)+(rec.data.actualizado_por?(' por '+rec.data.actualizado_por):'');
+    }
+  }catch(_){}
+  recalcCostes();
+  renderHistoricoCostes();
+}
+
+async function guardarCostes(){
+  var h=gv('co-handler'), yr=parseInt(gv('co-year')), mes=parseInt(gv('co-month'));
+  var detalle={extras:[]};
+  document.querySelectorAll('#co-tbody tr').forEach(function(tr){
+    var inp=tr.querySelector('.co-fact'); if(!inp)return;
+    var k=inp.getAttribute('data-k');
+    var prevCell=tr.querySelector('[data-prev]');
+    var prev=prevCell?parseFloat(prevCell.getAttribute('data-prev'))||0:0;
+    detalle[k]={prev:prev, fact: inp.value===''?null:(parseFloat(inp.value)||0)};
+  });
+  document.querySelectorAll('#co-extra tr').forEach(function(tr){
+    var inp=tr.querySelector('.co-fact'); var lb=tr.querySelector('input[type=text]');
+    if(!inp)return;
+    var v=inp.value===''?null:(parseFloat(inp.value)||0);
+    if((lb&&lb.value.trim())||v!=null) detalle.extras.push({lb:lb?lb.value.trim():'', fact:v});
+  });
+  var tprevCell=document.getElementById('co-tprev');
+  var totalPrev=tprevCell?parseFloat(tprevCell.getAttribute('data-prev'))||0:0;
+  var totalFact=0;
+  document.querySelectorAll('#co-content .co-fact').forEach(function(i){ totalFact+=parseFloat(i.value)||0; });
+  var numAwb=0; var hint=document.querySelector('#co-content strong'); if(hint) numAwb=parseInt(hint.textContent)||0;
+  var row={handler:h,anio:yr,mes:mes,num_awb:numAwb,total_previsto:totalPrev,total_facturado:totalFact,
+    detalle:detalle, actualizado_at:new Date().toISOString(), actualizado_por:(window.CU&&CU.nombre)||'—'};
+  try{
+    var res=await sb.from('costes_conciliacion').upsert(row,{onConflict:'handler,anio,mes'});
+    if(res.error){ alert('No se pudo guardar: '+res.error.message+'\n\n¿Ejecutaste el SQL 06-costes-conciliacion.sql?'); return; }
+    var sv=document.getElementById('co-saved'); if(sv) sv.textContent='✅ Guardado el '+fd(row.actualizado_at)+' por '+row.actualizado_por;
+    renderHistoricoCostes();
+  }catch(e){ alert('Error al guardar: '+(e&&e.message||e)); }
+}
+
+async function renderHistoricoCostes(){
+  var cont=document.getElementById('co-historico'); if(!cont)return;
+  try{
+    var res=await sb.from('costes_conciliacion').select('*').order('anio',{ascending:false}).order('mes',{ascending:false});
+    var data=(res&&res.data)||[];
+    if(!data.length){ cont.innerHTML=''; return; }
+    var MESES=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    var filas=data.map(function(r){
+      var dif=(r.total_facturado||0)-(r.total_previsto||0);
+      var pct=r.total_previsto>0?(dif/r.total_previsto*100):0;
+      var col=Math.abs(dif)<0.005?'var(--g600)':(dif>0?'var(--rd600)':'var(--gr600)');
+      return '<tr style="cursor:pointer" onclick="abrirConciliacion(\''+r.handler+'\','+r.anio+','+r.mes+')">'+
+        '<td style="padding:6px 8px">'+MESES[r.mes]+' '+r.anio+'</td>'+
+        '<td style="padding:6px 8px">'+r.handler+'</td>'+
+        '<td style="padding:6px 8px;text-align:right">'+fc(r.total_previsto)+'</td>'+
+        '<td style="padding:6px 8px;text-align:right">'+fc(r.total_facturado)+'</td>'+
+        '<td style="padding:6px 8px;text-align:right;font-weight:600;color:'+col+'">'+(dif>0?'+':'')+fc(dif)+' ('+(pct>0?'+':'')+pct.toFixed(1)+'%)</td>'+
+      '</tr>';
+    }).join('');
+    cont.innerHTML='<div class="sect">📋 Histórico de conciliaciones</div>'+
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'+
+      '<thead><tr style="background:var(--g100)"><th style="padding:8px;text-align:left">Periodo</th><th style="padding:8px;text-align:left">Handler</th><th style="padding:8px;text-align:right">Previsto</th><th style="padding:8px;text-align:right">Facturado</th><th style="padding:8px;text-align:right">Diferencia</th></tr></thead>'+
+      '<tbody>'+filas+'</tbody></table></div>';
+  }catch(_){ cont.innerHTML=''; }
+}
+
+function abrirConciliacion(h,yr,mes){
+  var sh=document.getElementById('co-handler'); if(sh)sh.value=h;
+  var sy=document.getElementById('co-year'); if(sy)sy.value=String(yr);
+  var sm=document.getElementById('co-month'); if(sm)sm.value=String(mes);
+  loadCostes();
+}
+
+function addCosteRow(){
+  _coExtra++;
+  var tb=document.getElementById('co-extra'); if(!tb)return;
+  var tr=document.createElement('tr');
+  tr.innerHTML='<td style="padding:4px 8px"><input type="text" class="fi" placeholder="Concepto de factura" style="width:100%;padding:5px"></td>'+
+    '<td style="padding:6px 8px;text-align:right;color:var(--g400)" data-prev="0">— (no previsto)</td>'+
+    '<td style="padding:4px 8px;text-align:right"><input type="number" step="0.01" min="0" class="fi co-fact" data-k="x'+_coExtra+'" oninput="recalcCostes()" style="width:110px;text-align:right;padding:5px"></td>'+
+    '<td class="co-dif" style="padding:6px 8px;text-align:right;font-weight:600">—</td>';
+  tb.appendChild(tr);
+}
+
+function recalcCostes(){
+  var totalFact=0;
+  document.querySelectorAll('#co-content tr').forEach(function(tr){
+    var inp=tr.querySelector('.co-fact'); if(!inp)return;
+    var prevCell=tr.querySelector('[data-prev]');
+    var difCell=tr.querySelector('.co-dif');
+    var prev=prevCell?parseFloat(prevCell.getAttribute('data-prev'))||0:0;
+    var fact=parseFloat(inp.value)||0;
+    totalFact+=fact;
+    if(difCell){
+      if(inp.value===''){ difCell.textContent='—'; difCell.style.color='var(--g400)'; }
+      else{
+        var dif=fact-prev;
+        difCell.textContent=(dif>0?'+':'')+fc(dif);
+        difCell.style.color = Math.abs(dif)<0.005?'var(--g500)':(dif>0?'var(--rd600)':'var(--gr600)');
+      }
+    }
+  });
+  var tprevCell=document.getElementById('co-tprev');
+  var totalPrev=tprevCell?parseFloat(tprevCell.getAttribute('data-prev'))||0:0;
+  var tf=document.getElementById('co-tfact'); if(tf)tf.textContent=fc(totalFact);
+  var td=document.getElementById('co-tdif');
+  var dv=document.getElementById('co-desvio');
+  if(td){
+    var dif=totalFact-totalPrev;
+    td.textContent=(dif>0?'+':'')+fc(dif);
+    td.style.color = Math.abs(dif)<0.005?'var(--g700)':(dif>0?'var(--rd600)':'var(--gr600)');
+    if(dv){
+      var pct = totalPrev>0 ? (dif/totalPrev*100) : 0;
+      dv.textContent = totalFact>0 ? ('Desvío: '+(pct>0?'+':'')+pct.toFixed(1)+'% sobre lo previsto'+(dif>0?' — te facturan de más':dif<0?' — te facturan de menos':'')) : '';
+    }
+  }
+}
+
 function loadTarifasView(){
   var year=parseInt(document.getElementById('tar-year').value)||2026;
   document.querySelectorAll('#tar-tabs .tab-btn').forEach(function(b,i){b.classList.toggle('active',i===0);});
