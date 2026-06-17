@@ -10002,40 +10002,133 @@ function _imprimirEtiquetasCarga(buqueNombre, total, etiquetas){
   setTimeout(()=>{try{w.print();}catch(e){}},800);
 }
 
-async function confirmarCargaBuque(bid){if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
-  if(!await confirmarAccion('¿Confirmar carga en camión para TODAS las expediciones autorizadas de este buque?'))return;
+async function confirmarCargaBuque(bid){
+  if(!checkOnline()){showToast("⚠️ Sin conexión");return;}
   const {data}=await sb.from('expediciones').select('id,nº_expedicion,bultos').eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO');
-  if(!data||!data.length){alert('No hay expediciones autorizadas');return;}
-  // Subir fotos del buque (una foto para toda la carga)
-  const prevEl=document.getElementById('cg-pv-'+bid);
-  const files=prevEl?._files||[];
-  let fotoUrl=null;
-  if(files.length){
-    showToast('📤 Subiendo fotos...');
-    const urls=await subirFotosYGuardar(files,'buques',bid,'carga_camion');
-    if(urls.length) fotoUrl=urls[0];
-  }
-  const ts=new Date().toISOString();
-  // Crear la TANDA de embarque: agrupa las expediciones de esta entrega.
-  let tandaId=null;
-  try{
-    const {data:tanda}=await sb.from('tandas_embarque').insert({buque_id:bid,estado:'pendiente'}).select('id').single();
-    tandaId=tanda?.id||null;
-  }catch(exT){ console.warn('tanda', exT); }
-  for(const e of data){
-    const upd={hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'};
-    if(tandaId) upd.tanda_id=tandaId;
-    if(fotoUrl) upd.foto_carga_url=fotoUrl;
-    await sb.from('expediciones').update(upd).eq('id',e.id);
-    await logAct('expediciones',e.id,e.nº_expedicion,'editar','ubicacion','—','Camión cargado'+( fotoUrl?' [con foto]':''));
-  }
-  showToast('✅ Carga confirmada — '+data.length+' expediciones'+( fotoUrl?' 📸':''));
-  const totalPrevisto = data.reduce((a,e)=>a+(e.bultos||0),0);
+  if(!data||!data.length){alert('No hay expediciones autorizadas para cargar');return;}
+  const totalPrevisto=data.reduce((a,e)=>a+(e.bultos||0),0);
   const {data:bqn}=await sb.from('buques').select('nombre').eq('id',bid).single();
+  window._cargaW={bid:bid, nombre:(bqn&&bqn.nombre)||'', expIds:data.map(e=>e.id), totalPrevisto:totalPrevisto, tandaId:null, nBultos:0, files:[]};
+  _cargaWizRender(1);
+}
+
+// ── Asistente de carga en camión (3 pasos, sin avanzar sin confirmar) ──
+function _cargaWizRender(step){
+  var W=window._cargaW; if(!W)return;
+  var ov=document.getElementById('cargaw-overlay');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='cargaw-overlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:21000;display:flex;align-items:center;justify-content:center;padding:20px';
+    document.body.appendChild(ov);
+  }
+  var pasos='<div style="display:flex;gap:6px;margin-bottom:14px">'+
+    [1,2,3].map(function(s){return '<div style="flex:1;height:5px;border-radius:3px;background:'+(s<=step?'var(--b600)':'var(--g200)')+'"></div>';}).join('')+'</div>';
+  var head='<div style="font-size:12px;color:var(--g500);margin-bottom:2px">Carga en camión · '+(W.nombre||'')+'</div>';
+  var body='';
+  if(step===1){
+    body='<div style="font-size:16px;font-weight:800;color:var(--g900);margin-bottom:10px">📦 Paso 1 de 3 · Bultos de reempaque</div>'+
+      '<label style="font-size:12px;font-weight:600;color:var(--g700);display:block;margin-bottom:6px">¿En cuántos bultos se ha embalado la mercancía?</label>'+
+      '<input id="cw-n" type="number" min="1" value="'+W.totalPrevisto+'" class="fi" style="width:100%;font-size:22px;text-align:center;font-weight:700;padding:10px">'+
+      '<div style="font-size:11px;color:var(--g400);margin:8px 0 16px">Bultos previstos por las expediciones: '+W.totalPrevisto+'</div>'+
+      '<div style="display:flex;gap:8px;justify-content:flex-end">'+
+        '<button onclick="_cargaWizCerrar()" style="background:var(--g100);color:var(--g600);border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Cancelar</button>'+
+        '<button onclick="_cargaWizPaso1()" style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer">Continuar →</button>'+
+      '</div>';
+  } else if(step===2){
+    body='<div style="font-size:16px;font-weight:800;color:var(--g900);margin-bottom:10px">🏷️ Paso 2 de 3 · Etiquetas QR de salida</div>'+
+      '<div style="font-size:13px;color:var(--g600);margin-bottom:14px">Imprime las <strong>'+W.nBultos+'</strong> etiquetas QR de los bultos reempaquetados. Son las que se escanearán al embarcar.</div>'+
+      '<button onclick="_cargaWizImprimir()" style="background:var(--b600);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;width:100%;margin-bottom:12px">🖨️ Imprimir '+W.nBultos+' etiqueta'+(W.nBultos!==1?'s':'')+'</button>'+
+      '<div id="cw-imp-ok" style="font-size:12px;color:var(--gr600);min-height:16px;margin-bottom:12px"></div>'+
+      '<div style="display:flex;gap:8px;justify-content:flex-end">'+
+        '<button onclick="_cargaWizCerrar()" style="background:var(--g100);color:var(--g600);border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Cancelar</button>'+
+        '<button id="cw-cont2" disabled onclick="_cargaWizRender(3)" style="background:var(--g200);color:var(--g400);border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:not-allowed">He impreso las etiquetas →</button>'+
+      '</div>';
+  } else {
+    body='<div style="font-size:16px;font-weight:800;color:var(--g900);margin-bottom:10px">📸 Paso 3 de 3 · Fotos de confirmación</div>'+
+      '<div style="font-size:13px;color:var(--g600);margin-bottom:12px">Haz al menos una foto de la carga en el camión. <strong>Obligatorio</strong> para cerrar la carga.</div>'+
+      '<input id="cw-foto-input" type="file" accept="image/*" capture="environment" multiple onchange="_cargaWizFotos(this)" style="width:100%;margin-bottom:10px">'+
+      '<div id="cw-foto-prev" style="font-size:12px;color:var(--g500);min-height:16px;margin-bottom:14px"></div>'+
+      '<div style="display:flex;gap:8px;justify-content:flex-end">'+
+        '<button onclick="_cargaWizCerrar()" style="background:var(--g100);color:var(--g600);border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Cancelar</button>'+
+        '<button id="cw-finalizar" disabled onclick="_cargaWizFinalizar()" style="background:var(--g200);color:var(--g400);border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:not-allowed">✅ Confirmar carga</button>'+
+      '</div>';
+  }
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;padding:24px;max-width:400px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.3)">'+pasos+head+body+'</div>';
+  if(step===1) setTimeout(function(){var i=document.getElementById('cw-n');if(i){i.focus();i.select();}},80);
+}
+
+async function _cargaWizPaso1(){
+  var W=window._cargaW; if(!W)return;
+  var n=parseInt(document.getElementById('cw-n').value)||0;
+  if(n<1){ showToast('⚠️ Introduce un número de bultos válido'); return; }
+  W.nBultos=n;
+  // Crear la tanda ahora (el QR la necesita); las expediciones se vinculan al confirmar.
+  if(!W.tandaId){
+    try{ var r=await sb.from('tandas_embarque').insert({buque_id:W.bid,estado:'pendiente'}).select('id').single(); W.tandaId=(r.data&&r.data.id)||null; }
+    catch(e){ console.warn('tanda',e); }
+  }
+  _cargaWizRender(2);
+}
+
+async function _cargaWizImprimir(){
+  var W=window._cargaW; if(!W)return;
+  var n=W.nBultos, tandaId=W.tandaId, bid=W.bid;
+  var qrId=tandaId||bid;
+  showToast('⏳ Generando '+n+' etiqueta'+(n!==1?'s':'')+'…');
+  try{
+    if(tandaId){
+      await sb.from('carga_bultos').delete().eq('tanda_id', tandaId);
+      await sb.from('tandas_embarque').update({num_bultos:n}).eq('id', tandaId);
+    } else { await sb.from('carga_bultos').delete().eq('buque_id', bid); }
+    var filas=[];
+    for(var i=1;i<=n;i++) filas.push({buque_id:bid, tanda_id:tandaId, codigo:'ALS-CARGA:'+qrId+':'+i+':'+n, num:i, total:n, escaneado:false});
+    await sb.from('carga_bultos').insert(filas);
+    try{ await sb.from('buques').update({bultos_cargados:n}).eq('id',bid); }catch(e2){}
+  }catch(ex){ console.warn('carga_bultos', ex); showToast('⚠️ No se pudieron guardar los bultos. Imprimo igualmente.'); }
+  var etiquetas=[];
+  for(var j=1;j<=n;j++){ var data='ALS-CARGA:'+qrId+':'+j+':'+n; var url=await generarQRDataURL(data,250); etiquetas.push({n:j,data:data,url:url}); }
+  _imprimirEtiquetasCarga(W.nombre, n, etiquetas);
+  var ok=document.getElementById('cw-imp-ok'); if(ok) ok.textContent='✅ '+n+' etiqueta'+(n!==1?'s':'')+' enviada'+(n!==1?'s':'')+' a impresión.';
+  var btn=document.getElementById('cw-cont2');
+  if(btn){ btn.disabled=false; btn.style.background='var(--b600)'; btn.style.color='#fff'; btn.style.cursor='pointer'; }
+}
+
+function _cargaWizFotos(inp){
+  var W=window._cargaW; if(!W)return;
+  var nuevos=Array.prototype.slice.call(inp.files||[]);
+  if(nuevos.length) W.files=W.files.concat(nuevos);
+  var prev=document.getElementById('cw-foto-prev');
+  if(prev) prev.textContent=W.files.length?('📷 '+W.files.length+' foto'+(W.files.length!==1?'s':'')+' lista'+(W.files.length!==1?'s':'')):'';
+  var btn=document.getElementById('cw-finalizar');
+  if(btn && W.files.length>0){ btn.disabled=false; btn.style.background='var(--gr600)'; btn.style.color='#fff'; btn.style.cursor='pointer'; }
+}
+
+async function _cargaWizFinalizar(){
+  var W=window._cargaW; if(!W)return;
+  if(!W.files.length){ showToast('⚠️ Haz al menos una foto de confirmación'); return; }
+  if(!checkOnline()){showToast('⚠️ Sin conexión');return;}
+  var btn=document.getElementById('cw-finalizar'); if(btn){btn.disabled=true;btn.textContent='Guardando…';}
+  showToast('📤 Subiendo fotos…');
+  var fotoUrl=null;
+  try{ var urls=await subirFotosYGuardar(W.files,'buques',W.bid,'carga_camion'); if(urls&&urls.length) fotoUrl=urls[0]; }catch(e){ console.warn('fotos',e); }
+  var ts=new Date().toISOString();
+  // Vincular las expediciones a la tanda y marcarlas CARGADO
+  for(var k=0;k<W.expIds.length;k++){
+    var upd={hora_de_carga:ts,ubicacion:'Camión cargado',estado_semaforo:'🚛 CARGADO CAMIÓN',estado_carga:'🚛 CARGADO CAMIÓN'};
+    if(W.tandaId) upd.tanda_id=W.tandaId;
+    if(fotoUrl) upd.foto_carga_url=fotoUrl;
+    await sb.from('expediciones').update(upd).eq('id',W.expIds[k]);
+  }
+  await logAct('buques',W.bid,W.nombre,'editar','carga','—',W.expIds.length+' expediciones cargadas · '+W.nBultos+' bultos'+(fotoUrl?' [con foto]':''));
+  _cargaWizCerrar();
+  showToast('✅ Carga confirmada — '+W.expIds.length+' expediciones · '+W.nBultos+' bultos 📸');
   await loadAlmFotos('carga');
   if(document.getElementById('alm-sheet')) cerrarAccionAlm();
-  // #7a: reempaquetado — preguntar nº de bultos resultante e imprimir nuevas etiquetas QR únicas de la TANDA
-  abrirReempaquetado(bid, bqn?.nombre||'', totalPrevisto, tandaId);
+}
+
+function _cargaWizCerrar(){
+  var ov=document.getElementById('cargaw-overlay'); if(ov) ov.remove();
+  window._cargaW=null;
 }
 // ── #7b: Gate de embarque — escaneo de bultos reempaquetados antes de la foto ──
 window._embScan = window._embScan || {};
@@ -14829,7 +14922,7 @@ async function _prepNotifEmails(e){
   const trackingUrl='https://portal.alsalgeciras.com/tracking.html?exp='+id;
   const filasC=[['Buque',e.buques?.nombre||'—'],['Expedición / P.O.',e.nº_expedicion||'—'],['Remitente / Shipper',e.remitente||e.empresas?.nombre||'—'],['Bultos',e.bultos||0],['Kilos',(e.kilos||0)+' kg'],['Ubicación',e.ubicacion||'—'],['Status aduanero',e.status_aduanero||'—']];
   const tablaC=`<table style="border-collapse:collapse;font-size:13px;margin:8px 0">${filasC.map(([k,v])=>`<tr><td style="${TDk}">${esc(k)}</td><td style="${TD}">${esc(v)}</td></tr>`).join('')}</table>`;
-  const htmlC=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:680px"><p>Estimado cliente,</p><p>Le informamos que su mercancía ha sido recibida.</p>${tablaC}${incs.length?incRojo:incVerdeCli}<p style="margin:14px 0"><a href="${trackingUrl}" style="display:inline-block;background:var(--b600);color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:bold">🔍 Seguimiento en tiempo real</a></p><p style="font-size:12px;color:#555">O copie este enlace: ${trackingUrl}</p><p style="margin-top:16px">Atentamente,<br><b>Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com</p></div>`;
+  const htmlC=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:680px"><p>Estimado cliente,</p><p>Le informamos que su mercancía ha sido recibida.</p>${tablaC}${incs.length?incRojo:incVerdeCli}<p style="margin:14px 0"><a href="${trackingUrl}" style="display:inline-block;background:var(--b600);color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:bold">📸 Ver fotos de llegada de la mercancía</a></p><p style="font-size:12px;color:#555">Este enlace le permite consultar las fotografías de su mercancía a su llegada a nuestro almacén. O copie este enlace: ${trackingUrl}</p><p style="margin-top:16px">Atentamente,<br><b>Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com</p></div>`;
   window._notifEmailCache[id]={
     aduana:{to:'aduana@customsway.eu', cc:'als@alsalgeciras.com', subject:'Nueva Expedición Buque '+vNombreB+' // Expediente '+vRefB, html:htmlA},
     cliente:{to:todosEmails, cc:'', subject:'Recepción: '+(e.buques?.nombre||'')+' // Exp: '+(e.nº_expedicion||''), html:htmlC}
@@ -15582,18 +15675,18 @@ async function abrirPredelivery(buqueId){
 async function impAlb(buqueId){
   const {data:b}=await sb.from('buques').select('*,ec:cliente_id(nombre),en:consignatario_id(nombre)').eq('id',buqueId).single();
   if(!b) return;
-  // El albarán recoge SOLO autorizadas. Se exige que TODAS las autorizadas
-  // estén verificadas en pre-delivery (predelivery_ok). Si entra una entrega
-  // nueva, nace sin verificar y vuelve a exigir el control — sin reescanear
-  // las ya verificadas.
+  // El albarán recoge las expediciones AUTORIZADAS (verificadas en pre-delivery)
+  // y las ya CARGADAS, para que siga disponible también después de cargar.
+  // Las autorizadas pendientes de pre-delivery siguen exigiendo el control.
   const {data:autoriz}=await sb.from('expediciones').select('id,predelivery_ok').eq('buque_id',buqueId).eq('estado_carga','✅ AUTORIZADO');
-  if(!autoriz?.length){ showToast('⚠️ No hay expediciones autorizadas: nada que albaranar todavía'); return; }
-  const pendientes=autoriz.filter(e=>e.predelivery_ok!==true);
+  const {data:cargadas}=await sb.from('expediciones').select('id').eq('buque_id',buqueId).eq('estado_carga','🚛 CARGADO CAMIÓN');
+  if((!autoriz||!autoriz.length)&&(!cargadas||!cargadas.length)){ showToast('⚠️ No hay expediciones autorizadas ni cargadas: nada que albaranar todavía'); return; }
+  const pendientes=(autoriz||[]).filter(e=>e.predelivery_ok!==true);
   if(pendientes.length){
     _showPredeliveryRequired(buqueId, b.nombre);
     return;
   }
-  const {data:exps}=await sb.from('expediciones').select('*').eq('buque_id',buqueId).eq('estado_carga','✅ AUTORIZADO');
+  const {data:exps}=await sb.from('expediciones').select('*').eq('buque_id',buqueId).in('estado_carga',['✅ AUTORIZADO','🚛 CARGADO CAMIÓN']);
   const {data:landedExps}=await sb.from('expediciones').select('*').eq('buque_id',buqueId).eq('ubicacion','Landed');
   const allExps=[...(exps||[]),...(landedExps||[]).filter(e=>!(exps||[]).find(x=>x.id===e.id))];
   abrirAlbaran(htmlAlb(b, allExps, null, QR_ALS_B64));
@@ -15811,12 +15904,14 @@ async function _procesarQRCarga(texto, bid, buqueNombre, totalBultos, expMap){
   _actualizarProgresoCarga(bid,estado.escaneados,totalBultos,estado.detalle);
   if(estado.escaneados>=totalBultos){
     beepCompletado(); if(navigator.vibrate)navigator.vibrate([200,100,200,100,200]);
-    _mostrarMensajeScan('🎉 ¡Todos los bultos verificados! Haz la foto y confirma la carga.','#22c55e');
+    _mostrarMensajeScan('🎉 ¡Todos los bultos verificados! Ya puedes imprimir el albarán.','#22c55e');
+    // Verificación pre-delivery completa → habilita el albarán. La carga es un paso aparte.
+    try{ sb.from('expediciones').update({predelivery_ok:true,predelivery_fecha:new Date().toISOString(),predelivery_user:(window.CU&&CU.nombre)||'—'}).eq('buque_id',bid).eq('estado_carga','✅ AUTORIZADO').then(function(){},function(){}); }catch(_){}
     setTimeout(()=>{
       cerrarScannerQR();
       const btn=document.getElementById('cg-btn-'+bid);
       if(btn)btn.style.display='';
-      showToast('✅ Todos los bultos escaneados — haz la foto para confirmar');
+      showToast('✅ Verificación completa — ya puedes imprimir el albarán. La carga en camión, cuando estéis listos.');
     },2000);
   } else {
     _mostrarMensajeScan(`✅ ${label} — quedan ${totalBultos-estado.escaneados}`, '#22c55e');
