@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.11.4';
+const APP_VERSION = 'v3.11.5';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -12857,30 +12857,38 @@ function _volverDesdeDespach(expId){
 // ya esté cargada/embarcada. Devuelve true si la acaba de autorizar.
 async function _recalcularAutorizacionExp(id){
   try{
-    const {data:e}=await sb.from('expediciones').select('nº_mrn,tramite_aduanero,estado_carga').eq('id',id).single();
-    if(!e){ window._lastAuthDiag='exp no encontrada'; return false; }
-    if(e.estado_carga==='🚛 CARGADO CAMIÓN'||e.estado_carga==='🚢 EMBARCADO'){ window._lastAuthDiag='ya cargada/embarcada'; return false; }
-    const {data:ds}=await sb.from('expedicion_despachos').select('nº_mrn,tramite_aduanero').eq('expedicion_id',id);
+    const {data:e}=await sb.from('expediciones').select('nº_mrn,tramite_aduanero,status_aduanero,estado_carga').eq('id',id).single();
+    if(!e){ window._lastAuthDiag='exp no encontrada'; window._lastAuthExp=null; return false; }
+    window._lastAuthExp=null;
+    const avanzada = e.estado_carga==='🚛 CARGADO CAMIÓN'||e.estado_carga==='🚢 EMBARCADO';
+    const {data:ds}=await sb.from('expedicion_despachos').select('nº_mrn,status_aduanero,tramite_aduanero').eq('expedicion_id',id);
     const lista=ds||[];
-    // Despachado si el campo principal lo dice O si hay despachos y TODOS lo están
-    const despPrincipal = (e.tramite_aduanero||'')==='Despachado';
-    const despTodos = lista.length>0 && lista.every(d=>(d.tramite_aduanero||'')==='Despachado');
-    const despachado = despPrincipal || despTodos;
-    // MRN del campo principal o de cualquier despacho
-    let mrn = (e.nº_mrn && String(e.nº_mrn).trim()) ? e.nº_mrn : null;
-    if(!mrn){ const dm=lista.find(d=>d.nº_mrn && String(d.nº_mrn).trim()); if(dm) mrn=dm.nº_mrn; }
-    const hasMrn = !!(mrn && String(mrn).trim());
-    window._lastAuthDiag='MRN='+(hasMrn?'sí':'no')+' · despachado='+(despachado?'sí':'no')+' · '+lista.length+' despacho(s) · estado='+(e.estado_carga||'—');
-    if(hasMrn && despachado && e.estado_carga!=='✅ AUTORIZADO'){
-      const {error}=await sb.from('expediciones').update({estado_carga:'✅ AUTORIZADO',estado_semaforo:'✅ AUTORIZADO'}).eq('id',id);
-      if(error){ window._lastAuthDiag='ERROR al guardar: '+error.message; return false; }
-      // Verificar que la escritura realmente persistió (RLS puede devolver OK sin escribir)
-      let persistido='?';
-      try{ const {data:chk}=await sb.from('expediciones').select('estado_carga').eq('id',id).single(); persistido=(chk&&chk.estado_carga)||'(vacío)'; }catch(_){ persistido='(no leído)'; }
-      window._lastAuthDiag='tras guardar, estado_carga = '+persistido;
-      return true;
+    let tramite, mrn, status;
+    const upd={};
+    if(lista.length){
+      // Si hay despachos, mandan ellos: sincronizamos el campo principal para que
+      // la ficha, la tarjeta y el guardado sean coherentes y dejen de revertir.
+      tramite = lista.every(d=>(d.tramite_aduanero||'')==='Despachado') ? 'Despachado' : 'Pendiente despachar';
+      mrn = (e.nº_mrn && String(e.nº_mrn).trim()) ? e.nº_mrn : ((lista.find(d=>d.nº_mrn&&String(d.nº_mrn).trim())||{}).nº_mrn||null);
+      status = (lista.find(d=>d.status_aduanero)||{}).status_aduanero || e.status_aduanero || null;
+      upd.tramite_aduanero=tramite; upd.nº_mrn=mrn; upd.status_aduanero=status;
+    } else {
+      tramite = e.tramite_aduanero; mrn = e.nº_mrn; status = e.status_aduanero;
     }
-    return false;
+    const hasMrn=!!(mrn&&String(mrn).trim());
+    const despachado=(tramite==='Despachado');
+    let autorizar=false;
+    if(hasMrn && despachado && !avanzada && e.estado_carga!=='✅ AUTORIZADO'){
+      upd.estado_carga='✅ AUTORIZADO'; upd.estado_semaforo='✅ AUTORIZADO'; autorizar=true;
+    }
+    if(Object.keys(upd).length){
+      const {error}=await sb.from('expediciones').update(upd).eq('id',id);
+      if(error){ window._lastAuthDiag='ERROR al guardar: '+error.message; return false; }
+    }
+    const estadoFinal = autorizar ? '✅ AUTORIZADO' : e.estado_carga;
+    window._lastAuthExp={tramite_aduanero:tramite, mrn:mrn, estado_carga:estadoFinal};
+    window._lastAuthDiag='MRN='+(hasMrn?'sí':'no')+' · despachado='+(despachado?'sí':'no')+' · '+lista.length+' despacho(s) · estado='+estadoFinal;
+    return autorizar;
   }catch(ex){ window._lastAuthDiag='excepción: '+(ex&&ex.message||ex); return false; }
 }
 
@@ -13505,10 +13513,12 @@ async function openExpD(id, forceOpen=false){
   const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre,cli:cliente_id(nombre,email_confronta,otros_emails)),empresas!empresa_id(nombre,email_confronta),cliente_override:cliente_override_id(nombre,email_confronta,otros_emails)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
-  // Auto-corrección: si tiene MRN y está despachada pero no autorizada, autorizar ahora.
+  // Auto-corrección: sincroniza trámite/MRN desde despachos y autoriza si procede.
   try{
-    if(await _recalcularAutorizacionExp(id)){ e.estado_carga='✅ AUTORIZADO'; e.estado_semaforo='✅ AUTORIZADO'; showToast('✅ Autorizada — '+(window._lastAuthDiag||'')); }
-    else if(e.estado_carga!=='✅ AUTORIZADO' && e.estado_carga!=='🚛 CARGADO CAMIÓN' && e.estado_carga!=='🚢 EMBARCADO' && window._lastAuthDiag){ showToast('ⓘ No autoriza → '+window._lastAuthDiag); }
+    const _auth=await _recalcularAutorizacionExp(id);
+    if(window._lastAuthExp){ e.tramite_aduanero=window._lastAuthExp.tramite_aduanero; e.nº_mrn=window._lastAuthExp.mrn; }
+    if(_auth){ e.estado_carga='✅ AUTORIZADO'; e.estado_semaforo='✅ AUTORIZADO'; showToast('✅ Expedición autorizada'); }
+    else if(window._lastAuthDiag && e.estado_carga!=='✅ AUTORIZADO' && e.estado_carga!=='🚛 CARGADO CAMIÓN' && e.estado_carga!=='🚢 EMBARCADO'){ showToast('ⓘ No autoriza → '+window._lastAuthDiag); }
   }catch(_){}
   const emailCli=e.cliente_override?.email_confronta||e.buques?.cli?.email_confronta||'';
   // Auto-corregir semáforo — NO en aeropuerto (causa bucle Realtime)
@@ -14820,13 +14830,17 @@ async function _autoNotifUbicacion(expId, newUbic){
 async function saveUbic(id,val){
   const upd={ubicacion:val};
   const sem=semaforoDeUbicacion(val);
-  if(sem) { upd.estado_semaforo=sem; upd.estado_carga=sem; }
+  // No pisar el estado si la expedición ya está autorizada/cargada/embarcada
+  let cur=null;
+  try{ const {data}=await sb.from('expediciones').select('estado_carga').eq('id',id).single(); cur=data&&data.estado_carga; }catch(_){}
+  const protegido=['✅ AUTORIZADO','🚛 CARGADO CAMIÓN','🚢 EMBARCADO'].includes(cur);
+  if(sem && !protegido) { upd.estado_semaforo=sem; upd.estado_carga=sem; }
   await sb.from('expediciones').update(upd).eq('id',id);
   await logAct('expediciones',id,'','editar','ubicacion',null,val+(sem?' → '+sem:''));
   // Refresh the badge in modal
   const badgeWrap=document.querySelector('[data-exp-badges]');
-  if(badgeWrap&&sem) badgeWrap.innerHTML=bdg(sem)+badgeWrap.innerHTML.replace(/<span[^>]*badge[^>]*>[^<]*<\/span>/,'');
-  showToast('Ubicación: '+val+(sem?' · '+sem:''));
+  if(badgeWrap&&sem&&!protegido) badgeWrap.innerHTML=bdg(sem)+badgeWrap.innerHTML.replace(/<span[^>]*badge[^>]*>[^<]*<\/span>/,'');
+  showToast('Ubicación: '+val+(sem&&!protegido?' · '+sem:''));
   // (#4) Auto-notificar al cliente cuando la mercancía llega a almacén o puerto
   const UBIC_NOTIF_AUTO=['Almacén-1ª Planta','Almacén-Planta Baja','Almacén-ADT','Almacén-LAME','Puerto'];
   if(UBIC_NOTIF_AUTO.includes(val)) _autoNotifUbicacion(id, val).catch(()=>{});
@@ -14917,6 +14931,14 @@ async function guardarExpedicion(id){if(!checkOnline())return;
     obj.estado_semaforo='✅ AUTORIZADO';
     // Notificar al almacén si no estaba ya autorizada
     if(!yaEraAutorizado) window._pendingNotifAutorizado = id;
+  } else {
+    // No degradar una expedición ya autorizada/cargada/embarcada por el semáforo de ubicación
+    try{
+      const {data:cur}=await sb.from('expediciones').select('estado_carga').eq('id',id).single();
+      if(cur && ['✅ AUTORIZADO','🚛 CARGADO CAMIÓN','🚢 EMBARCADO'].includes(cur.estado_carga)){
+        delete obj.estado_semaforo; delete obj.estado_carga;
+      }
+    }catch(_){}
   }
   // Bloqueo optimista: verificar que nadie más guardó mientras editábamos
   if(window._modalExpUpdatedAt){
