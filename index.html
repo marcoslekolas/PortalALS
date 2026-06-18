@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.11.8';
+const APP_VERSION = 'v3.11.9';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -2210,6 +2210,12 @@ async function doLogin(){
       if(!localStorage.getItem(onbKey)) setTimeout(()=>iniciarOnboarding(), 800);
     }catch(e){}
 
+    // Forzar cambio de contraseña en el primer inicio si el administrador lo marcó.
+    // Si la columna no existe aún (sin migrar), la consulta falla y no fuerza nada.
+    let _mustChange=false;
+    try{ const {data:uu}=await sb.from('usuarios').select('must_change_password').eq('id',CU.id).single(); _mustChange=!!(uu&&uu.must_change_password); }catch(_){}
+    if(_mustChange){ if(btn){btn.textContent='Entrar al sistema →';btn.disabled=false;} showChangePwd(); setTimeout(()=>showToast('🔒 Establece tu contraseña personal para continuar'),400); return; }
+
     showHome();
     setTimeout(()=>showToast('👋 Bienvenido, '+CU.nombre.split(' ')[0]), 600);
   }catch(e){
@@ -2316,6 +2322,7 @@ async function doChangePwd(){
     if(aerr){ err.textContent='Error al guardar: '+aerr.message; return; }
   }catch(e){ err.textContent='Error al guardar. Verifica la conexión.'; return; }
   saveSession(CU);
+  try{ await sb.rpc('app_clear_must_change_password'); }catch(_){ try{ await sb.from('usuarios').update({must_change_password:false}).eq('id',CU.id); }catch(__){} }
   document.getElementById('screen-changepwd').style.display='none';
   showToast('✅ Contraseña actualizada correctamente');
   showHome();
@@ -3176,17 +3183,19 @@ async function subirFotoStorage(file, entidad, entidadId, tipo){
         await new Promise(r => setTimeout(r, intento * 1000));
       }
     }
-    if(error) throw error;
+    if(error){ window._lastFotoError='Almacenamiento: '+(error.message||error); throw error; }
 
     const {data:urlData} = sb.storage.from('fotos-operativas').getPublicUrl(path);
     // Guardar en tabla fotos_operativas
-    await sb.from('fotos_operativas').insert({
+    const {error:insErr}=await sb.from('fotos_operativas').insert({
       entidad, entidad_id:entidadId, tipo,
       storage_url:urlData.publicUrl, storage_path:path,
       subida_por:CU?.id
     });
+    if(insErr){ window._lastFotoError='Registro: '+(insErr.message||insErr); }
     return urlData.publicUrl;
   }catch(e){
+    window._lastFotoError='Subida: '+(e?.message||e);
     console.warn('subirFotoStorage error:', e?.message||e);
     return null;
   }
@@ -3694,7 +3703,7 @@ function subirFotoExpedicionPC(expId, ref){
           showToast('✅ '+urls.length+' foto'+(urls.length>1?'s':'')+' añadida'+(urls.length>1?'s':''));
           const ov=document.getElementById('als-gallery-overlay'); if(ov) ov.remove();
           verFotosExpedicion(expId, ref||'expedición');
-        } else showToast('❌ No se pudo subir');
+        } else showToast('❌ No se pudo subir'+(window._lastFotoError?(' → '+window._lastFotoError):''));
       }catch(e){ showToast('❌ Error al subir: '+(e&&e.message||e)); }
     }
     inp.remove();
@@ -11229,6 +11238,7 @@ async function editUser(id){
     <div style="border-top:1px solid var(--g100);padding-top:12px;margin-bottom:14px">
       <label class="fl2">Nueva contraseña <span style="color:var(--g400);font-weight:400">(vacío = sin cambios)</span></label>
       <input id="eu-p" class="fi" type="password" placeholder="••••••••" style="margin-top:4px">
+      ${!isMe?`<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--g700);margin-top:10px;cursor:pointer"><input type="checkbox" id="eu-mcp" ${u.must_change_password?'checked':''} style="accent-color:var(--gr600);width:16px;height:16px">Exigir cambio de contraseña al iniciar sesión</label>`:''}
     </div>
 
     ${esAdmin&&!isMe?`
@@ -11423,6 +11433,10 @@ async function saveUser(id){
   }
 
   await logAct('usuarios',id,nuevoNombre,'editar','rol',null,`${nuevoNombre} · [${rolesSeleccionados.join(',')}]`);
+
+  // Marca de cambio obligatorio al iniciar (update aparte; si la columna no existe, se ignora)
+  const _mcpEl=document.getElementById('eu-mcp');
+  if(_mcpEl){ try{ await sb.from('usuarios').update({must_change_password:_mcpEl.checked}).eq('id',id); }catch(_){} }
 
   // 3b. Si se cambió contraseña: el propio usuario vía Auth; otro usuario vía Edge Function admin
   if(p){
@@ -12285,7 +12299,7 @@ const MODALS={
   after:()=>setTimeout(()=>setupFotos('gl-fi','gl-fpv','gl-fst'),100)
 },
 'nuevo-usuario':{t:'👤 Nuevo usuario',btn:'👤 Crear usuario',
-  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre o email"></div><div class="fg2"><label class="fl2">Email * <span style="font-size:11px;color:var(--b600);font-weight:500">(obligatorio para acceso JWT)</span></label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="operativa">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
+  body:async()=>`<div class="fr2"><div class="fg2"><label class="fl2">Nombre completo *</label><input id="nu-n" class="fi" placeholder="Nombre o email"></div><div class="fg2"><label class="fl2">Email * <span style="font-size:11px;color:var(--b600);font-weight:500">(obligatorio para acceso JWT)</span></label><input id="nu-e" class="fi" type="email" placeholder="usuario@als.com"></div></div><div class="fr2"><div class="fg2"><label class="fl2">Contraseña *</label><input id="nu-p" class="fi" type="password" placeholder="Contraseña inicial"></div><div class="fg2"><label class="fl2">Rol</label><select id="nu-r" class="fi fs"><option value="almacen">Almacén</option><option value="operativa">Oficina</option><option value="aduanas">Aduanas</option><option value="transportista">Transportista</option><option value="admin">Administrador</option></select></div></div><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--g700);margin:4px 0 8px;cursor:pointer"><input type="checkbox" id="nu-mcp" checked style="accent-color:var(--gr600);width:16px;height:16px">Exigir cambio de contraseña al iniciar sesión (contraseña temporal)</label><div class="info-box"><strong>Almacén:</strong> APP Almacén + Ubicaciones + Listos embarcar<br><strong>Oficina:</strong> Operativa completa (sin gestión usuarios)<br><strong>Aduanas:</strong> Solo vista expediciones y documentación<br><strong>Transportista:</strong> Solo vista de listos para embarcar<br><strong>Admin:</strong> Acceso total incluido gestión usuarios</div>`,
   action:async()=>{
   const n=gv('nu-n'),e=gv('nu-e'),p=gv('nu-p'),r=gv('nu-r');
   if(!n||!p){alert('Nombre y contraseña son obligatorios');return;}
@@ -12312,6 +12326,10 @@ const MODALS={
     return;
   }
   await logAct('usuarios',null,n,'crear','nombre',null,`${n} · ${r}`);
+  // Marca de cambio obligatorio al primer inicio (si la columna existe)
+  if(document.getElementById('nu-mcp')?.checked){
+    try{ await sb.from('usuarios').update({must_change_password:true}).eq('email', e.toLowerCase()); }catch(_){}
+  }
   showToast('✅ Usuario creado: '+n+' (Auth ✓)');
   closeModal();loadView(CV);
 }
@@ -12898,9 +12916,11 @@ async function _recalcularAutorizacionExp(id){
       const {error}=await sb.from('expediciones').update(upd).eq('id',id);
       if(error){ window._lastAuthDiag='ERROR al guardar: '+error.message; return false; }
     }
+    let persist='';
+    if(autorizar){ try{ const {data:chk}=await sb.from('expediciones').select('estado_carga').eq('id',id).single(); persist=' · persistido='+((chk&&chk.estado_carga)||'?'); }catch(_){} }
     const estadoFinal = autorizar ? '✅ AUTORIZADO' : e.estado_carga;
     window._lastAuthExp={tramite_aduanero:(despachado?'Despachado':e.tramite_aduanero), mrn:mrn, estado_carga:estadoFinal};
-    window._lastAuthDiag='MRN='+(hasMrn?('sí ('+mrn+')'):'no')+' · despachado='+(despachado?'sí':'no')+' · '+lista.length+' despacho(s) · estado='+estadoFinal;
+    window._lastAuthDiag=(typeof APP_VERSION!=='undefined'?APP_VERSION+' · ':'')+'MRN='+(hasMrn?('sí ('+mrn+')'):'no')+' · despachado='+(despachado?'sí':'no')+' · '+lista.length+' despacho(s) · estado='+estadoFinal+persist;
     return autorizar;
   }catch(ex){ window._lastAuthDiag='excepción: '+(ex&&ex.message||ex); return false; }
 }
@@ -13530,7 +13550,7 @@ async function openExpD(id, forceOpen=false){
   try{
     const _auth=await _recalcularAutorizacionExp(id);
     if(window._lastAuthExp){ e.tramite_aduanero=window._lastAuthExp.tramite_aduanero; e.nº_mrn=window._lastAuthExp.mrn; }
-    if(_auth){ e.estado_carga='✅ AUTORIZADO'; e.estado_semaforo='✅ AUTORIZADO'; showToast('✅ Expedición autorizada'); }
+    if(_auth){ e.estado_carga='✅ AUTORIZADO'; e.estado_semaforo='✅ AUTORIZADO'; showToast('✅ Autorizada — '+(window._lastAuthDiag||'')); }
     else if(window._lastAuthDiag && e.estado_carga!=='✅ AUTORIZADO' && e.estado_carga!=='🚛 CARGADO CAMIÓN' && e.estado_carga!=='🚢 EMBARCADO'){ showToast('ⓘ No autoriza → '+window._lastAuthDiag); }
   }catch(_){}
   const emailCli=e.cliente_override?.email_confronta||e.buques?.cli?.email_confronta||'';
