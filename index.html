@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.0';
+const APP_VERSION = 'v3.12.1';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -15075,7 +15075,7 @@ function notifCliente(id,emailDest,ref){
 }
 async function sendConfronta(buqueId){
   const {data:b}=await sb.from('buques').select('*,en:consignatario_id(nombre,email_confronta)').eq('id',buqueId).single();
-  const {data:exps}=await sb.from('expediciones').select('bultos,kilos,nº_mrn').eq('buque_id',buqueId);
+  const {data:exps}=await sb.from('expediciones').select('id,nº_expedicion,bultos,kilos,nº_mrn').eq('buque_id',buqueId);
   if(!b)return;
 
   // Solo expediciones con MRN válido (sin guion al inicio) para bultos, kilos y lista MRNs
@@ -15084,15 +15084,31 @@ async function sendConfronta(buqueId){
   const totalPeso=expsConMRN.reduce((a,e)=>a+(e.kilos||0),0);
   const mrns=expsConMRN.map(e=>e.nº_mrn).filter(Boolean);
   const destinatario='ca-pif-algeciras-confronta@guardiacivil.org';
-  const emailCC=b.en?.email_confronta||'';
-  const emailBCC='als@alsalgeciras.com,aduana@customsway.eu';
-  const asunto=encodeURIComponent('Avituallamiento: '+b.nombre+' // ETA: '+(b.eta_buque?fdl(b.eta_buque):'Sin Fecha'));
-  const cuerpo=encodeURIComponent('Buenos días,\n\nAdjuntamos documentación para el suministro a bordo del buque:\n\n🚢 Buque: '+b.nombre+'\n🆔 Escala: '+(b.nº_escala||'Sin Escala')+'\n🏢 Consignatario: '+(b.en?.nombre||'Sin especificar')+'\n📍 Terminal: '+(b.puerto_terminal||b.place||'No especificada')+'\n📅 ETA: '+(b.eta_buque?fdl(b.eta_buque):'Sin Fecha')+'\n\n📦 Total Bultos: '+totalBultos+'\n⚖️ Peso Total: '+totalPeso+' kg\n\n--- MRNs ---\n'+(mrns.length?mrns.join('\n'):'Ninguno')+'\n\nAtentamente,\n\nDepartamento de Operaciones\nAlgeciras Logistic Solutions\nOPERATIONS 24/7 +34 956 58 13 16\nBOARDINGS 24/7 +34 664 07 49 40');
-  let mailto=`mailto:${destinatario}?subject=${asunto}&body=${cuerpo}`;
-  if(emailCC)mailto+=`&cc=${encodeURIComponent(emailCC)}`;
-  if(emailBCC)mailto+=`&bcc=${encodeURIComponent(emailBCC)}`;
-  const a=document.createElement('a');a.href=mailto;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);
-  showToast('📧 Abriendo cliente de correo...');
+  const ccList=[b.en?.email_confronta,'als@alsalgeciras.com','aduana@customsway.eu'].filter(Boolean).join(', ');
+  const subject='Avituallamiento: '+b.nombre+' // ETA: '+(b.eta_buque?fdl(b.eta_buque):'Sin Fecha');
+  const _e=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const TD='padding:3px 9px;border:1px solid #ddd';
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.55">
+    <p>Buenos días,</p>
+    <p>Adjuntamos documentación para el suministro a bordo del buque:</p>
+    <table style="border-collapse:collapse;font-size:13px;margin:8px 0">
+      <tr><td style="${TD};background:#f3f4f6"><b>🚢 Buque</b></td><td style="${TD}">${_e(b.nombre)}</td></tr>
+      <tr><td style="${TD};background:#f3f4f6"><b>🆔 Escala</b></td><td style="${TD}">${_e(b.nº_escala||'Sin Escala')}</td></tr>
+      <tr><td style="${TD};background:#f3f4f6"><b>🏢 Consignatario</b></td><td style="${TD}">${_e(b.en?.nombre||'Sin especificar')}</td></tr>
+      <tr><td style="${TD};background:#f3f4f6"><b>📍 Terminal</b></td><td style="${TD}">${_e(b.puerto_terminal||b.place||'No especificada')}</td></tr>
+      <tr><td style="${TD};background:#f3f4f6"><b>📅 ETA</b></td><td style="${TD}">${_e(b.eta_buque?fdl(b.eta_buque):'Sin Fecha')}</td></tr>
+      <tr><td style="${TD};background:#f3f4f6"><b>📦 Total bultos</b></td><td style="${TD}">${totalBultos}</td></tr>
+      <tr><td style="${TD};background:#f3f4f6"><b>⚖️ Peso total</b></td><td style="${TD}">${totalPeso} kg</td></tr>
+    </table>
+    <p style="margin:10px 0 4px"><b>MRNs:</b></p>
+    <div style="font-family:monospace;font-size:12px;white-space:pre-line">${mrns.length?_e(mrns.join('\n')):'Ninguno'}</div>
+    <p style="margin-top:16px">Atentamente,<br><b>Departamento de Operaciones</b><br>Algeciras Logistic Solutions<br>OPERATIONS 24/7 +34 956 58 13 16<br>BOARDINGS 24/7 +34 664 07 49 40</p>
+  </div>`;
+  showToast('📎 Preparando documentación…');
+  let preAttachments=[];
+  try{ preAttachments=await _cargarDocsExpediciones(exps); }catch(_){}
+  _previewEmailCamion({to:destinatario, cc:ccList, subject, html, preAttachments,
+    onSent:async()=>{ showToast('✅ Confronta enviada'); try{ await logAct('buques',buqueId,b.nombre,'email','confronta',null,'enviada in-app'); }catch(_){} }});
 }
 
 function abrirExpEnBuque(buqueId,buqueNombre){
