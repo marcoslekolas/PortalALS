@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.11.6';
+const APP_VERSION = 'v3.11.7';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -3649,7 +3649,7 @@ async function verFotosExpedicion(expId, ref){
         // Recargar la vista para que el icono desaparezca
         loadView(CV);
       } else {
-        showToast('No hay fotos guardadas para '+ref);
+        if(await confirmarAccion('No hay fotos guardadas para '+ref+'. ¿Quieres subir una desde el equipo?')) subirFotoExpedicionPC(expId, ref);
       }
       return;
     }
@@ -3677,6 +3677,29 @@ async function verFotosExpedicion(expId, ref){
     abrirGaleriaFotos(todasUrls,'📸 Fotos — '+ref, fotosData, expId);
 
   }catch(e){showToast('Error cargando fotos: '+e.message);}
+}
+
+// ── Subir foto externa (desde el equipo) a una expedición ─────────
+function subirFotoExpedicionPC(expId, ref){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*'; inp.multiple=true; inp.style.display='none';
+  document.body.appendChild(inp);
+  inp.addEventListener('change', async ()=>{
+    const files=inp.files;
+    if(files && files.length){
+      showToast('⏳ Subiendo '+files.length+' foto'+(files.length>1?'s':'')+'…');
+      try{
+        const urls=await subirFotosYGuardar(files,'expediciones',expId,'complementaria',null);
+        if(urls&&urls.length){
+          showToast('✅ '+urls.length+' foto'+(urls.length>1?'s':'')+' añadida'+(urls.length>1?'s':''));
+          const ov=document.getElementById('als-gallery-overlay'); if(ov) ov.remove();
+          verFotosExpedicion(expId, ref||'expedición');
+        } else showToast('❌ No se pudo subir');
+      }catch(e){ showToast('❌ Error al subir: '+(e&&e.message||e)); }
+    }
+    inp.remove();
+  });
+  inp.click();
 }
 
 // ── Eliminar foto individual ──────────────────────────────────────
@@ -5031,7 +5054,7 @@ function abrirGaleriaFotos(urls, titulo, fotosData, expId){
     var title = document.createElement('div');
     title.style.cssText = 'color:#fff;font-weight:600;font-size:14px;flex:1;min-width:0;min-width:0';
     var fotoMeta = fotosData && fotosData[url] ? fotosData[url] : null;
-    var tipoLabel = fotoMeta && fotoMeta.tipo ? ({'llegada':'📥 Llegada','carga':'🚛 Carga','embarque':'🚢 Embarque','ocr':'🤖 OCR'}[fotoMeta.tipo] || fotoMeta.tipo) : '';
+    var tipoLabel = fotoMeta && fotoMeta.tipo ? ({'llegada':'📥 Llegada','carga':'🚛 Carga','embarque':'🚢 Embarque','ocr':'🤖 OCR','complementaria':'📎 Complementaria'}[fotoMeta.tipo] || fotoMeta.tipo) : '';
     var fechaLabel = fotoMeta && fotoMeta.created_at ? new Date(fotoMeta.created_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
     var userLabel = fotoMeta && fotoMeta.subida_por ? fotoMeta.subida_por : '';
     title.innerHTML = '<div>' + titulo + ' (' + (idx+1) + '/' + urlsArr.length + ')</div>'
@@ -5075,6 +5098,15 @@ function abrirGaleriaFotos(urls, titulo, fotosData, expId){
     viewBtn.style.cssText = 'background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;text-decoration:none';
     viewBtn.textContent = '🔍';
     btns.appendChild(viewBtn);
+
+    // Añadir foto desde el equipo (fotos externas que complementan el archivo)
+    if(expId){
+      var addBtn = document.createElement('button');
+      addBtn.style.cssText = 'background:#059669;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer';
+      addBtn.textContent = '➕ Añadir foto';
+      addBtn.onclick = function(){ subirFotoExpedicionPC(expId, titulo); };
+      btns.appendChild(addBtn);
+    }
 
     // Cerrar
     var closeBtn = document.createElement('button');
@@ -7230,7 +7262,7 @@ async function loteNotifCliente(){
      • Ubicación:   ${e.ubicacion||'—'}
      • Estado:      ${e.estado_semaforo||'—'}
      • Trámite:     ${e.tramite_aduanero||'—'}
-     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}\n     🔍 Seguimiento: https://portal.alsalgeciras.com/tracking.html?exp=${e.id}`
+     • Status:      ${e.status_aduanero||'—'}${e.nº_mrn?`\n     • MRN:        ${e.nº_mrn}`:''}\n     Fotografías de la mercancía: ${((e.foto_llegada_url||'').split(',')[0]||'').trim()||('https://portal.alsalgeciras.com/tracking.html?exp='+e.id)}`
   ).join('\n\n');
 
   // Cuerpo completo con firma de la plantilla
@@ -12501,7 +12533,7 @@ function _expCardHTML(e, b){
   if(e.ac_docs_puerto) acRows.push('<span>Docs: <strong>'+e.ac_docs_puerto+'</strong></span>');
   if(e.ac_ubicacion) acRows.push('<span>Ubic.: <strong>'+e.ac_ubicacion+'</strong></span>');
   if(e.ac_confirmacion) acRows.push('<span style="color:var(--gr700)">Llegada confirmada</span>');
-  acRows.push(e.ac_despachado?'<span style="color:var(--gr700)">Despachado</span>':'<span style="color:var(--am600)">Pend. despacho</span>');
+  acRows.push((e.ac_despachado||e.tramite_aduanero==='Despachado')?'<span style="color:var(--gr700)">Despachado</span>':'<span style="color:var(--am600)">Pend. despacho</span>');
   const acPanel=esAC?'<div class="ac-sync-panel" style="margin-top:6px;padding:6px 8px;background:var(--b50);border-radius:6px;border:1px solid var(--b100);font-size:10px;color:var(--b800);display:flex;flex-wrap:wrap;gap:8px">'+acRows.join('')+'</div>':'';
   const eta=etaPrev(e);
   const etaChip=eta?`<span style="font-size:10px;background:var(--b50);color:var(--b700);border:1px solid var(--b100);border-radius:4px;padding:1px 6px;font-weight:600">📅 ${new Date(eta+'T12:00').toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'})}</span>`:'';
@@ -12854,7 +12886,6 @@ async function _recalcularAutorizacionExp(id){
       mrn = (e.nº_mrn && String(e.nº_mrn).trim()) ? e.nº_mrn : ((lista.find(d=>d.nº_mrn&&String(d.nº_mrn).trim())||{}).nº_mrn||null);
       status = (lista.find(d=>d.status_aduanero)||{}).status_aduanero || e.status_aduanero || null;
       upd.tramite_aduanero=tramite; upd.nº_mrn=mrn; upd.status_aduanero=status;
-      upd.ac_despachado=(tramite==='Despachado');  // badge de despacho en expediciones de aeropuerto
     } else {
       tramite = e.tramite_aduanero; mrn = e.nº_mrn; status = e.status_aduanero;
     }
@@ -12885,7 +12916,7 @@ async function _sincronizarDespachosExpedicion(expId){
     const aggMrn=((lista.find(d=>d.nº_mrn&&String(d.nº_mrn).trim())||{}).nº_mrn)||null;
     const aggStatus=((lista.find(d=>d.status_aduanero)||{}).status_aduanero)||null;
     const allDespachado=lista.length>0 && lista.every(d=>d.tramite_aduanero==='Despachado');
-    const upd={nº_mrn:aggMrn, status_aduanero:aggStatus, tramite_aduanero: allDespachado?'Despachado':'Pendiente despachar', ac_despachado: allDespachado};
+    const upd={nº_mrn:aggMrn, status_aduanero:aggStatus, tramite_aduanero: allDespachado?'Despachado':'Pendiente despachar'};
     const {data:cur}=await sb.from('expediciones').select('estado_carga').eq('id',expId).single();
     const estadoAct=(cur&&cur.estado_carga)||'';
     const yaAvanzada = estadoAct==='🚛 CARGADO CAMIÓN' || estadoAct==='🚢 EMBARCADO';
@@ -14795,11 +14826,12 @@ async function _autoNotifUbicacion(expId, newUbic){
     const TDk='border:1px solid #999;padding:6px 9px;background:#f3f4f6;font-weight:bold';
     const filas=[['Nº Expedición',e.nº_expedicion||'—'],['Remitente / Shipper',e.remitente||e.empresas?.nombre||'—'],['Buque',e.buques?.nombre||'—'],['Bultos',e.bultos||0],['Kilos',(e.kilos||0)+' kg'],['Ubicación actual',newUbic],['Status aduanero',e.status_aduanero||'—']].map(([k,v])=>`<tr><td style="${TDk}">${_esc(k)}</td><td style="${TD}">${_esc(v)}</td></tr>`).join('');
     const trackingUrl='https://portal.alsalgeciras.com/tracking.html?exp='+expId;
+    const fotoUrl=((e.foto_llegada_url||'').split(',')[0]||'').trim()||trackingUrl;
     const html=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:680px">
       <p>Estimado cliente,</p>
       <p>Le informamos que su mercancía ha sido <strong>recibida en nuestras instalaciones</strong> y está disponible para los trámites correspondientes.</p>
       <table style="border-collapse:collapse;font-size:13px;margin:8px 0">${filas}</table>
-      <p style="margin:14px 0"><a href="${trackingUrl}" style="display:inline-block;background:var(--b600);color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:bold">🔍 Seguimiento en tiempo real</a></p>
+      <p style="margin:20px 0;text-align:center"><a href="${fotoUrl}" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;padding:16px 30px;border-radius:10px;font-weight:bold;font-size:17px">Ver fotografías de la mercancía &rarr;</a></p>
       <p>No dude en contactarnos para cualquier consulta.</p>
       <p style="margin-top:16px">Atentamente,<br><b>Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com</p>
     </div>`;
@@ -14995,9 +15027,10 @@ async function _prepNotifEmails(e){
   const emailCli=_cliObj.email_confronta||'';
   const todosEmails=[emailCli,...((_cliObj.otros_emails)||[])].filter(Boolean).join(',');
   const trackingUrl='https://portal.alsalgeciras.com/tracking.html?exp='+id;
+  const fotoUrl=((e.foto_llegada_url||'').split(',')[0]||'').trim()||trackingUrl;
   const filasC=[['Buque',e.buques?.nombre||'—'],['Expedición / P.O.',e.nº_expedicion||'—'],['Remitente / Shipper',e.remitente||e.empresas?.nombre||'—'],['Bultos',e.bultos||0],['Kilos',(e.kilos||0)+' kg'],['Ubicación',e.ubicacion||'—'],['Status aduanero',e.status_aduanero||'—']];
   const tablaC=`<table style="border-collapse:collapse;font-size:13px;margin:8px 0">${filasC.map(([k,v])=>`<tr><td style="${TDk}">${esc(k)}</td><td style="${TD}">${esc(v)}</td></tr>`).join('')}</table>`;
-  const htmlC=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:680px"><p>Estimado cliente,</p><p>Le informamos que su mercancía ha sido recibida.</p>${tablaC}${incs.length?incRojo:incVerdeCli}<p style="margin:14px 0"><a href="${trackingUrl}" style="display:inline-block;background:var(--b600);color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:bold">📸 Ver fotos de llegada de la mercancía</a></p><p style="font-size:12px;color:#555">Este enlace le permite consultar las fotografías de su mercancía a su llegada a nuestro almacén. O copie este enlace: ${trackingUrl}</p><p style="margin-top:16px">Atentamente,<br><b>Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com</p></div>`;
+  const htmlC=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:680px"><p>Estimado cliente,</p><p>Le informamos que su mercancía ha sido recibida.</p>${tablaC}${incs.length?incRojo:incVerdeCli}<p style="margin:20px 0;text-align:center"><a href="${fotoUrl}" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;padding:16px 30px;border-radius:10px;font-weight:bold;font-size:17px">Ver fotografías de la mercancía &rarr;</a></p><p style="margin-top:16px">Atentamente,<br><b>Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com</p></div>`;
   window._notifEmailCache[id]={
     aduana:{to:'aduana@customsway.eu', cc:'als@alsalgeciras.com', subject:'Nueva Expedición Buque '+vNombreB+' // Expediente '+vRefB, html:htmlA},
     cliente:{to:todosEmails, cc:'', subject:'Recepción: '+(e.buques?.nombre||'')+' // Exp: '+(e.nº_expedicion||''), html:htmlC}
