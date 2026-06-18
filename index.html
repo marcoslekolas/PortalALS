@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.1';
+const APP_VERSION = 'v3.12.2';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -5768,6 +5768,7 @@ function _previewEmailCamion(opts){
         '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">Cuerpo <span style="font-size:10px">— editable, haz clic para modificar</span></div>'+
         '<div id="epc-body" contenteditable="true" style="border:1px solid #d1d5db;border-radius:8px;padding:14px;max-height:40vh;overflow-y:auto;background:#fff;font-size:12px;line-height:1.5;outline:none">'+(opts.html||'')+'</div>'+
         '<div style="margin-top:12px">'+
+          '<div id="epc-pre-att" style="margin-bottom:8px"></div>'+
           '<div style="font-size:12px;color:#6b7280;margin-bottom:3px">📎 Adjuntos <span style="font-size:10px">(PDF, Word, Excel, imágenes…)</span></div>'+
           '<input id="epc-files" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.gif,.zip,.txt" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:12px;cursor:pointer;box-sizing:border-box">'+
           '<div id="epc-files-list" style="font-size:11px;color:#6b7280;margin-top:4px"></div>'+
@@ -5782,20 +5783,33 @@ function _previewEmailCamion(opts){
 
   const epFiles=document.getElementById('epc-files');
   const preAtt=opts.preAttachments||[];
+  const selectable=!!opts.selectableAttachments;
   const _kb=n=>(n/1024).toFixed(0)+' KB';
+  const _aF=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  // Documentos de las expediciones: lista fija, o seleccionable con casillas
+  const preWrap=document.getElementById('epc-pre-att');
+  if(preWrap && preAtt.length && selectable){
+    preWrap.innerHTML='<div style="font-size:12px;color:#6b7280;margin-bottom:4px">📋 Documentos de las expediciones <span style="font-size:10px">(marca los que quieras adjuntar)</span></div>'+
+      preAtt.map((a,i)=>{ const bytes=Math.round((a.content||'').length*0.75);
+        return '<label style="display:flex;align-items:center;gap:7px;font-size:12px;padding:2px 0;cursor:pointer"><input type="checkbox" id="epc-pre-'+i+'" checked style="width:15px;height:15px;accent-color:var(--b600)"><span>📎 '+_aF(a.filename)+' <span style="color:#9ca3af">('+_kb(bytes)+')</span></span></label>';
+      }).join('');
+    preWrap.addEventListener('change', renderLista);
+  }
+  function _preSeleccionados(){ return selectable ? preAtt.filter((a,i)=>{ const c=document.getElementById('epc-pre-'+i); return c?c.checked:true; }) : preAtt.slice(); }
   function renderLista(){
     const fl=document.getElementById('epc-files-list');
     if(!fl) return;
-    const pre=preAtt.map(a=>{
+    const selPre=_preSeleccionados();
+    const pre = selectable ? [] : preAtt.map(a=>{
       const bytes=Math.round((a.content||'').length*0.75);
       return '📎 '+a.filename+' <span style="color:#9ca3af">('+_kb(bytes)+' · de las expediciones)</span>';
     });
     const picked=Array.from(epFiles.files||[]).map(f=>'📄 '+f.name+' ('+_kb(f.size)+')');
-    let totalBytes=preAtt.reduce((s,a)=>s+Math.round((a.content||'').length*0.75),0)
+    let totalBytes=selPre.reduce((s,a)=>s+Math.round((a.content||'').length*0.75),0)
                   +Array.from(epFiles.files||[]).reduce((s,f)=>s+f.size,0);
     let aviso='';
     if(totalBytes>20*1024*1024) aviso='<div style="color:#b45309;margin-top:4px">⚠️ '+_kb(totalBytes/1024)+' MB en total — algunos servidores rechazan emails de más de 20-25 MB. Considera reducir adjuntos.</div>';
-    fl.innerHTML=(pre.concat(picked).join('<br>')||'<span style="color:#9ca3af">Sin adjuntos</span>')+aviso;
+    fl.innerHTML=(pre.concat(picked).join('<br>')||'<span style="color:#9ca3af">Sin adjuntos añadidos a mano</span>')+aviso;
   }
   epFiles.addEventListener('change',renderLista);
   renderLista(); // pinta los adjuntos precargados al abrir la ventana
@@ -5811,7 +5825,7 @@ function _previewEmailCamion(opts){
     const subj=(document.getElementById('epc-subject').value||'').trim();
     const html=document.getElementById('epc-body').innerHTML;
     if(!to){ showToast('⚠️ Introduce al menos un destinatario'); return; }
-    const attachments=[...preAtt];
+    const attachments=[..._preSeleccionados()];
     if(epFiles&&epFiles.files&&epFiles.files.length){
       for(const file of epFiles.files){
         const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
@@ -15106,8 +15120,8 @@ async function sendConfronta(buqueId){
   </div>`;
   showToast('📎 Preparando documentación…');
   let preAttachments=[];
-  try{ preAttachments=await _cargarDocsExpediciones(exps); }catch(_){}
-  _previewEmailCamion({to:destinatario, cc:ccList, subject, html, preAttachments,
+  try{ preAttachments=await _cargarDocsExpediciones(expsConMRN); }catch(_){}
+  _previewEmailCamion({to:destinatario, cc:ccList, subject, html, preAttachments, selectableAttachments:true,
     onSent:async()=>{ showToast('✅ Confronta enviada'); try{ await logAct('buques',buqueId,b.nombre,'email','confronta',null,'enviada in-app'); }catch(_){} }});
 }
 
