@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.11.5';
+const APP_VERSION = 'v3.11.6';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -9065,24 +9065,14 @@ function abrirAccionCarga(bid){
           <div style="background:var(--g100);border-radius:4px;height:10px;overflow:hidden"><div id="scan-bar-${bid}" style="height:100%;background:var(--b500);width:0%;transition:width .3s"></div></div>
           <div id="scan-detail-${bid}" style="margin-top:8px;font-size:11px;color:var(--g500)"></div>
         </div>
-        <div style="margin-top:16px">
-          <label class="fl2">📸 Foto camión cargado <span style="color:var(--rd600);font-size:10px">requerida</span></label>
-          <div class="foto-area" onclick="document.getElementById('cg-fi-${bid}').click()" style="padding:22px;margin-top:6px">
-            <input type="file" id="cg-fi-${bid}" accept="image/*" multiple capture="environment" onchange="onCargaFoto('${bid}')">
-            <div style="font-size:32px;margin-bottom:4px">📷</div>
-            <div style="font-size:14px;font-weight:600;color:var(--g700)">Foto del camión cargado</div>
-          </div>
-          <div class="foto-prev" id="cg-pv-${bid}"></div>
-        </div>
         <div style="margin-top:14px;font-size:12px;color:var(--g500)">Expediciones: ${d.items.map(e=>`<span class="badge bb" style="margin:2px">${_almEscH(e.nº_expedicion)} (${e.bultos||0}b)</span>`).join('')}</div>
       </div>
       <div style="position:sticky;bottom:0;background:var(--w);border-top:1px solid var(--g100);padding:12px 16px">
-        <button id="cg-btn-${bid}" class="btn btn-g" style="width:100%;min-height:54px;font-size:16px;font-weight:700;display:none" onclick="confirmarCargaBuque('${bid}')">✅ Confirmar carga — ${d.items.length} exp.</button>
-        <div id="cg-hint-${bid}" style="font-size:12px;color:var(--g400);text-align:center">Escanea los bultos y añade la foto para confirmar</div>
+        <button id="cg-btn-${bid}" class="btn btn-g" style="width:100%;min-height:54px;font-size:16px;font-weight:700" onclick="confirmarCargaBuque('${bid}')">🚛 Cargar en camión — ${d.items.length} exp.</button>
+        <div id="cg-hint-${bid}" style="font-size:12px;color:var(--g400);text-align:center;margin-top:4px">El asistente te guiará: bultos → etiquetas → fotos</div>
       </div>
     </div>`;
   document.body.appendChild(ov);
-  setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null);
   const prog=window._scanCargaProg?.[bid];
   if(prog && prog.escaneados>0) _actualizarProgresoCarga(bid, prog.escaneados, prog.total, prog.detalle||[]);
 }
@@ -9255,19 +9245,11 @@ async function loadAlmFotos(tab){
             </div>
             <div id="scan-detail-${bid}" style="margin-top:8px;font-size:11px;color:var(--g500)"></div>
           </div>
-          <div class="fg2"><label class="fl2">Foto camión cargado <span style="color:var(--rd600);font-size:10px">requerida</span></label>
-            <div class="foto-area" onclick="document.getElementById('cg-fi-${bid}').click()">
-              <input type="file" id="cg-fi-${bid}" accept="image/*" multiple capture="environment" onchange="onCargaFoto('${bid}')">
-              <div style="font-size:22px;margin-bottom:4px">📸</div><div style="font-size:12px;color:var(--g600)">Foto del camión cargado</div>
-            </div>
-            <div class="foto-prev" id="cg-pv-${bid}"></div>
-          </div>
-          <button id="cg-btn-${bid}" class="btn btn-g btn-full" style="display:none" onclick="confirmarCargaBuque('${bid}')">✅ Confirmar carga — ${d.items.length} expediciones</button>
+          <button id="cg-btn-${bid}" class="btn btn-g btn-full" onclick="confirmarCargaBuque('${bid}')">🚛 Cargar en camión — ${d.items.length} expediciones</button>
           <div style="margin-top:12px;font-size:12px;color:var(--g500)">Expediciones: ${d.items.map(e=>`<span class="badge bb" style="margin:2px">${escHTML(e.nº_expedicion)} (${e.bultos||0}b)</span>`).join('')}</div>
         </div>
       </div>`;
     }).join('');
-    Object.keys(byBuque).forEach(bid=>setupFotos('cg-fi-'+bid,'cg-pv-'+bid,null));
     // Restaurar progreso de escaneo si había sesión activa
     Object.keys(byBuque).forEach(bid=>{
       const prog = window._scanCargaProg?.[bid];
@@ -12872,6 +12854,7 @@ async function _recalcularAutorizacionExp(id){
       mrn = (e.nº_mrn && String(e.nº_mrn).trim()) ? e.nº_mrn : ((lista.find(d=>d.nº_mrn&&String(d.nº_mrn).trim())||{}).nº_mrn||null);
       status = (lista.find(d=>d.status_aduanero)||{}).status_aduanero || e.status_aduanero || null;
       upd.tramite_aduanero=tramite; upd.nº_mrn=mrn; upd.status_aduanero=status;
+      upd.ac_despachado=(tramite==='Despachado');  // badge de despacho en expediciones de aeropuerto
     } else {
       tramite = e.tramite_aduanero; mrn = e.nº_mrn; status = e.status_aduanero;
     }
@@ -12902,7 +12885,7 @@ async function _sincronizarDespachosExpedicion(expId){
     const aggMrn=((lista.find(d=>d.nº_mrn&&String(d.nº_mrn).trim())||{}).nº_mrn)||null;
     const aggStatus=((lista.find(d=>d.status_aduanero)||{}).status_aduanero)||null;
     const allDespachado=lista.length>0 && lista.every(d=>d.tramite_aduanero==='Despachado');
-    const upd={nº_mrn:aggMrn, status_aduanero:aggStatus, tramite_aduanero: allDespachado?'Despachado':'Pendiente despachar'};
+    const upd={nº_mrn:aggMrn, status_aduanero:aggStatus, tramite_aduanero: allDespachado?'Despachado':'Pendiente despachar', ac_despachado: allDespachado};
     const {data:cur}=await sb.from('expediciones').select('estado_carga').eq('id',expId).single();
     const estadoAct=(cur&&cur.estado_carga)||'';
     const yaAvanzada = estadoAct==='🚛 CARGADO CAMIÓN' || estadoAct==='🚢 EMBARCADO';
