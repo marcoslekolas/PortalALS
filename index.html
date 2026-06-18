@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.11.7';
+const APP_VERSION = 'v3.11.8';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -3689,7 +3689,7 @@ function subirFotoExpedicionPC(expId, ref){
     if(files && files.length){
       showToast('⏳ Subiendo '+files.length+' foto'+(files.length>1?'s':'')+'…');
       try{
-        const urls=await subirFotosYGuardar(files,'expediciones',expId,'complementaria',null);
+        const urls=await subirFotosYGuardar(files,'expediciones',expId,'llegada',null);
         if(urls&&urls.length){
           showToast('✅ '+urls.length+' foto'+(urls.length>1?'s':'')+' añadida'+(urls.length>1?'s':''));
           const ov=document.getElementById('als-gallery-overlay'); if(ov) ov.remove();
@@ -12877,20 +12877,19 @@ async function _recalcularAutorizacionExp(id){
     const avanzada = e.estado_carga==='🚛 CARGADO CAMIÓN'||e.estado_carga==='🚢 EMBARCADO';
     const {data:ds}=await sb.from('expedicion_despachos').select('nº_mrn,status_aduanero,tramite_aduanero').eq('expedicion_id',id);
     const lista=ds||[];
-    let tramite, mrn, status;
     const upd={};
-    if(lista.length){
-      // Si hay despachos, mandan ellos: sincronizamos el campo principal para que
-      // la ficha, la tarjeta y el guardado sean coherentes y dejen de revertir.
-      tramite = lista.every(d=>(d.tramite_aduanero||'')==='Despachado') ? 'Despachado' : 'Pendiente despachar';
-      mrn = (e.nº_mrn && String(e.nº_mrn).trim()) ? e.nº_mrn : ((lista.find(d=>d.nº_mrn&&String(d.nº_mrn).trim())||{}).nº_mrn||null);
-      status = (lista.find(d=>d.status_aduanero)||{}).status_aduanero || e.status_aduanero || null;
-      upd.tramite_aduanero=tramite; upd.nº_mrn=mrn; upd.status_aduanero=status;
-    } else {
-      tramite = e.tramite_aduanero; mrn = e.nº_mrn; status = e.status_aduanero;
-    }
-    const hasMrn=!!(mrn&&String(mrn).trim());
-    const despachado=(tramite==='Despachado');
+    // Despachado si lo dice el campo principal O si hay despachos y todos lo están (permisivo)
+    const despPrincipal = (e.tramite_aduanero||'')==='Despachado';
+    const despTodos = lista.length>0 && lista.every(d=>(d.tramite_aduanero||'')==='Despachado');
+    const despachado = despPrincipal || despTodos;
+    // MRN del campo principal o de cualquier despacho. El guion '-' cuenta como MRN.
+    let mrn = (e.nº_mrn && String(e.nº_mrn).trim()) ? e.nº_mrn : null;
+    if(!mrn && lista.length){ const dm=lista.find(d=>d.nº_mrn&&String(d.nº_mrn).trim()); if(dm) mrn=dm.nº_mrn; }
+    const hasMrn=!!(mrn && String(mrn).trim());
+    // Sincronizar el campo principal HACIA despachado/MRN (nunca degradar) para coherencia de tarjeta
+    if(despachado && (e.tramite_aduanero||'')!=='Despachado') upd.tramite_aduanero='Despachado';
+    if(mrn && (!e.nº_mrn || !String(e.nº_mrn).trim())) upd.nº_mrn=mrn;
+    if(lista.length){ const st=(lista.find(d=>d.status_aduanero)||{}).status_aduanero; if(st && !e.status_aduanero) upd.status_aduanero=st; }
     let autorizar=false;
     if(hasMrn && despachado && !avanzada && e.estado_carga!=='✅ AUTORIZADO'){
       upd.estado_carga='✅ AUTORIZADO'; upd.estado_semaforo='✅ AUTORIZADO'; autorizar=true;
@@ -12900,8 +12899,8 @@ async function _recalcularAutorizacionExp(id){
       if(error){ window._lastAuthDiag='ERROR al guardar: '+error.message; return false; }
     }
     const estadoFinal = autorizar ? '✅ AUTORIZADO' : e.estado_carga;
-    window._lastAuthExp={tramite_aduanero:tramite, mrn:mrn, estado_carga:estadoFinal};
-    window._lastAuthDiag='MRN='+(hasMrn?'sí':'no')+' · despachado='+(despachado?'sí':'no')+' · '+lista.length+' despacho(s) · estado='+estadoFinal;
+    window._lastAuthExp={tramite_aduanero:(despachado?'Despachado':e.tramite_aduanero), mrn:mrn, estado_carga:estadoFinal};
+    window._lastAuthDiag='MRN='+(hasMrn?('sí ('+mrn+')'):'no')+' · despachado='+(despachado?'sí':'no')+' · '+lista.length+' despacho(s) · estado='+estadoFinal;
     return autorizar;
   }catch(ex){ window._lastAuthDiag='excepción: '+(ex&&ex.message||ex); return false; }
 }
