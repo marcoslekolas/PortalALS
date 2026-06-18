@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.11.2';
+const APP_VERSION = 'v3.11.3';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -12858,26 +12858,27 @@ function _volverDesdeDespach(expId){
 async function _recalcularAutorizacionExp(id){
   try{
     const {data:e}=await sb.from('expediciones').select('nº_mrn,tramite_aduanero,estado_carga').eq('id',id).single();
-    if(!e) return false;
-    if(e.estado_carga==='🚛 CARGADO CAMIÓN'||e.estado_carga==='🚢 EMBARCADO') return false;
-    let despachado, mrn;
+    if(!e){ window._lastAuthDiag='exp no encontrada'; return false; }
+    if(e.estado_carga==='🚛 CARGADO CAMIÓN'||e.estado_carga==='🚢 EMBARCADO'){ window._lastAuthDiag='ya cargada/embarcada'; return false; }
     const {data:ds}=await sb.from('expedicion_despachos').select('nº_mrn,tramite_aduanero').eq('expedicion_id',id);
     const lista=ds||[];
-    if(lista.length){
-      despachado = lista.every(d=>d.tramite_aduanero==='Despachado');
-      mrn = e.nº_mrn || ((lista.find(d=>d.nº_mrn)||{}).nº_mrn) || null;
-    } else {
-      despachado = e.tramite_aduanero==='Despachado';
-      mrn = e.nº_mrn;
-    }
+    // Despachado si el campo principal lo dice O si hay despachos y TODOS lo están
+    const despPrincipal = (e.tramite_aduanero||'')==='Despachado';
+    const despTodos = lista.length>0 && lista.every(d=>(d.tramite_aduanero||'')==='Despachado');
+    const despachado = despPrincipal || despTodos;
+    // MRN del campo principal o de cualquier despacho
+    let mrn = (e.nº_mrn && String(e.nº_mrn).trim()) ? e.nº_mrn : null;
+    if(!mrn){ const dm=lista.find(d=>d.nº_mrn && String(d.nº_mrn).trim()); if(dm) mrn=dm.nº_mrn; }
     const hasMrn = !!(mrn && String(mrn).trim());
+    window._lastAuthDiag='MRN='+(hasMrn?'sí':'no')+' · despachado='+(despachado?'sí':'no')+' · '+lista.length+' despacho(s) · estado='+(e.estado_carga||'—');
     if(hasMrn && despachado && e.estado_carga!=='✅ AUTORIZADO'){
-      await sb.from('expediciones').update({estado_carga:'✅ AUTORIZADO',estado_semaforo:'✅ AUTORIZADO'}).eq('id',id);
+      const {error}=await sb.from('expediciones').update({estado_carga:'✅ AUTORIZADO',estado_semaforo:'✅ AUTORIZADO'}).eq('id',id);
+      if(error){ window._lastAuthDiag='ERROR al guardar: '+error.message; return false; }
       if(typeof _notificarAlmacenAutorizacion==='function'){ try{ _notificarAlmacenAutorizacion(id); }catch(_){} }
       return true;
     }
     return false;
-  }catch(_){ return false; }
+  }catch(ex){ window._lastAuthDiag='excepción: '+(ex&&ex.message||ex); return false; }
 }
 
 // Recalcula los campos agregados de la expedición a partir de sus despachos
@@ -13502,7 +13503,10 @@ async function openExpD(id, forceOpen=false){
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
   // Auto-corrección: si tiene MRN y está despachada pero no autorizada, autorizar ahora.
-  try{ if(await _recalcularAutorizacionExp(id)){ e.estado_carga='✅ AUTORIZADO'; e.estado_semaforo='✅ AUTORIZADO'; } }catch(_){}
+  try{
+    if(await _recalcularAutorizacionExp(id)){ e.estado_carga='✅ AUTORIZADO'; e.estado_semaforo='✅ AUTORIZADO'; showToast('✅ Expedición autorizada'); }
+    else if(e.estado_carga!=='✅ AUTORIZADO' && e.estado_carga!=='🚛 CARGADO CAMIÓN' && e.estado_carga!=='🚢 EMBARCADO' && window._lastAuthDiag){ showToast('ⓘ No autoriza → '+window._lastAuthDiag); }
+  }catch(_){}
   const emailCli=e.cliente_override?.email_confronta||e.buques?.cli?.email_confronta||'';
   // Auto-corregir semáforo — NO en aeropuerto (causa bucle Realtime)
   const esAeropuertoCheck=(e.ubicacion||'').toLowerCase().includes('aeropuerto');
