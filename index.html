@@ -12850,6 +12850,31 @@ function _volverDesdeDespach(expId){
   loadDespachos(expId);
 }
 
+// Recalcula los campos agregados de la expedición a partir de sus despachos
+// y aplica la autorización: si hay MRN y TODOS los despachos están 'Despachado',
+// la expedición pasa a ✅ AUTORIZADO (salvo que ya esté cargada/embarcada).
+async function _sincronizarDespachosExpedicion(expId){
+  try{
+    const {data:ds}=await sb.from('expedicion_despachos').select('nº_mrn,status_aduanero,tramite_aduanero').eq('expedicion_id',expId).order('created_at');
+    const lista=ds||[];
+    const aggMrn=((lista.find(d=>d.nº_mrn&&String(d.nº_mrn).trim())||{}).nº_mrn)||null;
+    const aggStatus=((lista.find(d=>d.status_aduanero)||{}).status_aduanero)||null;
+    const allDespachado=lista.length>0 && lista.every(d=>d.tramite_aduanero==='Despachado');
+    const upd={nº_mrn:aggMrn, status_aduanero:aggStatus, tramite_aduanero: allDespachado?'Despachado':'Pendiente despachar'};
+    const {data:cur}=await sb.from('expediciones').select('estado_carga').eq('id',expId).single();
+    const estadoAct=(cur&&cur.estado_carga)||'';
+    const yaAvanzada = estadoAct==='🚛 CARGADO CAMIÓN' || estadoAct==='🚢 EMBARCADO';
+    let nuevaAutoriz=false;
+    if(aggMrn && allDespachado && !yaAvanzada && estadoAct!=='✅ AUTORIZADO'){
+      upd.estado_carga='✅ AUTORIZADO'; upd.estado_semaforo='✅ AUTORIZADO';
+      nuevaAutoriz=true;
+    }
+    await sb.from('expediciones').update(upd).eq('id',expId);
+    if(nuevaAutoriz && typeof _notificarAlmacenAutorizacion==='function'){ try{ _notificarAlmacenAutorizacion(expId); }catch(_){} }
+    return nuevaAutoriz;
+  }catch(ex){ console.warn('sincronizar despachos', ex); return false; }
+}
+
 async function guardarNuevoDespacho(expId){
   const mrn=(document.getElementById('nd-mrn')?.value||'').trim();
   const sta=document.getElementById('nd-sta')?.value||null;
@@ -12862,11 +12887,8 @@ async function guardarNuevoDespacho(expId){
     tramite_aduanero:tra,fecha_despacho:fec||null,notas:not
   });
   if(error){showToast('Error: '+error.message);return;}
-  try{
-    const {data:all}=await sb.from('expedicion_despachos').select('nº_mrn,status_aduanero').eq('expedicion_id',expId).order('created_at').limit(1);
-    if(all?.length) await sb.from('expediciones').update({nº_mrn:all[0].nº_mrn||null,status_aduanero:all[0].status_aduanero||null}).eq('id',expId);
-  }catch(ex){}
-  showToast('✅ Despacho añadido');
+  const autoriz=await _sincronizarDespachosExpedicion(expId);
+  showToast(autoriz?'✅ Despacho añadido — expedición AUTORIZADA':'✅ Despacho añadido');
   _volverDesdeDespach(expId);
 }
 
@@ -12911,13 +12933,15 @@ async function actualizarDespacho(despachoId,expId){
     fecha_despacho:document.getElementById('ed-fec')?.value||null,
     notas:(document.getElementById('ed-not')?.value||'').trim()||null
   }).eq('id',despachoId);
-  showToast('✅ Despacho actualizado');
+  const autoriz=await _sincronizarDespachosExpedicion(expId);
+  showToast(autoriz?'✅ Despacho actualizado — expedición AUTORIZADA':'✅ Despacho actualizado');
   _volverDesdeDespach(expId);
 }
 
 async function eliminarDespacho(despachoId,expId){
   if(!confirm('¿Eliminar este despacho?')) return;
   await sb.from('expedicion_despachos').delete().eq('id',despachoId);
+  await _sincronizarDespachosExpedicion(expId);
   showToast('🗑️ Despacho eliminado');
   await loadDespachos(expId);
 }
@@ -13444,7 +13468,7 @@ async function saveBuqueEst(id,val){
 async function openExpD(id, forceOpen=false){
   // Bloquear solo en vistas informativas del módulo almacén (flota, timeline, exp-buque)
   if(!forceOpen && MOD==='almacen' && ['flota','timeline','alm-exp-buque'].includes(CV)) return;
-  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre),empresas!empresa_id(nombre,email_confronta),cliente_override:cliente_override_id(nombre)').eq('id',id).single();
+  const {data:e}=await sb.from('expediciones').select('*,buques(id,nombre,cli:cliente_id(nombre,email_confronta,otros_emails)),empresas!empresa_id(nombre,email_confronta),cliente_override:cliente_override_id(nombre,email_confronta,otros_emails)').eq('id',id).single();
   const {data:incs}=await sb.from('incidencias').select('*').eq('expedicion_id',id);
   if(!e)return;
   const emailCli=e.empresas?.email_confronta||'';
@@ -14863,7 +14887,7 @@ async function guardarExpedicion(id){if(!checkOnline())return;
   // Notificar al almacén si se acaba de autorizar
   if(window._pendingNotifAutorizado === id){
     window._pendingNotifAutorizado = null;
-    _notificarAlmacenAutorizacion(id);
+    if(typeof _notificarAlmacenAutorizacion==='function'){ try{ _notificarAlmacenAutorizacion(id); }catch(_){} }
   }
   showToast('✅ Cambios guardados');
   // ✈️ Auto-detección: si el nº de expedición tiene formato AWB (XXX-XXXXXXXX), registrar en airport_cargo
@@ -14917,8 +14941,9 @@ async function _prepNotifEmails(e){
   const filasA=[['Buque',vNombreB],['Expediente / Ref.',vRefB],['Terminal',vTerminal],['Expedición / P.O.',e.nº_expedicion||'-'],['Remitente / Shipper',e.remitente||e.empresas?.nombre||'—'],['Bultos',e.bultos||0],['Kilos',(e.kilos||0)+' kg'],['Ubicación actual',e.ubicacion||'No definida'],['Status aduanero',e.status_aduanero||'Pendiente']];
   const tablaA=`<table style="border-collapse:collapse;font-size:13px;margin:8px 0">${filasA.map(([k,v])=>`<tr><td style="${TDk}">${esc(k)}</td><td style="${TD}">${esc(v)}</td></tr>`).join('')}</table>`;
   const htmlA=`<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;line-height:1.5;max-width:680px"><p>Hola,</p><p>Una expedición para el buque <b>${esc(vNombreB)}</b> requiere de vuestra atención.</p>${tablaA}${incs.length?incRojo:incVerdeAdu}<p style="margin-top:16px">Atentamente,<br><b>Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com<br>OPERATIONS 24/7 +34 956 58 13 16 · BOARDINGS 24/7 +34 664 07 49 40</p></div>`;
-  const emailCli=e.empresas?.email_confronta||'';
-  const todosEmails=[emailCli,...((e.empresas?.otros_emails)||[])].filter(Boolean).join(',');
+  const _cliObj=(e.cliente_override&&e.cliente_override.email_confronta)?e.cliente_override:(e.buques&&e.buques.cli)||{};
+  const emailCli=_cliObj.email_confronta||'';
+  const todosEmails=[emailCli,...((_cliObj.otros_emails)||[])].filter(Boolean).join(',');
   const trackingUrl='https://portal.alsalgeciras.com/tracking.html?exp='+id;
   const filasC=[['Buque',e.buques?.nombre||'—'],['Expedición / P.O.',e.nº_expedicion||'—'],['Remitente / Shipper',e.remitente||e.empresas?.nombre||'—'],['Bultos',e.bultos||0],['Kilos',(e.kilos||0)+' kg'],['Ubicación',e.ubicacion||'—'],['Status aduanero',e.status_aduanero||'—']];
   const tablaC=`<table style="border-collapse:collapse;font-size:13px;margin:8px 0">${filasC.map(([k,v])=>`<tr><td style="${TDk}">${esc(k)}</td><td style="${TD}">${esc(v)}</td></tr>`).join('')}</table>`;
