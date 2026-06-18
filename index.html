@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.11.3';
+const APP_VERSION = 'v3.11.4';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -12874,7 +12874,10 @@ async function _recalcularAutorizacionExp(id){
     if(hasMrn && despachado && e.estado_carga!=='✅ AUTORIZADO'){
       const {error}=await sb.from('expediciones').update({estado_carga:'✅ AUTORIZADO',estado_semaforo:'✅ AUTORIZADO'}).eq('id',id);
       if(error){ window._lastAuthDiag='ERROR al guardar: '+error.message; return false; }
-      if(typeof _notificarAlmacenAutorizacion==='function'){ try{ _notificarAlmacenAutorizacion(id); }catch(_){} }
+      // Verificar que la escritura realmente persistió (RLS puede devolver OK sin escribir)
+      let persistido='?';
+      try{ const {data:chk}=await sb.from('expediciones').select('estado_carga').eq('id',id).single(); persistido=(chk&&chk.estado_carga)||'(vacío)'; }catch(_){ persistido='(no leído)'; }
+      window._lastAuthDiag='tras guardar, estado_carga = '+persistido;
       return true;
     }
     return false;
@@ -13504,7 +13507,7 @@ async function openExpD(id, forceOpen=false){
   if(!e)return;
   // Auto-corrección: si tiene MRN y está despachada pero no autorizada, autorizar ahora.
   try{
-    if(await _recalcularAutorizacionExp(id)){ e.estado_carga='✅ AUTORIZADO'; e.estado_semaforo='✅ AUTORIZADO'; showToast('✅ Expedición autorizada'); }
+    if(await _recalcularAutorizacionExp(id)){ e.estado_carga='✅ AUTORIZADO'; e.estado_semaforo='✅ AUTORIZADO'; showToast('✅ Autorizada — '+(window._lastAuthDiag||'')); }
     else if(e.estado_carga!=='✅ AUTORIZADO' && e.estado_carga!=='🚛 CARGADO CAMIÓN' && e.estado_carga!=='🚢 EMBARCADO' && window._lastAuthDiag){ showToast('ⓘ No autoriza → '+window._lastAuthDiag); }
   }catch(_){}
   const emailCli=e.cliente_override?.email_confronta||e.buques?.cli?.email_confronta||'';
