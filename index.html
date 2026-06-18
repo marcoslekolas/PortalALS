@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.11.9';
+const APP_VERSION = 'v3.12.0';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -3703,7 +3703,7 @@ function subirFotoExpedicionPC(expId, ref){
           showToast('✅ '+urls.length+' foto'+(urls.length>1?'s':'')+' añadida'+(urls.length>1?'s':''));
           const ov=document.getElementById('als-gallery-overlay'); if(ov) ov.remove();
           verFotosExpedicion(expId, ref||'expedición');
-        } else showToast('❌ No se pudo subir'+(window._lastFotoError?(' → '+window._lastFotoError):''));
+        } else showToast('❌ No se pudo subir la foto');
       }catch(e){ showToast('❌ Error al subir: '+(e&&e.message||e)); }
     }
     inp.remove();
@@ -13397,6 +13397,7 @@ async function _prepBuqueEmail(buqueId, buqueNombre){
 
   const asunto = `Aviso mercancía en almacén — Buque ${buqueNombre} · ${exps.length} expedición${exps.length!==1?'es':''}`;
   const trackingBase = 'https://portal.alsalgeciras.com/tracking.html?exp=';
+  const fotoDe = e => (((e.foto_llegada_url||'').split(',')[0]||'').trim()) || (trackingBase+e.id);
   const esP = e => (e.ubicacion === 'Pendiente recibir');
   const recibidas  = exps.filter(e => !esP(e));
   const pendientes = exps.filter(e =>  esP(e));
@@ -13417,14 +13418,14 @@ async function _prepBuqueEmail(buqueId, buqueNombre){
         <td style="${TDr}">${parseFloat(e.kilos)||0}</td>
         <td style="${TD}">${_esc(e.estado_semaforo||'En almacén')}</td>
         <td style="${TD}">${_esc(e.nº_mrn||'—')}</td>
-        <td style="${TD}"><a href="${trackingBase}${e.id}">Ver</a></td>
+        <td style="${TD}"><a href="${fotoDe(e)}">Ver fotos</a></td>
       </tr>`).join('');
   const tablaRecibidas = recibidas.length ? `
     <h3 style="font-size:14px;margin:16px 0 6px">📦 Expediciones recibidas (${recibidas.length})</h3>
     <table style="border-collapse:collapse;width:100%;font-size:12px">
       <tr><th style="${TH}">#</th><th style="${TH}">Expedición / P.O.</th><th style="${TH}">Remitente</th>
         <th style="${TH};text-align:right">Bultos</th><th style="${TH};text-align:right">Kilos</th>
-        <th style="${TH}">Estado</th><th style="${TH}">MRN</th><th style="${TH}">Seguimiento</th></tr>
+        <th style="${TH}">Estado</th><th style="${TH}">MRN</th><th style="${TH}">Fotos</th></tr>
       ${filasRec}
       <tr style="background:#dbeafe;font-weight:bold"><td style="${TD}" colspan="3">SUBTOTAL RECIBIDAS</td>
         <td style="${TDr}">${subB(recibidas)}</td><td style="${TDr}">${subK(recibidas)}</td><td style="${TD}" colspan="3"></td></tr>
@@ -13550,8 +13551,7 @@ async function openExpD(id, forceOpen=false){
   try{
     const _auth=await _recalcularAutorizacionExp(id);
     if(window._lastAuthExp){ e.tramite_aduanero=window._lastAuthExp.tramite_aduanero; e.nº_mrn=window._lastAuthExp.mrn; }
-    if(_auth){ e.estado_carga='✅ AUTORIZADO'; e.estado_semaforo='✅ AUTORIZADO'; showToast('✅ Autorizada — '+(window._lastAuthDiag||'')); }
-    else if(window._lastAuthDiag && e.estado_carga!=='✅ AUTORIZADO' && e.estado_carga!=='🚛 CARGADO CAMIÓN' && e.estado_carga!=='🚢 EMBARCADO'){ showToast('ⓘ No autoriza → '+window._lastAuthDiag); }
+    if(_auth){ e.estado_carga='✅ AUTORIZADO'; e.estado_semaforo='✅ AUTORIZADO'; showToast('✅ Expedición autorizada'); }
   }catch(_){}
   const emailCli=e.cliente_override?.email_confronta||e.buques?.cli?.email_confronta||'';
   // Auto-corregir semáforo — NO en aeropuerto (causa bucle Realtime)
