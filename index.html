@@ -3498,11 +3498,13 @@ window.addEventListener('offline', function(){
 });
 
 function checkOnline(){
-  if(!_online){
-    showToast('⚠️ Sin conexión — operación cancelada');
-    return false;
-  }
-  return true;
+  // Releer el estado REAL en cada llamada y autocorregir la variable cacheada,
+  // que puede quedarse desactualizada si el navegador no emite el evento 'online'
+  // (frecuente en móvil/PWA). Solo se bloquea si de verdad no hay red.
+  if(navigator.onLine){ _online = true; return true; }
+  _online = false;
+  showToast('⚠️ Sin conexión — operación cancelada');
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════
