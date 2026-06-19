@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.2';
+const APP_VERSION = 'v3.12.3';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -10589,13 +10589,13 @@ async function enviarEmailEmbarqueCliente(buqueId, fotoUrl, embarcadasIds){
       ${lugarBlock}
       <h3 style="font-size:14px;margin:14px 0 4px">📦 Expediciones embarcadas / Shipments loaded on board</h3>
       ${tablaExps}
-      ${fotoUrl?'<p style="font-size:12px;color:#555">📸 Foto de confirmación de embarque disponible en el seguimiento.</p>':''}
+      ${fotoUrl?`<p style="margin:20px 0;text-align:center"><a href="${fotoUrl}" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;padding:16px 30px;border-radius:10px;font-weight:bold;font-size:17px">Ver fotografías del embarque &rarr;</a></p>`:''}
       <p>We remain at your disposal for any queries. / Quedamos a su disposición para cualquier consulta.</p>
       <p style="margin-top:16px">Kind regards / Atentamente,<br><b>Operations Department · Departamento de Operaciones</b><br>ALGECIRAS LOGISTIC SOLUTIONS (ALS)<br>📞 +34 956 58 13 16 · als@alsalgeciras.com<br>Operations 24/7 · Boardings +34 664 07 49 40</p>
     </div>`;
-    const cc = (b.ec?.otros_emails||[]).filter(Boolean).join(',');
+    const cc = [...(b.ec?.otros_emails||[]),'als@alsalgeciras.com'].filter(Boolean).join(',');
     const subject = 'Cargo loaded on board — Vessel '+b.nombre+' · '+hoy+'  /  Embarque confirmado — Buque '+b.nombre;
-    _previewEmail({to:emailCliente, cc, subject, html});
+    await _abrirEmailHTML({to:emailCliente, cc, subject, html});
   } catch(ex){
     console.warn('Email embarque error:', ex);
     showToast('⚠️ No se pudo preparar el email de embarque: '+ex.message);
