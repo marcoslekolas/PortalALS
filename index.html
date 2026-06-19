@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.4';
+const APP_VERSION = 'v3.12.5';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -3693,35 +3693,16 @@ async function verFotosBuque(buqueId, buqueNombre){
   try{
     if(!buqueNombre){ try{ const {data:bq}=await sb.from('buques').select('nombre').eq('id',buqueId).single(); buqueNombre=bq?.nombre||'buque'; }catch(_){ buqueNombre='buque'; } }
     showToast('📸 Cargando fotos del buque…');
-    // 1) Fotos a nivel buque (carga camión, embarque) — todas
+    // Solo fotos de NIVEL BUQUE: carga camión y embarque (todas). Las de cada
+    // expedición (llegada, landed, complementarias) se consultan en su ficha,
+    // para no mezclar.
     const {data:fb}=await sb.from('fotos_operativas')
       .select('id,storage_url,storage_path,tipo,created_at,subida_por')
       .eq('entidad','buques').eq('entidad_id',buqueId).order('created_at');
-    // 2) Expediciones del buque
-    const {data:exps}=await sb.from('expediciones')
-      .select('id,nº_expedicion,foto_llegada_url,foto_carga_url,foto_embarque_url')
-      .eq('buque_id',buqueId);
-    const expIds=(exps||[]).map(e=>e.id);
-    const nomById={}; (exps||[]).forEach(e=>{ nomById[e.id]=e.nº_expedicion; });
-    // 3) Fotos a nivel expedición — todas
-    let fe=[];
-    if(expIds.length){
-      const {data}=await sb.from('fotos_operativas')
-        .select('id,storage_url,storage_path,tipo,created_at,subida_por,entidad_id')
-        .eq('entidad','expediciones').in('entidad_id',expIds).order('created_at');
-      fe=data||[];
-    }
     const todasUrls=[]; const fotosData={};
-    const push=(url,meta)=>{ if(url && !todasUrls.includes(url)){ todasUrls.push(url); fotosData[url]=meta; } };
-    (fb||[]).forEach(f=>push(f.storage_url,{id:f.id,path:f.storage_path,tipo:f.tipo,created_at:f.created_at,subida_por:f.subida_por}));
-    fe.forEach(f=>push(f.storage_url,{id:f.id,path:f.storage_path,tipo:f.tipo,created_at:f.created_at,subida_por:f.subida_por,exp:nomById[f.entidad_id]}));
-    // 4) Columnas directas por si alguna foto no está registrada en fotos_operativas
-    (exps||[]).forEach(e=>{
-      [['llegada',e.foto_llegada_url],['carga',e.foto_carga_url],['embarque',e.foto_embarque_url]]
-        .forEach(([tipo,url])=>push(url,{tipo,exp:e.nº_expedicion}));
-    });
-    if(!todasUrls.length){ showToast('No hay fotos para el buque '+buqueNombre); return; }
-    abrirGaleriaFotos(todasUrls,'📸 Fotos del buque — '+buqueNombre, fotosData, null);
+    (fb||[]).forEach(f=>{ if(f.storage_url && !todasUrls.includes(f.storage_url)){ todasUrls.push(f.storage_url); fotosData[f.storage_url]={id:f.id,path:f.storage_path,tipo:f.tipo,created_at:f.created_at,subida_por:f.subida_por}; } });
+    if(!todasUrls.length){ showToast('No hay fotos de carga/embarque para el buque '+buqueNombre); return; }
+    abrirGaleriaFotos(todasUrls,'📸 Fotos de carga y embarque — '+buqueNombre, fotosData, null);
   }catch(e){ showToast('Error cargando fotos del buque: '+(e&&e.message||e)); }
 }
 
