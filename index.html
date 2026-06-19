@@ -1849,7 +1849,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.5';
+const APP_VERSION = 'v3.12.6';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -13528,7 +13528,8 @@ function notifClienteBuque(buqueId, buqueNombre){
 }
 
 async function saveBuqueEst(id,val){
-  await sb.from('buques').update({estado_operacion:val}).eq('id',id);
+  const {error}=await sb.from('buques').update({estado_operacion:val}).eq('id',id);
+  if(error){ showToast('❌ No se pudo guardar "'+val+'": '+(error.message||error)); return; }
   await logAct('buques',id,'','editar','estado_operacion',null,val);
   const stCls=estOpCls(val);
   const key=stCls.replace('st-','');
