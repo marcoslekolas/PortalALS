@@ -811,9 +811,32 @@ if('serviceWorker' in navigator){
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)">v3.10.0</span>
-        <span style="font-size:12px;color:var(--g400)">30/03/2026</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.7</span>
+        <span style="font-size:12px;color:var(--g400)">18/06/2026</span>
         <span class="badge bg">Actual</span>
+      </div>
+      <ul style="font-size:13px;color:var(--g700);margin:0;padding-left:20px;line-height:1.8">
+        <li>🔐 Autenticación migrada 100% a Supabase Auth (JWT) — eliminado el sistema antiguo de contraseñas</li>
+        <li>🔑 Cambio de contraseña obligatorio al primer inicio: alta con contraseña temporal y casilla "exigir cambio"</li>
+        <li>🔑 Recuperación de contraseña por email ("¿Olvidaste tu contraseña?")</li>
+        <li>✅ Autorización de expedición robusta: campo principal o despachos, el guion "-" cuenta como MRN, sincroniza el trámite y ya no revierte al guardar o reubicar</li>
+        <li>🏷️ Etiquetas QR de bultos en negro (se imprimen siempre, también sobre fondos de color)</li>
+        <li>🚛 Carga en camión como asistente por pasos: bultos → etiquetas → fotos obligatorias</li>
+        <li>📸 Subir fotos externas desde el PC dentro de cada expedición ("➕ Añadir foto")</li>
+        <li>📸 Galería de fotos a nivel de buque: carga camión y embarque, todas</li>
+        <li>📧 Notif. cliente: botón destacado que enlaza a las fotos (no al seguimiento), con color compatible con clientes de correo</li>
+        <li>🚢 Embarque: email automático al cliente con enlace a las fotos, sin depender del transportista</li>
+        <li>📨 Confronta enviada dentro de la app, con los documentos de las expediciones de MRN numérico seleccionables como adjuntos</li>
+        <li>⚖️ Airport Cargo: tarifas con DGR y Recargo Continuidad; módulo de Control de costes (previsión vs factura con histórico)</li>
+        <li>🌐 Guardado más fiable: ya no bloquea por falsos "sin conexión"</li>
+        <li>🟢 Estados de buque "Cancelado" y "Aplazado" corregidos</li>
+        <li>📝 Log de actividad ampliado a más acciones operativas y auto-refresco al entrar</li>
+      </ul>
+    </div>
+    <div style="background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--g600)">v3.10.0</span>
+        <span style="font-size:12px;color:var(--g400)">30/03/2026</span>
       </div>
       <ul style="font-size:13px;color:var(--g700);margin:0;padding-left:20px;line-height:1.8">
         <li>🎨 Rediseño UI completo: tarjetas, alertas, tipografía, espaciado y colores</li>
@@ -1849,7 +1872,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.6';
+const APP_VERSION = 'v3.12.7';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -3719,6 +3742,7 @@ function subirFotoExpedicionPC(expId, ref){
         const urls=await subirFotosYGuardar(files,'expediciones',expId,'llegada',null);
         if(urls&&urls.length){
           showToast('✅ '+urls.length+' foto'+(urls.length>1?'s':'')+' añadida'+(urls.length>1?'s':''));
+          try{ await logAct('expediciones',expId,'','foto',null,null,urls.length+' foto(s) subida(s) desde PC'); }catch(_){}
           const ov=document.getElementById('als-gallery-overlay'); if(ov) ov.remove();
           verFotosExpedicion(expId, ref||'expedición');
         } else showToast('❌ No se pudo subir la foto');
@@ -3759,6 +3783,7 @@ async function eliminarFotoGaleria(url, fotosData, expId, onDone){
     }
 
     showToast('🗑️ Foto eliminada');
+    try{ const _ent=fotosData?.[url]?.exp?'expediciones':'fotos'; await logAct(expId?'expediciones':'fotos_operativas',expId||null,'','eliminar','foto',null,'foto eliminada'); }catch(_){}
     if(onDone) onDone(url);
 
   } catch(e){
@@ -11844,7 +11869,8 @@ async function loadPermisos(){
 }
 
 function loadVersiones(){
-  // La vista de versiones es HTML estático — solo hacer scroll al top
+  // El número "Actual" se sincroniza con la versión real; el detalle es manual.
+  try{ const n=document.getElementById('ver-actual-num'); if(n && typeof APP_VERSION!=='undefined') n.textContent=APP_VERSION; }catch(_){}
   const v = document.getElementById('view-versiones');
   if(v) v.scrollTop = 0;
 }
@@ -12950,7 +12976,7 @@ async function _recalcularAutorizacionExp(id){
       if(error){ window._lastAuthDiag='ERROR al guardar: '+error.message; return false; }
     }
     let persist='';
-    if(autorizar){ try{ const {data:chk}=await sb.from('expediciones').select('estado_carga').eq('id',id).single(); persist=' · persistido='+((chk&&chk.estado_carga)||'?'); }catch(_){} }
+    if(autorizar){ try{ const {data:chk}=await sb.from('expediciones').select('estado_carga').eq('id',id).single(); persist=' · persistido='+((chk&&chk.estado_carga)||'?'); }catch(_){} try{ await logAct('expediciones',id,'','autorizar','estado_carga',null,'✅ AUTORIZADO'); }catch(_){} }
     const estadoFinal = autorizar ? '✅ AUTORIZADO' : e.estado_carga;
     window._lastAuthExp={tramite_aduanero:(despachado?'Despachado':e.tramite_aduanero), mrn:mrn, estado_carga:estadoFinal};
     window._lastAuthDiag=(typeof APP_VERSION!=='undefined'?APP_VERSION+' · ':'')+'MRN='+(hasMrn?('sí ('+mrn+')'):'no')+' · despachado='+(despachado?'sí':'no')+' · '+lista.length+' despacho(s) · estado='+estadoFinal+persist;
@@ -12996,6 +13022,7 @@ async function guardarNuevoDespacho(expId){
   });
   if(error){showToast('Error: '+error.message);return;}
   const autoriz=await _sincronizarDespachosExpedicion(expId);
+  try{ await logAct('expediciones',expId,'','crear','despacho',null,'MRN '+(mrn||'-')+' · '+tra); }catch(_){}
   showToast(autoriz?'✅ Despacho añadido — expedición AUTORIZADA':'✅ Despacho añadido');
   _volverDesdeDespach(expId);
 }
@@ -13042,6 +13069,7 @@ async function actualizarDespacho(despachoId,expId){
     notas:(document.getElementById('ed-not')?.value||'').trim()||null
   }).eq('id',despachoId);
   const autoriz=await _sincronizarDespachosExpedicion(expId);
+  try{ await logAct('expediciones',expId,'','editar','despacho',null,'despacho actualizado'); }catch(_){}
   showToast(autoriz?'✅ Despacho actualizado — expedición AUTORIZADA':'✅ Despacho actualizado');
   _volverDesdeDespach(expId);
 }
@@ -13050,6 +13078,7 @@ async function eliminarDespacho(despachoId,expId){
   if(!confirm('¿Eliminar este despacho?')) return;
   await sb.from('expedicion_despachos').delete().eq('id',despachoId);
   await _sincronizarDespachosExpedicion(expId);
+  try{ await logAct('expediciones',expId,'','eliminar','despacho',null,'despacho eliminado'); }catch(_){}
   showToast('🗑️ Despacho eliminado');
   await loadDespachos(expId);
 }
