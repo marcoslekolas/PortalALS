@@ -2290,6 +2290,7 @@ async function showForm(e, prefill){
     (isEdit && !e.expedicion_id ? '<button class="btn btn-s" onclick="crearExpedicionDesdeAC(\''+e.id+'\')" title="Crear expedición vinculada en Operativas" style="color:var(--b600)">📦 Crear en Operativas</button>' : '')+
     (isEdit && e.expedicion_id  ? '<span style="font-size:11px;color:var(--gr600);padding:0 8px;align-self:center">✅ Expedición vinculada</span>' : '')+
     (!isEdit ? '<button class="btn btn-s" onclick="crearEntradaYExpedicion()" title="Guardar registro y crear expedición en Operativas" style="color:var(--b600)">📦 Guardar y crear en Operativas</button>' : '')+
+    (isEdit ? '<button class="btn btn-s" onclick="abrirDocsEntrada(\''+e.id+'\')" title="Documentos adjuntos (PDF)">📄 Docs</button>' : '')+
     (isEdit ? '<button class="btn btn-s" onclick="emailSinPreaviso(\''+e.id+'\')" title="Email al consignatario: llegada sin preaviso ni documentación" style="color:var(--am700)">📧 Sin preaviso</button>' : '')+
     '<button class="btn btn-p" onclick="'+(isEdit?'saveEntrada(\''+e.id+'\')':'crearEntrada()')+'">💾 '+(isEdit?'Guardar cambios':'Crear entrada')+'</button>';
   openModal();
@@ -3174,6 +3175,107 @@ function buscarEmailEmpresa(empresas, nombre){
   return match?getEmailEmpresa(match):'';
 }
 // Muestra la previsualización del email con campos editables (Para/CC/Asunto/Cuerpo),
+// ══════════════════════════════════════════════════════════════════
+// MÓDULO: Documentos en entradas de Airport Cargo
+// Reutiliza tabla expedicion_docs + bucket expedition-docs.
+//   · Entrada con expedicion_id  → doc COMPARTIDO con la ficha del index.
+//   · Entrada sin vincular        → doc enlazado por airport_cargo_id (no compartido).
+// ══════════════════════════════════════════════════════════════════
+var AC_DOCS_BUCKET='expedition-docs';
+var AC_MAX_PDF_MB=20;
+
+function _acDocKey(e){
+  return e.expedicion_id
+    ? {col:'expedicion_id', val:e.expedicion_id, shared:true}
+    : {col:'airport_cargo_id', val:String(e.id), shared:false};
+}
+
+async function abrirDocsEntrada(entryId){
+  var e=(typeof ALL!=='undefined'?ALL:[]).find(function(x){return String(x.id)===String(entryId);});
+  if(!e){ try{ var r=await sb.from('airport_cargo').select('*').eq('id',entryId).single(); e=r.data; }catch(_){} }
+  if(!e){ toast('Entrada no encontrada'); return; }
+  document.getElementById('m-title').textContent='📄 Documentos — '+formatAwb(e.awb||'');
+  document.getElementById('m-body').innerHTML='<div style="padding:20px;text-align:center;color:var(--g400)">⏳ Cargando…</div>';
+  document.getElementById('m-foot').innerHTML='<button class="btn btn-s" onclick="closeModal()">Cerrar</button>';
+  openModal();
+  window._acDocsCtx={key:_acDocKey(e), e:e};
+  await _acRenderDocs();
+}
+
+async function _acRenderDocs(){
+  var ctx=window._acDocsCtx; if(!ctx) return;
+  var res=await sb.from('expedicion_docs').select('*').eq(ctx.key.col,ctx.key.val).order('created_at',{ascending:false});
+  var docs=res.data||[];
+  var fmt=function(n){return n>=1048576?(n/1048576).toFixed(1)+' MB':Math.round(n/1024)+' KB';};
+  var nota = ctx.key.shared
+    ? '<div style="font-size:12px;color:var(--gr600);background:var(--gr50);border:1px solid var(--gr200);border-radius:8px;padding:8px 10px;margin-bottom:12px">✅ Vinculada a Operativas — estos documentos se comparten con la ficha de la expedición.</div>'
+    : '<div style="font-size:12px;color:var(--am700);background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:12px">⚠️ Entrada sin expedición vinculada — los documentos se guardan aquí pero no se comparten con Operativas. Crea la expedición para compartirlos.</div>';
+  var zona='<div style="margin-bottom:14px">'+
+    '<div style="font-size:12px;color:var(--g500);margin-bottom:8px">Formatos: PDF · Máx. '+AC_MAX_PDF_MB+' MB por archivo.</div>'+
+    '<label style="display:block;border:2px dashed var(--b300);border-radius:10px;padding:18px;text-align:center;cursor:pointer;background:var(--b50)">'+
+      '<input type="file" id="ac-pdf-input" accept=".pdf,application/pdf" multiple style="display:none" onchange="_acSubirDocs(this.files)">'+
+      '<div style="font-size:24px;margin-bottom:4px">📄</div>'+
+      '<div style="font-size:13px;font-weight:600;color:var(--b700)">Clic para seleccionar PDFs</div>'+
+      '<div style="font-size:11px;color:var(--g400);margin-top:3px">Varios a la vez</div>'+
+    '</label><div id="ac-pdf-progress" style="margin-top:8px"></div></div>';
+  var lista = docs.length ? '<div style="display:flex;flex-direction:column;gap:6px">'+docs.map(function(d){
+      var nom=(d.nombre_original||d.file_path.split('/').pop()).replace(/"/g,'&quot;');
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--g50);border-radius:8px;border:1px solid var(--g200)">'+
+        '<span style="font-size:20px;flex-shrink:0">📄</span>'+
+        '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+nom+'">'+nom+'</div>'+
+        '<div style="font-size:11px;color:var(--g400)">'+(d.tamaño_bytes?fmt(d.tamaño_bytes)+' · ':'')+new Date(d.created_at).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})+(d.subido_por?' · '+d.subido_por:'')+'</div></div>'+
+        '<div style="display:flex;gap:4px;flex-shrink:0">'+
+          '<button class="btn btn-s btn-sm" onclick="_acVerDoc(\''+d.file_path+'\')" title="Ver">👁️</button>'+
+          '<button class="btn btn-s btn-sm" onclick="_acDescargarDoc(\''+d.file_path+'\')" title="Descargar">⬇️</button>'+
+          '<button class="btn btn-sm" style="color:var(--rd500);background:var(--rd50);border-color:var(--rd200)" onclick="_acBorrarDoc(\''+d.id+'\',\''+d.file_path+'\')" title="Eliminar">🗑️</button>'+
+        '</div></div>';
+    }).join('')+'</div>' : '<div style="text-align:center;padding:18px;color:var(--g400);font-size:13px">Sin documentos adjuntos</div>';
+  document.getElementById('m-body').innerHTML=nota+zona+lista;
+}
+
+async function _acSubirDocs(files){
+  var ctx=window._acDocsCtx; if(!ctx) return;
+  var arr=Array.from(files||[]).filter(function(f){return f.type==='application/pdf'||/\.pdf$/i.test(f.name);});
+  if(!arr.length){ toast('⚠️ Selecciona PDFs'); return; }
+  var prog=document.getElementById('ac-pdf-progress');
+  var subidos=0, errores=0;
+  for(var i=0;i<arr.length;i++){
+    var f=arr[i];
+    if(prog) prog.innerHTML='<div style="font-size:12px;color:var(--b600);padding:6px 0">⬆️ Subiendo '+(i+1)+'/'+arr.length+': '+f.name+'…</div>';
+    if(f.size>AC_MAX_PDF_MB*1048576){ toast('⚠️ '+f.name+': excede '+AC_MAX_PDF_MB+' MB'); errores++; continue; }
+    var folder = ctx.key.shared ? ctx.key.val : ('ac_'+ctx.key.val);
+    var path=folder+'/'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    var up=await sb.storage.from(AC_DOCS_BUCKET).upload(path,f,{contentType:'application/pdf',upsert:false});
+    if(up.error){ toast('Error subiendo '+f.name+': '+up.error.message); errores++; continue; }
+    var row={file_path:path, nombre_original:f.name, tamaño_bytes:f.size, subido_por:(CU&&(CU.nombre||CU.email))||'—'};
+    row[ctx.key.col]=ctx.key.val;
+    await sb.from('expedicion_docs').insert(row);
+    subidos++;
+  }
+  if(prog) prog.innerHTML='';
+  toast(errores?(subidos+' subido(s), '+errores+' error(es)'):('✅ '+subidos+' documento(s) adjuntado(s)'));
+  await _acRenderDocs();
+}
+
+async function _acVerDoc(filePath){
+  var r=await sb.storage.from(AC_DOCS_BUCKET).createSignedUrl(filePath,3600);
+  if(r.error||!r.data||!r.data.signedUrl){ toast('Error al abrir el documento'); return; }
+  window.open(r.data.signedUrl,'_blank');
+}
+async function _acDescargarDoc(filePath){
+  var r=await sb.storage.from(AC_DOCS_BUCKET).createSignedUrl(filePath,3600);
+  if(r.error||!r.data||!r.data.signedUrl){ toast('Error al descargar'); return; }
+  var a=document.createElement('a'); a.href=r.data.signedUrl; a.download=filePath.split('/').pop().replace(/^\d+_/,'');
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+async function _acBorrarDoc(docId, filePath){
+  if(!confirm('¿Eliminar este documento? Esta acción no se puede deshacer.')) return;
+  await sb.storage.from(AC_DOCS_BUCKET).remove([filePath]);
+  await sb.from('expedicion_docs').delete().eq('id',docId);
+  toast('🗑️ Documento eliminado');
+  await _acRenderDocs();
+}
+
 // picker de adjuntos y botón de envío vía Nylas (Edge Function send-notif).
 // Misma firma que antes → ninguna llamada existente necesita cambiar.
 function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
