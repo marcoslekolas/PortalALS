@@ -1399,23 +1399,15 @@ function trackAwb(evt,awb){
   var clean=fmt.replace(/-/g,'');
   // Abrir pestaña SÍNCRONAMENTE dentro del gesto de usuario — popup blocker lo permite
   var w=window.open('https://www.track-trace.com/aircargo#'+clean,'_blank');
-  toast('🔍 Consultando aerolínea para '+clean+'…');
   // En paralelo, pedir a la edge function la URL directa de resultado
   fetch(
     'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/track-awb?awb='+encodeURIComponent(clean)
-  ).then(function(r){return r.text();}).then(function(txt){
-    var d=null; try{ d=JSON.parse(txt); }catch(_){}
-    if(d&&d.url&&d.url.indexOf('http')===0&&d.url.indexOf('track-trace')===-1){
-      toast('✈️ Redirigiendo → '+(d.url.split('/')[2]||d.url));
-      if(w&&!w.closed) w.location.href=d.url;
-    } else {
-      toast('⚠️ track-awb devolvió: '+((txt||'(vacío)').slice(0,120)));
-      console.warn('track-awb respuesta cruda:', txt);
+  ).then(function(r){return r.json();}).then(function(d){
+    if(d.url&&d.url.indexOf('http')===0&&d.url.indexOf('track-trace')===-1&&w&&!w.closed){
+      // Navegar la pestaña ya abierta a la URL directa del resultado
+      w.location.href=d.url;
     }
-  }).catch(function(e){
-    toast('❌ Error track-awb: '+(e&&e.message||e));
-    console.warn('track-awb error:', e);
-  });
+  }).catch(function(){});
 }
 
 function renderRows(list, tbodyId){

@@ -811,7 +811,7 @@ if('serviceWorker' in navigator){
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.7</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.9</span>
         <span style="font-size:12px;color:var(--g400)">18/06/2026</span>
         <span class="badge bg">Actual</span>
       </div>
@@ -1872,7 +1872,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.7';
+const APP_VERSION = 'v3.12.9';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -3828,22 +3828,6 @@ function navAlmMob(el){
   }
 }
 
-function awbTrackingUrl(awb){
-  if(!awb) return null;
-  // Normalizar: quitar guiones y espacios
-  var clean=awb.replace(/[-\s]/g,'');
-  var prefix=clean.substring(0,3);
-  var number=clean.substring(3);
-  var base=AWB_PORTALS[prefix];
-  if(base){
-    // Si la URL ya tiene ?awb= añadir el número formateado
-    if(base.includes('?awb=')) return base+prefix+'-'+number;
-    return base;
-  }
-  // Fallback: track-trace.com que soporta 244 aerolíneas
-  return 'https://www.track-trace.com/aircargo#'+prefix+'-'+number;
-}
-
 // Delegation for ✈️ AWB tracking — only on Aeropuerto expeditions
 document.addEventListener('click', function(ev){
   var el=ev.target.closest('.als-awb-track');
@@ -3851,21 +3835,24 @@ document.addEventListener('click', function(ev){
 });
 
 function abrirTrackingAWB(awb){
-  var url=awbTrackingUrl(awb);
-  if(!url){showToast('AWB no válido');return;}
-  window.open(url,'_blank');
-  // Copiar AWB al portapapeles por si la web requiere introducirlo manualmente
-  var clean=awb.replace(/[-\s]/g,'');
-  var prefix=clean.substring(0,3);
-  var number=clean.substring(3);
-  var formatted=prefix+'-'+number;
-  if(navigator.clipboard){
-    navigator.clipboard.writeText(formatted).then(function(){
-      showToast('🔍 Abriendo tracking · AWB '+formatted+' copiado');
-    }).catch(function(){showToast('🔍 Abriendo tracking de '+formatted);});
-  } else {
-    showToast('🔍 Abriendo tracking de '+formatted);
-  }
+  if(!awb){showToast('AWB no válido');return;}
+  var clean=String(awb).replace(/[-\s]/g,'');
+  if(clean.length<4){showToast('AWB no válido');return;}
+  var prefix=clean.substring(0,3), number=clean.substring(3), formatted=prefix+'-'+number;
+  // Abrir la pestaña SÍNCRONAMENTE dentro del gesto del usuario (el bloqueador de popups lo permite)
+  var w=window.open('https://www.track-trace.com/aircargo#'+clean,'_blank');
+  showToast('🔍 Abriendo tracking · AWB '+formatted);
+  // En paralelo, pedir a la edge function la URL directa de la aerolínea
+  // (replica el clic de "Track direct" de track-trace y redirige la pestaña)
+  try{
+    fetch(SB_URL+'/functions/v1/track-awb?awb='+encodeURIComponent(clean))
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d&&d.url&&d.url.indexOf('http')===0&&d.url.indexOf('track-trace')===-1&&w&&!w.closed){
+          w.location.href=d.url;
+        }
+      }).catch(function(){});
+  }catch(_){}
 }
 
 function doLogout(){
