@@ -347,6 +347,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div class="sb-sec">Acciones</div>
         <div class="nav-item" onclick="abrirEmail()"><span class="ni">📧</span><span class="nav-item-txt">Notificar consignatario</span></div>
         <div class="nav-item" onclick="abrirEmailCliente()"><span class="ni">👤</span><span class="nav-item-txt">Notificar cliente</span></div>
+        <div class="nav-item" onclick="emailTransportistaSeleccion()"><span class="ni">🚚</span><span class="nav-item-txt">Email transportista</span></div>
         <div class="nav-item" onclick="abrirEmailAeropuerto()"><span class="ni">✈️</span><span class="nav-item-txt">Consulta aeropuerto</span></div>
         <div class="nav-item" onclick="abrirInstrTransp()"><span class="ni">🚛</span><span class="nav-item-txt">Instruc. transportista</span></div>
       </div>
@@ -3293,13 +3294,73 @@ async function _acBorrarDoc(docId, filePath){
   await _acRenderDocs();
 }
 
+// Email al transportista para varias entradas seleccionadas, con los
+// documentos de sus expediciones como adjuntos seleccionables.
+async function emailTransportistaSeleccion(){
+  var ids=getSelected();
+  if(!ids.length){ toast('⚠️ Selecciona al menos una entrada (casilla de la izquierda)'); return; }
+  var entradas=ids.map(function(id){ return (typeof ALL!=='undefined'?ALL:[]).find(function(x){return String(x.id)===String(id);}); }).filter(Boolean);
+  if(!entradas.length){ toast('⚠️ Entradas no encontradas'); return; }
+  toast('📎 Cargando documentos…');
+  var preDocs=[];
+  for(var i=0;i<entradas.length;i++){
+    var e=entradas[i];
+    var key=_acDocKey(e);
+    try{
+      var r=await sb.from('expedicion_docs').select('id,file_path,nombre_original').eq(key.col,key.val).order('created_at');
+      (r.data||[]).forEach(function(d){ preDocs.push({file_path:d.file_path, nombre_original:d.nombre_original, awb:formatAwb(e.awb||'')}); });
+    }catch(_){}
+  }
+  var filas=entradas.map(function(e){
+    return '<tr>'+
+      '<td style="padding:5px 8px;border:1px solid #e5e7eb;font-family:monospace">'+formatAwb(e.awb||'—')+'</td>'+
+      '<td style="padding:5px 8px;border:1px solid #e5e7eb">'+(e.consignatario||'—')+'</td>'+
+      '<td style="padding:5px 8px;border:1px solid #e5e7eb">'+(e.buque||'—')+'</td>'+
+      '<td style="padding:5px 8px;border:1px solid #e5e7eb">'+(e.handling||e.handler||'—')+'</td>'+
+    '</tr>';
+  }).join('');
+  var html=''+
+    '<p>Buenos días,</p>'+
+    '<p>Adjuntamos la documentación correspondiente a las siguientes expediciones de carga aérea para su gestión:</p>'+
+    '<table style="border-collapse:collapse;font-size:12px;margin:10px 0">'+
+      '<thead><tr style="background:#f3f4f6">'+
+        '<th style="padding:5px 8px;border:1px solid #e5e7eb;text-align:left">AWB</th>'+
+        '<th style="padding:5px 8px;border:1px solid #e5e7eb;text-align:left">Consignatario</th>'+
+        '<th style="padding:5px 8px;border:1px solid #e5e7eb;text-align:left">Buque</th>'+
+        '<th style="padding:5px 8px;border:1px solid #e5e7eb;text-align:left">Handler</th>'+
+      '</tr></thead><tbody>'+filas+'</tbody>'+
+    '</table>'+
+    (preDocs.length?('<p>Se adjuntan '+preDocs.length+' documento(s).</p>'):'<p style="color:#b45309">⚠️ Estas expediciones no tienen documentos adjuntos todavía.</p>')+
+    '<p>Quedamos a su disposición para cualquier aclaración.</p>'+
+    '<p>Un saludo,<br>'+((CU&&CU.nombre)||'Departamento de Aduanas')+'<br>Algeciras Logistic Solutions</p>';
+  var asunto='Documentación expediciones aéreas — '+entradas.length+' AWB';
+  abrirVentanaEmail(html, '', asunto, null, preDocs);
+}
+
 // picker de adjuntos y botón de envío vía Nylas (Edge Function send-notif).
 // Misma firma que antes → ninguna llamada existente necesita cambiar.
-function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
+function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC, preDocs){
   var fromEmail='aduana@customsway.eu'; // dirección del módulo aduana (grant de Nylas)
   var fromName=(CU&&CU.nombre)?CU.nombre+' · Dpto. Aduana CUSTOMS-WAY':'Departamento Aduana CUSTOMS-WAY';
   var subjectDecoded='';
   try{subjectDecoded=decodeURIComponent(asunto);}catch(e){subjectDecoded=asunto;}
+
+  // Documentos pre-cargados de las expediciones (adjuntos seleccionables)
+  var preDocsHtml='';
+  if(preDocs && preDocs.length){
+    preDocsHtml='<div style="margin-top:12px">'+
+      '<div style="font-size:12px;color:#6b7280;margin-bottom:5px">📎 Documentos de las expediciones <span style="font-size:10px">(marca cuáles adjuntar)</span></div>'+
+      '<div style="border:1px solid #e5e7eb;border-radius:8px;max-height:170px;overflow-y:auto">'+
+      preDocs.map(function(d){
+        var nm=(d.nombre_original||d.file_path.split('/').pop()).replace(/"/g,'&quot;');
+        return '<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #f3f4f6;cursor:pointer;font-size:12px">'+
+          '<input type="checkbox" class="ep-predoc" checked data-path="'+d.file_path+'" data-name="'+nm+'" style="width:15px;height:15px;accent-color:var(--b600)">'+
+          '<span style="font-size:14px">📄</span>'+
+          '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(d.awb?'<b style="font-family:monospace">'+d.awb+'</b> · ':'')+nm+'</span>'+
+        '</label>';
+      }).join('')+
+      '</div></div>';
+  }
 
   // Eliminar modal previo
   var prev=document.getElementById('email-prev-dlg');if(prev)prev.remove();
@@ -3333,6 +3394,7 @@ function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
           '<input id="ep-files" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.gif,.zip,.txt" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:12px;cursor:pointer;box-sizing:border-box">'+
           '<div id="ep-files-list" style="font-size:11px;color:#6b7280;margin-top:4px"></div>'+
         '</div>'+
+        preDocsHtml+
       '</div>'+
       '<div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;align-items:center;justify-content:flex-end;gap:10px;background:#f9fafb;flex-shrink:0">'+
         '<button id="ep-cancel" style="background:#f3f4f6;color:#374151;border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Cancelar</button>'+
@@ -3372,6 +3434,21 @@ function abrirVentanaEmail(htmlContent, emailDest, asunto, emailCC){
         });
         attachments.push({filename:file.name,content_type:file.type||'application/octet-stream',content:b64});
       }
+    }
+
+    // Adjuntos pre-cargados (documentos de las expediciones) marcados
+    var preChecks=dlg.querySelectorAll('.ep-predoc:checked');
+    for(var pc=0;pc<preChecks.length;pc++){
+      var fp=preChecks[pc].getAttribute('data-path');
+      var fn=preChecks[pc].getAttribute('data-name')||fp.split('/').pop();
+      try{
+        var su=await sb.storage.from('expedition-docs').createSignedUrl(fp,3600);
+        if(su&&su.data&&su.data.signedUrl){
+          var blob=await (await fetch(su.data.signedUrl)).blob();
+          var b64p=await new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(r.result.split(',')[1]);};r.onerror=rej;r.readAsDataURL(blob);});
+          attachments.push({filename:fn,content_type:'application/pdf',content:b64p});
+        }
+      }catch(_){}
     }
 
     // CC automático al buzón principal
