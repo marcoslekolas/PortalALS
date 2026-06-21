@@ -1375,6 +1375,9 @@ function filtrar(){
   // Orden estable: fecha_llegada → hora_llegada (normalizada HH:MM) → id
   function normT(t){if(!t)return'99:99';var s=String(t).trim();return s.indexOf(':')===1?'0'+s:s;}
   f.sort(function(a,b){
+    var inc=function(x){return (!x.fecha_llegada||!x.buque||!(x.consignatario&&String(x.consignatario).trim()))?0:1;};
+    var ia=inc(a),ib=inc(b);
+    if(ia!==ib)return ia-ib;
     var fa=(a.fecha_llegada||'9999').slice(0,10),fb=(b.fecha_llegada||'9999').slice(0,10);
     if(fa!==fb)return fa<fb?-1:1;
     var ha=normT(a.hora_llegada),hb=normT(b.hora_llegada);
