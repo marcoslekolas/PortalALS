@@ -3212,11 +3212,11 @@ async function _acRenderDocs(){
     : '<div style="font-size:12px;color:var(--am700);background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:12px">⚠️ Entrada sin expedición vinculada — los documentos se guardan aquí pero no se comparten con Operativas. Crea la expedición para compartirlos.</div>';
   var zona='<div style="margin-bottom:14px">'+
     '<div style="font-size:12px;color:var(--g500);margin-bottom:8px">Formatos: PDF · Máx. '+AC_MAX_PDF_MB+' MB por archivo.</div>'+
-    '<label style="display:block;border:2px dashed var(--b300);border-radius:10px;padding:18px;text-align:center;cursor:pointer;background:var(--b50)">'+
+    '<label id="ac-drop-zone" style="display:block;border:2px dashed var(--b300);border-radius:10px;padding:18px;text-align:center;cursor:pointer;background:var(--b50)">'+
       '<input type="file" id="ac-pdf-input" accept=".pdf,application/pdf" multiple style="display:none" onchange="_acSubirDocs(this.files)">'+
       '<div style="font-size:24px;margin-bottom:4px">📄</div>'+
       '<div style="font-size:13px;font-weight:600;color:var(--b700)">Clic para seleccionar PDFs</div>'+
-      '<div style="font-size:11px;color:var(--g400);margin-top:3px">Varios a la vez</div>'+
+      '<div style="font-size:11px;color:var(--g400);margin-top:3px">O arrastra aquí los PDFs · varios a la vez</div>'+
     '</label><div id="ac-pdf-progress" style="margin-top:8px"></div></div>';
   var lista = docs.length ? '<div style="display:flex;flex-direction:column;gap:6px">'+docs.map(function(d){
       var nom=(d.nombre_original||d.file_path.split('/').pop()).replace(/"/g,'&quot;');
@@ -3231,6 +3231,23 @@ async function _acRenderDocs(){
         '</div></div>';
     }).join('')+'</div>' : '<div style="text-align:center;padding:18px;color:var(--g400);font-size:13px">Sin documentos adjuntos</div>';
   document.getElementById('m-body').innerHTML=nota+zona+lista;
+  // Arrastrar y soltar PDFs sobre la zona
+  var zoneEl=document.getElementById('ac-drop-zone');
+  if(zoneEl){
+    zoneEl.addEventListener('dragover', function(ev){ ev.preventDefault(); zoneEl.style.background='var(--b100)'; zoneEl.style.borderColor='var(--b500)'; });
+    zoneEl.addEventListener('dragleave', function(){ zoneEl.style.background='var(--b50)'; zoneEl.style.borderColor='var(--b300)'; });
+    zoneEl.addEventListener('drop', function(ev){
+      ev.preventDefault(); zoneEl.style.background='var(--b50)'; zoneEl.style.borderColor='var(--b300)';
+      var files=[];
+      var dt=ev.dataTransfer; if(!dt) return;
+      if(dt.items && dt.items.length){ for(var i=0;i<dt.items.length;i++){ if(dt.items[i].kind==='file'){ var f=dt.items[i].getAsFile(); if(f) files.push(f); } } }
+      if(!files.length && dt.files && dt.files.length){ files=Array.prototype.slice.call(dt.files); }
+      var pdfs=files.filter(function(f){return f.type==='application/pdf'||/\.pdf$/i.test(f.name);});
+      if(pdfs.length){ _acSubirDocs(pdfs); }
+      else if(files.length){ toast('⚠️ Solo se admiten PDF. Convierte el archivo antes de soltarlo.'); }
+      else { toast('⚠️ No se detectó ningún archivo. Si arrastras desde Outlook escritorio, guarda el adjunto y suéltalo.'); }
+    });
+  }
 }
 
 async function _acSubirDocs(files){
