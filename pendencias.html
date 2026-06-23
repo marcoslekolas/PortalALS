@@ -709,6 +709,37 @@ function imprimirEl(){
 
 // ── Toast ────────────────────────────────────────────────────────
 let _tt;
+// ── Captura centralizada de errores → tabla error_log (compartida) ──
+var _lastErrSig='', _lastErrTs=0;
+async function logError(contexto, err, extra){
+  try{
+    if(typeof sb==='undefined' || !sb) return;
+    var msg = (err && (err.message || (''+err))) || String(err||'');
+    var stack = (err && err.stack) || '';
+    if(extra){ try{ msg += ' | '+(typeof extra==='string'?extra:JSON.stringify(extra)); }catch(_){} }
+    var sig=(contexto||'')+'|'+msg, now=Date.now();
+    if(sig===_lastErrSig && (now-_lastErrTs)<5000) return;
+    _lastErrSig=sig; _lastErrTs=now;
+    var _cu=(typeof CU!=='undefined'&&CU)?CU:((typeof CU_GLOBAL!=='undefined'&&CU_GLOBAL)?CU_GLOBAL:null);
+    await sb.from('error_log').insert({
+      contexto:String(contexto||'').slice(0,200),
+      mensaje:String(msg).slice(0,2000),
+      stack:String(stack).slice(0,4000),
+      modulo:'⚠️ pendencias.html',
+      url:String(location.pathname+location.hash).slice(0,300),
+      usuario_id:_cu?(_cu.id||null):null,
+      usuario_nombre:_cu?(_cu.nombre||_cu.email||null):null,
+      user_agent:String(navigator.userAgent||'').slice(0,300)
+    });
+  }catch(_){}
+}
+window.logError=logError;
+window.addEventListener('error',function(ev){
+  try{ if(!ev.error && (!ev.message||ev.message==='Script error.')) return;
+    logError('window.onerror', ev.error||ev.message, ev.filename?((ev.filename.split('/').pop())+':'+ev.lineno):''); }catch(_){}
+});
+window.addEventListener('unhandledrejection',function(ev){ try{ logError('promesa no gestionada', ev.reason); }catch(_){} });
+
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(_tt);_tt=setTimeout(()=>t.classList.remove('show'),2600);}
 
 // ── Teclado ──────────────────────────────────────────────────────
