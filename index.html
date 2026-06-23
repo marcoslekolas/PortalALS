@@ -811,7 +811,7 @@ if('serviceWorker' in navigator){
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.10</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.11</span>
         <span style="font-size:12px;color:var(--g400)">18/06/2026</span>
         <span class="badge bg">Actual</span>
       </div>
@@ -1872,7 +1872,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.10';
+const APP_VERSION = 'v3.12.11';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -3942,6 +3942,41 @@ async function logActMod(tabla, rid, rnom, accion, campo, vant, vnew, modulo){
     });
   } catch(e){ console.warn('logActMod error:', e.message); }
 }
+
+// ── Captura centralizada de errores → tabla error_log + log de actividad ──
+let _lastErrSig='', _lastErrTs=0;
+async function logError(contexto, err, extra){
+  try{
+    if(typeof sb==='undefined' || !sb) return;
+    var msg = (err && (err.message || (''+err))) || String(err||'');
+    var stack = (err && err.stack) || '';
+    if(extra) { try{ msg += ' | '+(typeof extra==='string'?extra:JSON.stringify(extra)); }catch(_){} }
+    var sig = (contexto||'')+'|'+msg;
+    var now = Date.now();
+    if(sig===_lastErrSig && (now-_lastErrTs)<5000) return; // dedupe 5s
+    _lastErrSig=sig; _lastErrTs=now;
+    await sb.from('error_log').insert({
+      contexto: String(contexto||'').slice(0,200),
+      mensaje: String(msg).slice(0,2000),
+      stack: String(stack).slice(0,4000),
+      modulo: '⚠️ '+((location.pathname.split('/').pop())||'index.html'),
+      url: String(location.pathname+location.hash).slice(0,300),
+      usuario_id: (typeof CU!=='undefined'&&CU)?(CU.id||null):null,
+      usuario_nombre: (typeof CU!=='undefined'&&CU)?(CU.nombre||CU.email||null):null,
+      user_agent: String(navigator.userAgent||'').slice(0,300)
+    });
+  }catch(_){ /* el logger nunca debe romper nada */ }
+}
+window.logError = logError;
+window.addEventListener('error', function(ev){
+  try{
+    if(!ev.error && (!ev.message || ev.message==='Script error.')) return; // cross-origin sin detalle
+    logError('window.onerror', ev.error||ev.message, ev.filename?((ev.filename.split('/').pop())+':'+ev.lineno):'');
+  }catch(_){}
+});
+window.addEventListener('unhandledrejection', function(ev){
+  try{ logError('promesa no gestionada', ev.reason); }catch(_){}
+});
 
 const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',camiones:'Camiones consolidados',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',mensual:'Vista mensual',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas',rendimiento:'Rendimiento del equipo',ejecutivo:'Estadísticas'};
 let CV='dashboard';
@@ -11742,16 +11777,17 @@ async function trazabilidadExp(expId, ref){
 }
 
 async function loadLog(){
-  const [actR, authR] = await Promise.all([
+  const [actR, authR, errR] = await Promise.all([
     sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(200),
-    sb.from('als_auth_log').select('*').order('created_at',{ascending:false}).limit(100)
+    sb.from('als_auth_log').select('*').order('created_at',{ascending:false}).limit(100),
+    sb.from('error_log').select('*').order('created_at',{ascending:false}).limit(100)
   ]);
   const logBadge = a => {
     const m = {
       'crear':'bg', 'eliminar':'br', 'editar':'bb',
       'email_aduanas':'ba', 'email_cliente':'ba', 'email_confronta':'ba',
       'login_ok':'bg', 'logout':'bb', 'login_fail':'br', 'blocked':'br',
-      'password_change':'ba', 'alerta_llegada':'ba'
+      'password_change':'ba', 'alerta_llegada':'ba', 'error':'br'
     };
     return `<span class="badge ${m[a]||'bb'}">${a||'—'}</span>`;
   };
@@ -11779,10 +11815,21 @@ async function loadLog(){
     usuario: l.usuario_nombre||'—',
     fecha: l.created_at,
   }));
-  const todos = [...actRows, ...authRows].sort((a,b) => new Date(b.fecha) - new Date(a.fecha)).slice(0,300);
+  const errRows = (errR.data||[]).map(l => ({
+    tipo: 'error',
+    accion: 'error',
+    registro: l.contexto||'error',
+    modulo: l.modulo||'⚠️ Error',
+    campo: '—',
+    v_ant: '—',
+    v_new: (l.mensaje||'')+(l.stack?(' · '+String(l.stack).split('\n')[0]):''),
+    usuario: l.usuario_nombre||'—',
+    fecha: l.created_at,
+  }));
+  const todos = [...actRows, ...authRows, ...errRows].sort((a,b) => new Date(b.fecha) - new Date(a.fecha)).slice(0,300);
 
   const head = `<tr><th>Acción</th><th>Registro</th><th>Módulo</th><th>Campo</th><th>Valor anterior</th><th>Valor nuevo</th><th>Usuario</th><th>Fecha y hora</th></tr>`;
-  const body = todos.map(l => `<tr ${l.tipo==='auth'?'style="background:var(--b50)"':''}>
+  const body = todos.map(l => `<tr ${l.tipo==='auth'?'style="background:var(--b50)"':(l.tipo==='error'?'style="background:#fef2f2"':'')}>
     <td>${logBadge(l.accion)}</td>
     <td><div class="fw">${l.registro}</div></td>
     <td class="sm"><strong>${l.modulo}</strong></td>
