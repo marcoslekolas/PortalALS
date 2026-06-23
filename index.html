@@ -811,7 +811,7 @@ if('serviceWorker' in navigator){
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.11</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.12</span>
         <span style="font-size:12px;color:var(--g400)">18/06/2026</span>
         <span class="badge bg">Actual</span>
       </div>
@@ -1872,7 +1872,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.11';
+const APP_VERSION = 'v3.12.12';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -3215,11 +3215,12 @@ async function subirFotoStorage(file, entidad, entidadId, tipo){
       storage_url:urlData.publicUrl, storage_path:path,
       subida_por:CU?.id
     });
-    if(insErr){ window._lastFotoError='Registro: '+(insErr.message||insErr); }
+    if(insErr){ window._lastFotoError='Registro: '+(insErr.message||insErr); try{logError('registrar foto', insErr, entidad+'/'+entidadId);}catch(_){} }
     return urlData.publicUrl;
   }catch(e){
     window._lastFotoError='Subida: '+(e?.message||e);
     console.warn('subirFotoStorage error:', e?.message||e);
+    try{logError('subir foto', e, entidad+'/'+entidadId+'/'+tipo);}catch(_){}
     return null;
   }
 }
@@ -13431,10 +13432,12 @@ async function _abrirEmailHTML(opts){
     let errMsg=''; try{ const j=JSON.parse(errBody); errMsg=j.detail||j.error||j.message||errBody; }catch(_){ errMsg=errBody; }
     console.error('send-notif error',resp.status,errMsg);
     showToast('⚠️ Error '+resp.status+': '+(errMsg||'').substring(0,120));
+    try{logError('enviar email', errMsg||('status '+resp.status), 'to: '+to);}catch(_){}
     return false;
   }catch(e){
     console.warn('_abrirEmailHTML:',e);
     showToast('⚠️ No se pudo contactar con el servidor de email');
+    try{logError('enviar email (red)', e);}catch(_){}
     return false;
   }
 }
@@ -15080,7 +15083,7 @@ async function guardarExpedicion(id){if(!checkOnline())return;
     }
   }
   const {error}=await sb.from('expediciones').update(obj).eq('id',id);
-  if(error){alert('Error al guardar: '+error.message);return;}
+  if(error){alert('Error al guardar: '+error.message);try{logError('guardar expedición', error, 'exp '+id);}catch(_){}return;}
   await logAct('expediciones',id,'','editar','múltiples','—','Guardado por '+CU?.nombre);
   // Notificar al almacén si se acaba de autorizar
   if(window._pendingNotifAutorizado === id){
