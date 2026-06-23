@@ -1,78 +1,90 @@
 // ── ALS Portal Operativo — Service Worker ────────────────────────────
-// Versión: actualizar este string al desplegar cambios importantes
-const CACHE_NAME = 'als-cw-v1';
+// La versión se recibe en el query del registro: navigator.serviceWorker
+// .register('./sw.js?v=' + APP_VERSION). Así APP_VERSION (en index.html)
+// es la ÚNICA fuente de verdad: al subir versión, cambia el nombre de la
+// caché, se purga la antigua y se detecta la actualización automáticamente.
+const SW_VER = (function(){
+  try { return new URL(self.location.href).searchParams.get('v') || 'v0'; }
+  catch(e){ return 'v0'; }
+})();
+const CACHE_NAME = 'als-cw-' + SW_VER;
 
-// Recursos que se cachean en instalación (shell de la app)
-const PRECACHE = [
-  './',
-  './index.html',
-];
+// Shell mínimo que se cachea en instalación
+const PRECACHE = ['./', './index.html'];
 
-// ── Instalación: cachear el shell ─────────────────────────────────────
+// ── Instalación: cachear el shell y activar de inmediato ──────────────
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(PRECACHE))
+      .then(cache => cache.addAll(PRECACHE.map(u => new Request(u, {cache:'reload'}))))
       .then(() => self.skipWaiting())
+      .catch(() => self.skipWaiting())
   );
 });
 
-// ── Activación: limpiar caches antiguas ───────────────────────────────
+// ── Activación: limpiar TODAS las caches que no sean la actual ─────────
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(
-        keys
-          .filter(key => key !== CACHE_NAME)
-          .map(key => caches.delete(key))
-      )
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
 
-// ── Fetch: estrategia según tipo de recurso ───────────────────────────
+// ── Fetch ─────────────────────────────────────────────────────────────
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-
-  // IGNORAR: requests que no son http(s) — extensiones del navegador
-  // (chrome-extension://, moz-extension://), blob:, data:, etc.
-  // Si intentamos cache.put() sobre estos esquemas, el browser lanza error.
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    return; // dejar pasar al browser sin interceptar
-  }
-
-  // Supabase, OpenRouter, CDN externos → siempre Network (sin caché)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
   if (
     url.hostname.includes('supabase.co') ||
     url.hostname.includes('openrouter.ai') ||
     url.hostname.includes('cdn.jsdelivr.net') ||
     url.hostname.includes('fonts.googleapis.com') ||
     url.hostname.includes('fonts.gstatic.com')
-  ) {
-    return; // dejar pasar al browser sin interceptar
-  }
-
-  // Solo manejar GET (y mismo origen — defensa extra contra extensiones)
+  ) return;
   if (event.request.method !== 'GET') return;
   if (url.origin !== self.location.origin) return;
 
-  // Para el index.html y assets propios: Network First, fallback a caché
+  // ¿Navegación / documento HTML? → SIEMPRE fresco de red (no-store)
+  const isHTML =
+    event.request.mode === 'navigate' ||
+    url.pathname.endsWith('.html') ||
+    url.pathname.endsWith('/');
+
+  if (isHTML) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' })
+        .then(response => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then(c => c || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // Resto de assets propios: Network First con actualización de caché
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // Actualizar caché con la respuesta fresca
         if (response && response.status === 200 && response.type === 'basic') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
         return response;
       })
-      .catch(() => {
-        // Sin red → servir desde caché
-        return caches.match(event.request)
-          .then(cached => cached || caches.match('./index.html'));
-      })
+      .catch(() => caches.match(event.request))
   );
+});
+
+// Permitir que la página fuerce la activación del SW nuevo
+self.addEventListener('message', event => {
+  if (event.data === 'skipWaiting' || (event.data && event.data.type === 'skipWaiting')) {
+    self.skipWaiting();
+  }
 });
 
 // ── Push notifications (si se implementan en el futuro) ───────────────
