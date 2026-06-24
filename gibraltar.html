@@ -1024,10 +1024,22 @@ function setupMMDrag(svg) {
 // ═══ ACCESS CONTROL ═══
 async function checkAccess(){
   let cu=null;
-  try{ cu=JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null'); }catch(e){}
-  if(!cu||cu.rol!=='admin'){
-    document.getElementById('gate').style.display='flex';
-    return false;
+  // Auth actual = PortalGuard (Supabase Auth). El als_cu heredado ya no se
+  // escribe tras la migración, por eso el admin caía al gate. Se usa PortalGuard
+  // y solo se recurre al método antiguo si PortalGuard no estuviera cargado.
+  if(window.PortalGuard){
+    try{ if(!PortalGuard.ready) await PortalGuard.require('configuracion'); }catch(e){}
+    cu = PortalGuard.CU || window.CU || null;
+    if(!cu || !PortalGuard.esAdmin){
+      document.getElementById('gate').style.display='flex';
+      return false;
+    }
+  } else {
+    try{ cu=JSON.parse(sessionStorage.getItem('als_cu')||localStorage.getItem('als_cu')||'null'); }catch(e){}
+    if(!cu||cu.rol!=='admin'){
+      document.getElementById('gate').style.display='flex';
+      return false;
+    }
   }
   // Verify still active in Supabase (solo si la tabla es accesible)
   try{
