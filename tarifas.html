@@ -520,11 +520,13 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
 // ══════════════════════════════════════════════════════
 var CU = null;
 try {
-  CU = JSON.parse(sessionStorage.getItem('als_cu') || localStorage.getItem('als_cu') || 'null');
+  CU = (window.PortalGuard && window.PortalGuard.CU) || window.CU || JSON.parse(sessionStorage.getItem('als_cu') || localStorage.getItem('als_cu') || 'null');
 } catch(e) {}
 
 var _cuRolesTar = CU ? [CU.rol].concat(CU.roles||[]).filter(Boolean) : [];
-if (!CU || !_cuRolesTar.some(function(r){return ['admin','aduanas','oficina','facturacion'].indexOf(r)>=0;})) {
+// Solo bloquea si HAY usuario y NO tiene rol válido. Si la sesión aún no está
+// cargada (auto-restauración), no bloquea aquí: PortalGuard.require lo decide.
+if (CU && !_cuRolesTar.some(function(r){return ['admin','aduanas','oficina','facturacion'].indexOf(r)>=0;})) {
   document.body.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f8f9fa">
       <div style="text-align:center;padding:2rem">

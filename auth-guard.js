@@ -209,6 +209,14 @@
 
     // Compatibilidad con código existente que lee window.CU
     try { window.CU = CU; } catch(e) {}
+    // Compatibilidad con módulos heredados que leen 'als_cu' de storage.
+    // Se escribe SIEMPRE que carga la sesión (login Y auto-restauración),
+    // para que guards antiguos (gibraltar, tarifas, taric...) no fallen.
+    try {
+      var _s = JSON.stringify(CU);
+      sessionStorage.setItem('als_cu', _s);
+      localStorage.setItem('als_cu', _s);
+    } catch(e) {}
 
     listeners.ready.forEach(fn => { try { fn(CU); } catch(e) { console.warn(e); } });
     return { ok: true, CU };
