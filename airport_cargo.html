@@ -341,7 +341,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
         <div class="nav-item active" onclick="nav('dashboard',this)"><span class="ni">🏠</span><span class="nav-item-txt">Dashboard</span></div>
         <div class="nav-item" onclick="nav('entradas',this)"><span class="ni">📋</span><span class="nav-item-txt">Entradas pendientes</span></div>
         <div class="nav-item" onclick="nav('finalizadas',this)"><span class="ni">✅</span><span class="nav-item-txt">Finalizadas / Historial</span></div>
-        <div class="nav-item" onclick="nav('resumen',this)"><span class="ni">📊</span><span class="nav-item-txt">Resumen mensual</span></div>
+        <div class="nav-item" onclick="nav('resumen',this)"><span class="ni">📊</span><span class="nav-item-txt">Análisis de datos</span></div>
         <div class="nav-item" onclick="nav('tarifas',this)"><span class="ni">💰</span><span class="nav-item-txt">Tarifas por año</span></div>
         <div class="nav-item" onclick="nav('costes',this)"><span class="ni">⚖️</span><span class="nav-item-txt">Control de costes</span></div>
         <div class="sb-sec">Acciones</div>
@@ -448,8 +448,11 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
       <!-- RESUMEN -->
       <div class="view" id="view-resumen">
         <div class="ph">
-          <div class="pt">📊 Resumen mensual</div>
+          <div class="pt">📊 Análisis de datos</div>
           <div style="display:flex;gap:8px;align-items:center">
+            <select id="res-basis" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadResumen()" title="Fecha base del análisis">
+              <option value="llegada">Por llegada</option><option value="retirada">Por retirada</option>
+            </select>
             <select id="res-y" class="fi fs" style="width:auto;padding:5px 28px 5px 10px" onchange="loadResumen()">
               <option value="2026">2026</option><option value="2025">2025</option>
             </select>
@@ -1551,27 +1554,119 @@ function exportarAirportCSV(){
 }
 async function loadResumen(){
   var year=parseInt(document.getElementById('res-y').value)||2026;
-  if(!ALL.length)await loadAll();
-  var yd=ALL.filter(function(e){return e.fecha_retirada&&new Date(e.fecha_retirada).getFullYear()===year;});
-  var byM={};
+  var basisEl=document.getElementById('res-basis');
+  var basis=basisEl?basisEl.value:'llegada';
+  var dateField=basis==='retirada'?'fecha_retirada':'fecha_llegada';
+  var cont=document.getElementById('res-content');
+  if(!ALL.length) await loadAll();
+  cont.innerHTML='<p style="color:var(--g500);padding:16px">Analizando datos…</p>';
+
+  var yd=ALL.filter(function(e){ return e[dateField] && new Date(e[dateField]).getFullYear()===year; });
+  if(!yd.length){ cont.innerHTML='<p style="color:var(--g500);padding:24px;text-align:center">Sin datos para '+year+' ('+(basis==='retirada'?'retiradas':'llegadas')+').</p>'; return; }
+
+  var MESES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  var AIRLINES={'014':'Air Canada','016':'United','020':'Lufthansa','045':'LATAM','057':'Air France','064':'CSA','074':'KLM','075':'Iberia','081':'Qantas','105':'American A.','114':'Air Astana','125':'British A.','131':'JAL','139':'Cargolux','157':'Qatar','172':'Cargolux It.','176':'Emirates','180':'Korean Air','205':'Aeroméxico','214':'Air India','217':'Thai','220':'Lufthansa','230':'China Air','232':'MEA','235':'Turkish','245':'DHL','250':'Volga-Dnepr','257':'Swiss','262':'Saudia','406':'DHL','555':'Aeroflot','607':'Etihad','618':'Singapore','625':'Cathay','695':'Air China','706':'Kenya A.','724':'Swiss','729':'TAP','768':'Ethiopian','784':'AeroUnion','807':'FedEx','988':'Asiana'};
+
+  var totKg=0,totBultos=0,totCoste=0,despachadas=0,conEstancia=0,sumEstancia=0;
+  var byMes={},byCliente={},byConsig={},byHandling={},byBuque={},byAero={};
+  var clientes={},consigs={};
+  for(var mi=1;mi<=12;mi++) byMes[mi]={n:0,kg:0,blt:0,cst:0};
+
+  function acc(o,k,kg,cst){ if(!o[k])o[k]={n:0,kg:0,cst:0}; o[k].n++; o[k].kg+=kg; o[k].cst+=cst; }
+
   yd.forEach(function(e){
-    var m=calcMes(e.fecha_retirada);
-    if(!byM[m])byM[m]={n:0,kg:0,t:0,h:{}};
-    byM[m].n++;byM[m].kg+=parseFloat(e.kilos_tasables)||0;byM[m].t+=calcTotal(e);
-    if(e.handling)byM[m].h[e.handling]=(byM[m].h[e.handling]||0)+1;
+    var kg=parseFloat(e.kilos_tasables)||0, blt=parseInt(e.bultos)||0, cst=(typeof calcTotal==='function'?calcTotal(e):0)||0;
+    totKg+=kg; totBultos+=blt; totCoste+=cst;
+    if(e.despachado) despachadas++;
+    var m=new Date(e[dateField]).getMonth()+1;
+    if(byMes[m]){ byMes[m].n++; byMes[m].kg+=kg; byMes[m].blt+=blt; byMes[m].cst+=cst; }
+    if(e.fecha_llegada && e.fecha_retirada){
+      var dd=(new Date(e.fecha_retirada)-new Date(e.fecha_llegada))/86400000;
+      if(dd>=0 && dd<365){ sumEstancia+=dd; conEstancia++; }
+    }
+    var cli=((e.cliente||'')+'').trim()||'—';
+    var con=((e.consignatario||'')+'').trim()||'—';
+    var han=((e.handling||'')+'').trim()||'—';
+    var buq=((e.buque||'')+'').trim()||'—';
+    var pre=((e.awb||'')+'').replace(/[-\s]/g,'').slice(0,3);
+    var aero= pre?(AIRLINES[pre]?(AIRLINES[pre]+' ('+pre+')'):('Prefijo '+pre)):'—';
+    acc(byCliente,cli,kg,cst); acc(byConsig,con,kg,cst); acc(byHandling,han,kg,cst); acc(byBuque,buq,kg,cst);
+    if(pre) acc(byAero,aero,kg,cst);
+    if(cli!=='—') clientes[cli]=1; if(con!=='—') consigs[con]=1;
   });
-  var rows=Object.entries(byM).sort(function(a,b){return a[0].localeCompare(b[0]);});
-  var grand=rows.reduce(function(a,r){return a+r[1].t;},0);
-  var trows=rows.map(function(r){var m=r[0],d=r[1];return'<tr><td class="fw">'+m+'</td><td>'+d.n+'</td><td>'+d.kg.toLocaleString('es-ES')+' kg</td><td>'+(d.h['Swissport Cargo']||0)+'</td><td>'+(d.h['Groundforce AGP']||0)+'</td><td style="font-weight:700;color:var(--b700);font-family:var(--mono)">'+fc(d.t)+'</td></tr>';}).join('');
-  document.getElementById('res-content').innerHTML=
-    '<div class="sum-grid">'+
-    '<div class="sum-card"><div class="sum-card-title">Total '+year+'</div><div class="sum-card-val">'+fc(grand)+'</div></div>'+
-    '<div class="sum-card"><div class="sum-card-title">Entradas '+year+'</div><div class="sum-card-val">'+yd.length+'</div></div>'+
+
+  var nClientes=Object.keys(clientes).length, nConsig=Object.keys(consigs).length;
+  var estanciaMedia= conEstancia? (sumEstancia/conEstancia) : null;
+
+  // estilos reutilizables
+  var CB='background:var(--w,#fff);border:1px solid var(--g200,#e5e7eb);border-radius:10px;padding:14px;margin-bottom:14px';
+  var CH='font-weight:700;font-size:14px;margin-bottom:10px;color:var(--g800,#1f2937)';
+  var COLS='display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px';
+
+  function kpi(lbl,val,sub){ return '<div class="sum-card"><div class="sum-card-title">'+lbl+'</div><div class="sum-card-val">'+val+'</div>'+(sub?'<div style="font-size:11px;color:var(--g500);margin-top:2px">'+sub+'</div>':'')+'</div>'; }
+  var kpis='<div class="sum-grid" style="margin-bottom:16px">'+
+    kpi('Expediciones', yd.length.toLocaleString('es-ES'), (basis==='retirada'?'retiradas':'llegadas')+' '+year)+
+    kpi('Kilos tasables', Math.round(totKg).toLocaleString('es-ES')+' kg')+
+    kpi('Bultos', totBultos.toLocaleString('es-ES'))+
+    kpi('Clientes', nClientes)+
+    kpi('Consignatarios', nConsig)+
+    kpi('Facturación est.', (typeof fc==='function'?fc(totCoste):Math.round(totCoste)+' €'))+
+    kpi('Despachadas', Math.round(despachadas/yd.length*100)+'%', despachadas+' de '+yd.length)+
+    (estanciaMedia!=null? kpi('Estancia media', estanciaMedia.toFixed(1)+' días', 'llegada → retirada') : '')+
+    '</div>';
+
+  var maxMes=Math.max.apply(null,[1].concat(Object.keys(byMes).map(function(k){return byMes[k].n;})));
+  var barsMensual='';
+  for(var mm=1;mm<=12;mm++){
+    var d=byMes[mm], hh=Math.round(d.n/maxMes*100);
+    barsMensual+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0">'+
+      '<div style="font-size:10px;color:var(--g600);height:13px">'+(d.n||'')+'</div>'+
+      '<div style="width:100%;max-width:36px;height:110px;display:flex;align-items:flex-end;background:var(--g100,#f1f5f9);border-radius:4px;overflow:hidden">'+
+        '<div title="'+MESES[mm-1]+': '+d.n+' exp · '+Math.round(d.kg).toLocaleString('es-ES')+' kg · '+(typeof fc==='function'?fc(d.cst):Math.round(d.cst)+' €')+'" style="width:100%;height:'+hh+'%;background:var(--b500,#3b82f6);border-radius:4px 4px 0 0"></div>'+
+      '</div>'+
+      '<div style="font-size:10px;color:var(--g500)">'+MESES[mm-1]+'</div>'+
+    '</div>';
+  }
+  var chartMensual='<div style="'+CB+'"><div style="'+CH+'">📈 Movimientos mensuales '+year+'</div>'+
+    '<div style="display:flex;align-items:flex-end;gap:5px;padding:6px 2px">'+barsMensual+'</div>'+
+    '<div style="font-size:11px;color:var(--g400);text-align:right;margin-top:4px">Barras = nº expediciones · pasa el ratón para kg y facturación</div></div>';
+
+  function ranking(titulo, obj, top, metric, color){
+    var arr=Object.keys(obj).map(function(k){return {k:k,n:obj[k].n,kg:obj[k].kg,cst:obj[k].cst};});
+    arr=arr.filter(function(x){return x.k!=='—';});
+    arr.sort(function(a,b){ return metric==='kg'? b.kg-a.kg : (metric==='cst'? b.cst-a.cst : b.n-a.n); });
+    arr=arr.slice(0,top||10);
+    var max=Math.max.apply(null,[1].concat(arr.map(function(x){return metric==='kg'?x.kg:(metric==='cst'?x.cst:x.n);})));
+    var col=color||'var(--b500,#3b82f6)';
+    var rows=arr.map(function(x){
+      var v=metric==='kg'?x.kg:(metric==='cst'?x.cst:x.n), w=Math.round(v/max*100);
+      var label=metric==='kg'?(Math.round(x.kg).toLocaleString('es-ES')+' kg'):(metric==='cst'?(typeof fc==='function'?fc(x.cst):Math.round(x.cst)+' €'):(x.n+' exp'));
+      return '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:3px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+x.k.replace(/"/g,'&quot;')+'">'+x.k+'</span><span style="color:var(--g600);font-family:var(--mono);white-space:nowrap">'+label+'</span></div>'+
+        '<div style="height:8px;background:var(--g100,#f1f5f9);border-radius:4px;overflow:hidden"><div style="width:'+w+'%;height:100%;background:'+col+';border-radius:4px"></div></div></div>';
+    }).join('');
+    if(!rows) rows='<p style="font-size:12px;color:var(--g400)">Sin datos</p>';
+    return '<div style="'+CB+'"><div style="'+CH+'">'+titulo+'</div>'+rows+'</div>';
+  }
+
+  // Handling con tabla (n, kg, %, coste)
+  var hanArr=Object.keys(byHandling).filter(function(k){return k!=='—';}).map(function(k){return {k:k,n:byHandling[k].n,kg:byHandling[k].kg,cst:byHandling[k].cst};}).sort(function(a,b){return b.n-a.n;});
+  var hanRows=hanArr.map(function(x){
+    return '<tr><td class="fw">'+x.k+'</td><td>'+x.n+'</td><td>'+Math.round(x.n/yd.length*100)+'%</td><td>'+Math.round(x.kg).toLocaleString('es-ES')+' kg</td><td style="font-family:var(--mono);font-weight:700;color:var(--b700)">'+(typeof fc==='function'?fc(x.cst):Math.round(x.cst)+' €')+'</td></tr>';
+  }).join('');
+  var handTable='<div style="'+CB+'"><div style="'+CH+'">✈️ Por handling</div>'+
+    '<div class="tc"><table class="tbl"><thead><tr><th>Handler</th><th>Exp.</th><th>%</th><th>Kilos</th><th>Facturación</th></tr></thead><tbody>'+
+    (hanRows||'<tr><td colspan="5" style="color:var(--g400)">Sin datos</td></tr>')+'</tbody></table></div></div>';
+
+  cont.innerHTML = kpis + chartMensual + handTable +
+    '<div style="'+COLS+'">'+
+      ranking('🏢 Top clientes (por expediciones)', byCliente, 10, 'n')+
+      ranking('📦 Top consignatarios (por expediciones)', byConsig, 10, 'n')+
     '</div>'+
-    '<div class="tc"><table class="tbl"><thead><tr><th>Mes</th><th>Entradas</th><th>Kilos</th><th>Swissport Cargo</th><th>Groundforce AGP</th><th>Total</th></tr></thead><tbody>'+
-    trows+
-    '<tr style="background:var(--b50);font-weight:700"><td>TOTAL '+year+'</td><td>'+yd.length+'</td><td>—</td><td>—</td><td>—</td><td style="color:var(--b700);font-family:var(--mono)">'+fc(grand)+'</td></tr>'+
-    '</tbody></table></div>';
+    '<div style="'+COLS+'">'+
+      ranking('⚖️ Top clientes (por kilos)', byCliente, 10, 'kg', 'var(--gr500,#10b981)')+
+      ranking('🚢 Top buques (por expediciones)', byBuque, 10, 'n', 'var(--am500,#f59e0b)')+
+    '</div>'+
+    ranking('🛫 Por aerolínea (prefijo AWB)', byAero, 12, 'n', 'var(--b400,#60a5fa)');
 }
 
 // ── TARIFAS ──────────────────────────────────────────────
