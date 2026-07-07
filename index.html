@@ -811,7 +811,7 @@ if('serviceWorker' in navigator){
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.15</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.16</span>
         <span style="font-size:12px;color:var(--g400)">18/06/2026</span>
         <span class="badge bg">Actual</span>
       </div>
@@ -1873,7 +1873,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.15';
+const APP_VERSION = 'v3.12.16';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -5940,10 +5940,24 @@ async function notifAlmacenistaCamion(camionId){
 var _catalogoCache = null;
 async function _loadCatalogo(){
   if(_catalogoCache) return _catalogoCache;
+  const mapa={}; // nombre en minúsculas → {nombre, imo}
+  function add(v){
+    if(!v||!v.nombre) return;
+    const nom=(''+v.nombre).trim(); if(!nom) return;
+    const k=nom.toLowerCase();
+    if(!mapa[k]) mapa[k]={nombre:nom, imo:v.imo||null};
+    else if(!mapa[k].imo && v.imo) mapa[k].imo=v.imo;
+  }
   try{
-    const {data}=await sb.from('buques_catalogo').select('nombre,imo').order('nombre').limit(500);
-    _catalogoCache=data||[];
-  }catch(ex){_catalogoCache=[];}
+    const {data}=await sb.from('buques_catalogo').select('nombre,imo').order('nombre').limit(1000);
+    (data||[]).forEach(add);
+  }catch(ex){}
+  try{
+    // Buques ya creados en operaciones (para detectar los anteriores)
+    const {data}=await sb.from('buques').select('nombre,imo').order('nombre').limit(2000);
+    (data||[]).forEach(add);
+  }catch(ex){}
+  _catalogoCache=Object.keys(mapa).sort().map(k=>mapa[k]);
   return _catalogoCache;
 }
 async function _nbSuggest(q){
@@ -12306,6 +12320,7 @@ const MODALS={
           await sb.from('buques_catalogo').insert({nombre:obj.nombre,imo:obj.imo||null});
         }
       }catch(ex){}
+      _catalogoCache=null; // refrescar sugerencias con el buque recién creado
     }
   }
 },
