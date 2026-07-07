@@ -811,7 +811,7 @@ if('serviceWorker' in navigator){
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.16</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.17</span>
         <span style="font-size:12px;color:var(--g400)">18/06/2026</span>
         <span class="badge bg">Actual</span>
       </div>
@@ -1873,7 +1873,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.16';
+const APP_VERSION = 'v3.12.17';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -5960,22 +5960,44 @@ async function _loadCatalogo(){
   _catalogoCache=Object.keys(mapa).sort().map(k=>mapa[k]);
   return _catalogoCache;
 }
+var _nbSuggMatches = [];
+var _nbSuggHi = -1;
+function _nbEsc(s){ return String(s==null?'':s).replace(/</g,'&lt;'); }
 async function _nbSuggest(q){
   const sugg=document.getElementById('nb-sugg'); if(!sugg) return;
-  if(!q||q.length<2){sugg.style.display='none';return;}
+  if(!q||q.length<2){ _nbSuggMatches=[]; _nbSuggHi=-1; sugg.style.display='none'; return; }
   const cat=await _loadCatalogo();
-  const matches=cat.filter(v=>v.nombre.toLowerCase().includes(q.toLowerCase())).slice(0,8);
-  if(!matches.length){sugg.style.display='none';return;}
-  sugg.innerHTML=matches.map(v=>`
-    <div style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--g100)"
-      onmousedown="document.getElementById('nb-n').value='${v.nombre.replace(/'/g,"\\'")}';
-        document.getElementById('nb-imo').value='${(v.imo||'').replace(/'/g,"\\'")}';
-        document.getElementById('nb-sugg').style.display='none';
-        checkNbUnlock();prevIMO(document.getElementById('nb-imo').value);"
-      onmouseover="this.style.background='var(--b50)'" onmouseout="this.style.background=''">
-      <strong>${v.nombre}</strong>${v.imo?` <span style="color:var(--g400);font-size:11px">IMO ${v.imo}</span>`:''}
+  _nbSuggMatches=cat.filter(v=>v.nombre.toLowerCase().includes(q.toLowerCase())).slice(0,8);
+  if(!_nbSuggMatches.length){ _nbSuggHi=-1; sugg.style.display='none'; return; }
+  _nbSuggHi=0;
+  sugg.innerHTML=_nbSuggMatches.map((v,i)=>`
+    <div data-i="${i}" style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--g100)"
+      onmousedown="_nbSuggPick(${i})" onmouseover="_nbSuggHi=${i};_nbSuggHighlight()">
+      <strong>${_nbEsc(v.nombre)}</strong>${v.imo?` <span style="color:var(--g400);font-size:11px">IMO ${_nbEsc(v.imo)}</span>`:''}
     </div>`).join('');
   sugg.style.display='block';
+  _nbSuggHighlight();
+}
+function _nbSuggHighlight(){
+  const sugg=document.getElementById('nb-sugg'); if(!sugg) return;
+  Array.prototype.forEach.call(sugg.children,(el,i)=>{ el.style.background=(i===_nbSuggHi)?'var(--b100)':''; });
+}
+function _nbSuggPick(i){
+  const v=_nbSuggMatches[i]; if(!v) return;
+  const n=document.getElementById('nb-n'), imo=document.getElementById('nb-imo');
+  if(n) n.value=v.nombre;
+  if(imo) imo.value=v.imo||'';
+  const sugg=document.getElementById('nb-sugg'); if(sugg) sugg.style.display='none';
+  _nbSuggMatches=[]; _nbSuggHi=-1;
+  checkNbUnlock(); prevIMO(document.getElementById('nb-imo').value);
+}
+function _nbSuggKey(e){
+  const sugg=document.getElementById('nb-sugg');
+  if(!sugg || sugg.style.display==='none' || !_nbSuggMatches.length) return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); _nbSuggHi=Math.min(_nbSuggMatches.length-1,_nbSuggHi+1); _nbSuggHighlight(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); _nbSuggHi=Math.max(0,_nbSuggHi-1); _nbSuggHighlight(); }
+  else if(e.key==='Enter'){ if(_nbSuggHi>=0){ e.preventDefault(); _nbSuggPick(_nbSuggHi); } }
+  else if(e.key==='Escape'){ sugg.style.display='none'; }
 }
 
 async function _bqEditSuggest(q, nomId, imoId, suggId){
@@ -12287,6 +12309,7 @@ const MODALS={
           <div style="position:relative">
             <input id="nb-n" class="fi" placeholder="Escribe o busca en catálogo…" autocomplete="off"
               oninput="checkNbUnlock();_nbSuggest(this.value);"
+              onkeydown="_nbSuggKey(event)"
               onblur="setTimeout(()=>{const d=document.getElementById('nb-sugg');if(d)d.style.display='none'},200)">
             <div id="nb-sugg" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:9999;background:var(--w);border:1px solid var(--b300);border-radius:0 0 var(--r) var(--r);max-height:200px;overflow-y:auto;box-shadow:var(--shl)"></div>
           </div></div>
