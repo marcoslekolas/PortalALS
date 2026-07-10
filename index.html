@@ -811,7 +811,7 @@ if('serviceWorker' in navigator){
   <div style="max-width:800px;margin:0 auto">
     <div style="background:var(--b50);border:1px solid var(--b200);border-radius:var(--rl);padding:16px 20px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.19</span>
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--b700)" id="ver-actual-num">v3.12.20</span>
         <span style="font-size:12px;color:var(--g400)">18/06/2026</span>
         <span class="badge bg">Actual</span>
       </div>
@@ -1873,7 +1873,7 @@ function mostrarEstadoRealtime(){
 
 
 // ── Versión de la aplicación — cambiar aquí en cada release ─────────
-const APP_VERSION = 'v3.12.19';
+const APP_VERSION = 'v3.12.20';
 const APP_VERSION_DATE = '18/06/2026';
 
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -13650,34 +13650,21 @@ async function _prepBuqueEmail(buqueId, buqueNombre){
   if(!toEmail){ window._buqueEmailCache[buqueId]=false; return; }
   window._buqueEmailCache[buqueId]={to:toEmail, cc:ccEmail, subject:asunto, html};
 }
-async function notifAlmacenistaBuque(buqueId, buqueNombre){
-  const {data:b}=await sb.from('buques').select('nombre,puerto_terminal').eq('id',buqueId).single();
-  const {data:exps}=await sb.from('expediciones')
-    .select('id,nº_expedicion,bultos,kilos,ubicacion,remitente,empresa_id,empresas!empresa_id(nombre)')
-    .eq('buque_id',buqueId).order('nº_expedicion');
-  if(!exps||!exps.length){ showToast('⚠️ Este buque no tiene expediciones.'); return; }
-  let toEmail='';
-  try{
-    const {data:alm}=await sb.from('empresas').select('nombre,email_almacenista,email_confronta,es_almacenista').eq('es_almacenista',true).order('nombre');
-    if(alm&&alm.length){ const a=alm[0]; toEmail=a.email_almacenista||a.email_confronta||''; }
-  }catch(_){}
-  const nom=(buqueNombre||b?.nombre||'').trim();
-  const terminal=(b?.puerto_terminal||'').trim();
-  const subject = terminal ? (nom+' @'+terminal) : nom;
+function _buildBuqueEmailHtml(nom, terminal, exps){
   const hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
-  const totBultos=exps.reduce((a,e)=>a+(e.bultos||0),0);
-  const totKilos=exps.reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
+  const totBultos=(exps||[]).reduce((a,e)=>a+(e.bultos||0),0);
+  const totKilos=(exps||[]).reduce((a,e)=>a+(parseFloat(e.kilos)||0),0);
   const _e=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  const filas=exps.map(e=>'<tr>'+
+  const filas=(exps||[]).map(e=>'<tr>'+
     '<td style="padding:5px 8px;border-bottom:1px solid #eee">'+_e(e['nº_expedicion']||'—')+'</td>'+
-    '<td style="padding:5px 8px;border-bottom:1px solid #eee">'+_e(e.empresas?.nombre||e.remitente||'—')+'</td>'+
+    '<td style="padding:5px 8px;border-bottom:1px solid #eee">'+_e(e.empresas?.nombre||e._empresaNombre||e.remitente||'—')+'</td>'+
     '<td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right">'+(e.bultos||'—')+'</td>'+
     '<td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right">'+(e.kilos||'—')+'</td>'+
     '<td style="padding:5px 8px;border-bottom:1px solid #eee">'+_e(e.ubicacion||'—')+'</td>'+
   '</tr>').join('');
-  const html='<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222">'+
+  return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222">'+
     '<p>Buenas,</p>'+
-    '<p>Notificación de la operativa del buque <strong>'+_e(nom)+'</strong>'+(terminal?' @'+_e(terminal):'')+' ('+hoy+'). Se adjunta la documentación de las expediciones.</p>'+
+    '<p>Notificación de la operativa del buque <strong>'+_e(nom)+'</strong>'+(terminal?' @'+_e(terminal):'')+' ('+hoy+').</p>'+
     '<table style="border-collapse:collapse;width:100%;font-size:12px">'+
       '<thead><tr>'+
         '<th style="text-align:left;padding:5px 8px;border-bottom:2px solid #ccc">Exp.</th>'+
@@ -13686,18 +13673,63 @@ async function notifAlmacenistaBuque(buqueId, buqueNombre){
         '<th style="text-align:right;padding:5px 8px;border-bottom:2px solid #ccc">Kilos</th>'+
         '<th style="text-align:left;padding:5px 8px;border-bottom:2px solid #ccc">Ubicación</th>'+
       '</tr></thead><tbody>'+filas+'</tbody>'+
-      '<tfoot><tr><td colspan="2" style="padding:6px 8px;font-weight:700">TOTAL ('+exps.length+' exp.)</td>'+
+      '<tfoot><tr><td colspan="2" style="padding:6px 8px;font-weight:700">TOTAL ('+(exps||[]).length+' exp.)</td>'+
         '<td style="padding:6px 8px;text-align:right;font-weight:700">'+totBultos+'</td>'+
         '<td style="padding:6px 8px;text-align:right;font-weight:700">'+totKilos+'</td><td></td></tr></tfoot>'+
     '</table>'+
     '<p style="margin-top:14px">Un saludo,<br>Departamento de Operaciones · ALS</p>'+
   '</div>';
+}
+
+async function notifAlmacenistaBuque(buqueId, buqueNombre){
+  const {data:alms} = await sb.from('empresas')
+    .select('id,nombre,email_almacenista,email_confronta,es_almacenista').order('nombre');
+  let lista=(alms||[]).filter(a=>a.es_almacenista);
+  if(!lista.length) lista=(alms||[]).filter(a=>a.email_almacenista||a.email_confronta);
+  const optsHtml=lista.map(a=>{ const em=a.email_almacenista||a.email_confronta||'';
+    return '<option value="'+a.id+'" data-email="'+em+'">'+(a.nombre||'')+(em?' · '+em:'')+'</option>'; }).join('');
+  document.getElementById('m-title').textContent='🏭 Notificar almacenista — '+buqueNombre;
+  document.getElementById('m-body').innerHTML=
+    '<div style="margin-bottom:12px;font-size:13px;color:var(--g600)">Se notificará con el resumen de <strong>todas las expediciones</strong> del buque. Sus documentos se adjuntan y podrás <strong>elegir cuáles enviar</strong> en la previsualización.</div>'+
+    '<div class="fg2"><label class="fl2">Almacenista destinatario</label>'+
+    '<select id="notif-alm-sel" class="fi fs" style="margin-top:4px">'+
+    '<option value="">— Seleccionar almacenista —</option>'+optsHtml+
+    '<option value="__manual__">✏️ Escribir email a mano…</option>'+
+    '</select></div>'+
+    '<div id="notif-alm-manual-wrap" style="display:none"><div class="fg2"><label class="fl2">Email</label>'+
+    '<input id="notif-alm-email" class="fi" type="email" placeholder="email@empresa.com"></div></div>';
+  document.getElementById('m-foot').innerHTML=
+    '<button class="btn btn-s btn-sm" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-p btn-sm" id="btn-notif-alm-enviar">✉️ Continuar</button>';
+  document.getElementById('mo').classList.add('open');
+  const sel=document.getElementById('notif-alm-sel');
+  sel.onchange=()=>{ document.getElementById('notif-alm-manual-wrap').style.display = sel.value==='__manual__' ? 'block':'none'; };
+  document.getElementById('btn-notif-alm-enviar').onclick=()=>_enviarNotifAlmacenistaBuque(buqueId, buqueNombre);
+}
+
+async function _enviarNotifAlmacenistaBuque(buqueId, buqueNombre){
+  const sel=document.getElementById('notif-alm-sel');
+  let emailDest='';
+  if(sel && sel.value==='__manual__'){ emailDest=(document.getElementById('notif-alm-email')?.value||'').trim(); }
+  else if(sel && sel.value){ emailDest=sel.options[sel.selectedIndex].dataset.email||''; }
+  if(!emailDest){ showToast('⚠️ Selecciona un almacenista o escribe un email'); return; }
+  closeModal();
+  const {data:b}=await sb.from('buques').select('nombre,puerto_terminal').eq('id',buqueId).single();
+  const {data:exps}=await sb.from('expediciones')
+    .select('id,nº_expedicion,bultos,kilos,ubicacion,remitente,empresa_id,empresas!empresa_id(nombre)')
+    .eq('buque_id',buqueId).order('nº_expedicion');
+  if(!exps||!exps.length){ showToast('⚠️ Este buque no tiene expediciones.'); return; }
+  const nom=(buqueNombre||b?.nombre||'').trim();
+  const terminal=(b?.puerto_terminal||'').trim();
+  const subject = terminal ? (nom+' @'+terminal) : nom;
+  const html=_buildBuqueEmailHtml(nom, terminal, exps);
   showToast('⏳ Adjuntando documentación de las expediciones…');
   const preAttachments=await _cargarDocsExpediciones(exps);
   if(!preAttachments.length) showToast('ℹ️ Ninguna expedición tiene documentos; puedes añadirlos a mano.');
-  _previewEmailCamion({to:toEmail, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html, preAttachments});
+  _previewEmailCamion({to:emailDest, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html, preAttachments, selectableAttachments:true});
 }
 function notifClienteBuque(buqueId, buqueNombre){
+
   const c=(window._buqueEmailCache||{})[buqueId];
   if(c===undefined){ showToast('⏳ Preparando el aviso… reinténtalo en un segundo'); _prepBuqueEmail(buqueId, buqueNombre); return; }
   if(!c){ showToast('No hay expediciones/email para notificar en este buque'); return; }
@@ -16860,12 +16892,8 @@ async function _enviarInstruccionesBuque(buqueId, buqueNombre){
     'Customs Way — Puerto de Algeciras';
 
   const subject = '🚛 Instrucciones retirada — Buque '+buqueNombre+' · '+exps.length+' exp. · '+hoy;
-  const html = '<pre style="font-family:Arial,Helvetica,sans-serif;font-size:13px;white-space:pre-wrap;color:#222;margin:0">'+
-    String(cuerpo).replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre>';
-  showToast('⏳ Adjuntando documentación de las expediciones…');
-  const preAttachments = await _cargarDocsExpediciones(exps);
-  if(!preAttachments.length) showToast('ℹ️ Ninguna expedición tiene documentos; puedes añadirlos a mano.');
-  _previewEmailCamion({to:emailDest, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html, preAttachments});
+  const html = _buildBuqueEmailHtml(buqueNombre, null, exps);   // misma estructura que el email de almacenista
+  _previewEmailCamion({to:emailDest, cc:'als@alsalgeciras.com, aduana@customsway.eu', subject, html}); // transportista: SIN adjuntos
 }
 
 
