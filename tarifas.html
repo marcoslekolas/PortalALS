@@ -122,7 +122,10 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
 
 /* Stats */
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px}
-.stat-card{background:var(--w);border-radius:var(--rl);padding:16px 18px;box-shadow:var(--sh);border:1px solid var(--g200);display:flex;align-items:flex-start;gap:12px}
+.stat-card{background:var(--w);border-radius:var(--rl);padding:16px 18px;box-shadow:var(--sh);border:1px solid var(--g200);display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:border-color .15s,transform .15s}
+.stat-card:hover{border-color:var(--b500,#059669);transform:translateY(-1px)}
+.stat-card.stat-static{cursor:default}
+.stat-card.stat-static:hover{border-color:var(--g200);transform:none}
 .stat-icon{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .stat-icon.blue{background:var(--b50)} .stat-icon.blue svg{color:var(--b600)}
 .stat-icon.green{background:var(--gr50)} .stat-icon.green svg{color:var(--gr600)}
@@ -294,9 +297,10 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
 
   <nav class="sb-nav">
     <div class="sb-section">Principal</div>
-    <a class="sb-item active" id="nav-dashboard" onclick="showPage('dashboard')">
-      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-      <span class="sb-item-label">Dashboard</span>
+    <a class="sb-item active" id="nav-tarifas" onclick="showPage('tarifas')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span class="sb-item-label">Tarifas registradas</span>
+      <span class="sb-badge" id="sb-count" style="display:none">0</span>
     </a>
     <a class="sb-item" id="nav-nueva" onclick="nuevaOferta()">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
@@ -304,11 +308,6 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
     </a>
 
     <div class="sb-section">Gestión</div>
-    <a class="sb-item" id="nav-historico" onclick="showPage('historico')">
-      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-      <span class="sb-item-label">Histórico</span>
-      <span class="sb-badge" id="sb-count" style="display:none">0</span>
-    </a>
     <a class="sb-item" id="nav-revisiones" onclick="showPage('revisiones')">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       <span class="sb-item-label">Revisiones</span>
@@ -342,8 +341,8 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
   <header class="topbar" style="background:var(--w,#fff);border-bottom:1px solid var(--g100,#f1f3f5);padding:10px 24px;display:flex;align-items:center;justify-content:space-between">
     <div class="topbar-left">
       <div>
-        <div class="page-title" id="page-title" style="font-size:18px;font-weight:700;color:#0f172a">Dashboard</div>
-        <div class="page-subtitle" id="page-subtitle" style="font-size:12px;color:#64748b">Resumen de ofertas</div>
+        <div class="page-title" id="page-title" style="font-size:18px;font-weight:700;color:#0f172a">Tarifas registradas</div>
+        <div class="page-subtitle" id="page-subtitle" style="font-size:12px;color:#64748b">Tarifas vigentes por cliente</div>
       </div>
     </div>
     <div class="topbar-right">
@@ -355,38 +354,6 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
   </header>
 
   <div class="content">
-
-    <!-- ── PAGE: DASHBOARD ── -->
-    <div class="page" id="page-dashboard" style="display:block">
-      <div class="stats-grid" id="dash-stats">
-        <div class="stat-card">
-          <div class="stat-icon blue"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></div>
-          <div><div class="stat-num" id="d-total">—</div><div class="stat-lbl">Ofertas totales</div></div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon green"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
-          <div><div class="stat-num" id="d-clientes">—</div><div class="stat-lbl">Clientes</div></div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon red"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
-          <div><div class="stat-num" id="d-vencidas">—</div><div class="stat-lbl">Rev. vencidas</div></div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon amber"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-          <div><div class="stat-num" id="d-proximas">—</div><div class="stat-lbl">Vencen 30d</div></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
-            Últimas ofertas
-          </span>
-          <button class="btn btn-primary btn-sm" onclick="nuevaOferta()">+ Nueva oferta</button>
-        </div>
-        <div class="card-body" style="padding:0"><div id="dash-recent"></div></div>
-      </div>
-    </div>
 
     <!-- ── PAGE: NUEVA OFERTA ── -->
     <div class="page" id="page-nueva" style="display:none">
@@ -467,15 +434,36 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
       </div>
     </div>
 
-    <!-- ── PAGE: HISTÓRICO ── -->
-    <div class="page" id="page-historico" style="display:none">
+    <!-- ── PAGE: TARIFAS REGISTRADAS ── -->
+    <div class="page" id="page-tarifas" style="display:block">
+      <div class="stats-grid" id="dash-stats">
+        <div class="stat-card" onclick="filtrarStat('')" title="Ver todas">
+          <div class="stat-icon blue"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></div>
+          <div><div class="stat-num" id="d-total">—</div><div class="stat-lbl">Tarifas registradas</div></div>
+        </div>
+        <div class="stat-card stat-static">
+          <div class="stat-icon green"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+          <div><div class="stat-num" id="d-clientes">—</div><div class="stat-lbl">Clientes</div></div>
+        </div>
+        <div class="stat-card" onclick="filtrarStat('due')" title="Filtrar revisiones vencidas">
+          <div class="stat-icon red"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+          <div><div class="stat-num" id="d-vencidas">—</div><div class="stat-lbl">Rev. vencidas</div></div>
+        </div>
+        <div class="stat-card" onclick="filtrarStat('soon')" title="Filtrar las que vencen en 30 días">
+          <div class="stat-icon amber"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <div><div class="stat-num" id="d-proximas">—</div><div class="stat-lbl">Vencen 30d</div></div>
+        </div>
+      </div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
-            Todas las ofertas
+            Tarifas registradas
           </span>
-          <button class="btn btn-ghost btn-sm" onclick="loadHistory()">↺ Actualizar</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="loadHistory()">↺ Actualizar</button>
+            <button class="btn btn-primary btn-sm" onclick="nuevaOferta()">+ Nueva oferta</button>
+          </div>
         </div>
         <div class="card-body">
           <div class="search-bar">
@@ -734,9 +722,8 @@ function toast(msg, err=false) {
 //  NAVEGACIÓN
 // ══════════════════════════════════════════════════════
 const PAGE_META = {
-  dashboard:  {title:'Tarificador',  subtitle:'Resumen de ofertas'},
+  tarifas:    {title:'Tarifas registradas', subtitle:'Tarifas vigentes por cliente'},
   nueva:      {title:'Nueva oferta', subtitle:'Configura y genera una tarifa personalizada'},
-  historico:  {title:'Histórico',    subtitle:'Todas las ofertas guardadas'},
   revisiones: {title:'Revisiones',   subtitle:'Control de revisiones anuales'},
 };
 
@@ -749,9 +736,18 @@ function showPage(id) {
   const m = PAGE_META[id]||{};
   document.getElementById('page-title').textContent = m.title||id;
   document.getElementById('page-subtitle').textContent = m.subtitle||'';
-  if (id==='historico') renderHistory();
+  if (id==='tarifas') { renderStats(); renderHistory(); }
   if (id==='revisiones') renderRevisiones();
-  if (id==='dashboard') renderDashboard();
+}
+
+// Filtro rápido desde las tarjetas de resumen
+function filtrarStat(v){
+  showPage('tarifas');
+  const f = document.getElementById('filter-rev');
+  if(f){ f.value = v; }
+  const q = document.getElementById('search-q');
+  if(q && v){ q.value = ''; }
+  renderHistory();
 }
 
 function toggleSidebar() {
@@ -773,7 +769,8 @@ async function loadHistory() {
     state.history = data || [];
     updateBadges();
     setDbStatus(true);
-    renderDashboard();
+    renderStats();
+    if (document.getElementById('page-tarifas').style.display !== 'none') renderHistory();
   } catch(e) {
     setDbStatus(false);
     console.error('loadHistory:', e);
@@ -998,36 +995,16 @@ function descartarEdicion() {
 // ══════════════════════════════════════════════════════
 //  RENDER PÁGINAS
 // ══════════════════════════════════════════════════════
-function renderDashboard() {
+function renderStats() {
   const today = new Date().toISOString().split('T')[0];
   const soon = new Date(); soon.setDate(soon.getDate()+30); const ss = soon.toISOString().split('T')[0];
   const due = state.history.filter(e=>e.next_review<=today).length;
   const s30 = state.history.filter(e=>e.next_review>today&&e.next_review<=ss).length;
   const clients = new Set(state.history.map(e=>e.client)).size;
-  document.getElementById('d-total').textContent = state.history.length;
+  document.getElementById('d-total').textContent    = state.history.length;
   document.getElementById('d-clientes').textContent = clients;
   document.getElementById('d-vencidas').textContent = due;
   document.getElementById('d-proximas').textContent = s30;
-
-  const recent = state.history.slice(0,6);
-  const dr = document.getElementById('dash-recent');
-  if (!recent.length) {
-    dr.innerHTML = '<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><p>Sin ofertas aún</p><span>Crea tu primera oferta desde "Nueva oferta"</span></div>';
-    return;
-  }
-  const rows = recent.map(e => {
-    const d = e.date ? new Date(e.date+'T00:00:00').toLocaleDateString('es-ES') : '—';
-    return `<tr onclick="openModal('${e.id}')">
-      <td><span class="vbadge">${e.ref||'—'}</span></td>
-      <td style="font-weight:500">${e.client}</td>
-      <td style="color:var(--g600)">${d}</td>
-      <td><div class="td-actions">
-        <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openModal('${e.id}')">👁 Ver</button>
-        <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();loadOfferInForm('${e.id}')">Editar</button>
-      </div></td>
-    </tr>`;
-  }).join('');
-  dr.innerHTML = `<table class="htable"><thead><tr><th>Ref.</th><th>Cliente</th><th>Fecha</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderHistory() {
@@ -1043,7 +1020,12 @@ function renderHistory() {
     return true;
   });
   const hc = document.getElementById('history-container');
-  if (!list.length) { hc.innerHTML='<div class="empty-state"><p>No hay ofertas que coincidan</p></div>'; return; }
+  if (!list.length) {
+    hc.innerHTML = state.history.length
+      ? '<div class="empty-state"><p>No hay tarifas que coincidan</p><span>Prueba a limpiar el buscador o el filtro de revisión</span></div>'
+      : '<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><p>Sin tarifas registradas</p><span>Crea la primera desde "Nueva oferta"</span></div>';
+    return;
+  }
   const rows = list.map(e => {
     const due=e.next_review<=today, s30=!due&&e.next_review<=ss;
     const rev=due?`<span class="rev-due">⚠ ${e.next_review}</span>`:s30?`<span class="rev-soon">⏰ ${e.next_review}</span>`:`<span class="rev-ok">✓ ${e.next_review}</span>`;
@@ -1529,7 +1511,7 @@ document.getElementById('doc-date').value = new Date().toISOString().split('T')[
 buildSectionsGrid();
 renderDoc();
 loadHistory();
-showPage('dashboard');
+showPage('tarifas');
 </script>
 </body>
 </html>
