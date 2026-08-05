@@ -169,6 +169,8 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
 .section-block h3 input[type=checkbox]{width:14px;height:14px;accent-color:var(--b600);flex-shrink:0;cursor:pointer}
 .rate-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
 .rate-row input[type=checkbox]{width:13px;height:13px;accent-color:var(--g700);flex-shrink:0;cursor:pointer}
+.rate-row.rate-new{background:#fffbeb;border-left:3px solid #f59e0b;border-radius:4px;padding:2px 4px 2px 3px;margin-left:-3px}
+.rate-row.rate-new::before{content:'NUEVO';font-size:8px;font-weight:700;letter-spacing:.4px;color:#b45309;background:#fde68a;border-radius:3px;padding:1px 4px;flex-shrink:0;order:99}
 .rate-row .lbl-edit{flex:1;font-size:12px;border:1px solid transparent;border-radius:4px;padding:2px 6px;background:transparent;font-family:var(--f);color:var(--g900);min-width:0}
 .rate-row .lbl-edit:hover{border-color:var(--g300);background:#fff}
 .rate-row .lbl-edit:focus{outline:none;border-color:var(--b500);background:#fff}
@@ -820,7 +822,7 @@ async function saveOfferUI() {
     global_notes: document.getElementById('global-notes').value,
     cond_generales: document.getElementById('cond-generales').value,
     next_review: nr.toISOString().split('T')[0],
-    sections: state.sections
+    sections: stripNewFlags(state.sections)
   };
 
   try {
@@ -844,6 +846,58 @@ async function saveOfferUI() {
   }
 }
 
+// ── Merge de una oferta guardada con el catálogo actual (DEFAULT_SECTIONS) ──
+// Añade secciones nuevas Y conceptos nuevos dentro de secciones ya existentes.
+// Los conceptos nuevos entran DESMARCADOS y marcados con _new para resaltarlos.
+function mergeWithDefaults(savedSections){
+  const saved = JSON.parse(JSON.stringify(savedSections||[]));
+  const savedIds = new Set(saved.map(s=>s.id));
+  const merged = [...saved];
+  let addedRates = 0, addedSections = 0;
+
+  // 1) Secciones nuevas del catálogo que no estaban en la oferta
+  DEFAULT_SECTIONS.forEach(def => {
+    if(!savedIds.has(def.id)) {
+      const defIdx = DEFAULT_SECTIONS.findIndex(d=>d.id===def.id);
+      const insertAfter = DEFAULT_SECTIONS.slice(0,defIdx).map(d=>d.id).reverse().find(id=>savedIds.has(id));
+      const pos = insertAfter ? merged.findIndex(s=>s.id===insertAfter)+1 : merged.length;
+      const copia = JSON.parse(JSON.stringify(def));
+      // La sección entra DESACTIVADA (no altera el documento hasta que se marque),
+      // pero sus conceptos conservan el check del catálogo.
+      copia.defaultOn = false;
+      merged.splice(pos, 0, copia);
+      savedIds.add(def.id);   // para que la siguiente sección nueva se coloque detrás
+      addedSections++;
+    }
+  });
+
+  // 2) Conceptos nuevos dentro de secciones que la oferta ya tenía
+  merged.forEach(sec => {
+    const def = DEFAULT_SECTIONS.find(d=>d.id===sec.id);
+    if(!def) return;                       // sección eliminada del catálogo o a medida
+    sec.rates = sec.rates || [];
+    const rateIds = new Set(sec.rates.map(r=>r.id));
+    def.rates.forEach((dr, dIdx) => {
+      if(rateIds.has(dr.id)) return;
+      // Insertar respetando el orden del catálogo
+      const prevId = def.rates.slice(0,dIdx).map(r=>r.id).reverse().find(rid=>rateIds.has(rid));
+      const pos = prevId ? sec.rates.findIndex(r=>r.id===prevId)+1 : sec.rates.length;
+      sec.rates.splice(pos, 0, Object.assign({}, dr, {check:false, _new:true}));
+      rateIds.add(dr.id);
+      addedRates++;
+    });
+  });
+
+  return {sections: merged, addedRates, addedSections};
+}
+
+// Quita los flags internos _new antes de persistir en Supabase
+function stripNewFlags(sections){
+  const c = JSON.parse(JSON.stringify(sections||[]));
+  c.forEach(s => (s.rates||[]).forEach(r => { delete r._new; }));
+  return c;
+}
+
 function loadOfferInForm(id) {
   const e = state.history.find(x=>x.id===id); if(!e) return;
   document.getElementById('client-name').value = e.client||'';
@@ -856,20 +910,15 @@ function loadOfferInForm(id) {
   document.getElementById('validity').value = e.validity||'31/12/2026';
   document.getElementById('global-notes').value = e.global_notes||'';
   document.getElementById('cond-generales').value = e.cond_generales||COND_DEFAULT;
-  // Merge: mantener secciones guardadas + añadir las nuevas de DEFAULT que no existan
-  const saved = JSON.parse(JSON.stringify(e.sections||[]));
-  const savedIds = new Set(saved.map(s=>s.id));
-  const merged = [...saved];
-  DEFAULT_SECTIONS.forEach(def => {
-    if(!savedIds.has(def.id)) {
-      // Insertar en la posición correcta según DEFAULT_SECTIONS
-      const defIdx = DEFAULT_SECTIONS.findIndex(d=>d.id===def.id);
-      const insertAfter = DEFAULT_SECTIONS.slice(0,defIdx).map(d=>d.id).reverse().find(id=>savedIds.has(id));
-      const pos = insertAfter ? merged.findIndex(s=>s.id===insertAfter)+1 : merged.length;
-      merged.splice(pos, 0, JSON.parse(JSON.stringify(def)));
-    }
-  });
-  state.sections = merged;
+  // Merge: mantener lo guardado + añadir secciones y conceptos nuevos del catálogo
+  const mrg = mergeWithDefaults(e.sections);
+  state.sections = mrg.sections;
+  if(mrg.addedRates || mrg.addedSections){
+    const p = [];
+    if(mrg.addedSections) p.push(mrg.addedSections+' sección(es)');
+    if(mrg.addedRates)    p.push(mrg.addedRates+' concepto(s)');
+    setTimeout(()=>toast('Catálogo actualizado: '+p.join(' y ')+' disponibles sin marcar — actívalos si quieres incluirlos'), 400);
+  }
   state.editingId = id;
   document.getElementById('editing-notice').classList.add('show');
   document.getElementById('btn-save').innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Actualizar';
@@ -893,7 +942,7 @@ function duplicateOffer(id) {
   document.getElementById('validity').value       = orig.validity||'31/12/2026';
   document.getElementById('global-notes').value   = orig.global_notes||'';
   document.getElementById('cond-generales').value = orig.cond_generales||'';
-  state.sections  = JSON.parse(JSON.stringify(orig.sections||DEFAULT_SECTIONS));
+  state.sections  = mergeWithDefaults(orig.sections||DEFAULT_SECTIONS).sections;
   state.editingId = null;  // nueva oferta
   document.getElementById('editing-notice').classList.remove('show');
   document.getElementById('btn-save').innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Guardar (copia)';
@@ -1056,7 +1105,7 @@ function buildSectionsGrid() {
     const d = document.createElement('div');
     d.className = 'section-block' + (sec.defaultOn?' sec-active':'');
     const rows = sec.rates.map((r,ri)=>
-      `<div class="rate-row">
+      `<div class="rate-row${r._new?' rate-new':''}"${r._new?' title="Concepto nuevo del catálogo — márcalo para incluirlo"':''}>
         <input type="checkbox" ${r.check?'checked':''} onchange="toggleRate(${si},${ri},this.checked)">
         <input class="lbl-edit" type="text" value="${escH(r.label)}" onchange="updateLabel(${si},${ri},this.value)" oninput="renderDoc()">
         <input class="price" type="text" value="${r.price}" onchange="updatePrice(${si},${ri},this.value)">
