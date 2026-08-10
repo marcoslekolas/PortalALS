@@ -297,6 +297,19 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
 .tbl.costs-hidden .cost-col{display:none}
 /* Total provisional sin fecha de retirada */
 .tot-prov{color:var(--am600)!important;font-style:italic}
+/* Chips filtro estado de retirada */
+.ret-chip{display:inline-flex;align-items:center;gap:5px;background:var(--w);border:1px solid var(--g200);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600;color:var(--g600);cursor:pointer;user-select:none;transition:all .12s}
+.ret-chip:hover{border-color:var(--g400);color:var(--g800)}
+.ret-chip.on{background:var(--b600);border-color:var(--b600);color:#fff}
+.ret-chip .rc-n{background:rgba(0,0,0,.08);border-radius:999px;padding:0 6px;font-size:10px;font-weight:800;min-width:16px;text-align:center}
+.ret-chip.on .rc-n{background:rgba(255,255,255,.25)}
+:root.dark .ret-chip{background:#1a1a2e;border-color:#1e1e3f;color:#9aa0b5}
+:root.dark .ret-chip.on{background:var(--b600);border-color:var(--b600);color:#fff}
+/* Fila con retirada solicitada pendiente de confirmar */
+.row-solicitada{background:#f5f3ff;border-left:3px solid #7c3aed}
+:root.dark .row-solicitada{background:#1f1836 !important}
+.ret-badge{display:inline-block;font-size:9px;font-weight:700;color:#6d28d9;background:#ede9fe;border-radius:4px;padding:1px 5px;margin-top:2px;white-space:nowrap}
+:root.dark .ret-badge{background:#3b2a63;color:#c4b5fd}
 /* Shift+scroll hint */
 .tc{position:relative}
 .tc:hover::after{content:'Shift + scroll = desplazamiento horizontal';position:absolute;bottom:4px;right:8px;font-size:10px;color:var(--g400);pointer-events:none;opacity:.6}
@@ -390,6 +403,12 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
             <option value="10-Oct">Oct</option><option value="11-Nov">Nov</option><option value="12-Dic">Dic</option>
           </select>
           <button id="btn-costs" class="btn btn-s btn-sm" onclick="toggleCosts()" style="white-space:nowrap">📊 Ver desglose</button>
+          <button class="btn btn-sm" onclick="marcarRecogidasMasivo()" style="white-space:nowrap;background:var(--gr600);color:#fff;border:1px solid var(--gr700)" title="Marcar como recogidas las entradas seleccionadas">✔ Marcar recogidas</button>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 4px">
+          <div class="ret-chip on" id="rc-todas" onclick="setRetFilt('todas',this)">Todas <span class="rc-n" id="rc-n-todas">0</span></div>
+          <div class="ret-chip" id="rc-sin" onclick="setRetFilt('sin',this)">⏳ Sin solicitar <span class="rc-n" id="rc-n-sin">0</span></div>
+          <div class="ret-chip" id="rc-curso" onclick="setRetFilt('curso',this)">🚚 En curso de retirada <span class="rc-n" id="rc-n-curso">0</span></div>
         </div>
         <div id="sel-info" style="font-size:12px;color:var(--b600);margin-bottom:8px;min-height:18px"></div>
         <div id="mobile-cards" style="display:none;padding:0 4px"></div>
@@ -878,8 +897,18 @@ function getAlertas(){
     return f===hoyStr || f===mananaStr; // solo hoy y mañana, no pasado
   });
 
-  return {almacenajeVencido:almacenajeVencido, almacenajeHoy:almacenajeHoy, caducidadT1:caducidadT1};
+  // Retirada solicitada al transportista hace más de RET_DIAS_ALERTA días sin confirmar
+  var retiradaSinConfirmar=(ALL||[]).filter(function(e){
+    if(e.fecha_retirada) return false;
+    if(!e.retirada_solicitada) return false;
+    var d=Math.floor((Date.now()-new Date(e.retirada_solicitada).getTime())/86400000);
+    return d>=RET_DIAS_ALERTA;
+  });
+
+  return {almacenajeVencido:almacenajeVencido, almacenajeHoy:almacenajeHoy, caducidadT1:caducidadT1, retiradaSinConfirmar:retiradaSinConfirmar};
 }
+// Días desde la solicitud a partir de los cuales se avisa
+var RET_DIAS_ALERTA=3;
 
 function onT1UltimadoChk(chk){
   var row=document.getElementById('f-t1-ult-date-row');
@@ -905,7 +934,7 @@ async function ultimarT1(id){
 
 function actualizarBadgeAlertas(){
   var a=getAlertas();
-  var total=a.almacenajeVencido.length+a.almacenajeHoy.length+a.caducidadT1.length;
+  var total=a.almacenajeVencido.length+a.almacenajeHoy.length+a.caducidadT1.length+(a.retiradaSinConfirmar||[]).length;
   var badge=document.getElementById('alert-badge');
   if(!badge) return;
   if(total>0){
@@ -997,6 +1026,28 @@ function loadAlertas(){
       ];
     }),
     'Sin caducidades de T1 próximas ✓'
+  );
+  html+='</div>';
+
+  // — Retirada solicitada sin confirmar —
+  var rsc=a.retiradaSinConfirmar||[];
+  html+='<div class="alerta-card">';
+  html+='<div class="alerta-card-hd am">🚚 Retirada solicitada sin confirmar (+'+RET_DIAS_ALERTA+' días)'+(rsc.length?' <span style="margin-left:6px;background:#7c3aed;color:#fff;border-radius:20px;padding:1px 8px;font-size:11px">'+rsc.length+'</span>':'')+'</div>';
+  html+=mkTable(
+    ['AWB','Consignatario','Transportista','Solicitada','Días','Kilos',''],
+    rsc.map(function(e){
+      var d=Math.floor((Date.now()-new Date(e.retirada_solicitada).getTime())/86400000);
+      return[
+        '<span style="font-family:var(--mono);font-size:11px">'+formatAwb(e.awb||'')+'</span>',
+        '<span style="font-size:12px;color:var(--g500)">'+( e.consignatario||e.cliente||'—')+'</span>',
+        e.transportista_nombre||'—',
+        fd(e.retirada_solicitada),
+        '<strong style="color:#7c3aed">'+d+' días</strong>',
+        (e.kilos_tasables||'—')+' kg',
+        '<button onclick="abrirRecogida(event,\''+e.id+'\')" style="background:var(--gr600);color:#fff;border:none;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✔ Recogido</button>'
+      ];
+    }),
+    'Sin retiradas pendientes de confirmar ✓'
   );
   html+='</div>';
 
@@ -1262,6 +1313,12 @@ async function loadDashboard(){
     kpi('🚨',nAlertas,'Alertas activas',
       vencidos?vencidos+' almacenaje vencido':'almacenaje + T1',
       nAlertas?'var(--rd600)':'var(--gr600)','nav(\'alertas\',this)')+
+    (function(){
+      var enCurso=pendientes.filter(esSolicitada);
+      return kpi('🚚',enCurso.length,'En curso de retirada',
+        enCurso.length?'esperando confirmación del transportista':'ninguna solicitud abierta',
+        enCurso.length?'#7c3aed':'var(--g500)','irAEnCurso()');
+    })()+
     kpi('💰',fn(costoEstimado)+' €','Coste estimado',pendientes.length+' exp. × coste prov. a hoy','#7c3aed')+
   '</div>';
 
@@ -1356,12 +1413,186 @@ function miniTable(list){
   return'<table class="tbl"><thead><tr><th>AWB</th><th>Consignatario</th><th>Buque</th><th>Handler</th><th>Llegada</th><th>Retirada</th><th>Total</th></tr></thead><tbody>'+rows+'</tbody></table>';
 }
 
+// ══════════════════════════════════════════════════════════════════
+// ESTADO DE RETIRADA — solicitada → recogida
+// Estado derivado (sin columna 'estado'):
+//   fecha_retirada        → ✅ Finalizada
+//   retirada_solicitada   → 🚚 En curso de retirada
+//   ninguna               → ⏳ Pendiente
+// ══════════════════════════════════════════════════════════════════
+var RET_FILT='todas';
+
+function esSolicitada(e){ return !!(e && e.retirada_solicitada && !e.fecha_retirada); }
+
+// Salta a Entradas con el chip "En curso de retirada" ya activo
+function irAEnCurso(){
+  var navEl=null;
+  document.querySelectorAll('.nav-item').forEach(function(n){
+    if((n.getAttribute('onclick')||'').indexOf("'entradas'")>-1) navEl=n;
+  });
+  nav('entradas',navEl);
+  setTimeout(function(){ setRetFilt('curso',document.getElementById('rc-curso')); },80);
+}
+
+function setRetFilt(v,el){
+  RET_FILT=v;
+  document.querySelectorAll('.ret-chip').forEach(function(c){c.classList.remove('on');});
+  if(el)el.classList.add('on');
+  filtrar();
+}
+
+function actualizarChipsRetirada(){
+  var pend=(ALL||[]).filter(function(e){return !e.fecha_retirada;});
+  var curso=pend.filter(esSolicitada).length;
+  var set=function(id,n){var el=document.getElementById(id);if(el)el.textContent=n;};
+  set('rc-n-todas',pend.length);
+  set('rc-n-sin',pend.length-curso);
+  set('rc-n-curso',curso);
+}
+
+// Probe-once: evita HTTP 400 si aún no se ha ejecutado el ALTER TABLE
+async function _retColsOK(){
+  if(window._acRetOK!==undefined) return window._acRetOK;
+  try{
+    var pr=await sb.from('information_schema.columns')
+      .select('column_name')
+      .eq('table_name','airport_cargo')
+      .eq('column_name','retirada_solicitada')
+      .eq('table_schema','public')
+      .limit(1);
+    window._acRetOK = !pr.error && (pr.data||[]).length>0;
+  }catch(ex){ window._acRetOK=false; }
+  if(!window._acRetOK) console.debug('[ALS] Columna retirada_solicitada no existe aún en airport_cargo. Ejecuta el ALTER TABLE.');
+  return window._acRetOK;
+}
+
+// Marca un conjunto de AWBs como "retirada solicitada" (llamado al generar el email)
+async function marcarRetiradaSolicitada(ids, transpId, transpNombre){
+  if(!ids||!ids.length) return false;
+  if(!(await _retColsOK())) return false;
+  var ahora=new Date().toISOString();
+  var upd={retirada_solicitada:ahora, transportista_nombre:transpNombre||null};
+  if(transpId && transpId!=='__nuevo__') upd.transportista_id=transpId;
+  try{
+    var r=await sb.from('airport_cargo').update(upd).in('id',ids);
+    if(r.error){ console.warn('marcarRetiradaSolicitada:',r.error.message); return false; }
+  }catch(ex){ return false; }
+  ids.forEach(function(id){
+    var e=ALL.find(function(x){return String(x.id)===String(id);});
+    if(e){ e.retirada_solicitada=ahora; e.transportista_nombre=transpNombre||null; if(upd.transportista_id) e.transportista_id=upd.transportista_id; }
+  });
+  return true;
+}
+
+// Deshacer: vuelve a "sin solicitar"
+async function deshacerSolicitud(ev,id){
+  if(ev) ev.stopPropagation();
+  if(!(await _retColsOK())){toast('Faltan las columnas de retirada en la BD');return;}
+  var r=await sb.from('airport_cargo').update({retirada_solicitada:null,transportista_id:null,transportista_nombre:null}).eq('id',id);
+  if(r.error){toast('Error: '+r.error.message);return;}
+  var e=ALL.find(function(x){return String(x.id)===String(id);});
+  if(e){ e.retirada_solicitada=null; e.transportista_id=null; e.transportista_nombre=null; }
+  toast('↩️ Solicitud de retirada anulada');
+  filtrar();
+  actualizarBadgeAlertas();
+}
+
+// ── Confirmación de recogida ───────────────────────────────
+function abrirRecogida(ev,id){
+  if(ev) ev.stopPropagation();
+  var e=ALL.find(function(x){return String(x.id)===String(id);});
+  if(!e){toast('Registro no encontrado');return;}
+  _modalRecogida([e]);
+}
+
+function marcarRecogidasMasivo(){
+  var ids=getSelected();
+  if(!ids.length){toast('Selecciona primero una o varias entradas');return;}
+  var sel=ALL.filter(function(e){return ids.includes(String(e.id)) && !e.fecha_retirada;});
+  if(!sel.length){toast('Las seleccionadas ya están finalizadas');return;}
+  _modalRecogida(sel);
+}
+
+function _modalRecogida(list){
+  var prev=document.getElementById('recogida-modal');
+  if(prev) prev.remove();
+
+  var hoy=new Date().toISOString().slice(0,10);
+  var filas=list.slice(0,8).map(function(e){
+    return '<div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:4px 0;border-bottom:1px solid #1e293b">'
+      +'<span style="font-family:var(--mono);color:#e2e8f0">'+formatAwb(e.awb||'—')+'</span>'
+      +'<span style="color:#64748b;text-align:right;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(e.consignatario||'—')+'</span>'
+      +'</div>';
+  }).join('');
+  var extra=list.length>8?'<div style="font-size:11px;color:#64748b;padding-top:6px">…y '+(list.length-8)+' más</div>':'';
+
+  var modal=document.createElement('div');
+  modal.id='recogida-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML='<div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:24px;width:100%;max-width:420px;position:relative">'
+    +'<button id="rg-close-x" style="position:absolute;top:12px;right:12px;background:#334155;border:none;border-radius:6px;color:#94a3b8;padding:4px 9px;font-size:12px;cursor:pointer">&#10005;</button>'
+    +'<div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:4px">Confirmar recogida</div>'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:14px">'+list.length+' expedición'+(list.length>1?'es':'')+' pasará'+(list.length>1?'n':'')+' a Finalizadas</div>'
+    +'<div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px 12px;max-height:180px;overflow-y:auto;margin-bottom:14px">'+filas+extra+'</div>'
+    +'<label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:6px">Fecha real de retirada</label>'
+    +'<input id="rg-fecha" type="date" value="'+hoy+'" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">'
+    +'<div style="font-size:11px;color:#f59e0b;margin-top:8px;line-height:1.4">⚠️ Esta fecha determina los días de almacenaje facturables. Si el camión recogió otro día, corrígela.</div>'
+    +'<div id="rg-warn" style="font-size:11px;color:#f87171;margin-top:8px;display:none"></div>'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid #334155">'
+    +'<button id="rg-cancel" style="background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Cancelar</button>'
+    +'<button id="rg-ok" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">✔ Confirmar recogida</button>'
+    +'</div></div>';
+
+  document.body.appendChild(modal);
+  var cerrar=function(){modal.remove();};
+  document.getElementById('rg-close-x').onclick=cerrar;
+  document.getElementById('rg-cancel').onclick=cerrar;
+  modal.addEventListener('click',function(ev){if(ev.target===modal)cerrar();});
+
+  var chequear=function(){
+    var f=document.getElementById('rg-fecha').value;
+    var w=document.getElementById('rg-warn');
+    var malas=list.filter(function(e){return e.fecha_llegada && f && f < String(e.fecha_llegada).slice(0,10);});
+    if(malas.length){
+      w.style.display='';
+      w.textContent='La fecha es anterior a la llegada en '+malas.length+' expedición'+(malas.length>1?'es':'')+'.';
+    } else { w.style.display='none'; }
+  };
+  document.getElementById('rg-fecha').onchange=chequear;
+  chequear();
+
+  document.getElementById('rg-ok').onclick=async function(){
+    var f=document.getElementById('rg-fecha').value;
+    if(!f){toast('Indica la fecha de retirada');return;}
+    this.disabled=true; this.textContent='Guardando…';
+    await confirmarRecogida(list,f);
+    cerrar();
+  };
+}
+
+async function confirmarRecogida(list,fecha){
+  var ids=list.map(function(e){return e.id;});
+  var upd={fecha_retirada:fecha};
+  var r=await sb.from('airport_cargo').update(upd).in('id',ids);
+  if(r.error){toast('Error: '+r.error.message);return;}
+  ids.forEach(function(id){
+    var e=ALL.find(function(x){return String(x.id)===String(id);});
+    if(e) e.fecha_retirada=fecha;
+  });
+  toast('✅ '+ids.length+' expedición'+(ids.length>1?'es marcadas':' marcada')+' como recogida'+(ids.length>1?'s':''));
+  var chk=document.getElementById('chk-all'); if(chk) chk.checked=false;
+  filtrar();
+  updateSel();
+  actualizarBadgeAlertas();
+  if(CV==='dashboard') loadDashboard();
+}
+
 // ── ENTRADAS ─────────────────────────────────────────────
 async function loadEntradas(){
   await loadAll();
-  // Entradas = sólo pendientes (sin fecha de retirada)
-  var pendientes=ALL.filter(function(e){return !e.fecha_retirada;});
-  renderRows(pendientes,'tbody');
+  // Entradas = sólo pendientes (sin fecha de retirada). filtrar() aplica búsqueda + chips de retirada
+  actualizarChipsRetirada();
+  filtrar();
 }
 
 async function loadFinalizadas(){
@@ -1401,6 +1632,8 @@ function filtrar(){
   var m=document.getElementById('fil-m').value||'';
   var f=ALL.filter(function(e){
     if(e.fecha_retirada) return false;
+    if(RET_FILT==='sin'   &&  esSolicitada(e)) return false;
+    if(RET_FILT==='curso' && !esSolicitada(e)) return false;
     if(q&&!(_nb(e.awb)+_nb(e.consignatario)+_nb(e.buque)).includes(q))return false;
     if(h&&e.handling!==h)return false;
     if(y||m){var mo=calcMes(e.fecha_llegada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
@@ -1419,6 +1652,7 @@ function filtrar(){
     return String(a.id)<String(b.id)?-1:1;
   });
   renderRows(f,'tbody');
+  actualizarChipsRetirada();
   checkMobileView();
 }
 
@@ -1471,10 +1705,12 @@ function renderRows(list, tbodyId){
     var cc=isAuto?calcCC(e.aplica_carga_camion,kg,e.handling,yr):0;
     var ap=isAuto?calcAp(e.aplica_apertura,kg,e.handling,yr):0;
     var tot=isAuto?(alm+gd+md+tr+tm+fi+ex+cc+ap):(parseFloat(e.coste_manual)||0);
-    var rowStyle=e.confirmacion_llegada?' style="background:#ffedd5;border-left:3px solid #f97316"':'';
+    var solic=esSolicitada(e);
+    var rowStyle=solic?' style="background:#f5f3ff;border-left:3px solid #7c3aed"'
+                 :(e.confirmacion_llegada?' style="background:#ffedd5;border-left:3px solid #f97316"':'');
     return'<tr'+rowStyle+' data-id="'+e.id+'" class="tbl-row">'+
       '<td style="padding:0"><label style="display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;cursor:pointer;padding:6px"><input type="checkbox" class="row-chk" data-id="'+e.id+'" style="accent-color:var(--b600);width:20px;height:20px;cursor:pointer" onchange="updateSel()"></label></td>'+
-      '<td style="font-family:var(--mono);white-space:nowrap">'+formatAwb(e.awb||'—')+(e.awb?('<button class="awb-track-btn" data-awb="'+e.awb+'" style="background:var(--b100);border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:var(--b700);margin-left:4px" title="Rastrear AWB externo">✈️</button>'):'')+(e.awb?('<button class="awb-aeat-btn" data-awb="'+e.awb+'" style="background:#fef3c7;border:none;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:800;letter-spacing:.3px;cursor:pointer;color:#92400e;margin-left:3px" title="Consultar partida en Agencia Tributaria (G4)">AEAT</button>'):'')+(e.dossier_visualtrans?'<div style="font-size:10px;color:var(--g500);font-weight:400;margin-top:2px" title="Nº Dossier VisualTrans">📁 '+e.dossier_visualtrans+'</div>':'')+'</td>'+
+      '<td style="font-family:var(--mono);white-space:nowrap">'+formatAwb(e.awb||'—')+(e.awb?('<button class="awb-track-btn" data-awb="'+e.awb+'" style="background:var(--b100);border:none;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer;color:var(--b700);margin-left:4px" title="Rastrear AWB externo">✈️</button>'):'')+(e.awb?('<button class="awb-aeat-btn" data-awb="'+e.awb+'" style="background:#fef3c7;border:none;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:800;letter-spacing:.3px;cursor:pointer;color:#92400e;margin-left:3px" title="Consultar partida en Agencia Tributaria (G4)">AEAT</button>'):'')+(e.dossier_visualtrans?'<div style="font-size:10px;color:var(--g500);font-weight:400;margin-top:2px" title="Nº Dossier VisualTrans">📁 '+e.dossier_visualtrans+'</div>':'')+(solic?'<div class="ret-badge" title="Retirada solicitada el '+fd(e.retirada_solicitada)+(e.transportista_nombre?' a '+e.transportista_nombre:'')+'">🚚 '+(e.transportista_nombre||'Solicitada')+' · '+fd(e.retirada_solicitada)+'</div>':'')+'</td>'+
       '<td style="cursor:pointer;font-size:12px;color:var(--g500)">'+( e.consignatario||'—')+(e.cliente&&e.cliente!==e.consignatario?'<div style="font-size:10px;color:var(--g400)">🏢 '+e.cliente+'</div>':'')+'</td>'+
       '<td style="cursor:pointer;font-size:13px;font-weight:700;color:var(--g900)">'+( e.buque||'—')+'</td>'+
       '<td><span class="badge bb" style="font-size:10px">'+(e.handling||'—')+'</span></td>'+
@@ -1510,6 +1746,8 @@ function renderRows(list, tbodyId){
       '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(cc?fn(cc):'—')+'</td>'+
       '<td class="cost-col" style="text-align:right;font-family:var(--mono);font-size:11px">'+(ap?fn(ap):'—')+'</td>'+
       '<td class="col-sticky-r" style="white-space:nowrap;background:var(--w);padding:3px 4px;text-align:center">'+
+        (isEntradas?'<button onclick="abrirRecogida(event,\''+e.id+'\')" title="Confirmar recogida — pasa a Finalizadas" style="background:var(--gr600);color:#fff;border:none;border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;margin-right:2px">✔</button>':'')+
+        (isEntradas&&solic?'<button onclick="deshacerSolicitud(event,\''+e.id+'\')" title="Anular solicitud de retirada" style="background:#ede9fe;color:#6d28d9;border:none;border-radius:5px;padding:3px 6px;font-size:11px;cursor:pointer;margin-right:2px">↩</button>':'')+
         '<button class="btn btn-sm btn-s" data-action="edit" data-id="'+e.id+'" title="Editar">✏️</button>'+
         '<button class="btn btn-sm" data-action="dup" data-id="'+e.id+'" title="Duplicar expedición" style="margin-left:2px;background:var(--g100);color:var(--g600);border:1px solid var(--g200)">📋</button>'+
         '<button class="btn btn-sm btn-d" data-action="del" data-id="'+e.id+'" title="Eliminar" style="margin-left:2px">🗑️</button>'+
@@ -3897,20 +4135,22 @@ async function abrirInstrTransp(){
 
   document.getElementById('it-send-btn').onclick=async function(){
     var selVal=document.getElementById('it-transp-sel').value;
-    var emailDest='', transpNombre='';
+    var emailDest='', transpNombre='', transpId='';
 
     if(selVal==='__nuevo__'){
       transpNombre=(document.getElementById('it-nuevo-nombre').value||'').trim();
       emailDest=(document.getElementById('it-nuevo-email').value||'').trim();
       var tel=(document.getElementById('it-nuevo-tel').value||'').trim()||null;
       if(!transpNombre||!emailDest){toast('Introduce nombre y email del transportista');return;}
-      var ins=await sb.from('empresas').insert({nombre:transpNombre,email_confronta:emailDest,telefono:tel,rol:['Transportista']});
+      var ins=await sb.from('empresas').insert({nombre:transpNombre,email_confronta:emailDest,telefono:tel,rol:['Transportista']}).select('id');
       if(ins.error){toast('Error al crear: '+ins.error.message);return;}
+      transpId=(ins.data&&ins.data[0])?ins.data[0].id:'';
       toast('Transportista creado');
     } else if(selVal){
       var opt=document.getElementById('it-transp-sel').options[document.getElementById('it-transp-sel').selectedIndex];
       transpNombre=opt.dataset.nombre||opt.text.split(' · ')[0];
       emailDest=opt.dataset.email||'';
+      transpId=selVal;
     } else {
       toast('Selecciona un transportista');return;
     }
@@ -3930,6 +4170,14 @@ async function abrirInstrTransp(){
         (rr.data||[]).forEach(function(d){ preDocs.push({file_path:d.file_path,nombre_original:d.nombre_original,awb:formatAwb(ed.awb||'')}); });
       }catch(_){}
     }
+    // Marcar automáticamente las expediciones como "retirada solicitada"
+    var marcadas=await marcarRetiradaSolicitada(selIds,transpId,transpNombre);
+    if(marcadas){
+      toast('🚚 '+selIds.length+' expedición'+(selIds.length>1?'es marcadas':' marcada')+' en curso de retirada');
+      if(CV==='entradas'){ actualizarChipsRetirada(); filtrar(); }
+      actualizarBadgeAlertas();
+    }
+
     modal.remove();
     abrirVentanaEmail(htmlContent,emailDest,asunto,emailCli||null,preDocs);
   };
