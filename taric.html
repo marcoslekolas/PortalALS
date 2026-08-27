@@ -1088,6 +1088,9 @@ const OR_PROXY_ENDPOINT = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1
 const FACTURA_ENDPOINT = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/clasificar-factura';
 // Cabecera completa de la última factura leída (exportador, destinatario, origen…)
 let FACTURA_CABECERA = null;
+// País de origen cuando la factura no lo declara (ISO alfa-2).
+// Las facturas de avituallamiento no suelen indicarlo. Cambiar aquí si procede.
+const ORIGEN_POR_DEFECTO = 'ES';
 let _proxyDisponible = null; // null=sin probar, true=funciona, false=no disponible
 // Modelo por defecto — con crédito usa mistral-small-4 (vision); sin crédito usa gemma-3-12b
 const OR_MODEL_DEFAULT = 'mistralai/mistral-small-2603';  // $0.15/$0.60 por M tokens, vision ✅
@@ -2235,7 +2238,14 @@ async function handleFiles(fileList){
       const data = await procesarUnaFactura(file);
       const lineas = Array.isArray(data) ? data : (data.lineas || []);
       if(!lineas.length) throw new Error('No se encontraron líneas de mercancía');
-      FACTURAS.push({ fichero:file.name, cabecera:data.cabecera||{}, lineas, truncado:!!data._truncado, tokens:data._tokens||null });
+      // La IA deja pais_origen vacío si no consta en el documento (así se le pide,
+      // para que no lo deduzca). Aquí se completa con el valor por defecto.
+      const cabecera = data.cabecera || {};
+      if(!cabecera.pais_origen && ORIGEN_POR_DEFECTO){
+        cabecera.pais_origen = ORIGEN_POR_DEFECTO;
+        cabecera.origen_asumido = true;
+      }
+      FACTURAS.push({ fichero:file.name, cabecera, lineas, truncado:!!data._truncado, tokens:data._tokens||null });
       estados[i].estado = data._truncado ? 'parcial' : 'ok';
       estados[i].lineas = lineas.length;
       estados[i].msg = data._truncado
@@ -2349,7 +2359,9 @@ async function renderLoteFacturas(){
           <div style="font-size:11px;color:var(--g400)">${c.fecha||''} · ${f.fichero}</div>
           <div style="margin-left:auto;display:flex;gap:5px;flex-wrap:wrap">
             <span class="badge badge-blue" style="font-size:10px">${f.lineas.length} líneas</span>
-            ${chip('Origen', c.pais_origen)}
+            ${c.origen_asumido
+              ? `<span class="badge" style="background:var(--am50);color:var(--am600);font-size:10px" title="No consta en la factura; valor por defecto del portal">Origen: ${c.pais_origen} (asumido)</span>`
+              : chip('Origen', c.pais_origen)}
             ${chip('Total', c.total_factura?c.total_factura+' '+(c.moneda||''):'')}
           </div>
         </div>
@@ -2621,7 +2633,9 @@ async function exportarFactura(){
     'NIF/VAT Exportador': e.nif || '', 'EORI Exportador': e.eori || '', 'País Exportador': e.pais || '',
     'Destinatario': d.nombre || '', 'Dirección Destinatario': d.direccion || '',
     'NIF/VAT Destinatario': d.nif || '', 'EORI Destinatario': d.eori || '', 'País Destinatario': d.pais || '',
-    'País Origen': c.pais_origen || '', 'País Destino': c.pais_destino || '',
+    'País Origen': c.pais_origen || '',
+    'Origen declarado en factura': c.origen_asumido ? 'NO (asumido)' : 'SÍ',
+    'País Destino': c.pais_destino || '',
     'Incoterm': c.incoterm || '', 'Moneda': c.moneda || '',
     'Código TARIC (10 dígitos)': l.codigo_taric || '',
     'Nomenclatura Combinada NC8': l.nc8 || '',
