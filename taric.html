@@ -1084,6 +1084,10 @@ function eisContextoDUA(taricCode){
 }
 
 const OR_PROXY_ENDPOINT = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/openrouter-proxy';
+// Lectura de facturas: Gemini con schema forzado y PDF nativo multi-página
+const FACTURA_ENDPOINT = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/clasificar-factura';
+// Cabecera completa de la última factura leída (exportador, destinatario, origen…)
+let FACTURA_CABECERA = null;
 let _proxyDisponible = null; // null=sin probar, true=funciona, false=no disponible
 // Modelo por defecto — con crédito usa mistral-small-4 (vision); sin crédito usa gemma-3-12b
 const OR_MODEL_DEFAULT = 'mistralai/mistral-small-2603';  // $0.15/$0.60 por M tokens, vision ✅
@@ -2208,16 +2212,13 @@ async function handleFile(file){
 
   try {
     if(mediaType === 'application/pdf'){
-      // PDF → renderizar en canvas con PDF.js → JPEG alta resolución
-      _setFacturaStatus('Cargando PDF.js para renderizado...');
-      imageBase64 = await renderPDFaImagen(file);
-      if(!imageBase64){
-        // Fallback: enviar como texto si PDF.js falla
-        _setFacturaStatus('Extrayendo texto del PDF...');
-        textoPlano = await extraerTextoPDF(file);
-      } else {
-        _setFacturaStatus('PDF renderizado. Enviando a Gemini Vision OCR...');
-      }
+      // El PDF va ENTERO y sin convertir: Gemini lo pagina internamente.
+      // Antes se rasterizaba con PDF.js a un JPEG de 3 páginas máximo, lo que
+      // perdía páginas y degradaba el OCR de las tablas.
+      _setFacturaStatus('Preparando PDF completo...');
+      imageBase64 = await fileToBase64(file);
+      imageType = 'application/pdf';
+      _setFacturaStatus('PDF listo. Leyendo todas las páginas...');
     } else {
       // Imagen directa: convertir a JPEG comprimido para mejor compatibilidad
       _setFacturaStatus('Optimizando imagen para OCR...');
@@ -2250,6 +2251,7 @@ async function handleFile(file){
   `;
 
   try {
+    window._facturaFileName = file.name;
     const resultado = await leerFacturaConIA(base64, imageType, textoPlano);
     // leerFacturaConIA devuelve objeto {lineas:[...]} o array directo
     const numLineas = Array.isArray(resultado) ? resultado.length : (resultado?.lineas?.length || 0);
@@ -2270,106 +2272,27 @@ async function handleFile(file){
 }
 
 async function leerFacturaConIA(base64, mediaType, textoPlano){
-  const prompt = `Eres un experto aduanero TARIC de la UE con capacidad OCR avanzada. Tu tarea es:
-1. LEER la imagen de la factura con máximo detalle (aunque sea escaneada, fotografia o baja resolución)
-2. EXTRAER absolutamente TODAS las líneas de artículos/mercancía
-3. CLASIFICAR cada artículo en el código TARIC correcto de 10 dígitos
-
-Para cada línea de la factura:
-- Descripción EXACTA tal como aparece en el documento (sin modificar)
-- Cantidad y unidad de medida
-- Precio unitario y total si figuran
-- Código TARIC 10 dígitos (NC 8 + subdivisión TARIC 2)
-- Arancel Erga Omnes (tipo NMF para importación UE desde terceros países)
-- Medidas adicionales: antidumping, contingentes, licencias, vigilancia si las conoces
-
-Si el documento está en otro idioma, mantén la descripción original Y añade traducción al español.
-NO omitas ninguna línea aunque la imagen no sea perfecta — infiere lo que puedas.
-
-Responde ÚNICAMENTE con este JSON (sin backticks):
-{
-  "proveedor": "nombre del proveedor o null",
-  "comprador": "nombre del comprador o null",
-  "numero_factura": "número o null",
-  "fecha": "fecha o null",
-  "origen": "país de origen si figura",
-  "lineas": [
-    {
-      "num": 1,
-      "descripcion_original": "texto exacto de la factura",
-      "descripcion_es": "traducción al español si es necesario",
-      "cantidad": "X unidades/kg/etc",
-      "codigo_taric": "XXXXXXXXXX",
-      "descripcion_nc": "descripción oficial NC",
-      "arancel_erga_omnes": "X%",
-      "confianza": 85,
-      "medidas": [{"tipo": "ANTIDUMPING|CONTINGENTE|NINGUNA", "desc": "texto breve"}]
-    }
-  ]
-}`;
-
-  // Construir mensaje OpenAI-compatible con imagen base64
-  let messages;
-  if(base64 && base64.length > 100){
-    // Modo Vision: imagen JPEG → Qwen-VL OCR + clasificación
-    const imgType = (mediaType === 'application/pdf') ? 'image/jpeg' : (mediaType || 'image/jpeg');
-    const cleanType = imgType.startsWith('image/') ? imgType : 'image/jpeg';
-    messages = [{
-      role: 'user',
-      content: [
-        {
-          type: 'image_url',
-          image_url: { url: `data:${cleanType};base64,${base64}` }
-        },
-        {
-          type: 'text',
-          text: prompt + '\n\nANALIZA la imagen adjunta con OCR meticuloso. Lee TODOS los artículos/líneas de la factura aunque la imagen sea de baja calidad o escaneo. Extrae cada producto con su descripción EXACTA, cantidad y precio.'
-        }
-      ]
-    }];
-  } else if(textoPlano && textoPlano.length > 50){
-    // Fallback texto puro
-    messages = [{ role: 'user', content: prompt + '\n\nCONTENIDO DEL DOCUMENTO:\n' + textoPlano }];
-  } else {
-    throw new Error('No se pudo procesar el documento. Prueba a subir como imagen JPG/PNG.');
+  // Toda la lógica (system instruction TARIC, schema forzado, cascada de modelos
+  // y pase de rescate OCR) vive en la Edge Function clasificar-factura.
+  const r = await fetch(FACTURA_ENDPOINT, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      base64: base64 || null,
+      mimeType: mediaType || 'application/pdf',
+      fileName: (window._facturaFileName || ''),
+      texto: textoPlano || null
+    })
+  });
+  if(!r.ok){
+    let msg = 'Error ' + r.status;
+    try { const j = await r.json(); if(j && j.error) msg = j.error; } catch(_){}
+    throw new Error(msg);
   }
-
-  // Llamar OpenRouter con fallback automático
-  // Si el modelo principal no soporta visión (texto-only), usa modelo VL
-  const primaryModel = getOpenRouterModel();
-  const isVisionModel = primaryModel.includes('vl') || primaryModel.includes('vision') ||
-    primaryModel.includes('mistral-small') || primaryModel.includes('gemma') ||
-    primaryModel.includes('gemma') || primaryModel.includes('llama-3.2');
-
-  // Si el modelo seleccionado no soporta visión, empezar con el primero de la lista VL
-  const modelToUse = (base64 && !isVisionModel) ? OR_VISION_MODELS[0] : primaryModel;
-  if(base64 && !isVisionModel){
-    showToast('ℹ️ Usando modelo VL para OCR');
-  }
-
-  // Construir lista completa: modelo preferido primero, luego todos los VL disponibles
-  const visionFallbacks = [modelToUse, ...OR_VISION_MODELS.filter(m => m !== modelToUse)];
-  const tried = new Set();
-  let lastErr;
-  for(const model of visionFallbacks){
-    if(tried.has(model)) continue;
-    tried.add(model);
-    try {
-      const text = await _callOpenRouter(messages, model, true);
-      if(model !== primaryModel) showToast('⚡ OCR con: ' + model.split('/').pop());
-      logUsoIA('taric-ocr', model).catch(()=>{});
-      return parseClaudeResponse(text);
-    } catch(e){
-      console.warn('Modelo OCR fallido:', model, '→', e.message.substring(0,100));
-      if(e.message.startsWith('RATE_LIMIT:')){
-        lastErr = e;
-        continue;
-      }
-      throw e;
-    }
-  }
-  console.error('Todos los modelos OCR fallaron:', lastErr?.message);
-  throw new Error('⏳ Servicio de IA temporalmente saturado. Espera unos minutos e inténtalo de nuevo, o recarga la página.');
+  const data = await r.json();
+  FACTURA_CABECERA = data.cabecera || null;
+  logUsoIA('taric-factura', 'gemini-2.5-flash').catch(()=>{});
+  return data;
 }
 
 async function renderLineasFactura(data, filename){
@@ -2381,16 +2304,36 @@ async function renderLineasFactura(data, filename){
   const info = document.getElementById('factura-info');
   const tbody = document.getElementById('factura-tbody');
 
+  // La exportación XLSX lee de aquí, no del DOM: así conserva los campos que
+  // no se pintan en la tabla (EORI, direcciones, unidades suplementarias…)
+  window._facturaLineas = lineas;
+  const cab = data.cabecera || {};
+  if(!FACTURA_CABECERA) FACTURA_CABECERA = cab;
+  const exp = cab.exportador || {}, des = cab.destinatario || {};
+  const parte = (t,o) => `
+    <div style="flex:1;min-width:200px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);font-weight:700;margin-bottom:3px">${t}</div>
+      <div style="font-size:12px;font-weight:600;color:var(--g700)">${o.nombre||'—'}</div>
+      ${o.direccion?`<div style="font-size:11px;color:var(--g500)">${o.direccion}</div>`:''}
+      <div style="font-size:11px;color:var(--g400);font-family:var(--mono)">${[o.nif,o.eori,o.pais].filter(Boolean).join(' · ')||'—'}</div>
+    </div>`;
+  const chip = (t,v) => v ? `<span class="badge badge-blue" style="font-size:10px">${t}: ${v}</span>` : '';
+
   info.innerHTML = `
-    <div class="card" style="padding:12px 16px;margin-bottom:12px">
-      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <div>
-          <div style="font-size:13px;font-weight:700">${data.numero_factura||filename}</div>
-          <div style="font-size:11px;color:var(--g400)">${data.proveedor||'—'} → ${data.comprador||'—'} · ${data.fecha||''} · Origen: ${data.origen||'No especificado'}</div>
-        </div>
-        <div style="margin-left:auto;display:flex;gap:8px">
+    <div class="card" style="padding:14px 16px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <div style="font-size:14px;font-weight:700">${cab.numero_factura||data.numero_factura||filename}</div>
+        <div style="font-size:11px;color:var(--g400)">${cab.fecha||data.fecha||''}</div>
+        <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
           <span class="badge badge-blue">${lineas.length} líneas</span>
+          ${chip('Origen', cab.pais_origen||data.origen)}
+          ${chip('Incoterm', cab.incoterm)}
+          ${chip('Total', cab.total_factura?cab.total_factura+' '+(cab.moneda||''):'')}
         </div>
+      </div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--g100)">
+        ${parte('Exportador · casilla 2', exp.nombre?exp:{nombre:data.proveedor})}
+        ${parte('Destinatario · casilla 8', des.nombre?des:{nombre:data.comprador})}
       </div>
     </div>
   `;
@@ -2524,27 +2467,78 @@ async function clasificarTextoFactura(){
   }
 }
 
-function exportarFactura(){
-  const rows = document.querySelectorAll('#factura-tbody tr');
-  if(!rows.length) return;
-  const headers = ['#','Descripción original','Código TARIC','Descripción NC','Arancel EO','Confianza','Medidas TARIC'];
-  const data = [headers];
-  rows.forEach(tr=>{
-    const cells = tr.querySelectorAll('td');
-    if(cells.length>=6){
-      data.push([
-        cells[0].textContent.trim(),
-        cells[1].querySelector('div')?.textContent.trim()||'',
-        cells[2].textContent.replace(/\s+/g,' ').trim(),
-        cells[3].textContent.trim(),
-        cells[4].textContent.trim(),
-        cells[6].querySelector('div')?.textContent.trim()||'',
-        cells[7]?.querySelector('.badge')?.textContent.trim()||cells[7]?.textContent.trim()||''
-      ]);
-    }
+async function exportarFactura(){
+  const lineas = window._facturaLineas || [];
+  if(!lineas.length){ showToast('No hay líneas que exportar'); return; }
+  await loadXLSX();
+  const cab = FACTURA_CABECERA || {};
+  const exp = cab.exportador || {}, des = cab.destinatario || {};
+  const num = (v) => { const n = parseFloat(String(v||'').replace(/\./g,'').replace(',','.')); return isNaN(n) ? null : n; };
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Hoja 1: resumen por partida de 4 dígitos ──
+  const grupos = {};
+  lineas.forEach(l => {
+    const k = (l.codigo_taric||'').substring(0,4) || '----';
+    if(!grupos[k]) grupos[k] = { lineas:0, bultos:0, bruto:0, cantidad:0, importe:0, desc:l.descripcion_nc||'' };
+    const g = grupos[k];
+    g.lineas++;
+    g.bultos += num(l.bultos)||0; g.bruto += num(l.peso_bruto)||0;
+    g.cantidad += num(l.cantidad)||0; g.importe += num(l.importe)||0;
   });
-  const csv = data.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
-  downloadCSV(csv, 'factura_taric.csv');
+  const resumen = Object.keys(grupos).sort().map(k => ({
+    'Partida (4 dig.)': k, 'Descripción': grupos[k].desc, 'Nº Líneas': grupos[k].lineas,
+    'Total Bultos': grupos[k].bultos||'-', 'Total Peso Bruto (kg)': grupos[k].bruto||'-',
+    'Total Cantidad / Kilos Netos': grupos[k].cantidad||'-', 'Total Importe': grupos[k].importe||'-'
+  }));
+  resumen.push({
+    'Partida (4 dig.)':'TOTAL', 'Descripción':'', 'Nº Líneas': lineas.length,
+    'Total Bultos': resumen.reduce((a,r)=>a+(Number(r['Total Bultos'])||0),0)||'-',
+    'Total Peso Bruto (kg)': resumen.reduce((a,r)=>a+(Number(r['Total Peso Bruto (kg)'])||0),0)||'-',
+    'Total Cantidad / Kilos Netos': resumen.reduce((a,r)=>a+(Number(r['Total Cantidad / Kilos Netos'])||0),0)||'-',
+    'Total Importe': resumen.reduce((a,r)=>a+(Number(r['Total Importe'])||0),0)||'-'
+  });
+  const ws1 = XLSX.utils.json_to_sheet(resumen);
+  ws1['!cols'] = [{wch:16},{wch:46},{wch:10},{wch:14},{wch:20},{wch:26},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Resumen_Partidas_4Dig');
+
+  // ── Hoja 2: detalle línea a línea con la cabecera repetida ──
+  const detalle = lineas.map((l,i) => ({
+    'Nº Línea (Factura)': l.num || (i+1),
+    'Nº Factura': cab.numero_factura || '',
+    'Fecha Factura': cab.fecha || '',
+    'Exportador': exp.nombre || '', 'Dirección Exportador': exp.direccion || '',
+    'NIF/VAT Exportador': exp.nif || '', 'EORI Exportador': exp.eori || '', 'País Exportador': exp.pais || '',
+    'Destinatario': des.nombre || '', 'Dirección Destinatario': des.direccion || '',
+    'NIF/VAT Destinatario': des.nif || '', 'EORI Destinatario': des.eori || '', 'País Destinatario': des.pais || '',
+    'País Origen': cab.pais_origen || '', 'País Destino': cab.pais_destino || '',
+    'Incoterm': cab.incoterm || '', 'Moneda': cab.moneda || '',
+    'Código TARIC (10 dígitos)': l.codigo_taric || '',
+    'Nomenclatura Combinada NC8': l.nc8 || '',
+    'Descripción Original': l.descripcion_original || '',
+    'Traducción Técnica': l.descripcion_es || '',
+    'Descripción Oficial TARIC': l.descripcion_nc || '',
+    'Arancel Erga Omnes': l.arancel_erga_omnes || '',
+    'Bultos': num(l.bultos) ?? (l.bultos||''),
+    'Peso Bruto (kg)': num(l.peso_bruto) ?? (l.peso_bruto||''),
+    'Cantidad / Kilos Netos': num(l.cantidad) ?? (l.cantidad||''),
+    'Unidad': l.unidad || '',
+    'Precio Unitario': num(l.precio_unitario) ?? (l.precio_unitario||''),
+    'Importe': num(l.importe) ?? (l.importe||''),
+    'Unidades Suplementarias': l.unidades_suplementarias || '',
+    'Medidas Paraduaneras': (l.medidas||[]).filter(m=>m.tipo!=='NINGUNA').map(m=>m.codigo?(m.tipo+' ('+m.codigo+')'):m.tipo).join(' | '),
+    'Confianza (%)': l.confianza || 0,
+    'Fichero de Origen': l.fichero || cab.fichero || ''
+  }));
+  const ws2 = XLSX.utils.json_to_sheet(detalle);
+  ws2['!cols'] = Object.keys(detalle[0]||{}).map(k =>
+    ({wch: /Descripción|Dirección/.test(k) ? 40 : /Exportador|Destinatario|Medidas/.test(k) ? 26 : 16}));
+  XLSX.utils.book_append_sheet(wb, ws2, 'Detalle_Lineas');
+
+  const nombre = 'TARIC_' + (cab.numero_factura || 'factura').replace(/[^\w\-]/g,'_') + '.xlsx';
+  XLSX.writeFile(wb, nombre);
+  showToast('Excel generado: ' + nombre);
 }
 
 // ══════════════════════════════════════════════════════════════
