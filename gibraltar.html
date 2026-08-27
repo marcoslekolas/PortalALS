@@ -764,9 +764,9 @@ const GEM_PROXY='https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/gemini-pr
 // grounding:true consume cuota de búsqueda de Google — activarlo solo donde hace falta.
 // Para volver a OpenRouter: poner model:'perplexity/sonar-pro' o 'anthropic/claude-sonnet-4-5'.
 const IA = {
-  briefing:{ model:'gemini-2.5-flash', grounding:true,  maxTokens:5000 },
-  informe: { model:'gemini-2.5-flash', grounding:true,  maxTokens:7000 },
-  chat:    { model:'gemini-2.5-flash', grounding:false, maxTokens:2500 }
+  briefing:{ model:'gemini-2.5-flash', grounding:true,  maxTokens:8000 },
+  informe: { model:'gemini-2.5-flash', grounding:true,  maxTokens:14000 },
+  chat:    { model:'gemini-2.5-flash', grounding:false, maxTokens:4000 }
 };
 
 // Enruta al proxy correcto según el modelo
@@ -1412,6 +1412,19 @@ async function consumirSSE(r,onChunk){
   return full;
 }
 
+// Las Edge Functions llevan Verify JWT activo: sin estas cabeceras la petición
+// muere en la puerta de Supabase con un 401 SIN cabeceras CORS, y el navegador
+// lo reporta como error de red genérico en vez de 401.
+async function cabecerasIA(){
+  const h={'Content-Type':'application/json', apikey:SB_KEY, Authorization:'Bearer '+SB_KEY};
+  try{
+    const {data}=await sb.auth.getSession();
+    const tok=data&&data.session&&data.session.access_token;
+    if(tok) h.Authorization='Bearer '+tok;
+  }catch(_){}
+  return h;
+}
+
 async function streamOR({model,messages,maxTokens=4000,temperature=0.1,grounding=false,onChunk,onRetry,signal,reintentos=2}){
   if(AI_INFLIGHT>=AI_MAX_INFLIGHT){
     const e=new Error('Ya hay una consulta de IA en curso. Espera a que termine (o cancélala) antes de lanzar otra.');
@@ -1419,9 +1432,10 @@ async function streamOR({model,messages,maxTokens=4000,temperature=0.1,grounding
   }
   AI_INFLIGHT++;
   try{
+    const headers=await cabecerasIA();
     for(let intento=0;;intento++){
       const r=await fetch(endpointIA(model),{
-        method:'POST',headers:{'Content-Type':'application/json'},signal,
+        method:'POST',headers,signal,
         body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature,grounding,stream:true})
       });
       if(r.ok) return await consumirSSE(r,onChunk);
@@ -1682,7 +1696,7 @@ async function sendChat(){
     document.getElementById('tpdot')?.remove();
     const el=document.getElementById(msgId);
     if(e.name==='AbortError'){ if(el) el.innerHTML='<em style="color:var(--g400)">Cancelado.</em>'; }
-    else{ if(el) el.innerHTML='<span style="color:var(--rd600)">Error de conexión con la API.</span>'; }
+    else{ if(el) el.innerHTML='<span style="color:var(--rd600)">'+esc(e.message||'Error de conexión con la API.')+'</span>'; }
   }
   CB=false;document.getElementById('csend').disabled=false;
 }
