@@ -2214,10 +2214,10 @@ async function handleFiles(fileList){
         </div>
         ${estados.map(e => `
           <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--g100)">
-            <span style="font-size:15px">${e.estado==='ok'?'✅':e.estado==='error'?'❌':e.estado==='leyendo'?'⏳':'·'}</span>
+            <span style="font-size:15px">${e.estado==='ok'?'✅':e.estado==='parcial'?'⚠️':e.estado==='error'?'❌':e.estado==='leyendo'?'⏳':'·'}</span>
             <div style="flex:1;min-width:0">
               <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.nombre}</div>
-              ${e.msg?`<div style="font-size:11px;color:${e.estado==='error'?'var(--rd600)':'var(--g400)'}">${e.msg}</div>`:''}
+              ${e.msg?`<div style="font-size:11px;color:${e.estado==='error'?'var(--rd600)':e.estado==='parcial'?'var(--am600)':'var(--g400)'}">${e.msg}</div>`:''}
             </div>
             ${e.lineas?`<span class="badge badge-blue" style="font-size:10px">${e.lineas} líneas</span>`:''}
           </div>`).join('')}
@@ -2235,11 +2235,12 @@ async function handleFiles(fileList){
       const data = await procesarUnaFactura(file);
       const lineas = Array.isArray(data) ? data : (data.lineas || []);
       if(!lineas.length) throw new Error('No se encontraron líneas de mercancía');
-      FACTURAS.push({ fichero:file.name, cabecera:data.cabecera||{}, lineas });
-      estados[i].estado = 'ok';
+      FACTURAS.push({ fichero:file.name, cabecera:data.cabecera||{}, lineas, truncado:!!data._truncado, tokens:data._tokens||null });
+      estados[i].estado = data._truncado ? 'parcial' : 'ok';
       estados[i].lineas = lineas.length;
-      estados[i].msg = (data.cabecera && data.cabecera.numero_factura)
-        ? 'Factura ' + data.cabecera.numero_factura : '';
+      estados[i].msg = data._truncado
+        ? '⚠️ Lectura incompleta: se agotaron los tokens. Revisa que no falten líneas al final.'
+        : ((data.cabecera && data.cabecera.numero_factura) ? 'Factura ' + data.cabecera.numero_factura : '');
     } catch(e){
       console.error('Factura ' + file.name, e);
       FACTURAS.push({ fichero:file.name, cabecera:{}, lineas:[], error:e.message });
