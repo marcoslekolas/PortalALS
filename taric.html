@@ -625,10 +625,10 @@ textarea.fi{resize:vertical;min-height:80px}
             <!-- Panel: Subir archivo -->
             <div id="panel-archivo">
               <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-                <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="handleFile(this.files[0])">
+                <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple style="display:none" onchange="handleFiles(this.files)">
                 <div class="drop-zone-icon">📎</div>
-                <div class="drop-zone-title">Arrastra la factura aquí o haz clic para seleccionar</div>
-                <div class="drop-zone-sub">PDF, JPG, PNG, WEBP · Máximo 20MB</div>
+                <div class="drop-zone-title">Arrastra una o varias facturas aquí o haz clic para seleccionar</div>
+                <div class="drop-zone-sub">PDF, JPG, PNG, WEBP · Máximo 20MB por archivo · Se procesan en orden</div>
                 <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
                   <span class="badge badge-blue">🇬🇧 Inglés</span>
                   <span class="badge badge-blue">🇪🇸 Español</span>
@@ -2175,100 +2175,108 @@ function setupDropZone(){
   dz.addEventListener('dragleave', ()=>dz.classList.remove('dragover'));
   dz.addEventListener('drop', e=>{
     e.preventDefault();dz.classList.remove('dragover');
-    const f=e.dataTransfer.files[0];if(f) handleFile(f);
+    const fs=e.dataTransfer.files; if(fs && fs.length) handleFiles(fs);
   });
 }
 
-async function handleFile(file){
-  if(!file) return;
-  if(file.size > 20*1024*1024){ showToast('❌ Archivo demasiado grande (máx 20MB)'); return; }
+// ── Estado del lote de facturas ──
+let FACTURAS = [];          // [{fichero, cabecera, lineas, error}]
 
-  const mediaType = getMediaType(file.type, file.name);
+async function handleFile(file){ return handleFiles([file]); }
+
+async function handleFiles(fileList){
+  const files = Array.from(fileList || []).filter(Boolean);
+  if(!files.length) return;
+
+  const grandes = files.filter(f => f.size > 20*1024*1024);
+  if(grandes.length){
+    showToast('❌ Descartados por tamaño (máx 20MB): ' + grandes.map(f=>f.name).join(', '));
+  }
+  const validos = files.filter(f => f.size <= 20*1024*1024);
+  if(!validos.length) return;
+
+  FACTURAS = [];
+  FACTURA_CABECERA = null;
+  window._facturaLineas = [];
 
   document.getElementById('factura-upload-area').style.display='none';
   document.getElementById('factura-result').style.display='block';
-  document.getElementById('factura-info').innerHTML = `
-    <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
-      <span style="font-size:24px">${mediaType==='application/pdf'?'📄':'🖼️'}</span>
-      <div>
-        <div style="font-size:13px;font-weight:600">${file.name}</div>
-        <div style="font-size:11px;color:var(--g400)" id="factura-status-txt">
-          ${mediaType==='application/pdf'?'Renderizando PDF como imagen para OCR...':'Procesando imagen con OCR...'}
+  document.getElementById('btn-exp-fact').style.display='none';
+  document.getElementById('factura-tbody').innerHTML = '';
+
+  // Estado inicial de la cola
+  const estados = validos.map(f => ({ nombre:f.name, estado:'pendiente', lineas:0, msg:'' }));
+  const pintarCola = () => {
+    document.getElementById('factura-info').innerHTML = `
+      <div class="card" style="padding:14px 16px;margin-bottom:12px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px">
+          Procesando ${validos.length} documento${validos.length>1?'s':''}
         </div>
-      </div>
-      <div class="spinner" style="margin-left:auto" id="factura-spinner"></div>
-    </div>`;
-  document.getElementById('factura-tbody').innerHTML = `
-    <tr><td colspan="7" style="padding:32px;text-align:center">
-      <div class="loading-wrap" style="justify-content:center">
-        <div class="spinner"></div>
-        <span id="factura-ocr-status">Iniciando OCR con Gemini Vision...</span>
-      </div>
-    </td></tr>`;
+        ${estados.map(e => `
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--g100)">
+            <span style="font-size:15px">${e.estado==='ok'?'✅':e.estado==='error'?'❌':e.estado==='leyendo'?'⏳':'·'}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.nombre}</div>
+              ${e.msg?`<div style="font-size:11px;color:${e.estado==='error'?'var(--rd600)':'var(--g400)'}">${e.msg}</div>`:''}
+            </div>
+            ${e.lineas?`<span class="badge badge-blue" style="font-size:10px">${e.lineas} líneas</span>`:''}
+          </div>`).join('')}
+      </div>`;
+  };
+  pintarCola();
 
-  let imageBase64 = null;
-  let imageType = 'image/jpeg';
-  let textoPlano = null;
+  // Secuencial a propósito: en paralelo se dispara la cuota de Gemini
+  for(let i=0; i<validos.length; i++){
+    const file = validos[i];
+    estados[i].estado = 'leyendo';
+    estados[i].msg = 'Leyendo y clasificando...';
+    pintarCola();
+    try {
+      const data = await procesarUnaFactura(file);
+      const lineas = Array.isArray(data) ? data : (data.lineas || []);
+      if(!lineas.length) throw new Error('No se encontraron líneas de mercancía');
+      FACTURAS.push({ fichero:file.name, cabecera:data.cabecera||{}, lineas });
+      estados[i].estado = 'ok';
+      estados[i].lineas = lineas.length;
+      estados[i].msg = (data.cabecera && data.cabecera.numero_factura)
+        ? 'Factura ' + data.cabecera.numero_factura : '';
+    } catch(e){
+      console.error('Factura ' + file.name, e);
+      FACTURAS.push({ fichero:file.name, cabecera:{}, lineas:[], error:e.message });
+      estados[i].estado = 'error';
+      estados[i].msg = e.message;
+    }
+    pintarCola();
+  }
 
+  const conLineas = FACTURAS.filter(f => f.lineas.length);
+  if(!conLineas.length){
+    document.getElementById('factura-tbody').innerHTML =
+      '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--rd600)">No se pudo extraer ninguna línea de los documentos.</td></tr>';
+    return;
+  }
+  renderLoteFacturas();
+  document.getElementById('btn-exp-fact').style.display='';
+}
+
+// Prepara el fichero y lo manda a la Edge Function. No toca la UI global.
+async function procesarUnaFactura(file){
+  const mediaType = getMediaType(file.type, file.name);
+  let base64 = null, tipo = 'image/jpeg', textoPlano = null;
   try {
     if(mediaType === 'application/pdf'){
-      // El PDF va ENTERO y sin convertir: Gemini lo pagina internamente.
-      // Antes se rasterizaba con PDF.js a un JPEG de 3 páginas máximo, lo que
-      // perdía páginas y degradaba el OCR de las tablas.
-      _setFacturaStatus('Preparando PDF completo...');
-      imageBase64 = await fileToBase64(file);
-      imageType = 'application/pdf';
-      _setFacturaStatus('PDF listo. Leyendo todas las páginas...');
+      base64 = await fileToBase64(file);
+      tipo = 'application/pdf';
     } else {
-      // Imagen directa: convertir a JPEG comprimido para mejor compatibilidad
-      _setFacturaStatus('Optimizando imagen para OCR...');
-      imageBase64 = await comprimirImagenParaOCR(file);
-      _setFacturaStatus('Imagen lista. Enviando a Gemini Vision OCR...');
+      base64 = await comprimirImagenParaOCR(file);
     }
   } catch(e){
-    console.warn('Preparación imagen/PDF falló:', e);
-    // Último recurso: base64 raw
-    imageBase64 = await fileToBase64(file);
+    console.warn('Preparación falló, se envía en crudo:', e);
+    base64 = await fileToBase64(file);
+    tipo = mediaType || 'application/pdf';
   }
-
-  const base64 = imageBase64;
-
-  document.getElementById('factura-info').innerHTML = `
-    <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
-      <span style="font-size:24px">${file.type.includes('pdf')?'📄':'🖼️'}</span>
-      <div>
-        <div style="font-size:13px;font-weight:600">${file.name}</div>
-        <div style="font-size:11px;color:var(--g400)">${(file.size/1024).toFixed(0)} KB · Extrayendo líneas de mercancía...</div>
-      </div>
-      <div class="spinner" style="margin-left:auto"></div>
-    </div>
-  `;
-
-  document.getElementById('factura-tbody').innerHTML = `
-    <tr><td colspan="7" style="padding:32px;text-align:center;color:var(--g400)">
-      <div class="loading-wrap" style="justify-content:center"><div class="spinner"></div><span>IA leyendo la factura y clasificando mercancías...</span></div>
-    </td></tr>
-  `;
-
-  try {
-    window._facturaFileName = file.name;
-    const resultado = await leerFacturaConIA(base64, imageType, textoPlano);
-    // leerFacturaConIA devuelve objeto {lineas:[...]} o array directo
-    const numLineas = Array.isArray(resultado) ? resultado.length : (resultado?.lineas?.length || 0);
-    if(!numLineas){
-      document.getElementById('factura-info').innerHTML = '<div style="padding:12px;color:var(--rd600)">❌ No se encontraron líneas de mercancía en el documento.</div>';
-      document.getElementById('factura-tbody').innerHTML = '';
-      return;
-    }
-
-    await renderLineasFactura(resultado, file.name);
-    document.getElementById('btn-exp-fact').style.display='';
-
-  } catch(e){
-    console.error(e);
-    document.getElementById('factura-info').innerHTML = `<div style="padding:12px;color:var(--rd600)">❌ Error procesando factura: ${e.message}</div>`;
-    document.getElementById('factura-tbody').innerHTML = '';
-  }
+  window._facturaFileName = file.name;
+  return await leerFacturaConIA(base64, tipo, textoPlano);
 }
 
 async function leerFacturaConIA(base64, mediaType, textoPlano){
@@ -2293,6 +2301,67 @@ async function leerFacturaConIA(base64, mediaType, textoPlano){
   FACTURA_CABECERA = data.cabecera || null;
   logUsoIA('taric-factura', 'gemini-2.5-flash').catch(()=>{});
   return data;
+}
+
+// Fusiona todas las facturas del lote en una sola tabla, marcando cada línea
+// con la factura de la que viene, y repinta el panel con una tarjeta por documento.
+async function renderLoteFacturas(){
+  const conLineas = FACTURAS.filter(f => f.lineas.length);
+  if(!conLineas.length) return;
+
+  const todas = [];
+  conLineas.forEach(f => {
+    const c = f.cabecera || {};
+    f.lineas.forEach(l => todas.push(Object.assign({}, l, {
+      _numFactura: c.numero_factura || f.fichero,
+      _cab: c,
+      fichero: f.fichero
+    })));
+  });
+
+  FACTURA_CABECERA = conLineas[0].cabecera || {};
+  await renderLineasFactura({ lineas: todas, cabecera: FACTURA_CABECERA },
+                            conLineas.map(f => f.fichero).join(', '));
+  window._facturaLineas = todas;   // renderLineasFactura lo sobrescribe: restaurar
+
+  // Repintar la ficha: una tarjeta por factura en vez de la de un solo documento
+  const parte = (t,o) => `
+    <div style="flex:1;min-width:190px">
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);font-weight:700">${t}</div>
+      <div style="font-size:12px;font-weight:600;color:var(--g700)">${o.nombre||'—'}</div>
+      <div style="font-size:11px;color:var(--g400);font-family:var(--mono)">${[o.nif,o.eori,o.pais].filter(Boolean).join(' · ')||'—'}</div>
+    </div>`;
+  const chip = (t,v) => v ? `<span class="badge badge-blue" style="font-size:10px">${t}: ${v}</span>` : '';
+  const fallidas = FACTURAS.filter(f => f.error);
+
+  document.getElementById('factura-info').innerHTML = `
+    <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px;font-weight:700">${conLineas.length} factura${conLineas.length>1?'s':''} · ${todas.length} líneas</span>
+      ${fallidas.length?`<span class="badge" style="background:var(--rd50);color:var(--rd600);font-size:10px">${fallidas.length} con error</span>`:''}
+    </div>
+    ${conLineas.map(f => {
+      const c = f.cabecera||{}, e = c.exportador||{}, d = c.destinatario||{};
+      return `
+      <div class="card" style="padding:12px 16px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+          <div style="font-size:13px;font-weight:700">${c.numero_factura||f.fichero}</div>
+          <div style="font-size:11px;color:var(--g400)">${c.fecha||''} · ${f.fichero}</div>
+          <div style="margin-left:auto;display:flex;gap:5px;flex-wrap:wrap">
+            <span class="badge badge-blue" style="font-size:10px">${f.lineas.length} líneas</span>
+            ${chip('Origen', c.pais_origen)}
+            ${chip('Total', c.total_factura?c.total_factura+' '+(c.moneda||''):'')}
+          </div>
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--g100)">
+          ${parte('Exportador · casilla 2', e)}
+          ${parte('Destinatario · casilla 8', d)}
+        </div>
+      </div>`;
+    }).join('')}
+    ${fallidas.length?`<div class="card" style="padding:10px 16px;margin-bottom:8px;font-size:11px;color:var(--rd600)">
+      ${fallidas.map(f=>`❌ ${f.fichero}: ${f.error}`).join('<br>')}
+    </div>`:''}
+  `;
 }
 
 async function renderLineasFactura(data, filename){
@@ -2350,7 +2419,7 @@ async function renderLineasFactura(data, filename){
     const taricUrl = l.codigo_taric ? `https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es&Taric=${l.codigo_taric}` : '#';
 
     html += `<tr>
-      <td style="font-weight:700;color:var(--g400);font-family:var(--mono)">${l.num}</td>
+      <td style="font-weight:700;color:var(--g400);font-family:var(--mono)">${l.num}${l._numFactura?`<div style="font-size:9px;font-weight:600;color:var(--b600);margin-top:2px;max-width:52px;overflow:hidden;text-overflow:ellipsis" title="${l._numFactura}">${l._numFactura}</div>`:''}</td>
       <td>
         <div style="font-size:12px;font-weight:600;color:var(--g700)">${l.descripcion_original||'—'}</div>
         ${l.descripcion_es&&l.descripcion_es!==l.descripcion_original?`<div style="font-size:11px;color:var(--g400);margin-top:2px">🔤 ${l.descripcion_es}</div>`:''}
@@ -2481,9 +2550,11 @@ async function exportarFactura(){
   const grupos = {};
   lineas.forEach(l => {
     const k = (l.codigo_taric||'').substring(0,4) || '----';
-    if(!grupos[k]) grupos[k] = { lineas:0, bultos:0, bruto:0, cantidad:0, importe:0, desc:l.descripcion_nc||'', frec:{}, descs:[] };
+    if(!grupos[k]) grupos[k] = { lineas:0, bultos:0, bruto:0, cantidad:0, importe:0, desc:l.descripcion_nc||'', frec:{}, descs:[], facturas:[] };
     const g = grupos[k];
     g.lineas++;
+    const nf = (l._cab && l._cab.numero_factura) || cab.numero_factura || '';
+    if(nf && !g.facturas.includes(nf)) g.facturas.push(nf);
     g.bultos += num(l.bultos)||0; g.bruto += num(l.peso_bruto)||0;
     g.cantidad += num(l.cantidad)||0; g.importe += num(l.importe)||0;
     // Frecuencia de cada TARIC de 10 dígitos dentro del grupo, con kilos e importe acumulados
@@ -2511,13 +2582,15 @@ async function exportarFactura(){
   const resumen = Object.keys(grupos).sort().map(k => ({
     'Partida (4 dig.)': k,
     'TARIC 10 díg. (moda)': modaTaric(grupos[k]),
+    'Facturas': grupos[k].facturas.join(', '),
     'Descripción agrupada (casilla 31)': grupos[k].descs.join(' + '),
     'Descripción': grupos[k].desc, 'Nº Líneas': grupos[k].lineas,
     'Total Bultos': grupos[k].bultos||'-', 'Total Peso Bruto (kg)': grupos[k].bruto||'-',
     'Total Cantidad / Kilos Netos': grupos[k].cantidad||'-', 'Total Importe': grupos[k].importe||'-'
   }));
   resumen.push({
-    'Partida (4 dig.)':'TOTAL', 'TARIC 10 díg. (moda)':'', 'Descripción agrupada (casilla 31)':'',
+    'Partida (4 dig.)':'TOTAL', 'TARIC 10 díg. (moda)':'', 'Facturas':'',
+    'Descripción agrupada (casilla 31)':'',
     'Descripción':'', 'Nº Líneas': lineas.length,
     'Total Bultos': resumen.reduce((a,r)=>a+(Number(r['Total Bultos'])||0),0)||'-',
     'Total Peso Bruto (kg)': resumen.reduce((a,r)=>a+(Number(r['Total Peso Bruto (kg)'])||0),0)||'-',
@@ -2525,26 +2598,30 @@ async function exportarFactura(){
     'Total Importe': resumen.reduce((a,r)=>a+(Number(r['Total Importe'])||0),0)||'-'
   });
   const ws1 = XLSX.utils.json_to_sheet(resumen);
-  ws1['!cols'] = [{wch:16},{wch:22},{wch:70},{wch:46},{wch:10},{wch:14},{wch:20},{wch:26},{wch:16}];
+  ws1['!cols'] = [{wch:16},{wch:22},{wch:24},{wch:70},{wch:46},{wch:10},{wch:14},{wch:20},{wch:26},{wch:16}];
   // La descripción agrupada puede ser larga: ajuste de texto y filas más altas
   const rango = XLSX.utils.decode_range(ws1['!ref']);
   for(let R=1; R<=rango.e.r; R++){
-    const c = ws1[XLSX.utils.encode_cell({r:R,c:2})];
+    const c = ws1[XLSX.utils.encode_cell({r:R,c:3})];
     if(c){ c.s = Object.assign({}, c.s, {alignment:{wrapText:true,vertical:'top'}}); }
   }
   XLSX.utils.book_append_sheet(wb, ws1, 'Resumen_Partidas_4Dig');
 
   // ── Hoja 2: detalle línea a línea con la cabecera repetida ──
-  const detalle = lineas.map((l,i) => ({
+  const detalle = lineas.map((l,i) => {
+    // Cada línea lleva la cabecera de SU factura (lote multi-documento);
+    // si es un solo documento, cae a la cabecera global.
+    const c = l._cab || cab, e = c.exportador || exp, d = c.destinatario || des;
+    return {
     'Nº Línea (Factura)': l.num || (i+1),
-    'Nº Factura': cab.numero_factura || '',
-    'Fecha Factura': cab.fecha || '',
-    'Exportador': exp.nombre || '', 'Dirección Exportador': exp.direccion || '',
-    'NIF/VAT Exportador': exp.nif || '', 'EORI Exportador': exp.eori || '', 'País Exportador': exp.pais || '',
-    'Destinatario': des.nombre || '', 'Dirección Destinatario': des.direccion || '',
-    'NIF/VAT Destinatario': des.nif || '', 'EORI Destinatario': des.eori || '', 'País Destinatario': des.pais || '',
-    'País Origen': cab.pais_origen || '', 'País Destino': cab.pais_destino || '',
-    'Incoterm': cab.incoterm || '', 'Moneda': cab.moneda || '',
+    'Nº Factura': c.numero_factura || '',
+    'Fecha Factura': c.fecha || '',
+    'Exportador': e.nombre || '', 'Dirección Exportador': e.direccion || '',
+    'NIF/VAT Exportador': e.nif || '', 'EORI Exportador': e.eori || '', 'País Exportador': e.pais || '',
+    'Destinatario': d.nombre || '', 'Dirección Destinatario': d.direccion || '',
+    'NIF/VAT Destinatario': d.nif || '', 'EORI Destinatario': d.eori || '', 'País Destinatario': d.pais || '',
+    'País Origen': c.pais_origen || '', 'País Destino': c.pais_destino || '',
+    'Incoterm': c.incoterm || '', 'Moneda': c.moneda || '',
     'Código TARIC (10 dígitos)': l.codigo_taric || '',
     'Nomenclatura Combinada NC8': l.nc8 || '',
     'Descripción Original': l.descripcion_original || '',
@@ -2560,14 +2637,17 @@ async function exportarFactura(){
     'Unidades Suplementarias': l.unidades_suplementarias || '',
     'Medidas Paraduaneras': (l.medidas||[]).filter(m=>m.tipo!=='NINGUNA').map(m=>m.codigo?(m.tipo+' ('+m.codigo+')'):m.tipo).join(' | '),
     'Confianza (%)': l.confianza || 0,
-    'Fichero de Origen': l.fichero || cab.fichero || ''
-  }));
+    'Fichero de Origen': l.fichero || c.fichero || ''
+  };});
   const ws2 = XLSX.utils.json_to_sheet(detalle);
   ws2['!cols'] = Object.keys(detalle[0]||{}).map(k =>
     ({wch: /Descripción|Dirección/.test(k) ? 40 : /Exportador|Destinatario|Medidas/.test(k) ? 26 : 16}));
   XLSX.utils.book_append_sheet(wb, ws2, 'Detalle_Lineas');
 
-  const nombre = 'TARIC_' + (cab.numero_factura || 'factura').replace(/[^\w\-]/g,'_') + '.xlsx';
+  const nFact = new Set(lineas.map(l => (l._cab && l._cab.numero_factura) || cab.numero_factura || '')).size;
+  const nombre = 'TARIC_' + (nFact > 1
+      ? 'lote_' + nFact + '_facturas_' + new Date().toISOString().slice(0,10)
+      : (cab.numero_factura || 'factura').replace(/[^\w\-]/g,'_')) + '.xlsx';
   XLSX.writeFile(wb, nombre);
   showToast('Excel generado: ' + nombre);
 }
