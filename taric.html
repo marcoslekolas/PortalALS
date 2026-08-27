@@ -2486,21 +2486,23 @@ async function exportarFactura(){
     g.lineas++;
     g.bultos += num(l.bultos)||0; g.bruto += num(l.peso_bruto)||0;
     g.cantidad += num(l.cantidad)||0; g.importe += num(l.importe)||0;
-    // Frecuencia de cada TARIC de 10 dígitos dentro del grupo, con su importe acumulado
+    // Frecuencia de cada TARIC de 10 dígitos dentro del grupo, con kilos e importe acumulados
     if(l.codigo_taric && l.codigo_taric.length===10){
-      const f = g.frec[l.codigo_taric] || (g.frec[l.codigo_taric] = {n:0, imp:0});
-      f.n++; f.imp += num(l.importe)||0;
+      const f = g.frec[l.codigo_taric] || (g.frec[l.codigo_taric] = {n:0, kg:0, imp:0});
+      f.n++; f.kg += num(l.cantidad)||0; f.imp += num(l.importe)||0;
     }
     const d = (l.descripcion_original||l.descripcion_es||'').trim();
     if(d && !g.descs.includes(d)) g.descs.push(d);   // sin repetir
   });
   // MODA: el TARIC de 10 dígitos que más veces se repite en la agrupación.
-  // Empate → gana el de mayor importe acumulado; si persiste, el código más alto.
+  // Empate → gana el de más kilos netos; luego el de mayor importe; luego el código más alto.
+  // (El importe se mantiene como tercer criterio porque hay líneas sin peso declarado.)
   const modaTaric = g => {
     const cods = Object.keys(g.frec);
     if(!cods.length) return '';
     cods.sort((a,b) =>
       (g.frec[b].n - g.frec[a].n) ||
+      (g.frec[b].kg - g.frec[a].kg) ||
       (g.frec[b].imp - g.frec[a].imp) ||
       (a < b ? 1 : -1)
     );
