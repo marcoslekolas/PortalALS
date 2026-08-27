@@ -1335,12 +1335,47 @@ function toggleAcc(el){
 
 // ═══ BRIEFING ═══
 // ═══ HELPER: streaming SSE desde OpenRouter ═══
-async function streamOR({model,messages,maxTokens=8000,temperature=0.1,onChunk,signal}){
-  const r=await fetch(OR_PROXY,{
-    method:'POST',headers:{'Content-Type':'application/json'},signal,
-    body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature,stream:true})
+// OpenRouter RESERVA saldo por el max_tokens solicitado, no por lo que consume.
+// Dos consultas grandes a la vez (o una cancelada que sigue viva arriba) agotan
+// el "in-flight budget" y devuelven 402. Por eso: 1 llamada a la vez + reintento.
+let AI_INFLIGHT = 0;
+const AI_MAX_INFLIGHT = 1;
+
+function parseORError(status, raw){
+  let p=null;
+  try{ p=JSON.parse(raw); }catch(_){}
+  // El proxy envuelve el error: {error:'OpenRouter error', status, detail}
+  // detail puede llegar como objeto (proxy nuevo) o como string JSON (antiguo)
+  if(p && p.detail!=null){
+    if(typeof p.detail==='string'){ try{ p=JSON.parse(p.detail); }catch(_){ p={error:{message:p.detail}}; } }
+    else p=p.detail;
+  }
+  const e=(p&&typeof p.error==='object'&&p.error)||{};
+  return { status, reason:(e.metadata&&e.metadata.reason)||'', message:e.message||String(raw||'').substring(0,200) };
+}
+
+function orErrorLegible(info){
+  const inFlight = info.status===402 && info.reason==='in_flight_budget_exhausted';
+  let msg;
+  if(inFlight) msg='Sin crédito disponible ahora mismo en OpenRouter: hay consultas anteriores todavía abiertas reteniendo saldo. Espera 1–2 minutos y vuelve a intentarlo, o añade crédito en openrouter.ai/credits.';
+  else if(info.status===402) msg='Crédito insuficiente en OpenRouter para esta consulta. Añade saldo en openrouter.ai/credits o reduce la extensión del análisis.';
+  else if(info.status===401||info.status===403) msg='La API key de OpenRouter no es válida o no tiene permiso para este modelo (revisa als_config.gemini_api_key).';
+  else if(info.status===429) msg='Límite de peticiones alcanzado en OpenRouter. Espera unos segundos y reintenta.';
+  else msg='Error '+info.status+': '+info.message;
+  const err=new Error(msg);
+  err.orStatus=info.status; err.orReason=info.reason; err.recuperable=inFlight||info.status===429||info.status>=500;
+  return err;
+}
+
+function sleepAbortable(ms, signal){
+  return new Promise((res,rej)=>{
+    if(signal&&signal.aborted){ const e=new Error('Abortado'); e.name='AbortError'; return rej(e); }
+    const t=setTimeout(res,ms);
+    if(signal) signal.addEventListener('abort',()=>{ clearTimeout(t); const e=new Error('Abortado'); e.name='AbortError'; rej(e); },{once:true});
   });
-  if(!r.ok){const e=await r.text().catch(()=>'');throw new Error('API '+r.status+': '+e.substring(0,200));}
+}
+
+async function consumirSSE(r,onChunk){
   const reader=r.body.getReader(),dec=new TextDecoder();
   let buf='',full='';
   while(true){
@@ -1357,6 +1392,29 @@ async function streamOR({model,messages,maxTokens=8000,temperature=0.1,onChunk,s
     }
   }
   return full;
+}
+
+async function streamOR({model,messages,maxTokens=4000,temperature=0.1,onChunk,onRetry,signal,reintentos=2}){
+  if(AI_INFLIGHT>=AI_MAX_INFLIGHT){
+    const e=new Error('Ya hay una consulta de IA en curso. Espera a que termine (o cancélala) antes de lanzar otra: OpenRouter reserva saldo por cada petición abierta.');
+    e.code='BUSY'; throw e;
+  }
+  AI_INFLIGHT++;
+  try{
+    for(let intento=0;;intento++){
+      const r=await fetch(OR_PROXY,{
+        method:'POST',headers:{'Content-Type':'application/json'},signal,
+        body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature,stream:true})
+      });
+      if(r.ok) return await consumirSSE(r,onChunk);
+      const raw=await r.text().catch(()=>'');
+      const err=orErrorLegible(parseORError(r.status,raw));
+      if(!err.recuperable || intento>=reintentos) throw err;
+      const espera=8000*(intento+1);
+      if(onRetry) onRetry(intento+1,Math.round(espera/1000));
+      await sleepAbortable(espera,signal);
+    }
+  } finally { AI_INFLIGHT--; }
 }
 function startTimer(el){
   const t0=Date.now();
@@ -1416,9 +1474,10 @@ Si no hay novedades en una sección, escribe "Sin novedades esta semana."`;
     const text=await streamOR({
       model:'perplexity/sonar-pro',
       messages:[{role:'user',content:prompt}],
-      maxTokens:8000,
+      maxTokens:5000,
       temperature:0.1,
       signal:ac.signal,
+      onRetry:(n,seg)=>{ out.innerHTML='<em style="color:var(--am600)">OpenRouter sin saldo libre en este instante (peticiones anteriores aún abiertas). Reintento '+n+' en '+seg+'s…</em>'; },
       onChunk:(_delta,full)=>{ accum=full; out.innerHTML=fmtBrief(full)+'<span style="opacity:.4;font-size:11px"> ▌</span>'; }
     });
     stopTimer();
@@ -1581,7 +1640,7 @@ async function sendChat(){
     const reply=await streamOR({
       model:'anthropic/claude-sonnet-4-5',
       messages:msgs,
-      maxTokens:8000,
+      maxTokens:2500,
       temperature:0.1,
       signal:ac.signal,
       onChunk:(_d,full)=>{
@@ -1706,9 +1765,10 @@ FUENTES CONSULTADAS: [lista de URLs o referencias normativas verificadas]`;
     const text=await streamOR({
       model:'perplexity/sonar-pro',
       messages:[{role:'user',content:prompt}],
-      maxTokens:12000,
+      maxTokens:7000,
       temperature:0.1,
       signal:acRpt.signal,
+      onRetry:(n,seg)=>{ out.innerHTML='<div class="rpt-placeholder" style="color:var(--am600)">OpenRouter sin saldo libre en este instante (peticiones anteriores aún abiertas). Reintento '+n+' en '+seg+'s…</div>'; },
       onChunk:(_d,full)=>{ out.innerHTML=fmtReport(full)+'<span style="opacity:.4;font-size:11px"> ▌</span>'; }
     });
     stopRptTimer();
