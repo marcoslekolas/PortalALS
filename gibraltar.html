@@ -756,8 +756,23 @@ const sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefr
   }
 })();
 
-// ── Proxy URL (CORS: el browser no puede llamar a Anthropic directamente) ──
-const OR_PROXY='https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/openrouter-proxy'; // openrouter-proxy ya desplegado en TARIC
+// ── Proxies (CORS: el browser no puede llamar a las APIs directamente) ──
+const OR_PROXY ='https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/openrouter-proxy';
+const GEM_PROXY='https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/gemini-proxy';
+
+// Configuración de IA por función. Cambiar aquí y solo aquí.
+// grounding:true consume cuota de búsqueda de Google — activarlo solo donde hace falta.
+// Para volver a OpenRouter: poner model:'perplexity/sonar-pro' o 'anthropic/claude-sonnet-4-5'.
+const IA = {
+  briefing:{ model:'gemini-2.5-flash', grounding:true,  maxTokens:5000 },
+  informe: { model:'gemini-2.5-flash', grounding:true,  maxTokens:7000 },
+  chat:    { model:'gemini-2.5-flash', grounding:false, maxTokens:2500 }
+};
+
+// Enruta al proxy correcto según el modelo
+function endpointIA(model){
+  return String(model||'').startsWith('gemini') ? GEM_PROXY : OR_PROXY;
+}
 
 
 // ══════════════════════════════════════════════════════════════════════
@@ -1356,11 +1371,14 @@ function parseORError(status, raw){
 
 function orErrorLegible(info){
   const inFlight = info.status===402 && info.reason==='in_flight_budget_exhausted';
+  const cuotaGem = info.status===429 && /RESOURCE_EXHAUSTED|quota/i.test(info.message||'');
   let msg;
   if(inFlight) msg='Sin crédito disponible ahora mismo en OpenRouter: hay consultas anteriores todavía abiertas reteniendo saldo. Espera 1–2 minutos y vuelve a intentarlo, o añade crédito en openrouter.ai/credits.';
   else if(info.status===402) msg='Crédito insuficiente en OpenRouter para esta consulta. Añade saldo en openrouter.ai/credits o reduce la extensión del análisis.';
-  else if(info.status===401||info.status===403) msg='La API key de OpenRouter no es válida o no tiene permiso para este modelo (revisa als_config.gemini_api_key).';
-  else if(info.status===429) msg='Límite de peticiones alcanzado en OpenRouter. Espera unos segundos y reintenta.';
+  else if(cuotaGem) msg='Cuota diaria de la API de Gemini agotada. Se restablece a medianoche (hora del Pacífico). Si esto pasa a menudo, activa facturación en el proyecto de Google AI Studio.';
+  else if(info.status===401||info.status===403) msg='La API key no es válida o no tiene permiso para este modelo. Revisa el secret GEMINI_API_KEY / OPENROUTER_API_KEY en Supabase.';
+  else if(info.status===429) msg='Límite de peticiones alcanzado. Espera unos segundos y reintenta.';
+  else if(info.status===404) msg='El modelo solicitado no existe o ya no está disponible. Revisa el bloque IA en la cabecera del módulo.';
   else msg='Error '+info.status+': '+info.message;
   const err=new Error(msg);
   err.orStatus=info.status; err.orReason=info.reason; err.recuperable=inFlight||info.status===429||info.status>=500;
@@ -1394,17 +1412,17 @@ async function consumirSSE(r,onChunk){
   return full;
 }
 
-async function streamOR({model,messages,maxTokens=4000,temperature=0.1,onChunk,onRetry,signal,reintentos=2}){
+async function streamOR({model,messages,maxTokens=4000,temperature=0.1,grounding=false,onChunk,onRetry,signal,reintentos=2}){
   if(AI_INFLIGHT>=AI_MAX_INFLIGHT){
-    const e=new Error('Ya hay una consulta de IA en curso. Espera a que termine (o cancélala) antes de lanzar otra: OpenRouter reserva saldo por cada petición abierta.');
+    const e=new Error('Ya hay una consulta de IA en curso. Espera a que termine (o cancélala) antes de lanzar otra.');
     e.code='BUSY'; throw e;
   }
   AI_INFLIGHT++;
   try{
     for(let intento=0;;intento++){
-      const r=await fetch(OR_PROXY,{
+      const r=await fetch(endpointIA(model),{
         method:'POST',headers:{'Content-Type':'application/json'},signal,
-        body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature,stream:true})
+        body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature,grounding,stream:true})
       });
       if(r.ok) return await consumirSSE(r,onChunk);
       const raw=await r.text().catch(()=>'');
@@ -1472,9 +1490,10 @@ Si no hay novedades en una sección, escribe "Sin novedades esta semana."`;
   try{
     let accum='';
     const text=await streamOR({
-      model:'perplexity/sonar-pro',
+      model:IA.briefing.model,
       messages:[{role:'user',content:prompt}],
-      maxTokens:5000,
+      maxTokens:IA.briefing.maxTokens,
+      grounding:IA.briefing.grounding,
       temperature:0.1,
       signal:ac.signal,
       onRetry:(n,seg)=>{ out.innerHTML='<em style="color:var(--am600)">OpenRouter sin saldo libre en este instante (peticiones anteriores aún abiertas). Reintento '+n+' en '+seg+'s…</em>'; },
@@ -1500,6 +1519,8 @@ function fmtBrief(t){
   return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/### (.+)/g,'<h3>$1</h3>')
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    // Enlaces markdown de las fuentes del grounding: [título](url)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener" style="color:var(--b600)">$1</a>')
     .replace(/\n/g,'<br>');
 }
 
@@ -1638,9 +1659,10 @@ async function sendChat(){
   try{
     const msgs=[{role:'system',content:SYS},...CH];
     const reply=await streamOR({
-      model:'anthropic/claude-sonnet-4-5',
+      model:IA.chat.model,
       messages:msgs,
-      maxTokens:2500,
+      maxTokens:IA.chat.maxTokens,
+      grounding:IA.chat.grounding,
       temperature:0.1,
       signal:ac.signal,
       onChunk:(_d,full)=>{
@@ -1763,9 +1785,10 @@ FUENTES CONSULTADAS: [lista de URLs o referencias normativas verificadas]`;
 
   try{
     const text=await streamOR({
-      model:'perplexity/sonar-pro',
+      model:IA.informe.model,
       messages:[{role:'user',content:prompt}],
-      maxTokens:7000,
+      maxTokens:IA.informe.maxTokens,
+      grounding:IA.informe.grounding,
       temperature:0.1,
       signal:acRpt.signal,
       onRetry:(n,seg)=>{ out.innerHTML='<div class="rpt-placeholder" style="color:var(--am600)">OpenRouter sin saldo libre en este instante (peticiones anteriores aún abiertas). Reintento '+n+' en '+seg+'s…</div>'; },
@@ -1794,6 +1817,7 @@ function fmtReport(t){
   return '<pre style="white-space:pre-wrap;font-family:var(--f);font-size:13px;line-height:1.8;color:var(--g700)">'
     +t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener" style="color:var(--b600)">$1</a>')
     +'</pre>';
 }
 
