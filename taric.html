@@ -2481,26 +2481,55 @@ async function exportarFactura(){
   const grupos = {};
   lineas.forEach(l => {
     const k = (l.codigo_taric||'').substring(0,4) || '----';
-    if(!grupos[k]) grupos[k] = { lineas:0, bultos:0, bruto:0, cantidad:0, importe:0, desc:l.descripcion_nc||'' };
+    if(!grupos[k]) grupos[k] = { lineas:0, bultos:0, bruto:0, cantidad:0, importe:0, desc:l.descripcion_nc||'', frec:{}, descs:[] };
     const g = grupos[k];
     g.lineas++;
     g.bultos += num(l.bultos)||0; g.bruto += num(l.peso_bruto)||0;
     g.cantidad += num(l.cantidad)||0; g.importe += num(l.importe)||0;
+    // Frecuencia de cada TARIC de 10 dígitos dentro del grupo, con su importe acumulado
+    if(l.codigo_taric && l.codigo_taric.length===10){
+      const f = g.frec[l.codigo_taric] || (g.frec[l.codigo_taric] = {n:0, imp:0});
+      f.n++; f.imp += num(l.importe)||0;
+    }
+    const d = (l.descripcion_original||l.descripcion_es||'').trim();
+    if(d && !g.descs.includes(d)) g.descs.push(d);   // sin repetir
   });
+  // MODA: el TARIC de 10 dígitos que más veces se repite en la agrupación.
+  // Empate → gana el de mayor importe acumulado; si persiste, el código más alto.
+  const modaTaric = g => {
+    const cods = Object.keys(g.frec);
+    if(!cods.length) return '';
+    cods.sort((a,b) =>
+      (g.frec[b].n - g.frec[a].n) ||
+      (g.frec[b].imp - g.frec[a].imp) ||
+      (a < b ? 1 : -1)
+    );
+    return cods[0];
+  };
   const resumen = Object.keys(grupos).sort().map(k => ({
-    'Partida (4 dig.)': k, 'Descripción': grupos[k].desc, 'Nº Líneas': grupos[k].lineas,
+    'Partida (4 dig.)': k,
+    'TARIC 10 díg. (moda)': modaTaric(grupos[k]),
+    'Descripción agrupada (casilla 31)': grupos[k].descs.join(' + '),
+    'Descripción': grupos[k].desc, 'Nº Líneas': grupos[k].lineas,
     'Total Bultos': grupos[k].bultos||'-', 'Total Peso Bruto (kg)': grupos[k].bruto||'-',
     'Total Cantidad / Kilos Netos': grupos[k].cantidad||'-', 'Total Importe': grupos[k].importe||'-'
   }));
   resumen.push({
-    'Partida (4 dig.)':'TOTAL', 'Descripción':'', 'Nº Líneas': lineas.length,
+    'Partida (4 dig.)':'TOTAL', 'TARIC 10 díg. (moda)':'', 'Descripción agrupada (casilla 31)':'',
+    'Descripción':'', 'Nº Líneas': lineas.length,
     'Total Bultos': resumen.reduce((a,r)=>a+(Number(r['Total Bultos'])||0),0)||'-',
     'Total Peso Bruto (kg)': resumen.reduce((a,r)=>a+(Number(r['Total Peso Bruto (kg)'])||0),0)||'-',
     'Total Cantidad / Kilos Netos': resumen.reduce((a,r)=>a+(Number(r['Total Cantidad / Kilos Netos'])||0),0)||'-',
     'Total Importe': resumen.reduce((a,r)=>a+(Number(r['Total Importe'])||0),0)||'-'
   });
   const ws1 = XLSX.utils.json_to_sheet(resumen);
-  ws1['!cols'] = [{wch:16},{wch:46},{wch:10},{wch:14},{wch:20},{wch:26},{wch:16}];
+  ws1['!cols'] = [{wch:16},{wch:22},{wch:70},{wch:46},{wch:10},{wch:14},{wch:20},{wch:26},{wch:16}];
+  // La descripción agrupada puede ser larga: ajuste de texto y filas más altas
+  const rango = XLSX.utils.decode_range(ws1['!ref']);
+  for(let R=1; R<=rango.e.r; R++){
+    const c = ws1[XLSX.utils.encode_cell({r:R,c:2})];
+    if(c){ c.s = Object.assign({}, c.s, {alignment:{wrapText:true,vertical:'top'}}); }
+  }
   XLSX.utils.book_append_sheet(wb, ws1, 'Resumen_Partidas_4Dig');
 
   // ── Hoja 2: detalle línea a línea con la cabecera repetida ──
