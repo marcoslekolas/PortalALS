@@ -2377,6 +2377,134 @@ async function renderLoteFacturas(){
   `;
 }
 
+// Copia texto y confirma en el propio botón
+async function copiarTexto(btn, txt){
+  try{
+    await navigator.clipboard.writeText(String(txt).replace(/\\n/g,'\n'));
+    const o = btn.textContent; btn.textContent = '✓';
+    setTimeout(()=>{ btn.textContent = o; }, 1200);
+  }catch(_){ showToast('No se pudo copiar'); }
+}
+
+// ═══ CATÁLOGO TARIC EN SUPABASE ═══
+// Sustituye a EIS_DB (992 entradas) por las tablas cargadas desde CIRCABC:
+// 22.324 códigos declarables + 94.936 medidas + tu tabla cw_medidas_dua.
+// EIS_DB queda como respaldo si la base no responde (patrón probe-once).
+let _sbTaric = null;
+function sbT(){
+  if(!_sbTaric) _sbTaric = supabase.createClient(SB_URL, SB_KEY,
+    { auth:{ persistSession:true, autoRefreshToken:true } });
+  return _sbTaric;
+}
+
+const TARIC_DB = {
+  ok: null,              // null = sin probar, false = no disponible
+  nom: new Map(),        // nc8 -> [{codigo, descripcion}]
+  desc: new Map(),       // codigo10 -> descripcion oficial
+  med: new Map(),        // codigo10 -> Set(categorias)
+  dua: null              // catálogo cw_medidas_dua
+};
+
+// Carga en bloque lo necesario para un lote de líneas. Una sola ida y vuelta
+// por tabla, en vez de una consulta por línea.
+async function cargarCatalogoTaric(lineas){
+  if(TARIC_DB.ok === false) return false;
+  const nc8s = [...new Set(lineas.map(l => String(l.nc8||'').replace(/\D/g,'')
+                 || String(l.codigo_taric||'').replace(/\D/g,'').substring(0,8))
+                 .filter(x => x.length === 8))];
+  if(!nc8s.length) return false;
+  try{
+    const [nom, dua] = await Promise.all([
+      sbT().from('taric_nomenclatura')
+           .select('codigo,nc8,descripcion')
+           .in('nc8', nc8s).eq('declarable', 1),
+      TARIC_DB.dua ? Promise.resolve({data:TARIC_DB.dua}) :
+        sbT().from('cw_medidas_dua')
+             .select('clave,categoria,codigo_doc,formato,obligatorio,negativa,descripcion,orden')
+             .order('orden')
+    ]);
+    if(nom.error) throw nom.error;
+    if(dua.error) throw dua.error;
+
+    TARIC_DB.nom.clear(); TARIC_DB.desc.clear();
+    (nom.data||[]).forEach(r => {
+      if(!TARIC_DB.nom.has(r.nc8)) TARIC_DB.nom.set(r.nc8, []);
+      TARIC_DB.nom.get(r.nc8).push(r.codigo);
+      TARIC_DB.desc.set(r.codigo, r.descripcion || '');
+    });
+    TARIC_DB.nom.forEach(v => v.sort());
+    TARIC_DB.dua = dua.data || [];
+
+    // Medidas: solo de los códigos de 10 dígitos que hayan quedado resueltos
+    const cods = [...TARIC_DB.desc.keys()];
+    if(cods.length){
+      const med = await sbT().from('taric_medidas')
+                             .select('codigo,categoria').in('codigo', cods);
+      if(!med.error){
+        TARIC_DB.med.clear();
+        (med.data||[]).forEach(r => {
+          if(!TARIC_DB.med.has(r.codigo)) TARIC_DB.med.set(r.codigo, new Set());
+          TARIC_DB.med.get(r.codigo).add(r.categoria);
+        });
+      }
+    }
+    TARIC_DB.ok = true;
+    return true;
+  }catch(e){
+    console.warn('Catálogo TARIC no disponible, se usa EIS_DB:', e.message);
+    TARIC_DB.ok = false;   // probe-once: no reintentar en este lote
+    return false;
+  }
+}
+
+// Códigos de casilla 44 para una línea: las atestaciones negativas van
+// siempre en exportación desde España; los documentos reales, solo si la
+// partida tiene medida activa de esa categoría.
+function casilla44De(l){
+  if(!TARIC_DB.dua) return [];
+  const cats = TARIC_DB.med.get(l.codigo_taric) || new Set();
+  return TARIC_DB.dua.filter(d => d.negativa || cats.has(d.categoria));
+}
+
+// ═══ VERIFICACIÓN DE LOS DÍGITOS 9-10 CONTRA EL CATÁLOGO ═══
+// Los dos últimos dígitos del TARIC no son deducibles por razonamiento: son un
+// dato de la base DDS2. El modelo tiende a rellenarlos con '00'. Aquí se
+// contrastan con EIS_DB, que es la única fuente oficial que tiene el portal.
+let _eisIdx = null;
+function eisPorNC8(){
+  if(_eisIdx) return _eisIdx;
+  _eisIdx = {};
+  try{
+    Object.keys(EIS_DB||{}).forEach(c => {
+      const k = String(c).substring(0,8);
+      (_eisIdx[k] = _eisIdx[k] || []).push(String(c));
+    });
+    Object.keys(_eisIdx).forEach(k => _eisIdx[k].sort());
+  }catch(_){ _eisIdx = {}; }
+  return _eisIdx;
+}
+
+// Candidatos de 10 dígitos para una NC8: primero Supabase, luego EIS_DB
+function candidatosDe(nc8){
+  if(TARIC_DB.ok && TARIC_DB.nom.has(nc8)) return TARIC_DB.nom.get(nc8);
+  return eisPorNC8()[nc8] || null;
+}
+
+// Estados: 'ok' | 'corregido' | 'completado' | 'ambiguo' | 'fuera_catalogo' | 'sin_nc8'
+function verificarSubpartida(l){
+  const taric = String(l.codigo_taric||'').replace(/\D/g,'');
+  const nc8 = String(l.nc8||'').replace(/\D/g,'') || taric.substring(0,8);
+  if(nc8.length !== 8) return { estado:'sin_nc8' };
+  const cand = candidatosDe(nc8);
+  if(!cand || !cand.length) return { estado:'fuera_catalogo', nc8 };
+  if(cand.length === 1){
+    if(cand[0] === taric)  return { estado:'ok', nc8, codigo:cand[0] };
+    if(taric.length !== 10) return { estado:'completado', nc8, codigo:cand[0] };
+    return { estado:'corregido', nc8, codigo:cand[0], previo:taric };
+  }
+  return { estado:'ambiguo', nc8, candidatos:cand, incluyeActual:cand.includes(taric) };
+}
+
 async function renderLineasFactura(data, filename){
   // data puede ser: objeto con .lineas, array directo, o el resultado de parseClaudeResponse
   let lineas = [];
@@ -2420,32 +2548,72 @@ async function renderLineasFactura(data, filename){
     </div>
   `;
 
+  await cargarCatalogoTaric(lineas);
+
   let html = '';
   for(const l of lineas){
+    // Contrastar los dígitos 9-10 con el catálogo y corregir si hay una sola opción
+    l._verif = verificarSubpartida(l);
+    if(l._verif.estado === 'corregido' || l._verif.estado === 'completado') l.codigo_taric = l._verif.codigo;
+    // Sin 10 dígitos fiables se muestra la NC8 con los dos últimos pendientes
+    if(!l.codigo_taric && l.nc8) l._mostrar = l.nc8 + '··';
+    // Descripción oficial desde la base; la del modelo queda de respaldo
+    l._descOficial = TARIC_DB.desc.get(l.codigo_taric) || l.descripcion_nc || '';
+    // Casilla 31: SIEMPRE el texto de la factura, traducido. Nunca la NC oficial.
+    l._casilla31 = (l.descripcion_es || l.descripcion_original || '').trim();
+    l._c44 = casilla44De(l);
     const medidas = (l.medidas||[]).filter(m=>m.tipo!=='NINGUNA');
     const medidasHtml = medidas.length > 0
       ? medidas.map(m=>`<span class="badge badge-red" style="font-size:10px">${m.desc}</span>`).join(' ')
       : '<span class="badge badge-green" style="font-size:10px">Sin medidas</span>';
 
     const confianzaColor = l.confianza>=85?'var(--gr600)':l.confianza>=65?'var(--am600)':'var(--rd600)';
-    const taricFormatted = l.codigo_taric ? l.codigo_taric.match(/.{2}/g).join(' ') : '—';
-    const taricUrl = l.codigo_taric ? `https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es&Taric=${l.codigo_taric}` : '#';
+    const taricFormatted = l.codigo_taric ? l.codigo_taric.match(/.{2}/g).join(' ')
+                          : (l.nc8 ? l.nc8.match(/.{2}/g).join(' ') + ' ··' : '—');
+    const taricUrl = (l.codigo_taric || l.nc8)
+      ? `https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es&Taric=${l.codigo_taric||l.nc8}` : '#';
 
     html += `<tr>
       <td style="font-weight:700;color:var(--g400);font-family:var(--mono)">${l.num}${l._numFactura?`<div style="font-size:9px;font-weight:600;color:var(--b600);margin-top:2px;max-width:52px;overflow:hidden;text-overflow:ellipsis" title="${l._numFactura}">${l._numFactura}</div>`:''}</td>
       <td>
         <div style="font-size:12px;font-weight:600;color:var(--g700)">${l.descripcion_original||'—'}</div>
-        ${l.descripcion_es&&l.descripcion_es!==l.descripcion_original?`<div style="font-size:11px;color:var(--g400);margin-top:2px">🔤 ${l.descripcion_es}</div>`:''}
+        ${l._casilla31 && l._casilla31!==l.descripcion_original ? `
+          <div style="display:flex;align-items:center;gap:5px;margin-top:3px;padding:3px 6px;background:var(--b50);border-radius:4px">
+            <span style="font-size:9px;font-weight:700;color:var(--b700);white-space:nowrap">C.31</span>
+            <span style="font-size:11px;color:var(--g700);flex:1">${l._casilla31}</span>
+            <button onclick="copiarTexto(this,'${(l._casilla31||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')"
+              style="border:0;background:none;cursor:pointer;font-size:11px;padding:0 2px" title="Copiar para casilla 31">📋</button>
+          </div>` : ''}
         ${l.cantidad?`<div style="font-size:11px;color:var(--g500);margin-top:2px">Cant: ${l.cantidad}</div>`:''}
       </td>
       <td>
         <a href="${taricUrl}" target="_blank" style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);text-decoration:none;white-space:nowrap" title="Ver en TARIC Online">
           ${taricFormatted} ↗
         </a>
+        ${(()=>{
+          const v = l._verif || {};
+          if(v.estado==='completado') return `<div style="font-size:9px;color:var(--gr600);margin-top:2px" title="Dígitos 9-10 tomados del catálogo oficial del portal">✔ completado desde catálogo</div>`;
+          if(v.estado==='corregido') return `<div style="font-size:9px;color:var(--gr600);margin-top:2px" title="El modelo devolvió ${v.previo}; corregido con el catálogo oficial">✔ corregido desde ${v.previo?v.previo.slice(-2):'??'}</div>`;
+          if(v.estado==='ambiguo')   return `<div style="font-size:9px;color:var(--am600);margin-top:2px" title="Subpartidas posibles: ${(v.candidatos||[]).join(', ')}">⚠ ${v.candidatos.length} subpartidas posibles</div>`;
+          if(v.estado==='ok')        return `<div style="font-size:9px;color:var(--gr600);margin-top:2px">✔ verificado</div>`;
+          if(v.estado==='fuera_catalogo') return `<div style="font-size:9px;color:var(--g400);margin-top:2px" title="Fuera del catálogo EIS del portal: los dígitos 9-10 no están contrastados. Verifica en DDS2.">◦ 9-10 sin verificar</div>`;
+          return '';
+        })()}
       </td>
-      <td style="font-size:12px;color:var(--g600);max-width:200px">${l.descripcion_nc||'—'}</td>
+      <td style="font-size:12px;color:var(--g600);max-width:200px">${l._descOficial||'—'}</td>
       <td style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--g700);white-space:nowrap">${l.arancel_erga_omnes||'—'}</td>
-      <td>${medidasHtml}</td>
+      <td>
+        ${medidasHtml}
+        ${(l._c44||[]).length ? `
+          <div style="margin-top:5px;padding-top:5px;border-top:1px dashed var(--g200)">
+            <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
+              <span style="font-size:9px;font-weight:700;color:var(--g400)">CASILLA 44</span>
+              <button onclick="copiarTexto(this,'${l._c44.map(d=>d.formato).join('\\n').replace(/'/g,"\\'")}')"
+                style="border:0;background:none;cursor:pointer;font-size:10px" title="Copiar todos los códigos">📋</button>
+            </div>
+            ${l._c44.map(d=>`<span class="badge" style="font-size:9px;margin:1px;background:${d.negativa?'var(--g100)':'var(--am50)'};color:${d.negativa?'var(--g600)':'var(--am600)'}" title="${d.descripcion||''}${d.obligatorio?'':' (no obligatorio)'}">${d.codigo_doc}${d.obligatorio?'':'*'}</span>`).join('')}
+          </div>` : ''}
+      </td>
       <td>
         <div style="font-size:13px;font-weight:700;color:${confianzaColor}">${l.confianza||0}%</div>
         <div class="conf-bar-bg" style="width:60px;margin-top:3px">
@@ -2639,9 +2807,20 @@ async function exportarFactura(){
     'Incoterm': c.incoterm || '', 'Moneda': c.moneda || '',
     'Código TARIC (10 dígitos)': l.codigo_taric || '',
     'Nomenclatura Combinada NC8': l.nc8 || '',
+    'Dígitos 9-10 verificados': (()=>{
+      const v = l._verif || {};
+      if(v.estado==='ok') return 'SÍ (catálogo)';
+      if(v.estado==='completado') return 'SÍ (completado por catálogo)';
+      if(v.estado==='corregido') return 'SÍ (corregido de ' + (v.previo||'') + ')';
+      if(v.estado==='ambiguo') return 'NO - ELEGIR: ' + (v.candidatos||[]).join(' / ');
+      if(v.estado==='fuera_catalogo') return 'NO - verificar en DDS2';
+      return 'NO - sin NC8';
+    })(),
     'Descripción Original': l.descripcion_original || '',
-    'Traducción Técnica': l.descripcion_es || '',
-    'Descripción Oficial TARIC': l.descripcion_nc || '',
+    'Casilla 31 (español)': l._casilla31 || l.descripcion_es || '',
+    'Descripción Oficial TARIC': l._descOficial || l.descripcion_nc || '',
+    'Casilla 44 (códigos)': (l._c44||[]).map(d=>d.formato).join(' | '),
+    'Casilla 44 (obligatorios)': (l._c44||[]).filter(d=>d.obligatorio).map(d=>d.codigo_doc).join(' '),
     'Arancel Erga Omnes': l.arancel_erga_omnes || '',
     'Bultos': num(l.bultos) ?? (l.bultos||''),
     'Peso Bruto (kg)': num(l.peso_bruto) ?? (l.peso_bruto||''),
