@@ -2314,6 +2314,30 @@ async function leerFacturaConIA(base64, mediaType, textoPlano){
   return data;
 }
 
+// Compara el desglose de líneas con los totales declarados en la factura.
+// Un descuadre grande casi siempre significa que se ha confundido la columna
+// de cantidad con la de bultos, o un peso unitario con el peso de línea.
+function cuadreHtml(f){
+  const c = f.cabecera || {};
+  const num = v => { const n = parseFloat(String(v||'').replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
+  const sum = campo => f.lineas.reduce((a,l)=>a+(num(l[campo])||0), 0);
+  const filas = [
+    ['Bultos',     num(c.bultos_totales),   sum('bultos')],
+    ['Peso bruto', num(c.peso_bruto_total), sum('peso_bruto')]
+  ].filter(([,dec]) => dec !== null && dec > 0);
+  if(!filas.length) return '';
+
+  const malas = filas.filter(([,dec,calc]) => calc > 0 && Math.abs(calc-dec)/dec > 0.05);
+  if(!malas.length){
+    return `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--g100);font-size:11px;color:var(--gr600)">
+      ✔ Desglose cuadrado con los totales de la factura (${filas.map(([n,d])=>n.toLowerCase()+': '+d).join(' · ')})</div>`;
+  }
+  return `<div style="margin-top:8px;padding:8px 10px;background:var(--am50);border-radius:6px;font-size:11px;color:var(--am600)">
+    <strong>⚠ El desglose no cuadra con la factura.</strong> Revisa antes de usarlo en el DUA:
+    ${malas.map(([n,dec,calc])=>`<br>· ${n}: la factura declara <strong>${dec}</strong> y la suma de líneas da <strong>${Math.round(calc*100)/100}</strong>`).join('')}
+  </div>`;
+}
+
 // Fusiona todas las facturas del lote en una sola tabla, marcando cada línea
 // con la factura de la que viene, y repinta el panel con una tarjeta por documento.
 async function renderLoteFacturas(){
@@ -2365,6 +2389,7 @@ async function renderLoteFacturas(){
             ${chip('Total', c.total_factura?c.total_factura+' '+(c.moneda||''):'')}
           </div>
         </div>
+        ${cuadreHtml(f)}
         <div style="display:flex;gap:16px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--g100)">
           ${parte('Exportador · casilla 2', e)}
           ${parte('Destinatario · casilla 8', d)}
@@ -2457,13 +2482,14 @@ async function cargarCatalogoTaric(lineas){
   }
 }
 
-// Códigos de casilla 44 para una línea: las atestaciones negativas van
-// siempre en exportación desde España; los documentos reales, solo si la
-// partida tiene medida activa de esa categoría.
+// Códigos de casilla 44 de una línea. Se filtran ESPECÍFICAMENTE por las
+// medidas que el TARIC asocia a ese código de 10 dígitos: tanto las
+// atestaciones negativas como los documentos. Sin medida, sin código.
 function casilla44De(l){
-  if(!TARIC_DB.dua) return [];
-  const cats = TARIC_DB.med.get(l.codigo_taric) || new Set();
-  return TARIC_DB.dua.filter(d => d.negativa || cats.has(d.categoria));
+  if(!TARIC_DB.dua || !l.codigo_taric) return [];
+  const cats = TARIC_DB.med.get(l.codigo_taric);
+  if(!cats || !cats.size) return [];
+  return TARIC_DB.dua.filter(d => cats.has(d.categoria));
 }
 
 // ═══ VERIFICACIÓN DE LOS DÍGITOS 9-10 CONTRA EL CATÁLOGO ═══
@@ -2502,7 +2528,12 @@ function verificarSubpartida(l){
     if(taric.length !== 10) return { estado:'completado', nc8, codigo:cand[0] };
     return { estado:'corregido', nc8, codigo:cand[0], previo:taric };
   }
-  return { estado:'ambiguo', nc8, candidatos:cand, incluyeActual:cand.includes(taric) };
+  // Varias subpartidas: se elige la MÁS GENÉRICA, que por convención de la
+  // nomenclatura es la de dígitos 9-10 más altos (entre 00 y 90 gana 90).
+  const generico = cand.slice().sort().pop();
+  if(taric === generico) return { estado:'ok', nc8, codigo:generico, candidatos:cand };
+  return { estado: taric.length===10 ? 'corregido' : 'completado',
+           nc8, codigo:generico, previo: taric || null, candidatos:cand, ambiguo:true };
 }
 
 async function renderLineasFactura(data, filename){
@@ -2592,6 +2623,7 @@ async function renderLineasFactura(data, filename){
         </a>
         ${(()=>{
           const v = l._verif || {};
+          if(v.ambiguo) return `<div style="font-size:9px;color:var(--am600);margin-top:2px" title="Subpartidas posibles: ${(v.candidatos||[]).join(', ')}. Se ha elegido la más genérica.">⚠ genérico de ${v.candidatos.length} opciones</div>`;
           if(v.estado==='completado') return `<div style="font-size:9px;color:var(--gr600);margin-top:2px" title="Dígitos 9-10 tomados del catálogo oficial del portal">✔ completado desde catálogo</div>`;
           if(v.estado==='corregido') return `<div style="font-size:9px;color:var(--gr600);margin-top:2px" title="El modelo devolvió ${v.previo}; corregido con el catálogo oficial">✔ corregido desde ${v.previo?v.previo.slice(-2):'??'}</div>`;
           if(v.estado==='ambiguo')   return `<div style="font-size:9px;color:var(--am600);margin-top:2px" title="Subpartidas posibles: ${(v.candidatos||[]).join(', ')}">⚠ ${v.candidatos.length} subpartidas posibles</div>`;
@@ -2763,6 +2795,11 @@ async function exportarFactura(){
   const resumen = Object.keys(grupos).sort().map(k => ({
     'Partida (4 dig.)': k,
     'TARIC 10 díg. (moda)': modaTaric(grupos[k]),
+    'Medidas casilla 44': (()=>{
+      const cod = modaTaric(grupos[k]);
+      const l = lineas.find(x => x.codigo_taric === cod);
+      return l && l._c44 ? l._c44.map(d=>d.formato).join(' | ') : '';
+    })(),
     'Facturas': grupos[k].facturas.join(', '),
     'Descripción agrupada (casilla 31)': grupos[k].descs.join(' + '),
     'Descripción': grupos[k].desc, 'Nº Líneas': grupos[k].lineas,
@@ -2770,7 +2807,7 @@ async function exportarFactura(){
     'Total Cantidad / Kilos Netos': grupos[k].cantidad||'-', 'Total Importe': grupos[k].importe||'-'
   }));
   resumen.push({
-    'Partida (4 dig.)':'TOTAL', 'TARIC 10 díg. (moda)':'', 'Facturas':'',
+    'Partida (4 dig.)':'TOTAL', 'TARIC 10 díg. (moda)':'', 'Medidas casilla 44':'', 'Facturas':'',
     'Descripción agrupada (casilla 31)':'',
     'Descripción':'', 'Nº Líneas': lineas.length,
     'Total Bultos': resumen.reduce((a,r)=>a+(Number(r['Total Bultos'])||0),0)||'-',
@@ -2779,11 +2816,11 @@ async function exportarFactura(){
     'Total Importe': resumen.reduce((a,r)=>a+(Number(r['Total Importe'])||0),0)||'-'
   });
   const ws1 = XLSX.utils.json_to_sheet(resumen);
-  ws1['!cols'] = [{wch:16},{wch:22},{wch:24},{wch:70},{wch:46},{wch:10},{wch:14},{wch:20},{wch:26},{wch:16}];
+  ws1['!cols'] = [{wch:16},{wch:22},{wch:30},{wch:24},{wch:70},{wch:46},{wch:10},{wch:14},{wch:20},{wch:26},{wch:16}];
   // La descripción agrupada puede ser larga: ajuste de texto y filas más altas
   const rango = XLSX.utils.decode_range(ws1['!ref']);
   for(let R=1; R<=rango.e.r; R++){
-    const c = ws1[XLSX.utils.encode_cell({r:R,c:3})];
+    const c = ws1[XLSX.utils.encode_cell({r:R,c:4})];
     if(c){ c.s = Object.assign({}, c.s, {alignment:{wrapText:true,vertical:'top'}}); }
   }
   XLSX.utils.book_append_sheet(wb, ws1, 'Resumen_Partidas_4Dig');
