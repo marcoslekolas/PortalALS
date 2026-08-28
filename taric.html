@@ -2763,9 +2763,13 @@ async function exportarFactura(){
   const grupos = {};
   lineas.forEach(l => {
     const k = (l.codigo_taric||'').substring(0,4) || '----';
-    if(!grupos[k]) grupos[k] = { lineas:0, bultos:0, bruto:0, cantidad:0, importe:0, desc:l.descripcion_nc||'', frec:{}, descs:[], facturas:[] };
+    if(!grupos[k]) grupos[k] = { lineas:0, bultos:0, bruto:0, cantidad:0, importe:0, desc:l.descripcion_nc||'', frec:{}, descs:[], facturas:[], c44:new Map() };
     const g = grupos[k];
     g.lineas++;
+    // Casilla 44 de la agrupación: unión de los códigos de todas sus líneas
+    (l._c44 || casilla44De(l) || []).forEach(d => {
+      if(!g.c44.has(d.codigo_doc)) g.c44.set(d.codigo_doc, d);
+    });
     const nf = (l._cab && l._cab.numero_factura) || cab.numero_factura || '';
     if(nf && !g.facturas.includes(nf)) g.facturas.push(nf);
     g.bultos += num(l.bultos)||0; g.bruto += num(l.peso_bruto)||0;
@@ -2795,11 +2799,10 @@ async function exportarFactura(){
   const resumen = Object.keys(grupos).sort().map(k => ({
     'Partida (4 dig.)': k,
     'TARIC 10 díg. (moda)': modaTaric(grupos[k]),
-    'Medidas casilla 44': (()=>{
-      const cod = modaTaric(grupos[k]);
-      const l = lineas.find(x => x.codigo_taric === cod);
-      return l && l._c44 ? l._c44.map(d=>d.formato).join(' | ') : '';
-    })(),
+    'Casilla 44 (códigos)': [...grupos[k].c44.values()]
+        .sort((a,b)=>(a.orden||0)-(b.orden||0)).map(d=>d.formato).join(' | '),
+    'Casilla 44 (obligatorios)': [...grupos[k].c44.values()]
+        .filter(d=>d.obligatorio).sort((a,b)=>(a.orden||0)-(b.orden||0)).map(d=>d.codigo_doc).join(' '),
     'Facturas': grupos[k].facturas.join(', '),
     'Descripción agrupada (casilla 31)': grupos[k].descs.join(' + '),
     'Descripción': grupos[k].desc, 'Nº Líneas': grupos[k].lineas,
@@ -2807,7 +2810,8 @@ async function exportarFactura(){
     'Total Cantidad / Kilos Netos': grupos[k].cantidad||'-', 'Total Importe': grupos[k].importe||'-'
   }));
   resumen.push({
-    'Partida (4 dig.)':'TOTAL', 'TARIC 10 díg. (moda)':'', 'Medidas casilla 44':'', 'Facturas':'',
+    'Partida (4 dig.)':'TOTAL', 'TARIC 10 díg. (moda)':'',
+    'Casilla 44 (códigos)':'', 'Casilla 44 (obligatorios)':'', 'Facturas':'',
     'Descripción agrupada (casilla 31)':'',
     'Descripción':'', 'Nº Líneas': lineas.length,
     'Total Bultos': resumen.reduce((a,r)=>a+(Number(r['Total Bultos'])||0),0)||'-',
@@ -2816,12 +2820,14 @@ async function exportarFactura(){
     'Total Importe': resumen.reduce((a,r)=>a+(Number(r['Total Importe'])||0),0)||'-'
   });
   const ws1 = XLSX.utils.json_to_sheet(resumen);
-  ws1['!cols'] = [{wch:16},{wch:22},{wch:30},{wch:24},{wch:70},{wch:46},{wch:10},{wch:14},{wch:20},{wch:26},{wch:16}];
+  ws1['!cols'] = [{wch:16},{wch:22},{wch:34},{wch:20},{wch:24},{wch:70},{wch:46},{wch:10},{wch:14},{wch:20},{wch:26},{wch:16}];
   // La descripción agrupada puede ser larga: ajuste de texto y filas más altas
   const rango = XLSX.utils.decode_range(ws1['!ref']);
   for(let R=1; R<=rango.e.r; R++){
-    const c = ws1[XLSX.utils.encode_cell({r:R,c:4})];
-    if(c){ c.s = Object.assign({}, c.s, {alignment:{wrapText:true,vertical:'top'}}); }
+    [2,5].forEach(col => {
+      const c = ws1[XLSX.utils.encode_cell({r:R,c:col})];
+      if(c){ c.s = Object.assign({}, c.s, {alignment:{wrapText:true,vertical:'top'}}); }
+    });
   }
   XLSX.utils.book_append_sheet(wb, ws1, 'Resumen_Partidas_4Dig');
 
