@@ -771,7 +771,7 @@ textarea.fi{resize:vertical;min-height:80px}
         <div class="view-body">
           <div class="card" style="margin-bottom:16px">
             <div style="font-size:13px;color:var(--g600);line-height:1.6">
-              <strong>¿Qué es una CAV (BTI)?</strong> Una Consulta Arancelaria Vinculante es una decisión oficial de las autoridades aduaneras de la UE sobre la clasificación arancelaria de una mercancía específica. Son jurídicamente vinculantes durante 3 años y constituyen el respaldo legal más sólido para una clasificación TARIC. Las CAVs mostradas aquí son ejemplos ilustrativos de casos similares a tus búsquedas recientes.
+              <strong>¿Qué es una CAV (BTI)?</strong> Una Consulta Arancelaria Vinculante es una decisión oficial de las autoridades aduaneras de la UE sobre la clasificación arancelaria de una mercancía específica. Son jurídicamente vinculantes durante 3 años y constituyen el respaldo legal más sólido para una clasificación TARIC. Aquí no se muestran IAV de ejemplo: solo precedentes reales — las clasificaciones hechas en el portal y las descripciones de vuestro catálogo EIS. Para consultar IAV oficiales de cualquier Estado miembro, usa el botón de la base EBTI: copia el código de la partida y solo tienes que pegarlo en el buscador.
             </div>
           </div>
           <div id="cav-list">
@@ -3265,60 +3265,117 @@ async function exportarHistorial(){
 }
 
 // ══════════════════════════════════════════════════════════════
-// BASE CAVs — Ejemplos ilustrativos y vinculantes
+// PRECEDENTES DE CLASIFICACIÓN
+// Solo fuentes reales: el historial del portal y el catálogo EIS con
+// vuestras clasificaciones anteriores. No se muestran IAV de ejemplo:
+// una referencia inventada con formato real acaba citada en un expediente.
 // ══════════════════════════════════════════════════════════════
 async function loadCAVs(){
   const lista = document.getElementById('cav-list');
+  if(!lista) return;
+  lista.innerHTML = '<div style="padding:20px;text-align:center;color:var(--g400)">Cargando precedentes...</div>';
 
-  // Ejemplos reales representativos de CAVs UE por sectores habituales en Algeciras
-  const cavEjemplos = [
-    { ref:'ES/2023/7821', codigo:'8481209900', mercancia:'Válvulas reguladoras de presión para redes de gas, PN25, acero', fundamento:'Clasificadas por Regla 1+6 SA. Las válvulas de regulación se clasifican en 8481 y no en las partidas de tubería.', sector:'Industria' },
-    { ref:'DE/2022/3451', codigo:'7326909800', mercancia:'Bridas de acero al carbono sin alear, forjadas, para tuberías industriales DN100', fundamento:'Regla 3(b) SA. Carácter esencial determinado por el material (acero). Nota de sector 15 Sección XV.', sector:'Industria' },
-    { ref:'FR/2023/1204', codigo:'6204620090', mercancia:'Pantalones de algodón para mujer, tejido vaquero, talla M', fundamento:'Clasificación por materia textil principal (algodón >85%) según Nota Sección XI NC.', sector:'Textil' },
-    { ref:'ES/2022/4532', codigo:'8703239019', mercancia:'Automóvil turismo gasolina 1.6L 115CV, 5 puertas, tracción delantera', fundamento:'Regla 1 SA. Cilindrada entre 1.500cc y 3.000cc, partida 8703.23. Nota adicional UE para emisiones.', sector:'Vehículos' },
-    { ref:'NL/2023/8901', codigo:'0709991000', mercancia:'Alcachofas frescas, calibre 40-60mm, para consumo humano', fundamento:'Regla 1+6 NC. Hortalizas frescas capítulo 07, subpartida específica para alcachofas.', sector:'Agroalimentario' },
-    { ref:'ES/2021/2341', codigo:'2204210000', mercancia:'Vino tinto con DOP, botella 75cl, 13.5% vol., cosecha 2019', fundamento:'Cap. 22, partida 2204. Las denominaciones de origen afectan al tipo de medida pero no a la clasificación básica.', sector:'Agroalimentario' },
-    { ref:'BE/2023/5621', codigo:'8517120000', mercancia:'Teléfonos inteligentes (smartphones) con pantalla táctil, Android 13', fundamento:'Regla 1 SA, Nota de partida 8517. Dispositivos para comunicaciones inalámbricas de redes celulares.', sector:'Electrónica' },
-    { ref:'ES/2022/9012', codigo:'2709000000', mercancia:'Aceites crudos de petróleo, densidad 0.856 g/cm³, importación por oleoducto', fundamento:'Cap. 27, partida 2709. Test de densidad y color según Nota explicativa OMA para distinguir de 2710.', sector:'Energía' },
-    { ref:'PT/2023/3341', codigo:'6302220090', mercancia:'Ropa de cama de algodón (>85%), percal 200 hilos, marca blanca', fundamento:'Sección XI, NC 6302. Ropa de cama excluye tejidos técnicos. Algodón predominante determina clasificación.', sector:'Textil' },
-    { ref:'ES/2023/1187', codigo:'8528590000', mercancia:'Monitor para ordenador LED 27 pulgadas, resolución 4K, entrada HDMI/DP', fundamento:'Regla 1+6. Monitores específicos para ordenadores 8528.59. Nota de subpartida distingue de TV.', sector:'Electrónica' },
-  ];
+  const grupos = [];
 
-  // También cargar las CAVs de las clasificaciones recientes del historial
-  let cavHistorial = [];
-  if(sb && historialData.length){
-    cavHistorial = historialData.slice(0,5).map(h => ({
-      ref: 'Historial ALS',
-      codigo: h.codigo_taric,
-      mercancia: h.descripcion_busqueda,
-      fundamento: `Clasificado por el sistema con ${h.confianza}% de confianza. ${h.descripcion_nc}`,
-      sector: 'Tu historial'
-    }));
+  // ── 1. Clasificaciones recientes del portal ──
+  const recientes = (sb && historialData.length)
+    ? historialData.slice(0, 8).map(h => ({
+        codigo: h.codigo_taric,
+        mercancia: h.descripcion_busqueda,
+        detalle: h.descripcion_nc || '',
+        meta: (h.created_at ? new Date(h.created_at).toLocaleDateString('es-ES') : '') +
+              (h.confianza ? ' · confianza ' + h.confianza + '%' : '') +
+              (h.usuario_nombre ? ' · ' + h.usuario_nombre : '')
+      }))
+    : [];
+  if(recientes.length) grupos.push({
+    titulo: '📌 Clasificaciones recientes del portal',
+    etiqueta: 'Historial real', clase: 'badge-blue', items: recientes
+  });
+
+  // ── 2. Precedentes propios del catálogo EIS, por las partidas en uso ──
+  // EIS_DB guarda las descripciones comerciales que habéis usado de verdad.
+  // Es el precedente más útil: cómo clasificasteis vosotros esa mercancía.
+  const partidasUsadas = [...new Set(recientes.map(r => String(r.codigo||'').substring(0,4)).filter(Boolean))];
+  const propios = [];
+  try{
+    if(typeof EIS_DB !== 'undefined'){
+      const entradas = Object.entries(EIS_DB)
+        .filter(([cod, e]) => e && e.descs && e.descs.length)
+        .filter(([cod]) => !partidasUsadas.length || partidasUsadas.includes(cod.substring(0,4)));
+      entradas.slice(0, 10).forEach(([cod, e]) => {
+        const marcas = [];
+        if(e.veter)  marcas.push('Veterinario');
+        if(e.soivre) marcas.push('SOIVRE');
+        if(e.cites)  marcas.push('CITES');
+        if(e.unisupl && e.unisupl.length) marcas.push('U.supl: ' + e.unisupl.join('/'));
+        propios.push({
+          codigo: cod,
+          mercancia: e.descs.slice(0, 3).join(' · '),
+          detalle: e.descs.length > 3 ? `y ${e.descs.length - 3} descripciones más con este código` : '',
+          meta: marcas.join(' · ') || 'Sin medidas registradas'
+        });
+      });
+    }
+  }catch(err){ console.warn('EIS no disponible:', err); }
+  if(propios.length) grupos.push({
+    titulo: partidasUsadas.length
+      ? '🗂️ Precedentes propios en las partidas que estás usando'
+      : '🗂️ Precedentes propios del catálogo EIS',
+    etiqueta: 'Vuestro criterio', clase: 'badge-green', items: propios
+  });
+
+  // ── 3. Descripción oficial desde el catálogo TARIC ──
+  const todosCods = grupos.flatMap(g => g.items.map(i => ({
+    codigo_taric: String(i.codigo||'').replace(/\D/g,''),
+    nc8: String(i.codigo||'').replace(/\D/g,'').substring(0,8)
+  })));
+  if(todosCods.length){
+    try{
+      await cargarCatalogoTaric(todosCods);
+      grupos.forEach(g => g.items.forEach(i => {
+        const oficial = TARIC_DB.desc.get(String(i.codigo||'').replace(/\D/g,''));
+        if(oficial) i.oficial = oficial;
+      }));
+    }catch(_){}
   }
 
-  const todos = [...(cavHistorial.length ? [{tipo:'historial',items:cavHistorial}] : []), {tipo:'referencia',items:cavEjemplos}];
+  if(!grupos.length){
+    lista.innerHTML = `
+      <div class="card" style="padding:24px;text-align:center">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px">Aún no hay precedentes</div>
+        <div style="font-size:12px;color:var(--g400);margin-bottom:14px">
+          Las clasificaciones que hagas se irán acumulando aquí como referencia.
+          Mientras tanto puedes consultar las IAV oficiales de todos los Estados miembros.
+        </div>
+        <button class="btn btn-p btn-sm" onclick="abrirEBTI('')">🇪🇺 Consultar base EBTI ↗</button>
+      </div>`;
+    return;
+  }
 
-  lista.innerHTML = todos.map(grupo => `
+  lista.innerHTML = grupos.map(g => `
     <div style="margin-bottom:20px">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--g400);margin-bottom:10px;display:flex;align-items:center;gap:8px">
-        ${grupo.tipo==='historial' ? '📌 Basadas en tus clasificaciones recientes' : '📚 CAVs de referencia por sectores habituales en Algeciras'}
-        ${grupo.tipo==='historial'?'<span class="badge badge-blue">Personalizadas</span>':'<span class="badge badge-grey">Ilustrativas</span>'}
+        ${g.titulo}
+        <span class="badge ${g.clase}" style="font-size:10px">${g.etiqueta}</span>
       </div>
-      ${grupo.items.map(c => `
-        <div class="cav-item" onclick="abrirEBTI('${(c.codigo||'').replace(/\\D/g,'').substring(0,8)}')">
+      ${g.items.map(c => `
+        <div class="cav-item" onclick="abrirEBTI('${String(c.codigo||'').replace(/\D/g,'').substring(0,8)}')"
+             title="Copia el código y abre la base pública EBTI para buscar IAV de esta partida">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-            <div style="display:flex;align-items:center;gap:8px">
-              <span class="cav-ref">${c.ref}</span>
-              <span class="badge badge-grey" style="font-size:10px">${c.sector}</span>
-            </div>
-            <span class="cav-code" style="font-size:13px">${c.codigo.match(/.{2}/g).join(' ')}</span>
+            <span class="cav-code" style="font-size:13px">${String(c.codigo||'').replace(/\D/g,'').match(/.{1,2}/g).join(' ')}</span>
+            <span style="font-size:10px;color:var(--g400)">${c.meta||''}</span>
           </div>
-          <div class="cav-desc">${c.mercancia}</div>
-          <div style="font-size:11px;color:var(--g400);margin-top:4px">${c.fundamento}</div>
+          <div class="cav-desc">${c.mercancia||''}</div>
+          ${c.oficial?`<div style="font-size:11px;color:var(--g500);margin-top:3px">📖 ${c.oficial}</div>`:''}
+          ${c.detalle?`<div style="font-size:11px;color:var(--g400);margin-top:3px">${c.detalle}</div>`:''}
         </div>
       `).join('')}
     </div>
-  `).join('');
+  `).join('') + `
+    <div style="text-align:center;padding-top:6px">
+      <button class="btn btn-s btn-sm" onclick="abrirEBTI('')">🇪🇺 Buscar IAV oficiales en la base EBTI ↗</button>
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════════════════
