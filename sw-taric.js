@@ -1,6 +1,6 @@
 // Service Worker — Customs Way Clasificador TARIC
 // Versión del cache — incrementar para invalidar al actualizar
-const CACHE_VERSION = 'cw-taric-v3.2.0';
+const CACHE_VERSION = 'cw-taric-v2026.8.29';
 const STATIC_CACHE = [
   '/PortalALS/taric.html',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js',
