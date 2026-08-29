@@ -1587,6 +1587,7 @@ async function clasificar(){
               _desc_original: mejorMatch.descripcion_busqueda,
               _fecha_previa: mejorMatch.created_at
             };
+            await enriquecerConCatalogo(resultadoMemoria);
             mostrarResultado(resultadoMemoria, resultArea);
             ultimaClasificacion = resultadoMemoria;
             btn.disabled = false;
@@ -1604,6 +1605,7 @@ async function clasificar(){
   try {
     const resultado = await llamarClaudeAPI(desc);
     if(resultado){
+      await enriquecerConCatalogo(resultado);
       mostrarResultado(resultado, resultArea);
       ultimaClasificacion = resultado;
       await guardarHistorial(desc, resultado);
@@ -1632,6 +1634,7 @@ async function forzarClasificarIA(){
   try {
     const resultado = await llamarClaudeAPI(desc);
     if(resultado){
+      await enriquecerConCatalogo(resultado);
       mostrarResultado(resultado, resultArea);
       ultimaClasificacion = resultado;
       await guardarHistorial(desc, resultado);
@@ -1751,6 +1754,30 @@ function parseClaudeResponse(text){
 // ══════════════════════════════════════════════════════════════
 // RENDER RESULTADO
 // ══════════════════════════════════════════════════════════════
+// Pasa un resultado suelto (búsqueda libre, análisis de código, BTI) por la
+// misma verificación de catálogo que el flujo de facturas: corrige los dígitos
+// 9-10, trae la descripción oficial y calcula la casilla 44.
+async function enriquecerConCatalogo(r){
+  if(!r || !r.codigo_taric) return r;
+  const linea = {
+    codigo_taric: String(r.codigo_taric||'').replace(/\D/g,''),
+    nc8: String(r.nc8 || r.codigo_taric || '').replace(/\D/g,'').substring(0,8)
+  };
+  try{
+    await cargarCatalogoTaric([linea]);
+    const v = verificarSubpartida(linea);
+    if(v.codigo && v.codigo !== linea.codigo_taric){
+      r._taric_previo = r.codigo_taric;
+      r.codigo_taric = v.codigo;
+      linea.codigo_taric = v.codigo;
+    }
+    r._verif = v;
+    r._descOficial = TARIC_DB.desc.get(r.codigo_taric) || '';
+    r._c44 = casilla44De(linea);
+  }catch(e){ console.warn('Catálogo no aplicado:', e.message); }
+  return r;
+}
+
 function mostrarResultado(r, container){
   if(!r){ container.innerHTML = '<div style="padding:24px;color:var(--rd600)">Error al procesar resultado</div>'; return; }
 
@@ -1788,6 +1815,30 @@ function mostrarResultado(r, container){
         + '<div style="display:flex;flex-wrap:wrap;gap:6px">'+badges.join('')+'</div>'
         + '</div>';
     }
+  }
+
+  // ── Catálogo TARIC oficial: verificación 9-10, descripción y casilla 44 ──
+  let catalogoHtml = '';
+  if(r._verif && r._verif.estado && r._verif.estado !== 'fuera_catalogo' && r._verif.estado !== 'sin_nc8'){
+    const v = r._verif;
+    const nota = v.ambiguo
+      ? `Elegida la subpartida más genérica entre ${v.candidatos.length}: ${v.candidatos.join(', ')}`
+      : (r._taric_previo ? `Corregido desde ${r._taric_previo}` : 'Verificado contra el catálogo oficial');
+    catalogoHtml = `
+      <div style="background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:1px solid #93c5fd;border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:#1e40af;margin-bottom:4px">
+          ${v.ambiguo?'⚠️':'✅'} Catálogo TARIC · ${nota}
+        </div>
+        ${r._descOficial?`<div style="font-size:11px;color:var(--g600);margin-bottom:6px">${r._descOficial}</div>`:''}
+        ${(r._c44||[]).length ? `
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-top:6px;border-top:1px dashed #bfdbfe">
+            <span style="font-size:10px;font-weight:700;color:var(--g400)">CASILLA 44</span>
+            ${r._c44.map(d=>`<span class="badge" style="font-size:10px;background:${d.negativa?'var(--g100)':'var(--am50)'};color:${d.negativa?'var(--g600)':'var(--am600)'}" title="${d.descripcion||''}">${d.formato}</span>`).join('')}
+            <button onclick="copiarTexto(this,'${r._c44.map(d=>d.formato).join('\\n').replace(/'/g,"\\'")}')"
+              style="border:0;background:none;cursor:pointer;font-size:11px" title="Copiar códigos">📋</button>
+          </div>`
+        : '<div style="font-size:11px;color:var(--g400);padding-top:6px;border-top:1px dashed #bfdbfe">Sin medidas paraduaneras asociadas a este código.</div>'}
+      </div>`;
   }
 
   const medidasHtml = medidas.length > 0 ? medidas.map(m => {
@@ -1834,6 +1885,7 @@ function mostrarResultado(r, container){
   container.innerHTML = `
     <div class="result-card">
       ${memoriaHtml}
+      ${catalogoHtml}
       ${eisBadgeHtml}
       <!-- Header: code + desc + confidence -->
       <div class="result-header">
@@ -2417,6 +2469,7 @@ async function copiarTexto(btn, txt){
 // EIS_DB queda como respaldo si la base no responde (patrón probe-once).
 let _sbTaric = null;
 function sbT(){
+  if(sb) return sb;                       // el cliente de PortalGuard, ya autenticado
   if(!_sbTaric) _sbTaric = supabase.createClient(SB_URL, SB_KEY,
     { auth:{ persistSession:true, autoRefreshToken:true } });
   return _sbTaric;
