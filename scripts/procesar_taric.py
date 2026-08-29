@@ -11,11 +11,19 @@ from datetime import datetime, timezone
 import requests
 import openpyxl
 
-SB   = os.environ['SUPABASE_URL'].rstrip('/')
-SRV  = os.environ['SUPABASE_SERVICE_ROLE_KEY']
-DB   = os.environ['SUPABASE_DB_URL']
-ACT  = os.environ['ACT_ID']
-EXTR = os.environ['EXTRACCION']
+def _env(nombre):
+    v = os.environ.get(nombre, '').strip()
+    if not v:
+        print(f'[taric] FALTA la variable {nombre}. Revisa los secrets del repo '
+              f'y que el campo id/extraccion del "Run workflow" no vaya vacío.', flush=True)
+        sys.exit(2)
+    return v
+
+SB   = _env('SUPABASE_URL').rstrip('/')
+SRV  = _env('SUPABASE_SERVICE_ROLE_KEY')
+DB   = _env('SUPABASE_DB_URL')
+ACT  = _env('ACT_ID')
+EXTR = _env('EXTRACCION')
 
 H = {'apikey': SRV, 'Authorization': f'Bearer {SRV}'}
 WORK = 'taric_work'
@@ -23,13 +31,43 @@ os.makedirs(WORK, exist_ok=True)
 
 
 def estado(**campos):
-    requests.patch(f'{SB}/rest/v1/taric_actualizaciones?id=eq.{ACT}',
-                   headers={**H, 'Content-Type': 'application/json'},
-                   json=campos, timeout=30)
+    """Actualiza la fila de control. Avisa si no llega a escribir nada:
+    un id inexistente devolvería 200 sin tocar ninguna fila."""
+    try:
+        r = requests.patch(f'{SB}/rest/v1/taric_actualizaciones?id=eq.{ACT}',
+                           headers={**H, 'Content-Type': 'application/json',
+                                    'Prefer': 'return=representation'},
+                           json=campos, timeout=30)
+        if r.status_code >= 300:
+            print(f'[taric] aviso: no se pudo escribir el estado ({r.status_code}) {r.text[:200]}', flush=True)
+        elif r.json() == []:
+            print(f'[taric] AVISO: no existe ninguna fila con id={ACT} en '
+                  f'taric_actualizaciones. El proceso sigue, pero el portal no '
+                  f'verá el progreso.', flush=True)
+    except Exception as e:
+        print(f'[taric] aviso: fallo al escribir estado: {e}', flush=True)
 
 
 def log(msg):
     print(f'[taric] {msg}', flush=True)
+
+
+def listar_bucket(prefijo=''):
+    """Lista lo que hay realmente en el bucket, para diagnosticar rutas."""
+    try:
+        r = requests.post(f'{SB}/storage/v1/object/list/taric-updates',
+                          headers={**H, 'Content-Type': 'application/json'},
+                          json={'prefix': prefijo, 'limit': 100,
+                                'sortBy': {'column': 'name', 'order': 'asc'}},
+                          timeout=60)
+        if r.status_code >= 300:
+            return f'(no se pudo listar: {r.status_code} {r.text[:150]})'
+        items = r.json()
+        if not items:
+            return '(vacío)'
+        return ', '.join(i.get('name', '?') for i in items)
+    except Exception as e:
+        return f'(error al listar: {e})'
 
 
 def descargar(nombre):
@@ -38,10 +76,9 @@ def descargar(nombre):
     destino = f'{WORK}/{nombre}'
     log(f'descargando {nombre}...')
     with requests.get(url, headers=H, stream=True, timeout=900) as r:
-        # El Storage devuelve 400 o 404 según el caso cuando no existe
-        # el objeto o la carpeta. Ambos significan lo mismo aquí.
         if r.status_code in (400, 404):
-            log(f'  no encontrado ({r.status_code})')
+            cuerpo = r.content[:200].decode('utf-8', 'replace')
+            log(f'  no encontrado ({r.status_code}) {cuerpo}')
             return None
         r.raise_for_status()
         with open(destino, 'wb') as f:
@@ -134,6 +171,11 @@ def procesar_medidas(ruta):
         it = sh.iter_rows(values_only=True); next(it, None)
         for r in it:
             n += 1
+            # Latido cada 200.000 filas: sin esto el proceso pasa 10 minutos
+            # mudo y no hay forma de saber si avanza o está colgado.
+            if n % 200000 == 0:
+                log(f'  ...{n:,} filas leídas, {len(filas):,} retenidas')
+                estado(mensaje=f'Procesando medidas: {n:,} filas leídas')
             tipo = str(r[11]).strip() if r[11] else ''
             c = categoria_de(tipo, r[8])
             if not c:
@@ -205,6 +247,7 @@ def cargar(nom_csv, med_csv, c44_csv):
 
 
 def main():
+    log(f'parámetros · id={ACT} · extracción={EXTR} · proyecto={SB}')
     estado(estado='procesando', mensaje='Comprobando conexión')
 
     # Fallar rápido: mejor un error a los 2 segundos que tras 10 minutos
@@ -221,7 +264,11 @@ def main():
     med = descargar('TARIC_measures.xlsx')
     c44 = descargar('Box_44_codes_of_the_SAD.xlsx')
     if not nom or not med:
-        raise RuntimeError('Faltan Nomenclature_*.xlsx o TARIC_measures.xlsx en el bucket')
+        log(f'contenido de taric-updates/{EXTR}/ : {listar_bucket(EXTR + "/")}')
+        log(f'carpetas en la raíz del bucket   : {listar_bucket("")}')
+        raise RuntimeError(
+            f'Faltan Nomenclature_*.xlsx o TARIC_measures.xlsx en taric-updates/{EXTR}/. '
+            f'Revisa en el log de arriba qué hay realmente en el bucket.')
 
     estado(mensaje='Procesando nomenclatura')
     nom_csv, n_nom = procesar_nomenclatura(nom)
