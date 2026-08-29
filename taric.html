@@ -1088,6 +1088,19 @@ const OR_PROXY_ENDPOINT = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1
 // Lectura de facturas: Gemini con schema forzado y PDF nativo multi-página
 const FACTURA_ENDPOINT = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/clasificar-factura';
 // Cabecera completa de la última factura leída (exportador, destinatario, origen…)
+// Cabeceras para las Edge Functions. Con Verify JWT activo hay que mandar el
+// token de sesión: sin él la petición muere en la puerta de Supabase con un
+// 401 SIN cabeceras CORS, que el navegador reporta como error de red genérico.
+async function cabecerasTaric(){
+  const h = {'Content-Type':'application/json', apikey: SB_KEY, Authorization:'Bearer '+SB_KEY};
+  try{
+    const { data } = await sbT().auth.getSession();
+    const tok = data && data.session && data.session.access_token;
+    if(tok) h.Authorization = 'Bearer '+tok;
+  }catch(_){}
+  return h;
+}
+
 let FACTURA_CABECERA = null;
 // País de origen cuando la factura no lo declara (ISO alfa-2).
 // Las facturas de avituallamiento no suelen indicarlo. Cambiar aquí si procede.
@@ -1220,7 +1233,8 @@ async function _callOpenRouter(messages, modelOverride, forceJson){
   // El proxy no requiere key en el cliente — la gestiona server-side
   const usarProxy = _proxyDisponible !== false;
   const endpoint = usarProxy ? OR_PROXY_ENDPOINT : OR_ENDPOINT;
-  const headers = { 'Content-Type': 'application/json' };
+  // Con el proxy se manda el token de sesión (Verify JWT activo en la función)
+  const headers = usarProxy ? await cabecerasTaric() : { 'Content-Type': 'application/json' };
   if(!usarProxy){
     if(!key) throw new Error('⚙️ API key no configurada. Introduce tu key de OpenRouter en el panel lateral.');
     headers['Authorization'] = `Bearer ${key}`;
@@ -2348,7 +2362,7 @@ async function leerFacturaConIA(base64, mediaType, textoPlano){
   // y pase de rescate OCR) vive en la Edge Function clasificar-factura.
   const r = await fetch(FACTURA_ENDPOINT, {
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers: await cabecerasTaric(),
     body: JSON.stringify({
       base64: base64 || null,
       mimeType: mediaType || 'application/pdf',
@@ -2620,15 +2634,6 @@ async function subirActualizacionTaric(){
   }
 }
 
-async function cabecerasTaric(){
-  const h = {'Content-Type':'application/json', apikey: SB_KEY, Authorization:'Bearer '+SB_KEY};
-  try{
-    const { data } = await sbT().auth.getSession();
-    const tok = data && data.session && data.session.access_token;
-    if(tok) h.Authorization = 'Bearer '+tok;
-  }catch(_){}
-  return h;
-}
 
 // Sondea el estado cada 15 s durante 20 minutos como máximo
 function vigilarActualizacion(id){
