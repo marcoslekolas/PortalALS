@@ -25,6 +25,15 @@ DB   = _env('SUPABASE_DB_URL')
 ACT  = _env('ACT_ID')
 EXTR = _env('EXTRACCION')
 
+# Con la clave publishable, RLS se aplica y todo devuelve 200 con cero filas:
+# ni error ni datos. Es el fallo más difícil de diagnosticar, así que se corta aquí.
+if SRV.startswith('sb_publishable_') or SRV.startswith('sbp_'):
+    print('[taric] ERROR: SUPABASE_SERVICE_ROLE_KEY contiene la clave PUBLISHABLE, '
+          'no la service role. Con esa clave el Action no ve ni las filas ni los '
+          'ficheros del bucket. Cópiala de Project Settings → API Keys → service_role '
+          '(empieza por sb_secret_ o eyJ).', flush=True)
+    sys.exit(2)
+
 H = {'apikey': SRV, 'Authorization': f'Bearer {SRV}'}
 WORK = 'taric_work'
 os.makedirs(WORK, exist_ok=True)
