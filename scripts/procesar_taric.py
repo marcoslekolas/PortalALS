@@ -33,12 +33,15 @@ def log(msg):
 
 
 def descargar(nombre):
-    """Baja un fichero del bucket privado."""
+    """Baja un fichero del bucket privado. Devuelve None si no está."""
     url = f'{SB}/storage/v1/object/taric-updates/{EXTR}/{nombre}'
     destino = f'{WORK}/{nombre}'
     log(f'descargando {nombre}...')
     with requests.get(url, headers=H, stream=True, timeout=900) as r:
-        if r.status_code == 404:
+        # El Storage devuelve 400 o 404 según el caso cuando no existe
+        # el objeto o la carpeta. Ambos significan lo mismo aquí.
+        if r.status_code in (400, 404):
+            log(f'  no encontrado ({r.status_code})')
             return None
         r.raise_for_status()
         with open(destino, 'wb') as f:
@@ -202,7 +205,17 @@ def cargar(nom_csv, med_csv, c44_csv):
 
 
 def main():
-    estado(estado='procesando', mensaje='Descargando ficheros del bucket')
+    estado(estado='procesando', mensaje='Comprobando conexión')
+
+    # Fallar rápido: mejor un error a los 2 segundos que tras 10 minutos
+    # de parseo. Verifica de paso que el pooler y la contraseña son buenos.
+    r = subprocess.run(['psql', DB, '-tAc', 'SELECT count(*) FROM public.taric_medidas;'],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f'No se pudo conectar a la base: {r.stderr.strip()[-400:]}')
+    log(f'conexión OK · medidas actuales: {r.stdout.strip()}')
+
+    estado(mensaje='Descargando ficheros del bucket')
 
     nom = descargar('Nomenclature_EN.xlsx') or descargar('Nomenclature_ES.xlsx')
     med = descargar('TARIC_measures.xlsx')
