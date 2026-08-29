@@ -484,9 +484,9 @@ textarea.fi{resize:vertical;min-height:80px}
           <span class="ni">🇪🇺</span>
           <span class="nav-item-txt">TARIC Online ↗</span>
         </div>
-        <div class="nav-item" onclick="window.open('https://taxation-customs.ec.europa.eu/online-services/online-services-and-databases-customs/eu-customs-trader-portal_en','_blank')">
+        <div class="nav-item" onclick="abrirEBTI('')" title="Base pública EBTI: consulta de IAV/BTI de todos los Estados miembros">
           <span class="ni">📜</span>
-          <span class="nav-item-txt">IAV/BTI Portal UE ↗</span>
+          <span class="nav-item-txt">Consultar IAV/BTI ↗</span>
         </div>
         <div class="nav-item" onclick="window.open('https://www1.agenciatributaria.gob.es/wlpl/inwinvoc/es.aeat.dit.adu.adta.trans.bdm.TtCodNomIntQue','_blank')">
           <span class="ni">🏛</span>
@@ -765,7 +765,8 @@ textarea.fi{resize:vertical;min-height:80px}
             <div class="pt">📋 Base de Consultas Arancelarias Vinculantes</div>
             <div class="ps">Ejemplos de CAVs de la UE relacionadas con clasificaciones realizadas</div>
           </div>
-          <button class="btn btn-s btn-sm" onclick="window.open('https://taxation-customs.ec.europa.eu/online-services/online-services-and-databases-customs/eu-customs-trader-portal_en','_blank')">🇪🇺 Consultar BTI oficial ↗</button>
+          <button class="btn btn-s btn-sm" onclick="abrirEBTI('')">🇪🇺 Consultar base EBTI ↗</button>
+          <button class="btn btn-s btn-sm" onclick="window.open('https://taxation-customs.ec.europa.eu/online-services/online-services-and-databases-customs/eu-customs-trader-portal_en','_blank')" title="Solicitar una IAV nueva (requiere EU Login)">📝 Solicitar IAV ↗</button>
         </div>
         <div class="view-body">
           <div class="card" style="margin-bottom:16px">
@@ -1894,7 +1895,7 @@ function mostrarResultado(r, container){
 
   // TARIC online URL
   const taricUrl = `https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es&Taric=${r.codigo_taric}&LangDescr=es`;
-  const btiUrl = `https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es&nomenc=${r.codigo_taric.replace(/\s/g,'').substring(0,8)}&LngDescr=es`;
+  const btiNC8 = String(r.codigo_taric||'').replace(/\D/g,'').substring(0,8);
   const aeatUrl = `https://www1.agenciatributaria.gob.es/wlpl/inwinvoc/es.aeat.dit.adu.adta.trans.bdm.TtCodNomIntQue?codigoNomenclatura=${r.codigo_taric.replace(/\s/g,'').substring(0,8)}`;
 
   container.innerHTML = `
@@ -1944,7 +1945,7 @@ function mostrarResultado(r, container){
           <div class="result-section-title">Verificación y referencias</div>
           <div style="display:flex;flex-direction:column;gap:6px">
             <a href="${taricUrl}" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">🇪🇺 Ver en TARIC Online</a>
-            <a href="${btiUrl}" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">📋 Buscar IAV/BTI ↗</a>
+            <button onclick="abrirEBTI('${btiNC8}')" class="btn btn-s btn-sm" title="Copia el código y abre la base pública EBTI">📋 Buscar IAV/BTI ↗</button>
             <a href="${aeatUrl}" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">🏛️ Consultar AEAT</a>
             <button class="btn btn-s btn-sm" onclick="copiarCodigo('${r.codigo_taric}')">📋 Copiar código</button>
           </div>
@@ -2228,11 +2229,26 @@ function exportarResultado(){
   downloadCSV(csv, 'taric_clasificacion.csv');
 }
 
+// La consulta pública EBTI es un formulario JSP que NO admite el código por
+// parámetros GET: los ignora y abre la búsqueda vacía. No hay enlace directo
+// posible, así que se copia el código al portapapeles para pegarlo de un tirón.
+const EBTI_URL = 'https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es';
+
+async function abrirEBTI(codigo){
+  const nc8 = String(codigo||'').replace(/\D/g,'').substring(0,8);
+  if(nc8.length === 8){
+    try{
+      await navigator.clipboard.writeText(nc8);
+      showToast('📋 ' + nc8 + ' copiado. Pégalo en "Nomenclature code" y pulsa Search.');
+    }catch(_){
+      showToast('Busca por el código ' + nc8 + ' en el campo "Nomenclature code".');
+    }
+  }
+  window.open(EBTI_URL, '_blank', 'noopener');
+}
+
 function abrirCAV(ref, codificado){
-  const codigo = decodeURIComponent(codificado);
-  const codigo8 = (codigo||'').replace(/\s/g,'').substring(0,8);
-  const url = codigo8 ? `https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es&nomenc=${codigo8}` : 'https://taxation-customs.ec.europa.eu/online-services/online-services-and-databases-customs/eu-customs-trader-portal_en';
-  window.open(url, '_blank');
+  return abrirEBTI(decodeURIComponent(codificado));
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3289,7 +3305,7 @@ async function loadCAVs(){
         ${grupo.tipo==='historial'?'<span class="badge badge-blue">Personalizadas</span>':'<span class="badge badge-grey">Ilustrativas</span>'}
       </div>
       ${grupo.items.map(c => `
-        <div class="cav-item" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es&nomenc='+(c.codigo||'').replace(/\\s/g,'').substring(0,8),'_blank')">
+        <div class="cav-item" onclick="abrirEBTI('${(c.codigo||'').replace(/\\D/g,'').substring(0,8)}')">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px">
             <div style="display:flex;align-items:center;gap:8px">
               <span class="cav-ref">${c.ref}</span>
