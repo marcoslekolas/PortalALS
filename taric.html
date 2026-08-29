@@ -691,6 +691,7 @@ textarea.fi{resize:vertical;min-height:80px}
           </div>
         </div>
         <div class="view-body">
+          <div id="taric-catalogo-panel"></div>
           <div class="kpi-row" id="hist-kpis"></div>
           <div id="hist-list">
             <div class="loading-wrap"><div class="spinner"></div><span>Cargando historial...</span></div>
@@ -1362,7 +1363,7 @@ function nav(view, el){
   if(v) v.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if(el) el.classList.add('active');
-  if(view === 'historial') loadHistorial();
+  if(view === 'historial'){ loadHistorial(); pintarPanelCatalogo(); }
   if(view === 'cav') loadCAVs();
   if(window.innerWidth <= 768){
     document.getElementById('sidebar').classList.remove('open');
@@ -2461,6 +2462,143 @@ async function copiarTexto(btn, txt){
     const o = btn.textContent; btn.textContent = '✓';
     setTimeout(()=>{ btn.textContent = o; }, 1200);
   }catch(_){ showToast('No se pudo copiar'); }
+}
+
+// ═══ ACTUALIZACIÓN DEL CATÁLOGO TARIC ═══
+// Los XLSX de CIRCABC pesan hasta 68 MB: se suben al bucket y el proceso
+// pesado lo hace un GitHub Action. El navegador solo sube y consulta estado.
+const TARIC_DISPARO = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/disparar-taric';
+const TARIC_AVISO_DIAS = 45;   // a partir de aquí, avisar de catálogo caducado
+
+async function pintarPanelCatalogo(){
+  const cont = document.getElementById('taric-catalogo-panel');
+  if(!cont) return;
+  let est = null;
+  try{
+    const { data } = await sbT().from('taric_estado_catalogo').select('*').single();
+    est = data;
+  }catch(_){ }
+
+  const dias = est && est.dias_desde != null ? est.dias_desde : null;
+  const viejo = dias === null || dias > TARIC_AVISO_DIAS;
+  const esAdmin = (typeof PortalGuard !== 'undefined' && PortalGuard.esAdmin);
+
+  cont.innerHTML = `
+    <div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid ${viejo?'var(--am600)':'var(--gr600)'}">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <div style="font-size:13px;font-weight:700">${viejo?'⚠️':'✅'} Catálogo TARIC</div>
+          <div style="font-size:11px;color:var(--g500);margin-top:2px">
+            ${est && est.ultima_ok
+              ? `Extracción ${est.extraccion||'—'} · actualizado hace ${dias} día${dias===1?'':'s'} · ${(est.filas_nom||0).toLocaleString('es-ES')} códigos, ${(est.filas_med||0).toLocaleString('es-ES')} medidas`
+              : 'Sin registro de actualización. Los datos actuales se cargaron manualmente.'}
+            ${viejo?'<br><strong>Los códigos de 10 dígitos cambian en cualquier momento. Conviene actualizar.</strong>':''}
+          </div>
+        </div>
+        ${esAdmin?`<button class="btn btn-p btn-sm" onclick="abrirActualizarTaric()">⬆️ Actualizar catálogo</button>`:''}
+      </div>
+      <div id="taric-upload-zona" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--g100)">
+        <div style="font-size:11px;color:var(--g500);margin-bottom:8px">
+          Selecciona los ficheros de la extracción de CIRCABC. Imprescindibles
+          <strong>Nomenclature_EN.xlsx</strong> y <strong>TARIC_measures.xlsx</strong>;
+          opcional <strong>Box_44_codes_of_the_SAD.xlsx</strong>.
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="month" id="taric-extraccion" class="fi" style="width:150px">
+          <input type="file" id="taric-files" accept=".xlsx" multiple class="fi" style="flex:1;min-width:220px">
+          <button class="btn btn-p btn-sm" onclick="subirActualizacionTaric()">Subir y procesar</button>
+        </div>
+        <div id="taric-upload-estado" style="margin-top:10px;font-size:11px"></div>
+      </div>
+    </div>`;
+}
+
+function abrirActualizarTaric(){
+  const z = document.getElementById('taric-upload-zona');
+  if(!z) return;
+  z.style.display = z.style.display === 'none' ? 'block' : 'none';
+  const m = document.getElementById('taric-extraccion');
+  if(m && !m.value) m.value = new Date().toISOString().slice(0,7);
+}
+
+async function subirActualizacionTaric(){
+  const est = document.getElementById('taric-upload-estado');
+  const extraccion = (document.getElementById('taric-extraccion')||{}).value;
+  const files = Array.from((document.getElementById('taric-files')||{}).files || []);
+  if(!extraccion){ est.innerHTML = '<span style="color:var(--rd600)">Indica el mes de la extracción.</span>'; return; }
+  if(!files.length){ est.innerHTML = '<span style="color:var(--rd600)">Selecciona al menos los dos ficheros obligatorios.</span>'; return; }
+
+  const nombres = files.map(f=>f.name);
+  if(!nombres.some(n=>/^Nomenclature_/i.test(n)) || !nombres.some(n=>/^TARIC_measures/i.test(n))){
+    est.innerHTML = '<span style="color:var(--rd600)">Faltan Nomenclature_*.xlsx o TARIC_measures.xlsx.</span>';
+    return;
+  }
+
+  try{
+    // 1) Subir al bucket, uno a uno para poder informar del progreso
+    for(let i=0;i<files.length;i++){
+      const f = files[i];
+      est.innerHTML = `<span style="color:var(--g500)">Subiendo ${i+1}/${files.length}: ${f.name} (${(f.size/1e6).toFixed(1)} MB)…</span>`;
+      const { error } = await sbT().storage.from('taric-updates')
+        .upload(`${extraccion}/${f.name}`, f, { upsert:true, contentType:f.type||'application/octet-stream' });
+      if(error) throw new Error(`${f.name}: ${error.message}`);
+    }
+
+    // 2) Registrar la actualización
+    est.innerHTML = '<span style="color:var(--g500)">Registrando…</span>';
+    const { data:fila, error:e2 } = await sbT().from('taric_actualizaciones')
+      .insert({ extraccion, ficheros: nombres, subido_por: (PortalGuard.CU||{}).auth_user_id })
+      .select('id').single();
+    if(e2) throw new Error(e2.message);
+
+    // 3) Disparar el workflow
+    const r = await fetch(TARIC_DISPARO, {
+      method:'POST', headers: await cabecerasTaric(),
+      body: JSON.stringify({ id: fila.id })
+    });
+    if(!r.ok){ const j = await r.json().catch(()=>({})); throw new Error(j.error||('Error '+r.status)); }
+
+    est.innerHTML = '<span style="color:var(--gr600)">✅ Lanzado. El procesado tarda unos minutos; esta ficha se irá actualizando.</span>';
+    vigilarActualizacion(fila.id);
+
+  }catch(e){
+    est.innerHTML = `<span style="color:var(--rd600)">❌ ${e.message}</span>`;
+  }
+}
+
+async function cabecerasTaric(){
+  const h = {'Content-Type':'application/json', apikey: SB_KEY, Authorization:'Bearer '+SB_KEY};
+  try{
+    const { data } = await sbT().auth.getSession();
+    const tok = data && data.session && data.session.access_token;
+    if(tok) h.Authorization = 'Bearer '+tok;
+  }catch(_){}
+  return h;
+}
+
+// Sondea el estado cada 15 s durante 20 minutos como máximo
+function vigilarActualizacion(id){
+  const est = document.getElementById('taric-upload-estado');
+  let intentos = 0;
+  const iv = setInterval(async ()=>{
+    if(++intentos > 80){ clearInterval(iv); return; }
+    try{
+      const { data } = await sbT().from('taric_actualizaciones')
+        .select('estado,mensaje,filas_nom,filas_med').eq('id', id).single();
+      if(!data) return;
+      if(data.estado === 'ok'){
+        clearInterval(iv);
+        est.innerHTML = `<span style="color:var(--gr600)">✅ ${data.mensaje} — ${(data.filas_nom||0).toLocaleString('es-ES')} códigos, ${(data.filas_med||0).toLocaleString('es-ES')} medidas.</span>`;
+        TARIC_DB.ok = null; TARIC_DB.nom.clear(); TARIC_DB.desc.clear(); TARIC_DB.med.clear();
+        setTimeout(pintarPanelCatalogo, 1500);
+      } else if(data.estado === 'error'){
+        clearInterval(iv);
+        est.innerHTML = `<span style="color:var(--rd600)">❌ ${data.mensaje}</span>`;
+      } else if(est){
+        est.innerHTML = `<span style="color:var(--g500)">⏳ ${data.mensaje||'Procesando'}…</span>`;
+      }
+    }catch(_){}
+  }, 15000);
 }
 
 // ═══ CATÁLOGO TARIC EN SUPABASE ═══
