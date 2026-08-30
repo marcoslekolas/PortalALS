@@ -185,9 +185,9 @@ select.ctl:focus{border-color:var(--b500)}
 
       <div class="dz" id="dz" onclick="document.getElementById('fi-new').click()">
         <div class="dz-t">&#128228; Nueva notificación</div>
-        <div class="dz-s">Arrastra aquí el PDF del requerimiento, diligencia o propuesta.<br>Se lee, se extrae la referencia y los datos, y se crea el expediente.</div>
+        <div class="dz-s">Arrastra aquí <strong>todos los ficheros del expediente</strong> a la vez: el requerimiento y la documentación de soporte.<br>Se identifica el acto notificado, se extraen los datos y se crea un único expediente con todo dentro.</div>
       </div>
-      <input type="file" id="fi-new" accept="application/pdf" multiple style="display:none" onchange="onNuevos(this.files)">
+      <input type="file" id="fi-new" multiple style="display:none" onchange="onNuevos(this.files)">
 
       <div class="tb">
         <div class="sw"><input type="text" id="q" placeholder="Buscar referencia, cliente, MRN..." oninput="renderLista()"></div>
@@ -558,18 +558,7 @@ function renderLista(){
 }
 
 /* ═══════════ Dropzone y lectura de PDF ═══════════ */
-function initDropzone(){
-  var dz=document.getElementById('dz');
-  ['dragenter','dragover'].forEach(function(ev){
-    dz.addEventListener(ev,function(e){e.preventDefault();dz.classList.add('over');});
-  });
-  ['dragleave','drop'].forEach(function(ev){
-    dz.addEventListener(ev,function(e){e.preventDefault();dz.classList.remove('over');});
-  });
-  dz.addEventListener('drop',function(e){
-    if(e.dataTransfer&&e.dataTransfer.files)onNuevos(e.dataTransfer.files);
-  });
-}
+function initDropzone(){activarDz('dz',onNuevos);}
 function fileToB64(file){
   return new Promise(function(res,rej){
     var r=new FileReader();
@@ -597,76 +586,122 @@ async function extraerTexto(file){
 }
 
 /* ═══════════ Alta automática desde PDF ═══════════ */
-async function onNuevos(files){
-  var arr=Array.prototype.slice.call(files||[]).filter(function(f){return /pdf$/i.test(f.type)||/\.pdf$/i.test(f.name);});
-  document.getElementById('fi-new').value='';
-  if(!arr.length){toast('Solo se admiten PDF','warn');return;}
-  for(var i=0;i<arr.length;i++){
-    await altaDesdePDF(arr[i],i+1,arr.length);
-  }
+/* ═══════════ Alta: N ficheros → UN expediente ═══════════ */
+
+/* Puntúa qué fichero del lote es el acto administrativo notificado */
+function puntuaNotificacion(nombre,txt){
+  var t=((nombre||'')+' '+(txt||'').slice(0,6000)).toUpperCase();
+  var s=0;
+  var pistas=[['REQUERIMIENTO',6],['DILIGENCIA',5],['PROPUESTA DE LIQUIDACI',6],
+    ['ACUERDO DE LIQUIDACI',6],['TRAMITE DE AUDIENCIA',6],['TR\u00c1MITE DE AUDIENCIA',6],
+    ['PROPUESTA DE SANCI',6],['ACUERDO DE INICIO',5],
+    ['CODIGO SEGURO DE VERIFICACI',4],['C\u00d3DIGO SEGURO DE VERIFICACI',4],
+    ['AGENCIA ESTATAL DE ADMINISTRACI',4],['AGENCIA TRIBUTARIA',3],
+    ['DEPENDENCIA REGIONAL DE ADUANAS',4],['ADMINISTRACION DE ADUANAS',3],
+    ['NUMERO DE EXPEDIENTE',3],['N\u00daMERO DE EXPEDIENTE',3],
+    ['NOTIFICACI',2],['PLAZO DE ',2],['ALEGACIONES',2]];
+  for(var i=0;i<pistas.length;i++){if(t.indexOf(pistas[i][0])>=0)s+=pistas[i][1];}
+  return s;
 }
-async function altaDesdePDF(file,n,total){
-  busy(true,'Leyendo '+file.name+(total>1?' ('+n+'/'+total+')':'')+'...');
+function adivinaTipoDoc(nombre,txt){
+  var t=((nombre||'')+' '+(txt||'').slice(0,3000)).toUpperCase();
+  if(/FACTURA|INVOICE/.test(t))return 'factura';
+  if(/\bCMR\b|CARTA DE PORTE|BILL OF LADING|\bAWB\b|PACKING LIST/.test(t))return 'cmr';
+  if(/\bDUA\b|DECLARACION ADUANERA|DECLARACI\u00d3N ADUANERA|\bMRN\b|LEVANTE/.test(t))return 'dua';
+  if(/CERTIFICAD|EUR\.?\s?1\b|\bATR\b|CERTIFICATE|ORIGEN/.test(t))return 'certificado';
+  if(/CONTRATO|ACUERDO MARCO|AGREEMENT/.test(t))return 'contrato';
+  if(/ESCRITO|ALEGACIONES|RECURSO/.test(t))return 'escrito';
+  return 'otro';
+}
+
+async function onNuevos(files){
+  var arr=Array.prototype.slice.call(files||[]);
+  document.getElementById('fi-new').value='';
+  if(!arr.length)return;
+  if(expSel){await subirDocs(arr);return;}   // si hay expediente abierto, van a él
+  await altaDesdeLote(arr);
+}
+
+async function altaDesdeLote(arr){
+  busy(true,'Leyendo '+arr.length+' fichero'+(arr.length>1?'s':'')+'...');
   try{
-    var ext=await extraerTexto(file);
-    var escaneado=ext.texto.length<200;
-
-    busy(true,escaneado?'PDF sin capa de texto: leyendo con OCR...':'Analizando el documento...');
-
-    var contextoBruto='== DOCUMENTO NOTIFICADO ==\nFichero: '+file.name+'\n\n'+
-      (escaneado?'[El PDF se adjunta como imagen: extrae el texto y analízalo]':ext.texto.slice(0,120000));
-
-    /* Anonimización antes de salir. En un PDF escaneado no hay texto que
-       enmascarar en cliente, así que se avisa y se deja decidir. */
-    var an=anonimizar(contextoBruto,null);
-    if(escaneado&&ANON_NIVEL!=='off'&&!window._acAvisoOCR){
-      window._acAvisoOCR=true;
-      if(!confirm('Este PDF no tiene capa de texto, así que debe enviarse la imagen '+
-                  'completa al motor de OCR y la anonimización no puede aplicarse sobre él.\n\n'+
-                  '¿Continuar?')){busy(false);return;}
+    /* 1. Extraer texto de todo el lote */
+    var items=[];
+    for(var i=0;i<arr.length;i++){
+      busy(true,'Leyendo '+arr[i].name+' ('+(i+1)+'/'+arr.length+')...');
+      var esPdf=/pdf$/i.test(arr[i].type)||/\.pdf$/i.test(arr[i].name);
+      var ext=esPdf?await extraerTexto(arr[i]):{texto:'',paginas:0,origen:'manual'};
+      items.push({file:arr[i],ext:ext,esPdf:esPdf,
+        score:puntuaNotificacion(arr[i].name,ext.texto)});
     }
 
+    /* 2. Identificar el acto notificado: el de mayor puntuación */
+    var iNot=0;
+    for(var j=1;j<items.length;j++){if(items[j].score>items[iNot].score)iNot=j;}
+    var notif=items[iNot];
+    var resto=items.filter(function(x,k){return k!==iNot;});
+    var escaneado=notif.ext.texto.length<200;
+
+    busy(true,escaneado?'El acto no tiene capa de texto: leyendo con OCR...':'Analizando el expediente...');
+
+    /* 3. Contexto: el acto primero, el resto como soporte.
+          Presupuesto de caracteres holgado para el acto, repartido para el resto. */
+    var ctx='== DOCUMENTOS APORTADOS ('+items.length+') ==\n\n';
+    ctx+='[Doc. nº 1] '+notif.file.name+' — ACTO ADMINISTRATIVO NOTIFICADO\n';
+    ctx+=(escaneado?'[Se adjunta como imagen: extrae el texto y analízalo]':notif.ext.texto.slice(0,70000))+'\n\n';
+    if(resto.length){
+      var presup=Math.floor(60000/resto.length);
+      resto.forEach(function(d,k){
+        ctx+='[Doc. nº '+(k+2)+'] '+d.file.name+' — documentación de soporte\n';
+        ctx+=(d.ext.texto?d.ext.texto.slice(0,presup):'(sin texto extraíble; el fichero queda archivado en el expediente)')+'\n\n';
+      });
+    }
+
+    /* 4. Anonimizar */
+    var an=anonimizar(ctx,null);
+    if(escaneado&&ANON_NIVEL!=='off'){
+      if(!confirm('El acto notificado no tiene capa de texto, así que debe enviarse la '+
+                  'imagen completa al motor de OCR y la anonimización no puede aplicarse '+
+                  'sobre ella.\n\n¿Continuar?')){busy(false);return;}
+    }
     var payload={fase:'analisis',contexto:(an.mapa.pares.length?ANON_AVISO:'')+an.txt};
-    if(escaneado)payload.pdf_base64=await fileToB64(file);
+    if(escaneado)payload.pdf_base64=await fileToB64(notif.file);
 
     var r=await llamarAsistente(payload);
     var a=desanonimizarObj((r&&r.analisis)||{},an.mapa);
 
+    /* 5. Crear el expediente */
     busy(true,'Creando expediente...');
-
-    var fnot=a.fecha_notificacion&&/^\d{4}-\d{2}-\d{2}$/.test(a.fecha_notificacion)?a.fecha_notificacion:hoyISO();
+    var fnot=/^\d{4}-\d{2}-\d{2}$/.test(a.fecha_notificacion||'')?a.fecha_notificacion:hoyISO();
     var pcod=a.plazo_codigo_sugerido&&plazosTipo.some(function(p){return p.codigo===a.plazo_codigo_sugerido;})?a.plazo_codigo_sugerido:null;
     var dua=(a.duas_afectados&&a.duas_afectados[0])||{};
-
     var obj={
-      referencia:a.referencia_expediente||'',
-      csv:a.csv||'',
-      asunto:a.asunto||'',
-      tipo_acto:TIPO_ACTO[a.tipo_acto]?a.tipo_acto:'otro',
-      organo:a.organo_emisor||'',
+      referencia:a.referencia_expediente||'',csv:a.csv||'',asunto:a.asunto||'',
+      tipo_acto:TIPO_ACTO[a.tipo_acto]?a.tipo_acto:'otro',organo:a.organo_emisor||'',
       cliente:(a.obligado_tributario&&a.obligado_tributario.nombre)||'',
       nif_cliente:(a.obligado_tributario&&a.obligado_tributario.nif)||'',
       mrn:dua.mrn||'',
       fecha_dua:/^\d{4}-\d{2}-\d{2}$/.test(dua.fecha||'')?dua.fecha:null,
-      regimen:dua.regimen||'',
-      fecha_notificacion:fnot,
-      plazo_codigo:pcod,
-      fecha_fin_plazo:pcod?calcularPlazo(fnot,pcod):null,
-      estado:'analizado',
+      regimen:dua.regimen||'',fecha_notificacion:fnot,plazo_codigo:pcod,
+      fecha_fin_plazo:pcod?calcularPlazo(fnot,pcod):null,estado:'analizado',
       importe_propuesto:(a.importes&&(a.importes.total||a.importes.cuota))||null,
-      resumen:a.cuestion_juridica_nuclear||'',
-      analisis:a,
+      resumen:a.cuestion_juridica_nuclear||'',analisis:a,
       creado_por:CU?CU.id:null
     };
-
     var ins=await sb.from('cw_expedientes').insert(obj).select().single();
     if(ins.error)throw ins.error;
     var exp=ins.data;
 
-    // Documento notificado como Doc. nº 1
-    await guardarDoc(exp.id,file,'notificacion',1,ext);
+    /* 6. Subir todos los ficheros al mismo expediente, el acto como Doc. nº 1 */
+    busy(true,'Archivando documentos...');
+    await guardarDoc(exp.id,notif.file,'notificacion',1,notif.ext);
+    for(var k=0;k<resto.length;k++){
+      busy(true,'Archivando '+resto[k].file.name+' ('+(k+2)+'/'+items.length+')...');
+      await guardarDoc(exp.id,resto[k].file,
+        adivinaTipoDoc(resto[k].file.name,resto[k].ext.texto),k+2,resto[k].ext);
+    }
 
-    // Traza del análisis
+    /* 7. Traza */
     await sb.from('cw_exp_borradores').insert({
       expediente_id:exp.id,fase:'analisis',modelo:r.modelo,
       modelos_intentados:r.modelos_intentados||[],prompt_version:r.prompt_version||0,
@@ -677,15 +712,13 @@ async function altaDesdePDF(file,n,total){
 
     busy(false);
     await loadExpedientes();
-    toast('Expediente creado: '+(exp.referencia||file.name));
+    toast(items.length+' documento'+(items.length>1?'s':'')+' en el expediente. Acto notificado: '+notif.file.name);
     abrirExp(exp.id);
   }catch(e){
-    busy(false);
-    console.error(e);
-    toast('Error al procesar '+file.name+': '+(e.message||e),'error');
+    busy(false);console.error(e);
+    toast('Error al procesar el lote: '+(e.message||e),'error');
   }
 }
-
 /* ═══════════ Documentos ═══════════ */
 async function guardarDoc(expId,file,tipo,orden,ext){
   var safe=file.name.replace(/[^\w.\-]+/g,'_');
@@ -705,15 +738,18 @@ async function subirDocs(files){
   if(!expSel)return;
   var arr=Array.prototype.slice.call(files||[]);
   if(!arr.length)return;
-  busy(true,'Subiendo documentos...');
+  busy(true,'Incorporando documentación...');
   try{
-    var base=docsSel.length;
+    var base=0;
+    docsSel.forEach(function(d){if((d.orden||0)>base)base=d.orden;});
     for(var i=0;i<arr.length;i++){
-      busy(true,'Subiendo '+arr[i].name+'...');
-      await guardarDoc(expSel.id,arr[i],'otro',base+i+1,null);
+      busy(true,'Leyendo '+arr[i].name+' ('+(i+1)+'/'+arr.length+')...');
+      var esPdf=/pdf$/i.test(arr[i].type)||/\.pdf$/i.test(arr[i].name);
+      var ext=esPdf?await extraerTexto(arr[i]):{texto:'',paginas:0,origen:'manual'};
+      await guardarDoc(expSel.id,arr[i],adivinaTipoDoc(arr[i].name,ext.texto),base+i+1,ext);
     }
     await refrescarDocs();
-    toast('Documentos añadidos');
+    toast(arr.length+' documento'+(arr.length>1?'s incorporados':' incorporado')+' al expediente');
   }catch(e){toast('Error al subir: '+(e.message||e),'error');}
   busy(false);
 }
@@ -776,7 +812,22 @@ async function abrirExp(id){
   var d=document.getElementById('exp-detalle');
   d.style.display='flex';
   d.innerHTML=detalleHTML(e);
+  activarDz('dz-det',subirDocs);
   window.scrollTo(0,0);
+}
+/* Zona de arrastre reutilizable */
+function activarDz(id,cb){
+  var dz=document.getElementById(id);
+  if(!dz)return;
+  ['dragenter','dragover'].forEach(function(ev){
+    dz.addEventListener(ev,function(e){e.preventDefault();dz.classList.add('over');});
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    dz.addEventListener(ev,function(e){e.preventDefault();dz.classList.remove('over');});
+  });
+  dz.addEventListener('drop',function(e){
+    if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)cb(e.dataTransfer.files);
+  });
 }
 function cerrarDetalle(){
   expSel=null;
@@ -843,8 +894,12 @@ function detalleHTML(e){
     '<div style="display:flex;flex-direction:column;gap:14px">'+
       /* Documentos */
       '<div class="card"><div class="card-h"><h3>&#128206; Documentos</h3>'+
-        '<button class="btn btn-sec btn-sm ml" onclick="document.getElementById(\'fi-doc\').click()">+ Añadir</button></div>'+
-        '<div class="card-b"><div id="docs-list">'+docsHTML()+'</div>'+
+        '<span class="hint ml">'+docsSel.length+' en el expediente</span>'+
+        '<button class="btn btn-sec btn-sm" onclick="document.getElementById(\'fi-doc\').click()">+ Añadir</button></div>'+
+        '<div class="card-b">'+
+        '<div class="dz" id="dz-det" style="padding:12px;margin-bottom:10px" onclick="document.getElementById(\'fi-doc\').click()">'+
+          '<div class="dz-s">Arrastra aquí más documentación. Se incorpora al expediente y enriquece los escritos siguientes.</div></div>'+
+        '<div id="docs-list">'+docsHTML()+'</div>'+
         '<input type="file" id="fi-doc" multiple style="display:none" onchange="subirDocs(this.files)"></div>'+
       '</div>'+
 
@@ -907,12 +962,28 @@ function borrHTML(){
   var red=borrSel.filter(function(b){return b.fase==='redaccion';});
   if(!red.length)return '<div class="hint">Sin borradores generados.</div>';
   return red.map(function(b){
-    return '<div class="borr" onclick="usarBorrador(\''+b.id+'\')">'+
+    return '<div class="borr">'+
       '<div class="borr-h">'+new Date(b.created_at).toLocaleString('es-ES')+
-        (b.es_definitivo?' <span class="chip es-presentado">definitivo</span>':'')+'</div>'+
-      '<div class="borr-m mono">'+esc(b.modelo||'—')+' · '+(b.tokens_out||'?')+' tok · '+Math.round((b.ms||0)/1000)+' s</div>'+
+        (b.es_definitivo?' <span class="chip es-presentado">presentado</span>':'')+'</div>'+
+      '<div class="borr-m mono">'+esc(b.modelo||'—')+' · '+(b.tokens_out||'?')+' tok · '+
+        Math.round((b.ms||0)/1000)+' s'+(b.anon_n?' · '+b.anon_n+' anonimizados':'')+'</div>'+
+      '<div style="display:flex;gap:6px;margin-top:7px">'+
+        '<button class="btn btn-sec btn-sm" onclick="usarBorrador(\''+b.id+'\')">Cargar</button>'+
+        '<button class="btn btn-sec btn-sm" onclick="marcarPresentado(\''+b.id+'\')">'+
+          (b.es_definitivo?'Quitar marca':'Marcar como presentado')+'</button>'+
+      '</div>'+
     '</div>';
   }).join('');
+}
+/* Lo marcado como presentado es lo que alimenta los escritos de continuación */
+async function marcarPresentado(id){
+  var b=borrSel.find(function(x){return x.id===id;});if(!b)return;
+  var v=!b.es_definitivo;
+  var r=await sb.from('cw_exp_borradores').update({es_definitivo:v}).eq('id',id);
+  if(r.error){toast('Error: '+r.error.message,'error');return;}
+  b.es_definitivo=v;
+  document.getElementById('borr-list').innerHTML=borrHTML();
+  toast(v?'Versión marcada como presentada':'Marca retirada');
 }
 function recalcPlazo(){
   var cod=document.getElementById('fx-plazo').value;
@@ -1002,11 +1073,33 @@ function construirContexto(){
         (c.resultado?'\nResultado obtenido: '+c.resultado:'');
     }).join('\n\n')+'\n\n';
   }
+  /* Actuaciones previas: hacen que un escrito de continuación no repita ni
+     contradiga lo ya sostenido en el mismo expediente */
+  var prev=borrSel.filter(function(b){return b.fase==='redaccion'&&b.es_definitivo;});
+  if(e.escrito_final||prev.length){
+    t+='== ACTUACIONES PREVIAS EN ESTE EXPEDIENTE ==\n';
+    if(e.fecha_presentacion)t+='Escrito anterior presentado el '+e.fecha_presentacion+
+      (e.justificante?' (justificante '+e.justificante+')':'')+'.\n\n';
+    prev.forEach(function(b,i){
+      t+='--- Escrito presentado '+(i+1)+' ('+new Date(b.created_at).toLocaleDateString('es-ES')+') ---\n'+
+         (b.contenido||'').slice(0,25000)+'\n\n';
+    });
+    if(!prev.length&&e.escrito_final){
+      t+='--- Escrito obrante en el expediente ---\n'+e.escrito_final.slice(0,25000)+'\n\n';
+    }
+    t+='INSTRUCCIÓN: el escrito que vas a redactar es una CONTINUACIÓN de lo anterior.\n'+
+       'No reiteres alegaciones ya formuladas salvo por remisión expresa, no contradigas\n'+
+       'lo sostenido antes, y apóyate en la documentación nueva que se aporta ahora.\n\n';
+  }
+
   t+='== DOCUMENTOS DEL EXPEDIENTE ==\n';
   var presupuesto=Math.floor(140000/Math.max(1,docsSel.length));
+  var corte=e.fecha_presentacion?new Date(e.fecha_presentacion+'T23:59:59'):null;
   docsSel.forEach(function(d){
-    t+='\n[Doc. nº '+(d.orden||'?')+'] '+d.nombre+' — '+(TIPO_DOC[d.tipo]||d.tipo)+'\n';
-    t+=(d.texto_extraido||'(sin texto extraído)').slice(0,presupuesto)+'\n';
+    var nuevo=corte&&new Date(d.created_at)>corte;
+    t+='\n[Doc. nº '+(d.orden||'?')+'] '+d.nombre+' — '+(TIPO_DOC[d.tipo]||d.tipo)+
+       (nuevo?' [APORTADO CON POSTERIORIDAD AL ESCRITO ANTERIOR]':'')+'\n';
+    t+=(d.texto_extraido||'(sin texto extraído; el original obra en el expediente)').slice(0,presupuesto)+'\n';
   });
   return t;
 }
