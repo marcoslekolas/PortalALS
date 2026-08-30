@@ -1079,6 +1079,10 @@ function detalleHTML(e){
       '<div id="chat-list" class="chat-list"></div>'+
       '<div class="chat-in-row">'+
         '<textarea id="chat-in" rows="1" placeholder="Escribe aquí... (Ctrl+Intro para enviar)" oninput="chatAutosize(this)" onkeydown="chatTecla(event)"></textarea>'+
+        '<select class="ctl" id="chat-modo" title="Qué esperas de la respuesta">'+
+          '<option value="conversar">Conversar</option>'+
+          '<option value="corregir">Corregir escrito</option>'+
+        '</select>'+
         '<button class="btn btn-primary" onclick="enviarChat()">Enviar</button>'+
       '</div>'+
       (e.instruccion_inicial?'<div class="hint" style="margin-top:8px">Encargo registrado en el alta: <em>'+esc(e.instruccion_inicial)+'</em></div>':'')+
@@ -1238,14 +1242,30 @@ function construirContexto(modo){
        'lo sostenido antes, y apóyate en la documentación nueva que se aporta ahora.\n\n';
   }
 
+  /* Presupuesto de caracteres. El acto notificado se lleva la mitad, porque es
+     lo que hay que contestar; el resto se reparte entre la documentación de
+     soporte. En conversación se usa prácticamente el mismo presupuesto que en
+     redacción: recortarlo dejaba al modelo sin poder volver a los documentos. */
   t+='== DOCUMENTOS DEL EXPEDIENTE ==\n';
-  var presupuesto=Math.floor((chat?45000:140000)/Math.max(1,docsSel.length));
+  var TOTAL=chat?130000:140000;
+  var acto=docsSel.filter(function(d){return d.tipo==='notificacion';});
+  var otros=docsSel.filter(function(d){return d.tipo!=='notificacion';});
+  var presActo=acto.length?Math.floor((TOTAL*0.5)/acto.length):0;
+  var presOtros=otros.length?Math.floor((TOTAL-(presActo*acto.length))/otros.length):0;
   var corte=e.fecha_presentacion?new Date(e.fecha_presentacion+'T23:59:59'):null;
   docsSel.forEach(function(d){
     var nuevo=corte&&new Date(d.created_at)>corte;
+    var pres=d.tipo==='notificacion'?presActo:presOtros;
+    var txt=d.texto_extraido||'';
     t+='\n[Doc. nº '+(d.orden||'?')+'] '+d.nombre+' — '+(TIPO_DOC[d.tipo]||d.tipo)+
+       (d.tipo==='notificacion'?' — ACTO ADMINISTRATIVO QUE SE CONTESTA':'')+
        (nuevo?' [APORTADO CON POSTERIORIDAD AL ESCRITO ANTERIOR]':'')+'\n';
-    t+=(d.texto_extraido||'(sin texto extraído; el original obra en el expediente)').slice(0,presupuesto)+'\n';
+    if(!txt)t+='(sin texto extraído; el original obra en el expediente)\n';
+    else{
+      t+=txt.slice(0,pres)+'\n';
+      if(txt.length>pres)t+='[...documento truncado en '+pres.toLocaleString('es-ES')+
+        ' de '+txt.length.toLocaleString('es-ES')+' caracteres...]\n';
+    }
   });
 
   /* En conversación, el modelo necesita ver lo que hay ahora mismo en el editor
@@ -1254,7 +1274,7 @@ function construirContexto(modo){
     var ed=document.getElementById('escrito');
     var actual=ed?ed.value.trim():'';
     t+='\n== ESCRITO ACTUAL EN EL EDITOR ==\n'+
-       (actual?actual.slice(0,45000):'(vacío: todavía no se ha redactado nada)')+'\n';
+       (actual?actual.slice(0,60000):'(vacío: todavía no se ha redactado nada)')+'\n';
   }
   return t;
 }
@@ -1456,8 +1476,10 @@ async function enviarChat(){
       return {rol:m.rol,contenido:anonimizarCon(m.contenido,an.mapa)};
     });
 
+    var modo=(document.getElementById('chat-modo')||{}).value||'conversar';
     var r=await llamarAsistente({
       fase:'chat',
+      modo:modo,
       contexto:(an.mapa.pares.length?ANON_AVISO:'')+an.txt,
       historial:hist,
       modelo:(document.getElementById('ia-motor')||{}).value||null
@@ -1481,6 +1503,14 @@ async function enviarChat(){
     pintarChat();
     document.getElementById('chat-estado').textContent=
       r.modelo+' · '+Math.round(r.ms/1000)+' s · '+an.mapa.pares.length+' datos anonimizados';
+    /* En corrección la respuesta ES el escrito: se vuelca sin pedir permiso,
+       porque para eso se ha pedido. El anterior queda en Versiones. */
+    if(modo==='corregir'&&pareceEscrito(resp)){
+      document.getElementById('escrito').value=resp;
+      toast('Escrito corregido y cargado en el editor. Revisa y guarda.');
+    }else if(modo==='corregir'){
+      toast('La respuesta no parece un escrito completo. Revísala antes de volcarla.','warn');
+    }
   }catch(e){
     chatSel=chatSel.filter(function(m){return m.id!==propio.id;});
     pintarChat();
@@ -1488,6 +1518,16 @@ async function enviarChat(){
     document.getElementById('chat-estado').textContent='';
     toast('Error del asistente: '+(e.message||e),'error');
   }
+}
+/* Distingue un escrito completo de un comentario sobre el escrito */
+function pareceEscrito(t){
+  if(!t||t.length<600)return false;
+  var u=t.toUpperCase();
+  var marcas=0;
+  ['ANTECEDENTE','ALEGACI','SOLICITA','EXPONE','REPRESENTACI'].forEach(function(m){
+    if(u.indexOf(m)>=0)marcas++;
+  });
+  return marcas>=3;
 }
 function chatAlEscrito(id){
   var m=chatSel.find(function(x){return x.id===id;});if(!m)return;
