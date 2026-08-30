@@ -135,6 +135,18 @@ select.ctl:focus{border-color:var(--b500)}
 .ne-title{width:100%;background:var(--w);border:1px solid var(--g200);border-radius:var(--r) var(--r) 0 0;font-family:var(--f);font-size:17px;font-weight:700;color:var(--g900);outline:none;padding:13px 16px}
 .ne-body{width:100%;min-height:340px;background:var(--w);border:1px solid var(--g200);border-top:none;font-family:var(--f);font-size:13px;color:var(--g700);outline:none;padding:13px 16px;resize:vertical;line-height:1.8}
 .ne-footer{padding:8px 14px;border:1px solid var(--g200);border-top:none;border-radius:0 0 var(--r) var(--r);font-size:11px;color:var(--g500);display:flex;background:var(--g50)}
+/* Chat */
+.chat-list{max-height:460px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px 10px}
+.msg{display:flex;flex-direction:column;max-width:82%}
+.msg-u{align-self:flex-end;align-items:flex-end}
+.msg-a{align-self:flex-start;align-items:flex-start;max-width:94%}
+.msg-b{font-size:12.5px;line-height:1.7;white-space:pre-wrap;border-radius:var(--rl);padding:10px 13px}
+.msg-u .msg-b{background:var(--b600);color:#fff;border-bottom-right-radius:4px}
+.msg-a .msg-b{background:var(--g50);color:var(--g900);border:1px solid var(--g200);border-bottom-left-radius:4px}
+.msg-f{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:10px;color:var(--g500)}
+.chat-in-row{display:flex;gap:8px;align-items:flex-end;border-top:1px solid var(--g200);padding-top:10px}
+.chat-in-row textarea{flex:1;background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:9px 11px;font-family:var(--f);font-size:12.5px;color:var(--g900);outline:none;resize:none;line-height:1.6;max-height:160px}
+.chat-in-row textarea:focus{border-color:var(--b500);background:var(--w)}
 /* Modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px}
 .modal{background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 48px rgba(0,0,0,.15)}
@@ -181,6 +193,14 @@ select.ctl:focus{border-color:var(--b500)}
         <div class="kpi"><div class="kpi-n" id="k-72h" style="color:var(--am600)">0</div><div class="kpi-l">Vencen en 72 h</div></div>
         <div class="kpi"><div class="kpi-n" id="k-abiertos" style="color:var(--b600)">0</div><div class="kpi-l">Abiertos</div></div>
         <div class="kpi"><div class="kpi-n" id="k-borr" style="color:var(--pu600)">0</div><div class="kpi-l">Con borrador</div></div>
+      </div>
+
+      <div class="card" style="padding:0">
+        <div class="card-b" style="padding:14px 16px 12px">
+          <label style="font-size:10px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Qué necesitas de este expediente</label>
+          <textarea id="instr-inicial" rows="2" style="width:100%;background:var(--g50);border:1px solid var(--g200);border-radius:var(--r);padding:9px 11px;font-family:var(--f);font-size:12.5px;color:var(--g900);outline:none;resize:vertical;line-height:1.6" placeholder="Escríbelo antes de soltar los ficheros, como se lo dirías a un compañero. Ej.: es un requerimiento de valor en aduana; el cliente sí tiene la factura y el pago bancario, quiero contestar aportándolos y defendiendo el valor de transacción. No entres en clasificación."></textarea>
+          <div class="hint" style="margin-top:5px">Opcional, pero cambia mucho el resultado. Se guarda en el expediente y acompaña a todas las respuestas posteriores.</div>
+        </div>
       </div>
 
       <div class="dz" id="dz" onclick="document.getElementById('fi-new').click()">
@@ -401,7 +421,7 @@ var ANON_AVISO='== AVISO SOBRE IDENTIFICADORES ==\n'+
 /* ═══════════ Estado ═══════════ */
 var sb=null, CU=null;
 var expedientes=[], criterios=[], notas=[], plazosTipo=[], festivos={};
-var expSel=null, docsSel=[], borrSel=[];
+var expSel=null, docsSel=[], borrSel=[], chatSel=[];
 var notaSelId=null, notaTimer=null;
 
 /* ═══════════ Guard ═══════════ */
@@ -664,7 +684,10 @@ async function altaDesdeLote(arr){
                   'imagen completa al motor de OCR y la anonimización no puede aplicarse '+
                   'sobre ella.\n\n¿Continuar?')){busy(false);return;}
     }
+    var instrIni=(document.getElementById('instr-inicial')||{}).value||'';
+    instrIni=instrIni.trim();
     var payload={fase:'analisis',contexto:(an.mapa.pares.length?ANON_AVISO:'')+an.txt};
+    if(instrIni)payload.instruccion=anonimizarCon(instrIni,an.mapa);
     if(escaneado)payload.pdf_base64=await fileToB64(notif.file);
 
     var r=await llamarAsistente(payload);
@@ -686,6 +709,7 @@ async function altaDesdeLote(arr){
       fecha_fin_plazo:pcod?calcularPlazo(fnot,pcod):null,estado:'analizado',
       importe_propuesto:(a.importes&&(a.importes.total||a.importes.cuota))||null,
       resumen:a.cuestion_juridica_nuclear||'',analisis:a,
+      instruccion_inicial:instrIni||null,
       creado_por:CU?CU.id:null
     };
     var ins=await sb.from('cw_expedientes').insert(obj).select().single();
@@ -710,6 +734,7 @@ async function altaDesdeLote(arr){
       anon_nivel:escaneado?'ocr_sin_anon':ANON_NIVEL,anon_n:an.mapa.pares.length
     });
 
+    var ii=document.getElementById('instr-inicial');if(ii)ii.value='';
     busy(false);
     await loadExpedientes();
     toast(items.length+' documento'+(items.length>1?'s':'')+' en el expediente. Acto notificado: '+notif.file.name);
@@ -806,13 +831,15 @@ async function abrirExp(id){
     docsSel=r1.data||[];
     var r2=await sb.from('cw_exp_borradores').select('*').eq('expediente_id',id).order('created_at',{ascending:false}).limit(20);
     borrSel=r2.data||[];
-  }catch(err){docsSel=[];borrSel=[];}
+    await loadChat();
+  }catch(err){docsSel=[];borrSel=[];chatSel=[];}
   busy(false);
   document.getElementById('exp-lista').style.display='none';
   var d=document.getElementById('exp-detalle');
   d.style.display='flex';
   d.innerHTML=detalleHTML(e);
   activarDz('dz-det',subirDocs);
+  pintarChat();
   window.scrollTo(0,0);
 }
 /* Zona de arrastre reutilizable */
@@ -945,6 +972,20 @@ function detalleHTML(e){
     '<button class="btn btn-sec btn-sm" onclick="exportarPDF()">Exportar PDF</button>'+
     '<button class="btn btn-primary btn-sm" onclick="guardarEscrito()">Guardar</button></div>'+
     '<div class="card-b"><textarea id="escrito" placeholder="Aquí aparece el escrito redactado. Se edita libremente antes de presentarlo.">'+esc(e.escrito_final)+'</textarea></div>'+
+  '</div>'+
+
+  /* Conversación */
+  '<div class="card"><div class="card-h"><h3>&#128172; Conversación sobre el expediente</h3>'+
+    '<span class="hint ml" id="chat-estado"></span>'+
+    '<button class="btn btn-sec btn-sm" onclick="limpiarChat()">Borrar conversación</button></div>'+
+    '<div class="card-b">'+
+      '<div id="chat-list" class="chat-list"></div>'+
+      '<div class="chat-in-row">'+
+        '<textarea id="chat-in" rows="1" placeholder="Escribe aquí... (Ctrl+Intro para enviar)" oninput="chatAutosize(this)" onkeydown="chatTecla(event)"></textarea>'+
+        '<button class="btn btn-primary" onclick="enviarChat()">Enviar</button>'+
+      '</div>'+
+      (e.instruccion_inicial?'<div class="hint" style="margin-top:8px">Encargo registrado en el alta: <em>'+esc(e.instruccion_inicial)+'</em></div>':'')+
+    '</div>'+
   '</div>';
 }
 function campo(lbl,id,val,tipo,onch){
@@ -1041,8 +1082,9 @@ async function llamarAsistente(payload){
   if(!resp.ok||!d.ok)throw new Error((d&&d.error)||('HTTP '+resp.status));
   return d;
 }
-function construirContexto(){
+function construirContexto(modo){
   var e=expSel;
+  var chat=modo==='chat';
   var pt=plazosTipo.find(function(p){return p.codigo===e.plazo_codigo;});
   var sel=[];
   var pick=document.getElementById('crit-pick');
@@ -1062,6 +1104,10 @@ function construirContexto(){
     'Plazo aplicable: '+(pt?pt.descripcion+' ('+pt.base_legal+')':'no determinado')+'\n'+
     'Fin de plazo: '+(e.fecha_fin_plazo||'no determinado')+'\n'+
     'Lugar y fecha del escrito: La Línea de la Concepción, '+new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})+'\n\n';
+
+  if(e.instruccion_inicial){
+    t+='== ENCARGO DEL TITULAR ==\n'+e.instruccion_inicial+'\n\n';
+  }
 
   if(e.analisis){
     t+='== ANÁLISIS PREVIO (Fase 1) ==\n'+JSON.stringify(e.analisis,null,1)+'\n\n';
@@ -1093,7 +1139,7 @@ function construirContexto(){
   }
 
   t+='== DOCUMENTOS DEL EXPEDIENTE ==\n';
-  var presupuesto=Math.floor(140000/Math.max(1,docsSel.length));
+  var presupuesto=Math.floor((chat?45000:140000)/Math.max(1,docsSel.length));
   var corte=e.fecha_presentacion?new Date(e.fecha_presentacion+'T23:59:59'):null;
   docsSel.forEach(function(d){
     var nuevo=corte&&new Date(d.created_at)>corte;
@@ -1101,6 +1147,15 @@ function construirContexto(){
        (nuevo?' [APORTADO CON POSTERIORIDAD AL ESCRITO ANTERIOR]':'')+'\n';
     t+=(d.texto_extraido||'(sin texto extraído; el original obra en el expediente)').slice(0,presupuesto)+'\n';
   });
+
+  /* En conversación, el modelo necesita ver lo que hay ahora mismo en el editor
+     para poder reescribir una alegación concreta sin rehacerlo todo. */
+  if(chat){
+    var ed=document.getElementById('escrito');
+    var actual=ed?ed.value.trim():'';
+    t+='\n== ESCRITO ACTUAL EN EL EDITOR ==\n'+
+       (actual?actual.slice(0,45000):'(vacío: todavía no se ha redactado nada)')+'\n';
+  }
   return t;
 }
 async function analizar(){
@@ -1247,6 +1302,120 @@ function copiarEscrito(){
   if(!t){toast('No hay escrito que copiar','warn');return;}
   navigator.clipboard.writeText(t).then(function(){toast('Copiado al portapapeles');},
     function(){toast('No se pudo copiar','error');});
+}
+
+/* ═══════════ Chat del expediente ═══════════ */
+function chatHTML(){
+  if(!chatSel.length){
+    return '<div class="hint">Pregúntale lo que necesites sobre este expediente: qué solidez tiene una línea, '+
+      'qué documento falta, que reescriba la alegación tercera, que acorte, que te explique el precepto que invoca '+
+      'la Administración. Ve el expediente completo y el escrito que tengas en el editor.</div>';
+  }
+  return chatSel.map(function(m){
+    if(m.rol==='user'){
+      return '<div class="msg msg-u"><div class="msg-b">'+esc(m.contenido)+'</div></div>';
+    }
+    return '<div class="msg msg-a"><div class="msg-b">'+esc(m.contenido)+'</div>'+
+      '<div class="msg-f"><span class="mono">'+esc(m.modelo||'—')+'</span>'+
+      '<button class="btn btn-sec btn-sm" onclick="chatAlEscrito(\''+m.id+'\')">Llevar al escrito</button>'+
+      '<button class="btn btn-sec btn-sm" onclick="chatCopiar(\''+m.id+'\')">Copiar</button></div></div>';
+  }).join('');
+}
+async function loadChat(){
+  if(!expSel){chatSel=[];return;}
+  try{
+    var r=await sb.from('cw_exp_chat').select('*').eq('expediente_id',expSel.id).order('created_at',{ascending:true});
+    chatSel=r.data||[];
+  }catch(e){chatSel=[];}
+}
+function pintarChat(){
+  var c=document.getElementById('chat-list');
+  if(!c)return;
+  c.innerHTML=chatHTML();
+  c.scrollTop=c.scrollHeight;
+}
+async function enviarChat(){
+  if(!expSel)return;
+  var inp=document.getElementById('chat-in');
+  var txt=(inp.value||'').trim();
+  if(!txt)return;
+  inp.value='';
+  inp.style.height='auto';
+
+  /* Pinta el turno del usuario de inmediato */
+  var propio={id:'tmp_'+Date.now(),rol:'user',contenido:txt,created_at:new Date().toISOString()};
+  chatSel.push(propio);
+  pintarChat();
+  document.getElementById('chat-estado').textContent='Pensando...';
+
+  try{
+    /* Una sola pasada de anonimización sobre contexto e historial, para que
+       los marcadores sean coherentes a lo largo de toda la conversación. */
+    var an=anonimizar(construirContexto('chat'),expSel);
+    var hist=chatSel.slice(-14).map(function(m){
+      return {rol:m.rol,contenido:anonimizarCon(m.contenido,an.mapa)};
+    });
+
+    var r=await llamarAsistente({
+      fase:'chat',
+      contexto:(an.mapa.pares.length?ANON_AVISO:'')+an.txt,
+      historial:hist,
+      modelo:(document.getElementById('ia-motor')||{}).value||null
+    });
+    var resp=desanonimizar(r.contenido,an.mapa);
+
+    /* Persistir ambos turnos en claro: es tu expediente, en tu base */
+    var ins=await sb.from('cw_exp_chat').insert([
+      {expediente_id:expSel.id,rol:'user',contenido:txt,
+       anon_nivel:ANON_NIVEL,anon_n:an.mapa.pares.length},
+      {expediente_id:expSel.id,rol:'assistant',contenido:resp,modelo:r.modelo,
+       tokens_in:r.tokens_in,tokens_out:r.tokens_out,ms:r.ms,
+       anon_nivel:ANON_NIVEL,anon_n:an.mapa.pares.length}
+    ]).select();
+    if(ins.data&&ins.data.length){
+      chatSel=chatSel.filter(function(m){return m.id!==propio.id;});
+      chatSel=chatSel.concat(ins.data.sort(function(a,b){return a.rol==='user'?-1:1;}));
+    }else{
+      chatSel.push({id:'tmp_a'+Date.now(),rol:'assistant',contenido:resp,modelo:r.modelo});
+    }
+    pintarChat();
+    document.getElementById('chat-estado').textContent=
+      r.modelo+' · '+Math.round(r.ms/1000)+' s · '+an.mapa.pares.length+' datos anonimizados';
+  }catch(e){
+    chatSel=chatSel.filter(function(m){return m.id!==propio.id;});
+    pintarChat();
+    inp.value=txt;
+    document.getElementById('chat-estado').textContent='';
+    toast('Error del asistente: '+(e.message||e),'error');
+  }
+}
+function chatAlEscrito(id){
+  var m=chatSel.find(function(x){return x.id===id;});if(!m)return;
+  var ed=document.getElementById('escrito');
+  if(ed.value.trim()&&!confirm('Se sustituye el contenido del editor por esta respuesta. ¿Continuar?'))return;
+  ed.value=m.contenido;
+  ed.scrollIntoView({behavior:'smooth',block:'center'});
+  toast('Llevado al editor. Recuerda guardar.');
+}
+function chatCopiar(id){
+  var m=chatSel.find(function(x){return x.id===id;});if(!m)return;
+  navigator.clipboard.writeText(m.contenido).then(function(){toast('Copiado');},
+    function(){toast('No se pudo copiar','error');});
+}
+async function limpiarChat(){
+  if(!expSel||!chatSel.length)return;
+  if(!confirm('¿Borrar toda la conversación de este expediente? Los documentos, el análisis y los borradores no se tocan.'))return;
+  await sb.from('cw_exp_chat').delete().eq('expediente_id',expSel.id);
+  chatSel=[];pintarChat();
+  document.getElementById('chat-estado').textContent='';
+  toast('Conversación borrada');
+}
+function chatAutosize(el){
+  el.style.height='auto';
+  el.style.height=Math.min(el.scrollHeight,160)+'px';
+}
+function chatTecla(e){
+  if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();enviarChat();}
 }
 
 /* ═══════════ Exportar PDF ═══════════ */
