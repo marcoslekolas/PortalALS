@@ -3117,34 +3117,36 @@ async function exportarFactura(){
     return cods[0];
   };
   const resumen = Object.keys(grupos).sort().map(k => ({
+    'Nº Factura': grupos[k].facturas.join(', '),
+    'TARIC 10 díg.': modaTaric(grupos[k]),
+    'Total Bultos': grupos[k].bultos||'-',
+    'Total Peso Bruto (kg)': grupos[k].bruto||'-',
+    'Total Cantidad / Kilos Netos': grupos[k].cantidad||'-',
+    'Total Importe': grupos[k].importe||'-',
     'Partida (4 dig.)': k,
-    'TARIC 10 díg. (moda)': modaTaric(grupos[k]),
     'Casilla 44 (códigos)': [...grupos[k].c44.values()]
         .sort((a,b)=>(a.orden||0)-(b.orden||0)).map(d=>d.formato).join(' | '),
     'Casilla 44 (obligatorios)': [...grupos[k].c44.values()]
         .filter(d=>d.obligatorio).sort((a,b)=>(a.orden||0)-(b.orden||0)).map(d=>d.codigo_doc).join(' '),
-    'Facturas': grupos[k].facturas.join(', '),
     'Descripción agrupada (casilla 31)': grupos[k].descs.join(' + '),
-    'Descripción': grupos[k].desc, 'Nº Líneas': grupos[k].lineas,
-    'Total Bultos': grupos[k].bultos||'-', 'Total Peso Bruto (kg)': grupos[k].bruto||'-',
-    'Total Cantidad / Kilos Netos': grupos[k].cantidad||'-', 'Total Importe': grupos[k].importe||'-'
+    'Descripción': grupos[k].desc,
+    'Nº Líneas': grupos[k].lineas
   }));
   resumen.push({
-    'Partida (4 dig.)':'TOTAL', 'TARIC 10 díg. (moda)':'',
-    'Casilla 44 (códigos)':'', 'Casilla 44 (obligatorios)':'', 'Facturas':'',
-    'Descripción agrupada (casilla 31)':'',
-    'Descripción':'', 'Nº Líneas': lineas.length,
+    'Nº Factura':'TOTAL', 'TARIC 10 díg.':'',
     'Total Bultos': resumen.reduce((a,r)=>a+(Number(r['Total Bultos'])||0),0)||'-',
     'Total Peso Bruto (kg)': resumen.reduce((a,r)=>a+(Number(r['Total Peso Bruto (kg)'])||0),0)||'-',
     'Total Cantidad / Kilos Netos': resumen.reduce((a,r)=>a+(Number(r['Total Cantidad / Kilos Netos'])||0),0)||'-',
-    'Total Importe': resumen.reduce((a,r)=>a+(Number(r['Total Importe'])||0),0)||'-'
+    'Total Importe': resumen.reduce((a,r)=>a+(Number(r['Total Importe'])||0),0)||'-',
+    'Partida (4 dig.)':'', 'Casilla 44 (códigos)':'', 'Casilla 44 (obligatorios)':'',
+    'Descripción agrupada (casilla 31)':'', 'Descripción':'', 'Nº Líneas': lineas.length
   });
   const ws1 = XLSX.utils.json_to_sheet(resumen);
-  ws1['!cols'] = [{wch:16},{wch:22},{wch:34},{wch:20},{wch:24},{wch:70},{wch:46},{wch:10},{wch:14},{wch:20},{wch:26},{wch:16}];
+  ws1['!cols'] = [{wch:24},{wch:16},{wch:13},{wch:20},{wch:26},{wch:15},{wch:14},{wch:34},{wch:20},{wch:70},{wch:46},{wch:10}];
   // La descripción agrupada puede ser larga: ajuste de texto y filas más altas
   const rango = XLSX.utils.decode_range(ws1['!ref']);
   for(let R=1; R<=rango.e.r; R++){
-    [2,5].forEach(col => {
+    [7,9].forEach(col => {
       const c = ws1[XLSX.utils.encode_cell({r:R,c:col})];
       if(c){ c.s = Object.assign({}, c.s, {alignment:{wrapText:true,vertical:'top'}}); }
     });
@@ -3157,8 +3159,15 @@ async function exportarFactura(){
     // si es un solo documento, cae a la cabecera global.
     const c = l._cab || cab, e = c.exportador || exp, d = c.destinatario || des;
     return {
-    'Nº Línea (Factura)': l.num || (i+1),
     'Nº Factura': c.numero_factura || '',
+    'Código TARIC (10 dígitos)': l.codigo_taric || '',
+    'Bultos': num(l.bultos) ?? (l.bultos||''),
+    'Peso Bruto (kg)': num(l.peso_bruto) ?? (l.peso_bruto||''),
+    'Cantidad / Kilos Netos': num(l.cantidad) ?? (l.cantidad||''),
+    'Importe': num(l.importe) ?? (l.importe||''),
+    'Casilla 31 (español)': l._casilla31 || l.descripcion_es || '',
+    'Casilla 44 (códigos)': (l._c44||[]).map(d=>d.formato).join(' | '),
+    'Nº Línea (Factura)': l.num || (i+1),
     'Fecha Factura': c.fecha || '',
     'Exportador': e.nombre || '', 'Dirección Exportador': e.direccion || '',
     'NIF/VAT Exportador': e.nif || '', 'EORI Exportador': e.eori || '', 'País Exportador': e.pais || '',
@@ -3168,7 +3177,6 @@ async function exportarFactura(){
     'Origen declarado en factura': c.origen_asumido ? 'NO (asumido)' : 'SÍ',
     'País Destino': c.pais_destino || '',
     'Incoterm': c.incoterm || '', 'Moneda': c.moneda || '',
-    'Código TARIC (10 dígitos)': l.codigo_taric || '',
     'Nomenclatura Combinada NC8': l.nc8 || '',
     'Dígitos 9-10 verificados': (()=>{
       const v = l._verif || {};
@@ -3180,17 +3188,11 @@ async function exportarFactura(){
       return 'NO - sin NC8';
     })(),
     'Descripción Original': l.descripcion_original || '',
-    'Casilla 31 (español)': l._casilla31 || l.descripcion_es || '',
     'Descripción Oficial TARIC': l._descOficial || l.descripcion_nc || '',
-    'Casilla 44 (códigos)': (l._c44||[]).map(d=>d.formato).join(' | '),
     'Casilla 44 (obligatorios)': (l._c44||[]).filter(d=>d.obligatorio).map(d=>d.codigo_doc).join(' '),
     'Arancel Erga Omnes': l.arancel_erga_omnes || '',
-    'Bultos': num(l.bultos) ?? (l.bultos||''),
-    'Peso Bruto (kg)': num(l.peso_bruto) ?? (l.peso_bruto||''),
-    'Cantidad / Kilos Netos': num(l.cantidad) ?? (l.cantidad||''),
     'Unidad': l.unidad || '',
     'Precio Unitario': num(l.precio_unitario) ?? (l.precio_unitario||''),
-    'Importe': num(l.importe) ?? (l.importe||''),
     'Unidades Suplementarias': l.unidades_suplementarias || '',
     'Medidas Paraduaneras': (l.medidas||[]).filter(m=>m.tipo!=='NINGUNA').map(m=>m.codigo?(m.tipo+' ('+m.codigo+')'):m.tipo).join(' | '),
     'Confianza (%)': l.confianza || 0,
@@ -3198,7 +3200,9 @@ async function exportarFactura(){
   };});
   const ws2 = XLSX.utils.json_to_sheet(detalle);
   ws2['!cols'] = Object.keys(detalle[0]||{}).map(k =>
-    ({wch: /Descripción|Dirección/.test(k) ? 40 : /Exportador|Destinatario|Medidas/.test(k) ? 26 : 16}));
+    ({wch: /Casilla 31|Descripción|Dirección/.test(k) ? 42
+         : /Casilla 44|Exportador|Destinatario|Medidas/.test(k) ? 26
+         : /Bultos|Importe|Peso|Cantidad/.test(k) ? 13 : 18}));
   XLSX.utils.book_append_sheet(wb, ws2, 'Detalle_Lineas');
 
   const nFact = new Set(lineas.map(l => (l._cab && l._cab.numero_factura) || cab.numero_factura || '')).size;
