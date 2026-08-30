@@ -135,6 +135,9 @@ select.ctl:focus{border-color:var(--b500)}
 .ne-title{width:100%;background:var(--w);border:1px solid var(--g200);border-radius:var(--r) var(--r) 0 0;font-family:var(--f);font-size:17px;font-weight:700;color:var(--g900);outline:none;padding:13px 16px}
 .ne-body{width:100%;min-height:340px;background:var(--w);border:1px solid var(--g200);border-top:none;font-family:var(--f);font-size:13px;color:var(--g700);outline:none;padding:13px 16px;resize:vertical;line-height:1.8}
 .ne-footer{padding:8px 14px;border:1px solid var(--g200);border-top:none;border-radius:0 0 var(--r) var(--r);font-size:11px;color:var(--g500);display:flex;background:var(--g50)}
+.lote-radio{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;flex-shrink:0;width:38px}
+.lote-radio input{margin:0;cursor:pointer}
+.lote-radio span{font-size:8px;font-weight:800;letter-spacing:.05em;color:var(--b700)}
 /* Chat */
 .chat-list{max-height:460px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px 10px}
 .msg{display:flex;flex-direction:column;max-width:82%}
@@ -205,9 +208,10 @@ select.ctl:focus{border-color:var(--b500)}
 
       <div class="dz" id="dz" onclick="document.getElementById('fi-new').click()">
         <div class="dz-t">&#128228; Nueva notificación</div>
-        <div class="dz-s">Arrastra aquí <strong>todos los ficheros del expediente</strong> a la vez: el requerimiento y la documentación de soporte.<br>Se identifica el acto notificado, se extraen los datos y se crea un único expediente con todo dentro.</div>
+        <div class="dz-s">Arrastra aquí <strong>todos los ficheros del expediente</strong> a la vez: el requerimiento y la documentación de soporte.<br>Puedes soltarlos en varias tandas: se acumulan abajo y no se env&iacute;a nada hasta que lo confirmes.</div>
       </div>
       <input type="file" id="fi-new" multiple style="display:none" onchange="onNuevos(this.files)">
+      <div id="lote-wrap"></div>
 
       <div class="tb">
         <div class="sw"><input type="text" id="q" placeholder="Buscar referencia, cliente, MRN..." oninput="renderLista()"></div>
@@ -422,6 +426,7 @@ var ANON_AVISO='== AVISO SOBRE IDENTIFICADORES ==\n'+
 var sb=null, CU=null;
 var expedientes=[], criterios=[], notas=[], plazosTipo=[], festivos={};
 var expSel=null, docsSel=[], borrSel=[], chatSel=[];
+var lote=[], loteActoId=null;
 var notaSelId=null, notaTimer=null;
 
 /* ═══════════ Guard ═══════════ */
@@ -639,27 +644,119 @@ async function onNuevos(files){
   document.getElementById('fi-new').value='';
   if(!arr.length)return;
   if(expSel){await subirDocs(arr);return;}   // si hay expediente abierto, van a él
-  await altaDesdeLote(arr);
+  await encolar(arr);
 }
 
-async function altaDesdeLote(arr){
-  busy(true,'Leyendo '+arr.length+' fichero'+(arr.length>1?'s':'')+'...');
+/* ── Cola de preparación ────────────────────────────────────────────
+   Los ficheros no se procesan al soltarlos: se van acumulando aquí, en
+   tantas tandas como haga falta, y el expediente se crea cuando pulsas
+   "Analizar y crear". Así puedes ir reuniendo la documentación a lo
+   largo del rato sin tenerla toda a mano de golpe. */
+async function encolar(arr){
+  var nuevos=0, repes=0;
+  busy(true,'Leyendo documentos...');
   try{
-    /* 1. Extraer texto de todo el lote */
-    var items=[];
     for(var i=0;i<arr.length;i++){
-      busy(true,'Leyendo '+arr[i].name+' ('+(i+1)+'/'+arr.length+')...');
-      var esPdf=/pdf$/i.test(arr[i].type)||/\.pdf$/i.test(arr[i].name);
-      var ext=esPdf?await extraerTexto(arr[i]):{texto:'',paginas:0,origen:'manual'};
-      items.push({file:arr[i],ext:ext,esPdf:esPdf,
-        score:puntuaNotificacion(arr[i].name,ext.texto)});
+      var f=arr[i];
+      var clave=f.name+'|'+f.size+'|'+(f.lastModified||0);
+      if(lote.some(function(x){return x.clave===clave;})){repes++;continue;}
+      busy(true,'Leyendo '+f.name+' ('+(i+1)+'/'+arr.length+')...');
+      var esPdf=/pdf$/i.test(f.type)||/\.pdf$/i.test(f.name);
+      var ext=esPdf?await extraerTexto(f):{texto:'',paginas:0,origen:'manual'};
+      lote.push({
+        id:'L'+Date.now()+'_'+i, clave:clave, file:f, ext:ext, esPdf:esPdf,
+        score:puntuaNotificacion(f.name,ext.texto),
+        tipo:adivinaTipoDoc(f.name,ext.texto)
+      });
+      nuevos++;
     }
+    /* El acto notificado se propone solo, pero se puede cambiar a mano */
+    if(lote.length){
+      var mejor=lote[0];
+      lote.forEach(function(x){if(x.score>mejor.score)mejor=x;});
+      var actual=lote.find(function(x){return x.id===loteActoId;});
+      if(!actual||mejor.score>actual.score)loteActoId=mejor.id;
+      var act=lote.find(function(x){return x.id===loteActoId;});
+      if(act)act.tipo='notificacion';
+    }
+  }catch(e){toast('Error al leer: '+(e.message||e),'error');}
+  busy(false);
+  renderLote();
+  if(nuevos)toast(nuevos+' documento'+(nuevos>1?'s añadidos':' añadido')+' a la cola'+(repes?' ('+repes+' repetido'+(repes>1?'s':'')+' ignorado'+(repes>1?'s':'')+')':''));
+  else if(repes)toast('Esos documentos ya estaban en la cola','warn');
+}
+function renderLote(){
+  var w=document.getElementById('lote-wrap');
+  if(!w)return;
+  if(!lote.length){w.innerHTML='';return;}
+  var conTexto=lote.filter(function(x){return x.ext.texto.length>=200;}).length;
+  w.innerHTML='<div class="card"><div class="card-h">'+
+    '<h3>&#128230; Documentos preparados ('+lote.length+')</h3>'+
+    '<span class="hint ml">'+conTexto+' con texto legible</span>'+
+    '<button class="btn btn-sec btn-sm" onclick="vaciarLote()">Vaciar</button></div>'+
+    '<div class="card-b">'+
+      '<div class="hint" style="margin-bottom:10px">Marca cuál es el <strong>acto notificado</strong>. '+
+      'El resto entra como documentación de soporte. Puedes seguir añadiendo ficheros: nada se envía hasta que pulses el botón.</div>'+
+      lote.map(function(x,i){
+        var kb=Math.round(x.file.size/1024)+' KB';
+        var txt=x.ext.texto.length>=200?x.ext.texto.length.toLocaleString('es-ES')+' car.'
+              :x.esPdf?'sin capa de texto':'no legible';
+        var esActo=x.id===loteActoId;
+        return '<div class="doc"'+(esActo?' style="border-color:var(--b500);background:var(--b50)"':'')+'>'+
+          '<label class="lote-radio" title="Marcar como acto notificado">'+
+            '<input type="radio" name="lote-acto"'+(esActo?' checked':'')+' onchange="marcarActo(\''+x.id+'\')">'+
+            '<span>'+(esActo?'ACTO':'&nbsp;')+'</span></label>'+
+          '<div style="flex:1;min-width:0"><div class="doc-n">'+esc(x.file.name)+'</div>'+
+          '<div class="doc-m">'+kb+' · '+txt+(x.score?' · pistas de acto: '+x.score:'')+'</div></div>'+
+          '<select class="ctl" style="font-size:11px;padding:4px 6px" onchange="tipoLote(\''+x.id+'\',this.value)">'+
+            Object.keys(TIPO_DOC).map(function(k){return '<option value="'+k+'"'+(x.tipo===k?' selected':'')+'>'+TIPO_DOC[k]+'</option>';}).join('')+
+          '</select>'+
+          '<button class="btn btn-danger btn-sm" onclick="quitarDelLote(\''+x.id+'\')">&times;</button>'+
+        '</div>';
+      }).join('')+
+      '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'+
+        '<button class="btn btn-primary" onclick="crearDesdeLote()">&#9889; Analizar y crear expediente</button>'+
+        '<button class="btn btn-sec" onclick="document.getElementById(\'fi-new\').click()">+ Añadir más documentos</button>'+
+      '</div>'+
+    '</div></div>';
+}
+function marcarActo(id){
+  var ant=lote.find(function(x){return x.id===loteActoId;});
+  if(ant&&ant.tipo==='notificacion')ant.tipo=adivinaTipoDoc(ant.file.name,ant.ext.texto);
+  loteActoId=id;
+  var n=lote.find(function(x){return x.id===id;});
+  if(n)n.tipo='notificacion';
+  renderLote();
+}
+function tipoLote(id,v){
+  var x=lote.find(function(y){return y.id===id;});
+  if(x)x.tipo=v;
+}
+function quitarDelLote(id){
+  lote=lote.filter(function(x){return x.id!==id;});
+  if(loteActoId===id){
+    loteActoId=null;
+    if(lote.length){
+      var mejor=lote[0];
+      lote.forEach(function(x){if(x.score>mejor.score)mejor=x;});
+      loteActoId=mejor.id;mejor.tipo='notificacion';
+    }
+  }
+  renderLote();
+}
+function vaciarLote(){
+  if(lote.length>1&&!confirm('¿Vaciar la cola de '+lote.length+' documentos?'))return;
+  lote=[];loteActoId=null;renderLote();
+}
 
-    /* 2. Identificar el acto notificado: el de mayor puntuación */
-    var iNot=0;
-    for(var j=1;j<items.length;j++){if(items[j].score>items[iNot].score)iNot=j;}
-    var notif=items[iNot];
-    var resto=items.filter(function(x,k){return k!==iNot;});
+async function crearDesdeLote(){
+  if(!lote.length){toast('No hay documentos en la cola','warn');return;}
+  busy(true,'Preparando el expediente...');
+  try{
+    /* 1. El acto notificado es el marcado; el resto, soporte */
+    var items=lote.slice();
+    var notif=items.find(function(x){return x.id===loteActoId;})||items[0];
+    var resto=items.filter(function(x){return x!==notif;});
     var escaneado=notif.ext.texto.length<200;
 
     busy(true,escaneado?'El acto no tiene capa de texto: leyendo con OCR...':'Analizando el expediente...');
@@ -721,8 +818,7 @@ async function altaDesdeLote(arr){
     await guardarDoc(exp.id,notif.file,'notificacion',1,notif.ext);
     for(var k=0;k<resto.length;k++){
       busy(true,'Archivando '+resto[k].file.name+' ('+(k+2)+'/'+items.length+')...');
-      await guardarDoc(exp.id,resto[k].file,
-        adivinaTipoDoc(resto[k].file.name,resto[k].ext.texto),k+2,resto[k].ext);
+      await guardarDoc(exp.id,resto[k].file,resto[k].tipo||'otro',k+2,resto[k].ext);
     }
 
     /* 7. Traza */
@@ -735,13 +831,14 @@ async function altaDesdeLote(arr){
     });
 
     var ii=document.getElementById('instr-inicial');if(ii)ii.value='';
+    lote=[];loteActoId=null;renderLote();
     busy(false);
     await loadExpedientes();
     toast(items.length+' documento'+(items.length>1?'s':'')+' en el expediente. Acto notificado: '+notif.file.name);
     abrirExp(exp.id);
   }catch(e){
     busy(false);console.error(e);
-    toast('Error al procesar el lote: '+(e.message||e),'error');
+    toast('Error al procesar el lote: '+(e.message||e)+'. La cola se conserva.','error');
   }
 }
 /* ═══════════ Documentos ═══════════ */
