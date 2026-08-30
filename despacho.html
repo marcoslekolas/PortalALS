@@ -277,6 +277,127 @@ var MOTORES={
   'openrouter/free':'Router libre'
 };
 
+/* ═══════════════════════════════════════════════════════════════════
+   ANONIMIZACIÓN REVERSIBLE
+   Nada identificativo sale hacia la IA. El mapa token↔real vive solo en
+   memoria durante la llamada: no se envía, no se persiste, no se registra.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Datos propios: NUNCA se enmascaran, son el declarante */
+var ANON_BLANCA=['B72058449','ALGECIRAS LOGISTIC SOLUTIONS','CUSTOMS WAY',
+                 'ALSALGECIRAS','ALS ALGECIRAS','LA LINEA DE LA CONCEPCION',
+                 'LA LÍNEA DE LA CONCEPCIÓN','956625988','956 625 988',
+                 '622671454','622 671 454','ALSALGECIRAS.COM','CUSTOMSWAY.EU'];
+
+/* Barrido por patrón. El orden importa: lo más específico primero. */
+var ANON_RE=[
+  {pre:'EMAIL',re:/\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b/g},
+  {pre:'IBAN', re:/\b[A-Z]{2}\d{2}(?:[ -]?[A-Z0-9]{4}){3,7}\b/g},
+  {pre:'MRN',  re:/\b\d{2}[A-Z]{2}[A-Z0-9]{12,24}\b/g},
+  {pre:'EORI', re:/\b(?:ES|GB|PT|FR|DE|NL|IT|BE|IE|PL)[A-Z0-9]{9,15}\b/g},
+  {pre:'NIF',  re:/\b(?:[A-HJ-NP-SUVW]\d{7}[0-9A-J]|\d{8}[A-HJ-NP-TV-Z]|[XYZ]\d{7}[A-HJ-NP-TV-Z])\b/g},
+  /* Sin lookbehind: Safari iOS < 16.4 lanza SyntaxError al parsear el literal
+     y tumbaría el script entero. Se acota con grupo de captura. */
+  {pre:'TEL',  re:/(^|[^\d.,])((?:\+34[ .-]?)?[6-9]\d{2}[ .-]?\d{3}[ .-]?\d{3})(?!\d|[.,]\d)/g, g:2}
+];
+
+var anonTerminos=[];
+var ANON_NIVEL=localStorage.getItem('cw_anon_nivel')||'estandar';
+
+async function loadAnonTerminos(){
+  try{
+    var r=await sb.from('cw_anon_terminos').select('*').eq('activo',true);
+    anonTerminos=r.data||[];
+  }catch(e){anonTerminos=[];}
+}
+function esBlanca(s){
+  var u=String(s).toUpperCase();
+  for(var i=0;i<ANON_BLANCA.length;i++){if(u.indexOf(ANON_BLANCA[i])>=0)return true;}
+  return false;
+}
+function escRe(s){return String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+
+function nuevoMapa(){
+  return {pares:[],cont:{},
+    token:function(pre,real){
+      real=String(real).trim();
+      if(!real||real.length<2||esBlanca(real))return null;
+      for(var i=0;i<this.pares.length;i++){
+        if(this.pares[i].real.toUpperCase()===real.toUpperCase())return this.pares[i].token;
+      }
+      this.cont[pre]=(this.cont[pre]||0)+1;
+      var t='[['+pre+'_'+this.cont[pre]+']]';
+      this.pares.push({token:t,real:real});
+      return t;
+    }};
+}
+
+/* Sustituye en el texto y devuelve el mapa para deshacerlo después */
+function anonimizar(txt,exp){
+  var mapa=nuevoMapa();
+  if(ANON_NIVEL==='off'||!txt)return {txt:txt,mapa:mapa};
+  var out=txt;
+
+  /* 1. Términos declarados (razones sociales que ningún patrón detecta) */
+  var lista=anonTerminos.slice();
+  if(exp){
+    if(exp.cliente)lista.push({termino:exp.cliente,prefijo:'ENT'});
+    if(exp.nif_cliente)lista.push({termino:exp.nif_cliente,prefijo:'NIF'});
+    if(exp.referencia)lista.push({termino:exp.referencia,prefijo:'REF'});
+    if(exp.csv)lista.push({termino:exp.csv,prefijo:'CSV'});
+    if(exp.mrn)lista.push({termino:exp.mrn,prefijo:'MRN'});
+    if(exp.justificante)lista.push({termino:exp.justificante,prefijo:'REF'});
+    if(ANON_NIVEL==='estricto'&&exp.organo)lista.push({termino:exp.organo,prefijo:'ORG'});
+  }
+  lista.sort(function(a,b){return String(b.termino).length-String(a.termino).length;});
+  lista.forEach(function(t){
+    if(!t.termino||esBlanca(t.termino))return;
+    var tk=mapa.token(t.prefijo||'ENT',t.termino);
+    if(!tk)return;
+    out=out.replace(new RegExp(escRe(t.termino),'gi'),tk);
+  });
+
+  /* 2. Barrido por patrón */
+  ANON_RE.forEach(function(p){
+    p.re.lastIndex=0;
+    out=out.replace(p.re,function(){
+      var args=arguments;
+      var full=args[0];
+      var val=p.g?args[p.g]:full;
+      if(!val||esBlanca(val))return full;
+      var tk=mapa.token(p.pre,val);
+      if(!tk)return full;
+      return p.g?full.replace(val,tk):tk;
+    });
+  });
+
+  return {txt:out,mapa:mapa};
+}
+
+/* Deshace la sustitución. Tolera espacios que el modelo haya podido meter. */
+function desanonimizar(txt,mapa){
+  if(!txt||!mapa||!mapa.pares.length)return txt;
+  return String(txt).replace(/\[\[\s*([A-Z]+)_(\d+)\s*\]\]/g,function(m,p,n){
+    var t='[['+p+'_'+n+']]';
+    for(var i=0;i<mapa.pares.length;i++){if(mapa.pares[i].token===t)return mapa.pares[i].real;}
+    return m;
+  });
+}
+function desanonimizarObj(obj,mapa){
+  if(!obj||!mapa||!mapa.pares.length)return obj;
+  try{return JSON.parse(desanonimizar(JSON.stringify(obj),mapa));}catch(e){return obj;}
+}
+
+/* Aviso que se antepone al contexto para que el modelo respete los tokens */
+var ANON_AVISO='== AVISO SOBRE IDENTIFICADORES ==\n'+
+ 'Por confidencialidad, los datos identificativos de terceros se han sustituido por\n'+
+ 'marcadores con la forma [[TIPO_n]] — por ejemplo [[ENT_1]], [[NIF_2]], [[MRN_1]].\n'+
+ 'REGLAS: reprodúcelos literalmente, con sus dobles corchetes, allí donde el dato\n'+
+ 'corresponda. No los traduzcas, no los renumeres, no los sustituyas por nombres\n'+
+ 'inventados y no los describas. El sistema los repone automáticamente después.\n'+
+ 'Los datos del declarante (Algeciras Logistic Solutions SL, CIF B72058449) van en\n'+
+ 'claro y se escriben tal cual.\n\n';
+
 /* ═══════════ Estado ═══════════ */
 var sb=null, CU=null;
 var expedientes=[], criterios=[], notas=[], plazosTipo=[], festivos={};
@@ -352,6 +473,7 @@ function calcularPlazo(inicio,codigo){
 /* ═══════════ Carga ═══════════ */
 async function init(){
   await cargarCatalogos();
+  await loadAnonTerminos();
   await Promise.all([loadExpedientes(),loadCriterios(),loadNotas()]);
 }
 async function cargarCatalogos(){
@@ -491,14 +613,24 @@ async function altaDesdePDF(file,n,total){
 
     busy(true,escaneado?'PDF sin capa de texto: leyendo con OCR...':'Analizando el documento...');
 
-    var contexto='== DOCUMENTO NOTIFICADO ==\nFichero: '+file.name+'\n\n'+
+    var contextoBruto='== DOCUMENTO NOTIFICADO ==\nFichero: '+file.name+'\n\n'+
       (escaneado?'[El PDF se adjunta como imagen: extrae el texto y analízalo]':ext.texto.slice(0,120000));
 
-    var payload={fase:'analisis',contexto:contexto};
+    /* Anonimización antes de salir. En un PDF escaneado no hay texto que
+       enmascarar en cliente, así que se avisa y se deja decidir. */
+    var an=anonimizar(contextoBruto,null);
+    if(escaneado&&ANON_NIVEL!=='off'&&!window._acAvisoOCR){
+      window._acAvisoOCR=true;
+      if(!confirm('Este PDF no tiene capa de texto, así que debe enviarse la imagen '+
+                  'completa al motor de OCR y la anonimización no puede aplicarse sobre él.\n\n'+
+                  '¿Continuar?')){busy(false);return;}
+    }
+
+    var payload={fase:'analisis',contexto:(an.mapa.pares.length?ANON_AVISO:'')+an.txt};
     if(escaneado)payload.pdf_base64=await fileToB64(file);
 
     var r=await llamarAsistente(payload);
-    var a=(r&&r.analisis)||{};
+    var a=desanonimizarObj((r&&r.analisis)||{},an.mapa);
 
     busy(true,'Creando expediente...');
 
@@ -538,8 +670,9 @@ async function altaDesdePDF(file,n,total){
     await sb.from('cw_exp_borradores').insert({
       expediente_id:exp.id,fase:'analisis',modelo:r.modelo,
       modelos_intentados:r.modelos_intentados||[],prompt_version:r.prompt_version||0,
-      contenido:r.contenido,analisis:r.analisis,
-      tokens_in:r.tokens_in,tokens_out:r.tokens_out,ms:r.ms
+      contenido:desanonimizar(r.contenido,an.mapa),analisis:a,
+      tokens_in:r.tokens_in,tokens_out:r.tokens_out,ms:r.ms,
+      anon_nivel:escaneado?'ocr_sin_anon':ANON_NIVEL,anon_n:an.mapa.pares.length
     });
 
     busy(false);
@@ -720,7 +853,16 @@ function detalleHTML(e){
         '<div class="card-b">'+
           '<div class="fg">'+
             '<div class="ff"><label>Motor</label><select id="ia-motor">'+opts(MOTORES,'')+'</select></div>'+
-            '<div class="ff"><label>&nbsp;</label><button class="btn btn-sec" onclick="analizar()">Reanalizar expediente</button></div>'+
+            '<div class="ff"><label>Anonimización</label><select id="ia-anon" onchange="cambiarNivelAnon(this.value)">'+
+              '<option value="estandar"'+(ANON_NIVEL==='estandar'?' selected':'')+'>Estándar</option>'+
+              '<option value="estricto"'+(ANON_NIVEL==='estricto'?' selected':'')+'>Estricta (+ órgano)</option>'+
+              '<option value="off"'+(ANON_NIVEL==='off'?' selected':'')+'>Desactivada</option>'+
+            '</select></div>'+
+            '<div class="ff full" style="flex-direction:row;gap:8px">'+
+              '<button class="btn btn-sec btn-sm" onclick="verEnvio()">&#128065; Ver lo que se envía</button>'+
+              '<button class="btn btn-sec btn-sm" onclick="modalTerminos()">Términos protegidos ('+anonTerminos.length+')</button>'+
+              '<button class="btn btn-sec btn-sm ml" onclick="analizar()">Reanalizar</button>'+
+            '</div>'+
             '<div class="ff full"><label>Criterios propios a incorporar</label>'+
               '<div class="crit-pick" id="crit-pick">'+critPickHTML()+'</div></div>'+
             '<div class="ff full"><label>Instrucción concreta</label>'+
@@ -872,20 +1014,24 @@ async function analizar(){
   if(!expSel)return;
   busy(true,'Analizando el expediente...');
   try{
+    var an=anonimizar(construirContexto(),expSel);
     var r=await llamarAsistente({
       fase:'analisis',
-      contexto:construirContexto(),
+      contexto:(an.mapa.pares.length?ANON_AVISO:'')+an.txt,
       modelo:document.getElementById('ia-motor').value||null
     });
-    await sb.from('cw_expedientes').update({analisis:r.analisis,estado:expSel.estado==='recibido'?'analizado':expSel.estado}).eq('id',expSel.id);
+    var analisis=desanonimizarObj(r.analisis,an.mapa);
+    await sb.from('cw_expedientes').update({analisis:analisis,estado:expSel.estado==='recibido'?'analizado':expSel.estado}).eq('id',expSel.id);
     await sb.from('cw_exp_borradores').insert({
       expediente_id:expSel.id,fase:'analisis',modelo:r.modelo,
       modelos_intentados:r.modelos_intentados||[],prompt_version:r.prompt_version||0,
-      contenido:r.contenido,analisis:r.analisis,tokens_in:r.tokens_in,tokens_out:r.tokens_out,ms:r.ms
+      contenido:desanonimizar(r.contenido,an.mapa),analisis:analisis,
+      tokens_in:r.tokens_in,tokens_out:r.tokens_out,ms:r.ms,
+      anon_nivel:ANON_NIVEL,anon_n:an.mapa.pares.length
     });
-    expSel.analisis=r.analisis;
+    expSel.analisis=analisis;
     busy(false);
-    document.getElementById('ia-log').textContent='Analizado con '+r.modelo+' en '+Math.round(r.ms/1000)+' s.';
+    document.getElementById('ia-log').textContent='Analizado con '+r.modelo+' en '+Math.round(r.ms/1000)+' s. '+an.mapa.pares.length+' datos enmascarados.';
     toast('Análisis actualizado');
     verAnalisis();
   }catch(e){busy(false);toast('Error del asistente: '+(e.message||e),'error');}
@@ -896,25 +1042,72 @@ async function redactar(){
   if(actual&&!confirm('Ya hay un escrito. El anterior se conserva en Versiones, pero el editor se sustituye. ¿Continuar?'))return;
   busy(true,'Redactando el escrito...');
   try{
+    var an=anonimizar(construirContexto(),expSel);
+    var instr=document.getElementById('ia-instr').value.trim();
+    var anInstr=anonimizarCon(instr,an.mapa);
     var r=await llamarAsistente({
       fase:'redaccion',
-      contexto:construirContexto(),
-      instruccion:document.getElementById('ia-instr').value.trim(),
+      contexto:(an.mapa.pares.length?ANON_AVISO:'')+an.txt,
+      instruccion:anInstr,
       modelo:document.getElementById('ia-motor').value||null
     });
+    var texto=desanonimizar(r.contenido,an.mapa);
+    var pend=(texto.match(/\[\[[A-Z]+_\d+\]\]/g)||[]).length;
     var ins=await sb.from('cw_exp_borradores').insert({
       expediente_id:expSel.id,fase:'redaccion',modelo:r.modelo,
       modelos_intentados:r.modelos_intentados||[],prompt_version:r.prompt_version||0,
-      instruccion:document.getElementById('ia-instr').value.trim(),
-      contenido:r.contenido,tokens_in:r.tokens_in,tokens_out:r.tokens_out,ms:r.ms
+      instruccion:instr,contenido:texto,
+      tokens_in:r.tokens_in,tokens_out:r.tokens_out,ms:r.ms,
+      anon_nivel:ANON_NIVEL,anon_n:an.mapa.pares.length
     }).select().single();
     if(ins.data)borrSel.unshift(ins.data);
-    document.getElementById('escrito').value=r.contenido;
+    document.getElementById('escrito').value=texto;
     document.getElementById('borr-list').innerHTML=borrHTML();
-    document.getElementById('ia-log').textContent='Redactado con '+r.modelo+' en '+Math.round(r.ms/1000)+' s. Cascada: '+(r.modelos_intentados||[]).join(' → ');
+    document.getElementById('ia-log').textContent=
+      'Redactado con '+r.modelo+' en '+Math.round(r.ms/1000)+' s. '+
+      an.mapa.pares.length+' datos enmascarados y repuestos.'+
+      (pend?' ATENCIÓN: '+pend+' marcador(es) sin reponer, revísalos.':'')+
+      ' Cascada: '+(r.modelos_intentados||[]).join(' → ');
     busy(false);
-    toast('Escrito generado con '+r.modelo);
+    if(pend)toast('Quedan '+pend+' marcadores sin reponer en el escrito','warn');
+    else toast('Escrito generado con '+r.modelo);
   }catch(e){busy(false);toast('Error del asistente: '+(e.message||e),'error');}
+}
+/* Aplica el mismo mapa ya construido a un texto suelto (la instrucción libre) */
+function anonimizarCon(txt,mapa){
+  if(!txt||ANON_NIVEL==='off'||!mapa||!mapa.pares.length)return txt;
+  var out=txt;
+  mapa.pares.slice().sort(function(a,b){return b.real.length-a.real.length;})
+    .forEach(function(p){out=out.replace(new RegExp(escRe(p.real),'gi'),p.token);});
+  return out;
+}
+/* Muestra literalmente lo que va a salir del navegador */
+function verEnvio(){
+  if(!expSel)return;
+  var an=anonimizar(construirContexto(),expSel);
+  var ctx=(an.mapa.pares.length?ANON_AVISO:'')+an.txt;
+  var restos=[];
+  ANON_RE.forEach(function(p){
+    p.re.lastIndex=0;
+    var m=ctx.match(p.re);
+    if(m)restos=restos.concat(m);
+  });
+  document.getElementById('modal-root').innerHTML=
+    '<div class="modal-overlay" onclick="if(event.target===this)cerrarM()"><div class="modal wide" onclick="event.stopPropagation()">'+
+    '<div class="mhdr"><h2>Lo que se envía al motor</h2><button onclick="cerrarM()">&times;</button></div>'+
+    '<div class="mbody">'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
+        '<span class="chip es-analizado">nivel: '+ANON_NIVEL+'</span>'+
+        '<span class="chip es-resuelto">'+an.mapa.pares.length+' datos enmascarados</span>'+
+        '<span class="chip '+(restos.length?'tp-requerimiento':'es-recibido')+'">'+restos.length+' posibles restos</span>'+
+        '<span class="chip es-recibido">'+ctx.length.toLocaleString('es-ES')+' caracteres</span>'+
+      '</div>'+
+      (restos.length?'<div class="hint" style="color:var(--rd600);margin-bottom:10px">Patrones que siguen en claro: '+esc(restos.slice(0,20).join(', '))+'</div>':'')+
+      '<div class="hint" style="margin-bottom:8px">El mapa de reposición no sale del navegador. Correspondencias: '+
+        esc(an.mapa.pares.map(function(p){return p.token;}).join(' '))+'</div>'+
+      '<textarea readonly style="width:100%;min-height:340px;font-family:ui-monospace,monospace;font-size:11px;line-height:1.6;border:1px solid var(--g200);border-radius:var(--r);padding:12px">'+esc(ctx)+'</textarea>'+
+    '</div>'+
+    '<div class="mfoot"><button class="btn btn-sec" onclick="cerrarM()">Cerrar</button></div></div></div>';
 }
 function usarBorrador(id){
   var b=borrSel.find(function(x){return x.id===id;});if(!b)return;
@@ -1037,6 +1230,49 @@ async function crearManual(){
   var r=await sb.from('cw_expedientes').insert(obj).select().single();
   if(r.error){toast('Error: '+r.error.message,'error');return;}
   cerrarM();await loadExpedientes();toast('Expediente creado');abrirExp(r.data.id);
+}
+
+function cambiarNivelAnon(v){
+  ANON_NIVEL=v;
+  localStorage.setItem('cw_anon_nivel',v);
+  if(v==='off')toast('Anonimización desactivada: los datos de terceros saldrán en claro','warn');
+  else toast('Anonimización '+v);
+}
+function modalTerminos(){
+  var filas=anonTerminos.length
+    ? anonTerminos.map(function(t){
+        return '<div class="doc"><div style="flex:1"><div class="doc-n">'+esc(t.termino)+'</div>'+
+          '<div class="doc-m">'+esc(t.prefijo||'ENT')+(t.nota?' · '+esc(t.nota):'')+'</div></div>'+
+          '<button class="btn btn-danger btn-sm" onclick="delTermino(\''+t.id+'\')">&times;</button></div>';
+      }).join('')
+    : '<div class="hint">Sin términos. Añade aquí las razones sociales que ningún patrón puede detectar.</div>';
+  document.getElementById('modal-root').innerHTML=
+    '<div class="modal-overlay" onclick="if(event.target===this)cerrarM()"><div class="modal" onclick="event.stopPropagation()">'+
+    '<div class="mhdr"><h2>Términos protegidos</h2><button onclick="cerrarM()">&times;</button></div>'+
+    '<div class="mbody">'+
+      '<div class="hint" style="margin-bottom:12px">Se enmascaran en todas las llamadas, incluida la primera lectura del PDF. '+
+      'Los NIF, EORI, MRN, IBAN, teléfonos y correos se detectan solos: aquí solo hacen falta nombres y razones sociales.</div>'+
+      '<div class="fg" style="margin-bottom:12px">'+
+        '<div class="ff"><label>Término</label><input id="tm-txt" placeholder="RAZÓN SOCIAL, S.L."></div>'+
+        '<div class="ff"><label>Tipo</label><select id="tm-pre">'+
+          '<option value="ENT">Entidad</option><option value="PER">Persona</option>'+
+          '<option value="DIR">Dirección</option><option value="REF">Referencia</option></select></div>'+
+        '<div class="ff full"><button class="btn btn-primary" onclick="addTermino()">Añadir</button></div>'+
+      '</div>'+
+      '<div id="tm-list">'+filas+'</div>'+
+    '</div>'+
+    '<div class="mfoot"><button class="btn btn-sec" onclick="cerrarM()">Cerrar</button></div></div></div>';
+}
+async function addTermino(){
+  var t=val('tm-txt');
+  if(t.length<3){toast('Un término de menos de 3 caracteres generaría falsos positivos','warn');return;}
+  var r=await sb.from('cw_anon_terminos').insert({termino:t,prefijo:val('tm-pre')||'ENT'});
+  if(r.error){toast('Error: '+r.error.message,'error');return;}
+  await loadAnonTerminos();modalTerminos();toast('Término protegido');
+}
+async function delTermino(id){
+  await sb.from('cw_anon_terminos').delete().eq('id',id);
+  await loadAnonTerminos();modalTerminos();
 }
 
 /* ═══════════ Criterios ═══════════ */
