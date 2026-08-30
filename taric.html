@@ -2256,49 +2256,51 @@ function abrirModal(titulo, htmlContenido){
 
 const EBTI_URL = 'https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es';
 
+// El formulario de EBTI envía por GET, así que se puede enlazar directamente
+// al resultado. Parámetros reales: nomenc / nomencto (rango a 10 dígitos) y
+// allRecords=1 para incluir también las IAV caducadas, que siguen valiendo
+// como precedente.
+function urlEBTI(desde, hasta){
+  const q = new URLSearchParams({
+    Lang:'es', refcountry:'', reference:'',
+    valstartdate1:'', valstartdate:'', valstartdateto1:'', valstartdateto:'',
+    valenddate1:'', valenddate:'', valenddateto1:'', valenddateto:'',
+    suppldate1:'', suppldate:'',
+    nomenc: desde, nomencto: hasta,
+    keywordsearch1:'', keywordsearch:'', specialkeyword:'', keywordmatchrule:'OR',
+    excludekeywordsearch1:'', excludekeywordsearch:'', excludespecialkeyword:'',
+    descript:'', orderby:'0', Expand:'true', offset:'1', viewVal:'',
+    isVisitedRef:'false', allRecords:'1', showProgressBar:'true'
+  });
+  return 'https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?' + q.toString();
+}
+
 async function abrirEBTI(codigo){
   const full = String(codigo||'').replace(/\D/g,'');
   if(full.length < 4){ window.open(EBTI_URL,'_blank','noopener'); return; }
 
-  // El campo "Código de la nomenclatura" es un RANGO y la base guarda los
-  // códigos a 10 dígitos. Poner el NC8 en ambos extremos no devuelve nada:
-  // hay que abrir el rango rellenando con 00 y 99 hasta los 10 dígitos.
-  const rango = (pref) => ({ de: pref.padEnd(10,'0'), a: pref.padEnd(10,'9') });
   const niveles = [
-    { pref: full.substring(0,8), etq:'NC8',     nota:'Solo esa subpartida de 8 dígitos.' },
+    { pref: full.substring(0,8), etq:'NC8',     nota:'Solo esa subpartida de 8 dígitos. La más precisa, pero muchas no tienen ninguna IAV.' },
     { pref: full.substring(0,6), etq:'SA6',     nota:'Toda la subpartida del Sistema Armonizado.' },
     { pref: full.substring(0,4), etq:'Partida', nota:'Toda la partida. Es donde más resultados vas a encontrar.' }
-  ].filter(x => x.pref.length >= 4).map(x => Object.assign(x, rango(x.pref)));
-
-  const fila = (l) => `
-    <div style="padding:9px 0;border-top:1px solid var(--g100)">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="font-size:11px;font-weight:700">${l.etq}</span>
-        <span style="font-size:10px;color:var(--g400)">${l.nota}</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        <span style="font-size:10px;color:var(--g400)">De</span>
-        <code style="font-family:var(--mono);font-size:13px;font-weight:700">${l.de}</code>
-        <button class="btn btn-s btn-sm" style="padding:1px 6px" onclick="copiarTexto(this,'${l.de}')">📋</button>
-        <span style="font-size:10px;color:var(--g400);margin-left:4px">A</span>
-        <code style="font-family:var(--mono);font-size:13px;font-weight:700">${l.a}</code>
-        <button class="btn btn-s btn-sm" style="padding:1px 6px" onclick="copiarTexto(this,'${l.a}')">📋</button>
-      </div>
-    </div>`;
+  ].filter(x => x.pref.length >= 4)
+   .map(x => Object.assign(x, { de:x.pref.padEnd(10,'0'), a:x.pref.padEnd(10,'9') }));
 
   abrirModal('Buscar IAV/BTI en EBTI', `
     <div style="font-size:12px;color:var(--g500);margin-bottom:10px">
-      En <strong>Código de la nomenclatura</strong> hay que rellenar los dos extremos del rango,
-      con el código a <strong>10 dígitos</strong>. Deja vacío <strong>Referencia de la IAV</strong>:
-      ese campo es para referencias tipo <code>ESBTIES-2024-…</code> y, si lo rellenas, no encuentra nada.
+      Abre la consulta oficial ya filtrada por el rango de nomenclatura, con las
+      IAV caducadas incluidas. Empieza por la más precisa y amplía si no hay resultados.
     </div>
-    ${niveles.map(fila).join('')}
-    <div style="margin-top:10px;padding:8px 10px;background:var(--am50);border-radius:6px;font-size:11px;color:var(--am600)">
-      Marca <strong>Include invalid BTIs</strong>: las caducadas siguen sirviendo como precedente de clasificación.
-    </div>
-    <div style="text-align:center;margin-top:12px">
-      <button class="btn btn-p btn-sm" onclick="window.open(EBTI_URL,'_blank','noopener')">🇪🇺 Abrir consulta EBTI ↗</button>
-    </div>`);
+    ${niveles.map(l=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--g100)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;font-weight:700">${l.etq}
+            <span style="font-family:var(--mono);font-weight:400;color:var(--g400)"> ${l.de} → ${l.a}</span>
+          </div>
+          <div style="font-size:10px;color:var(--g400)">${l.nota}</div>
+        </div>
+        <button class="btn btn-p btn-sm" onclick="window.open(urlEBTI('${l.de}','${l.a}'),'_blank','noopener')">Buscar ↗</button>
+      </div>`).join('')}`);
 }
 
 function abrirCAV(ref, codificado){
