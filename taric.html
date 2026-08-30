@@ -2232,19 +2232,73 @@ function exportarResultado(){
 // La consulta pública EBTI es un formulario JSP que NO admite el código por
 // parámetros GET: los ignora y abre la búsqueda vacía. No hay enlace directo
 // posible, así que se copia el código al portapapeles para pegarlo de un tirón.
+// Modal genérico y autocontenido (no hay uno común en el módulo)
+function abrirModal(titulo, htmlContenido){
+  document.getElementById('modal-generico')?.remove();
+  const d = document.createElement('div');
+  d.id = 'modal-generico';
+  d.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  d.innerHTML = `
+    <div class="card" style="max-width:460px;width:100%;padding:18px 20px;background:var(--bg,#fff);box-shadow:0 20px 50px rgba(0,0,0,.25)" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+        <div style="font-size:14px;font-weight:700">${titulo}</div>
+        <button onclick="document.getElementById('modal-generico').remove()"
+          style="border:0;background:none;cursor:pointer;font-size:16px;color:var(--g400)">✕</button>
+      </div>
+      ${htmlContenido}
+    </div>`;
+  d.onclick = () => d.remove();
+  document.addEventListener('keydown', function esc(e){
+    if(e.key === 'Escape'){ d.remove(); document.removeEventListener('keydown', esc); }
+  });
+  document.body.appendChild(d);
+}
+
 const EBTI_URL = 'https://ec.europa.eu/taxation_customs/dds2/ebti/ebti_consultation.jsp?Lang=es';
 
 async function abrirEBTI(codigo){
-  const nc8 = String(codigo||'').replace(/\D/g,'').substring(0,8);
-  if(nc8.length === 8){
-    try{
-      await navigator.clipboard.writeText(nc8);
-      showToast('📋 ' + nc8 + ' copiado. Pégalo en "Nomenclature code" y pulsa Search.');
-    }catch(_){
-      showToast('Busca por el código ' + nc8 + ' en el campo "Nomenclature code".');
-    }
-  }
-  window.open(EBTI_URL, '_blank', 'noopener');
+  const full = String(codigo||'').replace(/\D/g,'');
+  if(full.length < 4){ window.open(EBTI_URL,'_blank','noopener'); return; }
+
+  // El campo "Código de la nomenclatura" es un RANGO y la base guarda los
+  // códigos a 10 dígitos. Poner el NC8 en ambos extremos no devuelve nada:
+  // hay que abrir el rango rellenando con 00 y 99 hasta los 10 dígitos.
+  const rango = (pref) => ({ de: pref.padEnd(10,'0'), a: pref.padEnd(10,'9') });
+  const niveles = [
+    { pref: full.substring(0,8), etq:'NC8',     nota:'Solo esa subpartida de 8 dígitos.' },
+    { pref: full.substring(0,6), etq:'SA6',     nota:'Toda la subpartida del Sistema Armonizado.' },
+    { pref: full.substring(0,4), etq:'Partida', nota:'Toda la partida. Es donde más resultados vas a encontrar.' }
+  ].filter(x => x.pref.length >= 4).map(x => Object.assign(x, rango(x.pref)));
+
+  const fila = (l) => `
+    <div style="padding:9px 0;border-top:1px solid var(--g100)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:11px;font-weight:700">${l.etq}</span>
+        <span style="font-size:10px;color:var(--g400)">${l.nota}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="font-size:10px;color:var(--g400)">De</span>
+        <code style="font-family:var(--mono);font-size:13px;font-weight:700">${l.de}</code>
+        <button class="btn btn-s btn-sm" style="padding:1px 6px" onclick="copiarTexto(this,'${l.de}')">📋</button>
+        <span style="font-size:10px;color:var(--g400);margin-left:4px">A</span>
+        <code style="font-family:var(--mono);font-size:13px;font-weight:700">${l.a}</code>
+        <button class="btn btn-s btn-sm" style="padding:1px 6px" onclick="copiarTexto(this,'${l.a}')">📋</button>
+      </div>
+    </div>`;
+
+  abrirModal('Buscar IAV/BTI en EBTI', `
+    <div style="font-size:12px;color:var(--g500);margin-bottom:10px">
+      En <strong>Código de la nomenclatura</strong> hay que rellenar los dos extremos del rango,
+      con el código a <strong>10 dígitos</strong>. Deja vacío <strong>Referencia de la IAV</strong>:
+      ese campo es para referencias tipo <code>ESBTIES-2024-…</code> y, si lo rellenas, no encuentra nada.
+    </div>
+    ${niveles.map(fila).join('')}
+    <div style="margin-top:10px;padding:8px 10px;background:var(--am50);border-radius:6px;font-size:11px;color:var(--am600)">
+      Marca <strong>Include invalid BTIs</strong>: las caducadas siguen sirviendo como precedente de clasificación.
+    </div>
+    <div style="text-align:center;margin-top:12px">
+      <button class="btn btn-p btn-sm" onclick="window.open(EBTI_URL,'_blank','noopener')">🇪🇺 Abrir consulta EBTI ↗</button>
+    </div>`);
 }
 
 function abrirCAV(ref, codificado){
