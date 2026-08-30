@@ -1079,7 +1079,10 @@ async function llamarAsistente(payload){
   });
   var d=null;
   try{d=await resp.json();}catch(e){throw new Error('Respuesta no válida del asistente ('+resp.status+')');}
-  if(!resp.ok||!d.ok)throw new Error((d&&d.error)||('HTTP '+resp.status));
+  if(!resp.ok||!d.ok){
+    if(d&&d.detalle)console.warn('asistente-aduanero '+resp.status+':',d.detalle,d);
+    throw new Error(((d&&d.error)||('HTTP '+resp.status))+(d&&d.detalle?' — '+d.detalle:''));
+  }
   return d;
 }
 function construirContexto(modo){
