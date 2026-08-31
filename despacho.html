@@ -27,6 +27,12 @@
   --hh:0px;
 }
 html,body{min-height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
+/* La cabecera la inyecta PortalGuard con position:sticky en su elemento
+   interno, pero su contenedor mide justo lo mismo, así que el sticky se
+   agota al instante y la cabecera se va con el scroll. Se ancla aquí el
+   contenedor, que sí es hijo directo del body y por tanto del contenedor
+   de scroll. !important porque portal-theme.css se carga después. */
+body > #pg-header-app{position:sticky!important;top:0!important;z-index:60;background:var(--w)}
 #app{min-height:calc(100vh - var(--hh));display:flex;flex-direction:column}
 .tabs-bar{background:var(--w);border-bottom:1px solid var(--g200);padding:0 16px;display:flex;gap:2px;flex-shrink:0;position:sticky;top:var(--hh);z-index:50;transition:box-shadow .15s}
 .tabs-bar.pegada{box-shadow:0 2px 8px rgba(0,0,0,.06)}
@@ -472,6 +478,7 @@ var notaSelId=null, notaTimer=null;
   setTimeout(ajustarBarra,150);
   setTimeout(ajustarBarra,600);
   window.addEventListener('load',ajustarBarra);
+  vigilarCabecera();
   window.addEventListener('resize',ajustarBarra);
   window.addEventListener('scroll',sombraBarra,{passive:true});
   await init();
@@ -483,15 +490,16 @@ var notaSelId=null, notaTimer=null;
    contenido, con la barra flotando en mitad de la pantalla. */
 function ajustarBarra(){
   var cont=document.getElementById('pg-header-app');
-  var el=(cont&&cont.firstElementChild)||cont;
-  var top=0;
-  if(el){
-    var cs=window.getComputedStyle(el);
-    if(cs.position==='fixed'||cs.position==='sticky'){
-      top=Math.round(el.getBoundingClientRect().height)||0;
+  var alto=0;
+  if(cont){
+    alto=Math.round(cont.getBoundingClientRect().height)||0;
+    /* Si el contenedor no mide nada, la cabecera está fuera de flujo
+       (fixed o absolute): se mide entonces el elemento interno. */
+    if(alto<8&&cont.firstElementChild){
+      alto=Math.round(cont.firstElementChild.getBoundingClientRect().height)||0;
     }
   }
-  document.documentElement.style.setProperty('--hh',top+'px');
+  document.documentElement.style.setProperty('--hh',alto+'px');
   sombraBarra();
 }
 function sombraBarra(){
@@ -499,6 +507,13 @@ function sombraBarra(){
   if(!b)return;
   var lim=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hh'),10)||0;
   b.classList.toggle('pegada',b.getBoundingClientRect().top<=lim+1);
+}
+/* La cabecera puede cambiar de alto (menús que se despliegan, cambio de
+   orientación). Se vigila con ResizeObserver donde esté disponible. */
+function vigilarCabecera(){
+  var cont=document.getElementById('pg-header-app');
+  if(!cont||!window.ResizeObserver)return;
+  try{new ResizeObserver(ajustarBarra).observe(cont);}catch(e){}
 }
 
 /* ═══════════ Utilidades ═══════════ */
