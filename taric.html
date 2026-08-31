@@ -2929,7 +2929,7 @@ async function renderLineasFactura(data, filename){
     html += `<tr>
       <td style="font-weight:700;color:var(--g400);font-family:var(--mono)">${l.num}${l._numFactura?`<div style="font-size:9px;font-weight:600;color:var(--b600);margin-top:2px;max-width:52px;overflow:hidden;text-overflow:ellipsis" title="${l._numFactura}">${l._numFactura}</div>`:''}</td>
       <td>
-        <div style="font-size:12px;font-weight:600;color:var(--g700)">${l.descripcion_original||'—'}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--g700)">${l.referencia?`<span style="font-family:var(--mono);color:var(--b600);font-weight:700">${l.referencia}</span> · `:''}${l.descripcion_original||'—'}</div>
         ${l._casilla31 && l._casilla31!==l.descripcion_original ? `
           <div style="display:flex;align-items:center;gap:5px;margin-top:3px;padding:3px 6px;background:var(--b50);border-radius:4px">
             <span style="font-size:9px;font-weight:700;color:var(--b700);white-space:nowrap">C.31</span>
@@ -3164,8 +3164,10 @@ async function exportarFactura(){
     'Nº Factura': c.numero_factura || '',
     'Código TARIC (10 dígitos)': l.codigo_taric || '',
     'Bultos': num(l.bultos) ?? (l.bultos||''),
+    'Cantidad': num(l.cantidad) ?? (l.cantidad||''),
+    'Unidad': l.unidad || '',
     'Peso Bruto (kg)': num(l.peso_bruto) ?? (l.peso_bruto||''),
-    'Cantidad / Kilos Netos': num(l.cantidad) ?? (l.cantidad||''),
+    'Descripción Original': (l.referencia ? l.referencia + ' · ' : '') + (l.descripcion_original||''),
     'Importe': num(l.importe) ?? (l.importe||''),
     'Casilla 31 (español)': l._casilla31 || l.descripcion_es || '',
     'Casilla 44 (códigos)': (l._c44||[]).map(d=>d.formato).join(' | '),
@@ -3189,11 +3191,9 @@ async function exportarFactura(){
       if(v.estado==='fuera_catalogo') return 'NO - verificar en DDS2';
       return 'NO - sin NC8';
     })(),
-    'Descripción Original': l.descripcion_original || '',
     'Descripción Oficial TARIC': l._descOficial || l.descripcion_nc || '',
     'Casilla 44 (obligatorios)': (l._c44||[]).filter(d=>d.obligatorio).map(d=>d.codigo_doc).join(' '),
     'Arancel Erga Omnes': l.arancel_erga_omnes || '',
-    'Unidad': l.unidad || '',
     'Precio Unitario': num(l.precio_unitario) ?? (l.precio_unitario||''),
     'Unidades Suplementarias': l.unidades_suplementarias || '',
     'Medidas Paraduaneras': (l.medidas||[]).filter(m=>m.tipo!=='NINGUNA').map(m=>m.codigo?(m.tipo+' ('+m.codigo+')'):m.tipo).join(' | '),
