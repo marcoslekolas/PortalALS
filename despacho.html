@@ -24,11 +24,12 @@
   --f:"Inter",sans-serif;
   --r:8px;--rl:12px;--rxl:16px;
   --sh:0 1px 3px rgba(0,0,0,.08);--shl:0 4px 16px rgba(0,0,0,.1);
-  --hh:52px;
+  --hh:0px;
 }
 html,body{min-height:100%;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
 #app{min-height:calc(100vh - var(--hh));display:flex;flex-direction:column}
-.tabs-bar{background:var(--w);border-bottom:1px solid var(--g200);padding:0 16px;display:flex;gap:2px;flex-shrink:0;position:sticky;top:var(--hh);z-index:50}
+.tabs-bar{background:var(--w);border-bottom:1px solid var(--g200);padding:0 16px;display:flex;gap:2px;flex-shrink:0;position:sticky;top:var(--hh);z-index:50;transition:box-shadow .15s}
+.tabs-bar.pegada{box-shadow:0 2px 8px rgba(0,0,0,.06)}
 .tab-btn{padding:10px 14px;font-size:13px;font-weight:600;color:var(--g600);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:var(--f);transition:all .15s}
 .tab-btn:hover{color:var(--g900)}.tab-btn.on{color:var(--b600);border-bottom-color:var(--b600)}
 .view{display:none;flex:1;flex-direction:column;min-height:0}.view.on{display:flex}
@@ -465,8 +466,40 @@ var notaSelId=null, notaTimer=null;
     pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
   }
   initDropzone();
+  ajustarBarra();
+  /* La cabecera y portal-theme.css pueden terminar de pintar después de este
+     punto, así que se vuelve a medir cuando el layout ya está asentado. */
+  setTimeout(ajustarBarra,150);
+  setTimeout(ajustarBarra,600);
+  window.addEventListener('load',ajustarBarra);
+  window.addEventListener('resize',ajustarBarra);
+  window.addEventListener('scroll',sombraBarra,{passive:true});
   await init();
 })();
+
+/* La cabecera la pinta PortalGuard y no siempre está anclada. Si lo está,
+   la barra de pestañas se pega justo debajo; si no, se pega al borde. Dar
+   por supuesto un alto fijo dejaba un hueco por el que se veía pasar el
+   contenido, con la barra flotando en mitad de la pantalla. */
+function ajustarBarra(){
+  var cont=document.getElementById('pg-header-app');
+  var el=(cont&&cont.firstElementChild)||cont;
+  var top=0;
+  if(el){
+    var cs=window.getComputedStyle(el);
+    if(cs.position==='fixed'||cs.position==='sticky'){
+      top=Math.round(el.getBoundingClientRect().height)||0;
+    }
+  }
+  document.documentElement.style.setProperty('--hh',top+'px');
+  sombraBarra();
+}
+function sombraBarra(){
+  var b=document.querySelector('.tabs-bar');
+  if(!b)return;
+  var lim=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hh'),10)||0;
+  b.classList.toggle('pegada',b.getBoundingClientRect().top<=lim+1);
+}
 
 /* ═══════════ Utilidades ═══════════ */
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -1023,6 +1056,8 @@ function detalleHTML(e){
         campo('Importe final','fx-impf',e.importe_final,'number')+
         campo('Fecha presentación','fx-fpres',e.fecha_presentacion,'date')+
         campo('Justificante / nº registro','fx-just',e.justificante)+
+        '<div class="ff full"><label>Encargo / contexto para el asistente</label>'+
+          '<textarea id="fx-instr" rows="3" placeholder="Qué necesitas de este expediente. Acompaña a todas las llamadas al asistente.">'+esc(e.instruccion_inicial)+'</textarea></div>'+
         '<div class="ff full"><label>Resumen</label><textarea id="fx-res" rows="2">'+esc(e.resumen)+'</textarea></div>'+
         '<div class="ff full"><div class="hint">El fin de plazo se recalcula al cambiar el tipo de plazo o la fecha de notificación. Puedes sobrescribirlo a mano; se respeta lo que dejes escrito.</div></div>'+
       '</div></div>'+
@@ -1099,7 +1134,9 @@ function detalleHTML(e){
         '</select>'+
         '<button class="btn btn-primary" onclick="enviarChat()">Enviar</button>'+
       '</div>'+
-      (e.instruccion_inicial?'<div class="hint" style="margin-top:8px">Encargo registrado en el alta: <em>'+esc(e.instruccion_inicial)+'</em></div>':'')+
+      '<div class="hint" style="margin-top:8px">'+
+        (e.instruccion_inicial?'Encargo activo: <em>'+esc(e.instruccion_inicial)+'</em>'
+         :'Sin encargo registrado. Puedes escribirlo en la ficha, campo «Encargo / contexto».')+'</div>'+
     '</div>'+
   '</div>';
 }
@@ -1163,7 +1200,8 @@ async function guardarFicha(){
     plazo_codigo:val('fx-plazo')||null,fecha_fin_plazo:valD('fx-flim'),
     importe_propuesto:valN('fx-imp'),importe_final:valN('fx-impf'),
     fecha_presentacion:valD('fx-fpres'),justificante:val('fx-just'),
-    resumen:val('fx-res')
+    resumen:val('fx-res'),
+    instruccion_inicial:val('fx-instr')||null
   };
   var r=await sb.from('cw_expedientes').update(obj).eq('id',expSel.id);
   if(r.error){toast('Error al guardar: '+r.error.message,'error');return;}
