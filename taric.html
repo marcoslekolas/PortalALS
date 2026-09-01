@@ -2292,11 +2292,13 @@ async function handleFiles(fileList){
         cabecera.pais_origen = ORIGEN_POR_DEFECTO;
         cabecera.origen_asumido = true;
       }
-      FACTURAS.push({ fichero:file.name, cabecera, lineas, truncado:!!data._truncado, tokens:data._tokens||null });
-      estados[i].estado = data._truncado ? 'parcial' : 'ok';
+      FACTURAS.push({ fichero:file.name, cabecera, lineas, truncado:!!data._truncado,
+                      incompleta:data._incompleta||null, tokens:data._tokens||null });
+      const problema = data._incompleta || (data._truncado
+        ? 'Lectura truncada: se agotaron los tokens. Revisa que no falten líneas al final.' : null);
+      estados[i].estado = problema ? 'parcial' : 'ok';
       estados[i].lineas = lineas.length;
-      estados[i].msg = data._truncado
-        ? '⚠️ Lectura incompleta: se agotaron los tokens. Revisa que no falten líneas al final.'
+      estados[i].msg = problema ? '⚠️ ' + problema
         : ((data.cabecera && data.cabecera.numero_factura) ? 'Factura ' + data.cabecera.numero_factura : '');
     } catch(e){
       console.error('Factura ' + file.name, e);
@@ -2369,8 +2371,9 @@ function cuadreHtml(f){
   const num = v => { const n = parseFloat(String(v||'').replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
   const sum = campo => f.lineas.reduce((a,l)=>a+(num(l[campo])||0), 0);
   const filas = [
-    ['Bultos',     num(c.bultos_totales),   sum('bultos')],
-    ['Peso bruto', num(c.peso_bruto_total), sum('peso_bruto')]
+    ['Partidas',   num(c.partidas_declaradas), f.lineas.length],
+    ['Bultos',     num(c.bultos_totales),      sum('bultos')],
+    ['Peso bruto', num(c.peso_bruto_total),    sum('peso_bruto')]
   ].filter(([,dec]) => dec !== null && dec > 0);
   if(!filas.length) return '';
 
