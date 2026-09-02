@@ -2742,7 +2742,11 @@ function verificarSubpartida(l){
   const nc8 = String(l.nc8||'').replace(/\D/g,'') || taric.substring(0,8);
   if(nc8.length !== 8) return { estado:'sin_nc8' };
   const cand = candidatosDe(nc8);
-  if(!cand || !cand.length) return { estado:'fuera_catalogo', nc8 };
+  if(!cand || !cand.length){
+    // Si el catálogo está cargado y esa NC8 no aparece, no es una duda:
+    // es que no existe en la nomenclatura. La clasificación está mal.
+    return { estado: TARIC_DB.ok ? 'nc8_invalido' : 'fuera_catalogo', nc8 };
+  }
   if(cand.length === 1){
     if(cand[0] === taric)  return { estado:'ok', nc8, codigo:cand[0] };
     if(taric.length !== 10) return { estado:'completado', nc8, codigo:cand[0] };
@@ -2807,7 +2811,7 @@ async function renderLineasFactura(data, filename){
     l._verif = verificarSubpartida(l);
     if(l._verif.estado === 'corregido' || l._verif.estado === 'completado') l.codigo_taric = l._verif.codigo;
     // Sin 10 dígitos fiables se muestra la NC8 con los dos últimos pendientes
-    if(!l.codigo_taric && l.nc8) l._mostrar = l.nc8 + '··';
+    if(!l.codigo_taric && l.nc8) l._mostrar = l.nc8;
     // Descripción oficial desde la base; la del modelo queda de respaldo
     l._descOficial = TARIC_DB.desc.get(l.codigo_taric) || l.descripcion_nc || '';
     // Casilla 31: SIEMPRE el texto de la factura, traducido. Nunca la NC oficial.
@@ -2820,7 +2824,7 @@ async function renderLineasFactura(data, filename){
 
     const confianzaColor = l.confianza>=85?'var(--gr600)':l.confianza>=65?'var(--am600)':'var(--rd600)';
     const taricFormatted = l.codigo_taric ? l.codigo_taric.match(/.{2}/g).join(' ')
-                          : (l.nc8 ? l.nc8.match(/.{2}/g).join(' ') + ' ··' : '—');
+                          : (l.nc8 ? l.nc8.match(/.{2}/g).join(' ') : '—');
     const taricUrl = (l.codigo_taric || l.nc8)
       ? `https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=es&Taric=${l.codigo_taric||l.nc8}` : '#';
 
@@ -2849,6 +2853,7 @@ async function renderLineasFactura(data, filename){
           if(v.estado==='ambiguo')   return `<div style="font-size:9px;color:var(--am600);margin-top:2px" title="Subpartidas posibles: ${(v.candidatos||[]).join(', ')}">⚠ ${v.candidatos.length} subpartidas posibles</div>`;
           if(v.estado==='ok')        return `<div style="font-size:9px;color:var(--gr600);margin-top:2px">✔ verificado</div>`;
           if(v.estado==='fuera_catalogo') return `<div style="font-size:9px;color:var(--g400);margin-top:2px" title="Esa NC8 no aparece en el catálogo TARIC cargado. Verifica los dígitos 9-10 en DDS2.">◦ 9-10 sin verificar</div>`;
+          if(v.estado==='nc8_invalido') return `<div style="font-size:9px;color:var(--rd600);margin-top:2px;font-weight:700" title="La NC8 ${v.nc8} no figura en la nomenclatura oficial. La clasificación es incorrecta.">✕ NC8 INEXISTENTE</div>`;
           if(v.estado==='sin_nc8') return `<div style="font-size:9px;color:var(--rd600);margin-top:2px;font-weight:600" title="La IA no ha podido clasificar esta mercancía. Clasifícala a mano antes de usarla en el DUA.">✕ SIN CLASIFICAR</div>`;
           return '';
         })()}
@@ -3061,9 +3066,9 @@ async function exportarFactura(){
     const c = l._cab || cab, e = c.exportador || exp, d = c.destinatario || des;
     return {
     'Nº Factura': c.numero_factura || '',
-    // Si no hay los 10 dígitos verificados, se marcan los dos últimos como
-    // pendientes en vez de dejar la celda vacía: así no pasa desapercibido.
-    'Código TARIC (10 dígitos)': l.codigo_taric || (l.nc8 ? l.nc8 + '??' : ''),
+    // Solo códigos verificados contra la nomenclatura. Nunca un código a
+    // medias: acabaría copiado tal cual en un DUA.
+    'Código TARIC (10 dígitos)': l.codigo_taric || '',
     'NC8': l.nc8 || (l.codigo_taric ? l.codigo_taric.substring(0,8) : ''),
     'Bultos': num(l.bultos) ?? (l.bultos||''),
     'Cantidad': num(l.cantidad) ?? (l.cantidad||''),
@@ -3089,8 +3094,9 @@ async function exportarFactura(){
       if(v.estado==='completado') return 'SÍ (completado por catálogo)';
       if(v.estado==='corregido') return 'SÍ (corregido de ' + (v.previo||'') + ')';
       if(v.estado==='ambiguo') return 'NO - ELEGIR: ' + (v.candidatos||[]).join(' / ');
+      if(v.estado==='nc8_invalido') return '⚠️ ERROR: la NC8 ' + (v.nc8||'') + ' NO EXISTE en la nomenclatura. Reclasificar.';
       if(v.estado==='fuera_catalogo') return 'NO - verificar en DDS2';
-      return 'NO - sin NC8';
+      return '⚠️ SIN CLASIFICAR';
     })(),
     'Descripción Oficial TARIC': l._descOficial || l.descripcion_nc || '',
     'Casilla 44 (obligatorios)': (l._c44||[]).filter(d=>d.obligatorio).map(d=>d.codigo_doc).join(' '),
