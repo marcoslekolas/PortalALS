@@ -2849,6 +2849,7 @@ async function renderLineasFactura(data, filename){
           if(v.estado==='ambiguo')   return `<div style="font-size:9px;color:var(--am600);margin-top:2px" title="Subpartidas posibles: ${(v.candidatos||[]).join(', ')}">⚠ ${v.candidatos.length} subpartidas posibles</div>`;
           if(v.estado==='ok')        return `<div style="font-size:9px;color:var(--gr600);margin-top:2px">✔ verificado</div>`;
           if(v.estado==='fuera_catalogo') return `<div style="font-size:9px;color:var(--g400);margin-top:2px" title="Esa NC8 no aparece en el catálogo TARIC cargado. Verifica los dígitos 9-10 en DDS2.">◦ 9-10 sin verificar</div>`;
+          if(v.estado==='sin_nc8') return `<div style="font-size:9px;color:var(--rd600);margin-top:2px;font-weight:600" title="La IA no ha podido clasificar esta mercancía. Clasifícala a mano antes de usarla en el DUA.">✕ SIN CLASIFICAR</div>`;
           return '';
         })()}
       </td>
@@ -3060,7 +3061,10 @@ async function exportarFactura(){
     const c = l._cab || cab, e = c.exportador || exp, d = c.destinatario || des;
     return {
     'Nº Factura': c.numero_factura || '',
-    'Código TARIC (10 dígitos)': l.codigo_taric || '',
+    // Si no hay los 10 dígitos verificados, se marcan los dos últimos como
+    // pendientes en vez de dejar la celda vacía: así no pasa desapercibido.
+    'Código TARIC (10 dígitos)': l.codigo_taric || (l.nc8 ? l.nc8 + '??' : ''),
+    'NC8': l.nc8 || (l.codigo_taric ? l.codigo_taric.substring(0,8) : ''),
     'Bultos': num(l.bultos) ?? (l.bultos||''),
     'Cantidad': num(l.cantidad) ?? (l.cantidad||''),
     'Unidad': l.unidad || '',
@@ -3079,7 +3083,6 @@ async function exportarFactura(){
     'Origen declarado en factura': c.origen_asumido ? 'NO (asumido)' : 'SÍ',
     'País Destino': c.pais_destino || '',
     'Incoterm': c.incoterm || '', 'Moneda': c.moneda || '',
-    'Nomenclatura Combinada NC8': l.nc8 || '',
     'Dígitos 9-10 verificados': (()=>{
       const v = l._verif || {};
       if(v.estado==='ok') return 'SÍ (catálogo)';
