@@ -2366,9 +2366,32 @@ async function leerFacturaConIA(base64, mediaType, textoPlano){
 // Compara el desglose de líneas con los totales declarados en la factura.
 // Un descuadre grande casi siempre significa que se ha confundido la columna
 // de cantidad con la de bultos, o un peso unitario con el peso de línea.
+// Convierte a número tanto "2.628,40" (formato ES) como "2628.40" o "2,628.40"
+// (formato EN). Detecta el decimal por cuál separador aparece el último.
+function parseNum(v){
+  let s = String(v == null ? '' : v).trim().replace(/[^\d.,-]/g,'');
+  if(!s) return null;
+  const ultimaComa = s.lastIndexOf(','), ultimoPunto = s.lastIndexOf('.');
+  if(ultimaComa > -1 && ultimoPunto > -1){
+    // el que está más a la derecha es el decimal; el otro, miles
+    if(ultimaComa > ultimoPunto) s = s.replace(/\./g,'').replace(',','.');
+    else s = s.replace(/,/g,'');
+  } else if(ultimaComa > -1){
+    // solo comas: decimal si hay 1-2 dígitos tras la última, si no son miles
+    const dec = s.length - ultimaComa - 1;
+    s = (dec === 3 && !s.slice(0,ultimaComa).includes(',')) ? s.replace(/,/g,'') : s.replace(/\./g,'').replace(',','.');
+  } else if(ultimoPunto > -1){
+    // solo puntos: decimal salvo que parezca separador de miles (grupos de 3)
+    const dec = s.length - ultimoPunto - 1;
+    if(dec === 3 && /^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g,'');
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
 function cuadreHtml(f){
   const c = f.cabecera || {};
-  const num = v => { const n = parseFloat(String(v||'').replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
+  const num = v => { const n = parseNum(v); return n; };
   const sum = campo => f.lineas.reduce((a,l)=>a+(num(l[campo])||0), 0);
   const filas = [
     ['Partidas',   num(c.partidas_declaradas), f.lineas.length],
@@ -2981,7 +3004,7 @@ async function exportarFactura(){
   await loadXLSX();
   const cab = FACTURA_CABECERA || {};
   const exp = cab.exportador || {}, des = cab.destinatario || {};
-  const num = (v) => { const n = parseFloat(String(v||'').replace(/\./g,'').replace(',','.')); return isNaN(n) ? null : n; };
+  const num = (v) => { const n = parseNum(v); return n; };
 
   const wb = XLSX.utils.book_new();
 
