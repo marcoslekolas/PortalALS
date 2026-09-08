@@ -2862,7 +2862,8 @@ async function renderLineasFactura(data, filename){
             <button onclick="copiarTexto(this,'${(l._casilla31||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')"
               style="border:0;background:none;cursor:pointer;font-size:11px;padding:0 2px" title="Copiar para casilla 31">📋</button>
           </div>` : ''}
-        ${l.cantidad?`<div style="font-size:11px;color:var(--g500);margin-top:2px">Cant: ${l.cantidad}</div>`:''}
+        ${l.cantidad?`<div style="font-size:11px;color:var(--g500);margin-top:2px">Cant: ${l.cantidad}${l.unidad?' '+l.unidad:''}</div>`:''}
+        ${(!l.peso_bruto && l.peso_estimado)?`<div style="font-size:11px;color:var(--am600);margin-top:2px" title="Estimación del portal: ${l.peso_estimado_base||''}. Verifica antes del DUA.">≈ ${l.peso_estimado} kg (est.)</div>`:''}
       </td>
       <td>
         <a href="${taricUrl}" target="_blank" style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--b700);text-decoration:none;white-space:nowrap" title="Ver en TARIC Online">
@@ -3021,7 +3022,10 @@ async function exportarFactura(){
     });
     const nf = (l._cab && l._cab.numero_factura) || cab.numero_factura || '';
     if(nf && !g.facturas.includes(nf)) g.facturas.push(nf);
-    g.bultos += num(l.bultos)||0; g.bruto += num(l.peso_bruto)||0;
+    g.bultos += num(l.bultos)||0;
+    // Peso: usa el real; si no hay, cae a la estimación y marca el grupo
+    const pReal = num(l.peso_bruto);
+    if(pReal){ g.bruto += pReal; } else if(num(l.peso_estimado)){ g.bruto += num(l.peso_estimado); g.tieneEst = true; }
     g.cantidad += num(l.cantidad)||0; g.importe += num(l.importe)||0;
     // Frecuencia de cada TARIC de 10 dígitos dentro del grupo, con kilos e importe acumulados
     if(l.codigo_taric && l.codigo_taric.length===10){
@@ -3049,7 +3053,7 @@ async function exportarFactura(){
     'Nº Factura': grupos[k].facturas.join(', '),
     'TARIC 10 díg.': modaTaric(grupos[k]),
     'Total Bultos': grupos[k].bultos||'-',
-    'Total Peso Bruto (kg)': grupos[k].bruto||'-',
+    'Total Peso Bruto (kg)': grupos[k].bruto ? (grupos[k].bruto + (grupos[k].tieneEst?' (incl. est.)':'')) : '-',
     'Total Cantidad / Kilos Netos': grupos[k].cantidad||'-',
     'Total Importe': grupos[k].importe||'-',
     'Partida (4 dig.)': k,
@@ -3064,7 +3068,7 @@ async function exportarFactura(){
   resumen.push({
     'Nº Factura':'TOTAL', 'TARIC 10 díg.':'',
     'Total Bultos': resumen.reduce((a,r)=>a+(Number(r['Total Bultos'])||0),0)||'-',
-    'Total Peso Bruto (kg)': resumen.reduce((a,r)=>a+(Number(r['Total Peso Bruto (kg)'])||0),0)||'-',
+    'Total Peso Bruto (kg)': resumen.reduce((a,r)=>a+(parseFloat(String(r['Total Peso Bruto (kg)']))||0),0)||'-',
     'Total Cantidad / Kilos Netos': resumen.reduce((a,r)=>a+(Number(r['Total Cantidad / Kilos Netos'])||0),0)||'-',
     'Total Importe': resumen.reduce((a,r)=>a+(Number(r['Total Importe'])||0),0)||'-',
     'Partida (4 dig.)':'', 'Casilla 44 (códigos)':'', 'Casilla 44 (obligatorios)':'',
@@ -3097,6 +3101,8 @@ async function exportarFactura(){
     'Cantidad': num(l.cantidad) ?? (l.cantidad||''),
     'Unidad': l.unidad || '',
     'Peso Bruto (kg)': num(l.peso_bruto) ?? (l.peso_bruto||''),
+    'Peso Estimado (kg)': (!l.peso_bruto && l.peso_estimado) ? (num(l.peso_estimado) ?? l.peso_estimado) : '',
+    'Base Estimación': (!l.peso_bruto && l.peso_estimado) ? (l.peso_estimado_base||'') : '',
     'Descripción Original': (l.referencia ? l.referencia + ' · ' : '') + (l.descripcion_original||''),
     'Importe': num(l.importe) ?? (l.importe||''),
     'Casilla 31 (español)': l._casilla31 || l.descripcion_es || '',
