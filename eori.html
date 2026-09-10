@@ -76,7 +76,7 @@ a{color:var(--b600)}
     <div style="font-size:12px;color:var(--g600);line-height:1.7">
       El <strong>EORI</strong> (Economic Operators Registration and Identification) es el identificador único de todo operador que realiza trámites aduaneros en la UE. Es obligatorio en cada declaración; un EORI erróneo hace que Aduana rechace el despacho.
       <br><br>
-      La <strong>validación por código</strong> consulta el registro oficial de la Comisión (DG TAXUD): es la fuente de verdad. La <strong>búsqueda por empresa</strong> usa IA con acceso a internet y es orientativa — confirma siempre el EORI encontrado con la validación oficial.
+      La <strong>validación por código</strong> te lleva al registro oficial de la Comisión (DG TAXUD) con el número precargado: es la fuente de verdad legal. La <strong>búsqueda por empresa</strong> usa IA con acceso a internet y es orientativa — confirma siempre el EORI encontrado con la validación oficial.
       <br><br>
       Los EORI británicos (GB) no están en el registro de la UE desde el Brexit: valídalos en el servicio del HMRC.
     </div>
@@ -86,7 +86,7 @@ a{color:var(--b600)}
 <script>
 const SB_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
 const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
-const VALIDAR_EORI = SB_URL + '/functions/v1/validar-eori';
+// const VALIDAR_EORI = SB_URL + '/functions/v1/validar-eori'; // la Comisión no permite consulta automática
 const GEM_PROXY    = SB_URL + '/functions/v1/gemini-proxy';
 let sb = null, MODO = 'codigo';
 
@@ -115,7 +115,7 @@ function setModo(m){
   if(m==='codigo'){
     bc.className='btn btn-p btn-sm'; be.className='btn btn-s btn-sm';
     q.placeholder='Número EORI (ej. ESB12345678)';
-    hint.innerHTML='Consulta el registro oficial de la Comisión Europea (DG TAXUD).';
+    hint.innerHTML='Abre el registro oficial de la Comisión con el número precargado.';
   } else {
     be.className='btn btn-p btn-sm'; bc.className='btn btn-s btn-sm';
     q.placeholder='Nombre de la empresa (ej. REDWOOD LOGISTICS SL)';
@@ -138,53 +138,49 @@ async function buscar(){
   finally{ btn.disabled=false; }
 }
 
-// ── MODO CÓDIGO: validación oficial TAXUD ──
+// ── MODO CÓDIGO: validación en la página oficial (la Comisión no permite
+//    consultarla automáticamente, así que se abre con el EORI precargado) ──
 async function validarCodigo(q, out){
-  const r = await fetch(VALIDAR_EORI, { method:'POST', headers:await cabeceras(), body:JSON.stringify({eori:q}) });
-  const d = await r.json();
-  if(d.error){ out.innerHTML=aviso('⚠️ '+d.error,'am'); return; }
-
-  if(d.estado==='valido'){
-    out.innerHTML = `
-    <div class="card" style="overflow:hidden">
-      <div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-bottom:1px solid #bbf7d0;padding:14px 20px;display:flex;align-items:center;gap:10px">
-        <span style="font-size:22px">✅</span>
-        <div><div style="font-weight:700;font-size:15px">EORI válido</div>
-        <div style="font-size:12px;color:var(--gr600)">Verificado en el registro oficial de la Comisión Europea</div></div>
-      </div>
-      <div style="padding:18px 20px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-          <span class="tag-eori" style="font-size:15px">${esc(d.eori)}</span>
-          <span style="font-size:12px;color:var(--g400)">${esc(d.pais||'')}</span>
-        </div>
-        ${d.nombre?`
-          <div style="margin-bottom:8px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);font-weight:700">Titular</div>
-          <div style="font-size:14px;font-weight:600">${esc(d.nombre)}</div></div>` : ''}
-        ${d.direccion?`
-          <div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);font-weight:700">Dirección</div>
-          <div style="font-size:13px;color:var(--g600)">${esc(d.direccion)}</div></div>` : ''}
-        ${!d.publicacion_consentida?`<div style="margin-top:12px;font-size:12px;color:var(--am600);background:var(--am50);padding:10px 12px;border-radius:8px">El EORI es válido, pero el operador no ha autorizado publicar su nombre y dirección. Es normal y no afecta a la validez.</div>`:''}
-        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-s btn-sm" onclick="copiar(this,'${esc(d.eori)}')">📋 Copiar EORI</button>
-          <button class="btn btn-s btn-sm" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp','_blank')">🇪🇺 Ver en la Comisión ↗</button>
-        </div>
-      </div>
-    </div>`;
-  } else if(d.estado==='no_valido'){
-    out.innerHTML = `
-    <div class="card" style="overflow:hidden">
-      <div style="background:var(--rd50);border-bottom:1px solid #fecdd3;padding:14px 20px;display:flex;align-items:center;gap:10px">
-        <span style="font-size:22px">❌</span>
-        <div><div style="font-weight:700;font-size:15px">EORI no encontrado</div>
-        <div style="font-size:12px;color:var(--rd600)">${esc(d.mensaje)}</div></div>
-      </div>
-      <div style="padding:16px 20px;font-size:13px;color:var(--g600)">
-        Comprueba que el número está bien escrito, incluido el código de país inicial. Si crees que debería existir, el registro puede tardar en reflejar altas recientes.
-      </div>
-    </div>`;
-  } else {
-    out.innerHTML=aviso('⚠️ '+(d.mensaje||'No se pudo validar.'),'am');
+  const num = q.toUpperCase().replace(/\s/g,'');
+  if(!/^[A-Z]{2}[A-Z0-9]{1,15}$/.test(num)){
+    out.innerHTML = aviso('Formato no válido. Un EORI empieza por 2 letras de país (ej. ES, DE, FR) seguidas de cifras y letras.', 'am');
+    return;
   }
+  const esGB = num.startsWith('GB');
+  const urlUE = 'https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&EoriNumb='+encodeURIComponent(num)+'&Expand=true';
+  const urlGB = 'https://www.gov.uk/check-eori-number';
+
+  out.innerHTML = `
+    <div class="card" style="overflow:hidden">
+      <div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-bottom:1px solid #bfdbfe;padding:14px 20px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:22px">🇪🇺</span>
+        <div><div style="font-weight:700;font-size:15px">Validación oficial</div>
+        <div style="font-size:12px;color:var(--b700)">Registro de la Comisión Europea (DG TAXUD)</div></div>
+      </div>
+      <div style="padding:20px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+          <span class="tag-eori" style="font-size:16px">${esc(num)}</span>
+          <span style="font-size:12px;color:var(--g400)">${esc(num.substring(0,2))}</span>
+        </div>
+        ${esGB ? `
+          <div style="font-size:13px;color:var(--g600);line-height:1.6;margin-bottom:16px">
+            Los EORI británicos <strong>no están en el registro de la UE</strong> desde el Brexit. Se validan en el servicio del Reino Unido (HMRC).
+          </div>
+          <button class="btn btn-p" onclick="window.open('${urlGB}','_blank')">🇬🇧 Validar en HMRC (Reino Unido) ↗</button>
+        ` : `
+          <div style="font-size:13px;color:var(--g600);line-height:1.6;margin-bottom:16px">
+            Pulsa para comprobarlo en el registro oficial de la Comisión. Se abre con el número <strong>ya rellenado</strong>: solo tienes que ver el resultado. Si el operador autorizó la publicación, verás también su nombre y dirección.
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-p" onclick="window.open('${urlUE}','_blank')">🇪🇺 Validar en la Comisión Europea ↗</button>
+            <button class="btn btn-s btn-sm" onclick="copiar(this,'${esc(num)}')">📋 Copiar EORI</button>
+          </div>
+        `}
+        <div style="margin-top:14px;font-size:11px;color:var(--g400)">
+          La validación se abre en la web oficial de la Comisión, que es la única fuente con validez legal. El portal no puede consultarla de forma automática porque la Comisión no lo permite.
+        </div>
+      </div>
+    </div>`;
 }
 
 // ── MODO EMPRESA: grounding con Google Search ──
