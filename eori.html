@@ -129,58 +129,34 @@ async function buscar(){
   const out = document.getElementById('result');
   const btn = document.getElementById('btn-buscar');
   if(!q){ out.innerHTML=aviso('Introduce un término de búsqueda.'); return; }
-  btn.disabled=true;
-  out.innerHTML='<div class="card"><div class="load"><div class="spinner"></div><span style="font-size:13px;color:var(--g600)">'+(MODO==='codigo'?'Consultando registro oficial…':'Buscando en registros públicos…')+'</span></div></div>';
-  try{
-    if(MODO==='codigo') await validarCodigo(q, out);
-    else await buscarEmpresa(q, out);
-  }catch(e){ out.innerHTML=aviso('❌ '+e.message,'rd'); }
-  finally{ btn.disabled=false; }
-}
 
-// ── MODO CÓDIGO: validación en la página oficial (la Comisión no permite
-//    consultarla automáticamente, así que se abre con el EORI precargado) ──
-async function validarCodigo(q, out){
-  const num = q.toUpperCase().replace(/\s/g,'');
-  if(!/^[A-Z]{2}[A-Z0-9]{1,15}$/.test(num)){
-    out.innerHTML = aviso('Formato no válido. Un EORI empieza por 2 letras de país (ej. ES, DE, FR) seguidas de cifras y letras.', 'am');
+  // MODO CÓDIGO: un solo clic → abre la validación oficial ya resuelta.
+  // La URL lleva el EORI y Expand=true, así que la página de la Comisión
+  // muestra el resultado directamente, sin pulsar nada más allí.
+  if(MODO==='codigo'){
+    const num = q.toUpperCase().replace(/\s/g,'');
+    if(!/^[A-Z]{2}[A-Z0-9]{1,15}$/.test(num)){
+      out.innerHTML = aviso('Formato no válido. Un EORI empieza por 2 letras de país (ej. ES, DE, FR) seguidas de cifras y letras.', 'am');
+      return;
+    }
+    if(num.startsWith('GB')){
+      window.open('https://www.gov.uk/check-eori-number','_blank');
+    } else {
+      window.open('https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&EoriNumb='+encodeURIComponent(num)+'&Expand=true','_blank');
+    }
+    out.innerHTML = `<div class="card" style="padding:16px 20px;font-size:13px;color:var(--g600)">
+      🇪🇺 Se ha abierto la validación oficial de <span class="tag-eori">${esc(num)}</span> en una pestaña nueva con el resultado ya cargado.
+      ${num.startsWith('GB')?'<br><span style="color:var(--am600)">EORI británico: se valida en el servicio del HMRC.</span>':''}
+    </div>`;
     return;
   }
-  const esGB = num.startsWith('GB');
-  const urlUE = 'https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&EoriNumb='+encodeURIComponent(num)+'&Expand=true';
-  const urlGB = 'https://www.gov.uk/check-eori-number';
 
-  out.innerHTML = `
-    <div class="card" style="overflow:hidden">
-      <div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-bottom:1px solid #bfdbfe;padding:14px 20px;display:flex;align-items:center;gap:10px">
-        <span style="font-size:22px">🇪🇺</span>
-        <div><div style="font-weight:700;font-size:15px">Validación oficial</div>
-        <div style="font-size:12px;color:var(--b700)">Registro de la Comisión Europea (DG TAXUD)</div></div>
-      </div>
-      <div style="padding:20px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-          <span class="tag-eori" style="font-size:16px">${esc(num)}</span>
-          <span style="font-size:12px;color:var(--g400)">${esc(num.substring(0,2))}</span>
-        </div>
-        ${esGB ? `
-          <div style="font-size:13px;color:var(--g600);line-height:1.6;margin-bottom:16px">
-            Los EORI británicos <strong>no están en el registro de la UE</strong> desde el Brexit. Se validan en el servicio del Reino Unido (HMRC).
-          </div>
-          <button class="btn btn-p" onclick="window.open('${urlGB}','_blank')">🇬🇧 Validar en HMRC (Reino Unido) ↗</button>
-        ` : `
-          <div style="font-size:13px;color:var(--g600);line-height:1.6;margin-bottom:16px">
-            Pulsa para comprobarlo en el registro oficial de la Comisión. Se abre con el número <strong>ya rellenado</strong>: solo tienes que ver el resultado. Si el operador autorizó la publicación, verás también su nombre y dirección.
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-p" onclick="window.open('${urlUE}','_blank')">🇪🇺 Validar en la Comisión Europea ↗</button>
-            <button class="btn btn-s btn-sm" onclick="copiar(this,'${esc(num)}')">📋 Copiar EORI</button>
-          </div>
-        `}
-        <div style="margin-top:14px;font-size:11px;color:var(--g400)">
-          La validación se abre en la web oficial de la Comisión, que es la única fuente con validez legal. El portal no puede consultarla de forma automática porque la Comisión no lo permite.
-        </div>
-      </div>
-    </div>`;
+  btn.disabled=true;
+  out.innerHTML='<div class="card"><div class="load"><div class="spinner"></div><span style="font-size:13px;color:var(--g600)">Buscando en registros públicos…</span></div></div>';
+  try{
+    await buscarEmpresa(q, out);
+  }catch(e){ out.innerHTML=aviso('❌ '+e.message,'rd'); }
+  finally{ btn.disabled=false; }
 }
 
 // ── MODO EMPRESA: grounding con Google Search ──
