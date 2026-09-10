@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Buscador EORI · Portal ALS</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --w:#fff;--g50:#f8fafc;--g100:#f1f5f9;--g200:#e2e8f0;--g300:#cbd5e1;
+  --g400:#94a3b8;--g500:#64748b;--g600:#475569;--g700:#334155;--g900:#0f172a;
+  --b50:#eff6ff;--b100:#dbeafe;--b500:#3b82f6;--b600:#2563eb;--b700:#1d4ed8;
+  --gr50:#f0fdf4;--gr500:#22c55e;--gr600:#16a34a;
+  --am50:#fffbeb;--am500:#f59e0b;--am600:#d97706;
+  --rd50:#fff1f2;--rd500:#f43f5e;--rd600:#e11d48;
+  --f:'IBM Plex Sans',sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--rl:12px;--rxl:18px;
+  --sh0:0 1px 3px rgba(0,0,0,.07);--shl:0 8px 32px rgba(0,0,0,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--f);background:var(--g50);color:var(--g900);min-height:100vh}
+:root.dark body{background:#0f172a;color:#e2e8f0}
+.wrap{max-width:820px;margin:0 auto;padding:0 20px 60px}
+.card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rxl);box-shadow:var(--sh0)}
+:root.dark .card{background:#1e293b;border-color:#334155}
+.fi{width:100%;padding:11px 14px;border:1.5px solid var(--g200);border-radius:var(--rl);font-family:var(--f);font-size:14px;outline:none;transition:border-color .15s;background:var(--w);color:var(--g900)}
+.fi:focus{border-color:var(--b500)}
+:root.dark .fi{background:#0f172a;border-color:#334155;color:#e2e8f0}
+.btn{padding:11px 18px;border:none;border-radius:var(--rl);font-family:var(--f);font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;justify-content:center}
+.btn-p{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff}
+.btn-p:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(37,99,235,.35)}
+.btn-s{background:var(--g100);color:var(--g700)}
+.btn-s:hover{background:var(--g200)}
+.btn-sm{padding:7px 12px;font-size:12px}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.hero{text-align:center;padding:40px 0 28px}
+.hero .badge{display:inline-flex;align-items:center;gap:6px;background:var(--b50);color:var(--b700);padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:16px;border:1px solid var(--b100)}
+.hero h1{font-size:30px;font-weight:700;letter-spacing:-.5px;margin-bottom:8px}
+.hero p{color:var(--g500);font-size:15px;max-width:520px;margin:0 auto}
+.spinner{width:22px;height:22px;border:3px solid var(--g200);border-top-color:var(--b600);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load{display:flex;flex-direction:column;align-items:center;gap:10px;padding:30px}
+.mono{font-family:var(--mono)}
+a{color:var(--b600)}
+.tag-eori{font-family:var(--mono);font-weight:700;color:var(--b700);background:var(--b50);padding:2px 6px;border-radius:4px}
+</style>
+<script src="auth-guard.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+</head>
+<body>
+<div id="pg-header-app"></div>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="badge">🔎 Registro EORI · Unión Europea</div>
+    <h1>Buscador EORI</h1>
+    <p>Valida un número EORI contra el registro oficial de la Comisión Europea, o localiza el EORI de una empresa a partir de su nombre.</p>
+  </div>
+
+  <div class="card" style="padding:18px 20px;margin-bottom:16px">
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="btn btn-p btn-sm" id="modo-codigo" onclick="setModo('codigo')" style="flex:1;min-width:150px">🔢 Validar por EORI</button>
+      <button class="btn btn-s btn-sm" id="modo-empresa" onclick="setModo('empresa')" style="flex:1;min-width:150px">🏢 Buscar por empresa</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input type="text" id="q" class="fi" style="flex:1;min-width:240px" placeholder="Número EORI (ej. ESB12345678)" onkeydown="if(event.key==='Enter')buscar()">
+      <button class="btn btn-p" id="btn-buscar" onclick="buscar()">Buscar</button>
+    </div>
+    <div id="hint" style="font-size:12px;color:var(--g400);margin-top:8px"></div>
+  </div>
+
+  <div id="result"></div>
+
+  <div class="card" style="padding:16px 18px;margin-top:16px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px">ℹ️ Sobre el número EORI</div>
+    <div style="font-size:12px;color:var(--g600);line-height:1.7">
+      El <strong>EORI</strong> (Economic Operators Registration and Identification) es el identificador único de todo operador que realiza trámites aduaneros en la UE. Es obligatorio en cada declaración; un EORI erróneo hace que Aduana rechace el despacho.
+      <br><br>
+      La <strong>validación por código</strong> consulta el registro oficial de la Comisión (DG TAXUD): es la fuente de verdad. La <strong>búsqueda por empresa</strong> usa IA con acceso a internet y es orientativa — confirma siempre el EORI encontrado con la validación oficial.
+      <br><br>
+      Los EORI británicos (GB) no están en el registro de la UE desde el Brexit: valídalos en el servicio del HMRC.
+    </div>
+  </div>
+</div>
+
+<script>
+const SB_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
+const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
+const VALIDAR_EORI = SB_URL + '/functions/v1/validar-eori';
+const GEM_PROXY    = SB_URL + '/functions/v1/gemini-proxy';
+let sb = null, MODO = 'codigo';
+
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+document.addEventListener('DOMContentLoaded', async ()=>{
+  const ok = await PortalGuard.require('taric');   // EORI vive bajo el rol TARIC
+  if(!ok) return;
+  sb = PortalGuard.sb;
+  try{ PortalGuard.mountHeader({mount:'#pg-header-app', module:'Aduanas', section:'Buscador EORI'}); }catch(e){}
+  setModo('codigo');
+});
+
+async function cabeceras(){
+  const h = {'Content-Type':'application/json', apikey:SB_KEY, Authorization:'Bearer '+SB_KEY};
+  try{ const {data} = await sb.auth.getSession();
+    const t = data && data.session && data.session.access_token;
+    if(t) h.Authorization = 'Bearer '+t; }catch(_){}
+  return h;
+}
+
+function setModo(m){
+  MODO = m;
+  const bc = document.getElementById('modo-codigo'), be = document.getElementById('modo-empresa');
+  const q = document.getElementById('q'), hint = document.getElementById('hint');
+  if(m==='codigo'){
+    bc.className='btn btn-p btn-sm'; be.className='btn btn-s btn-sm';
+    q.placeholder='Número EORI (ej. ESB12345678)';
+    hint.innerHTML='Consulta el registro oficial de la Comisión Europea (DG TAXUD).';
+  } else {
+    be.className='btn btn-p btn-sm'; bc.className='btn btn-s btn-sm';
+    q.placeholder='Nombre de la empresa (ej. REDWOOD LOGISTICS SL)';
+    hint.innerHTML='Búsqueda con IA en internet. Orientativa: confirma el resultado con la validación oficial.';
+  }
+  q.focus();
+}
+
+async function buscar(){
+  const q = (document.getElementById('q').value||'').trim();
+  const out = document.getElementById('result');
+  const btn = document.getElementById('btn-buscar');
+  if(!q){ out.innerHTML=aviso('Introduce un término de búsqueda.'); return; }
+  btn.disabled=true;
+  out.innerHTML='<div class="card"><div class="load"><div class="spinner"></div><span style="font-size:13px;color:var(--g600)">'+(MODO==='codigo'?'Consultando registro oficial…':'Buscando en registros públicos…')+'</span></div></div>';
+  try{
+    if(MODO==='codigo') await validarCodigo(q, out);
+    else await buscarEmpresa(q, out);
+  }catch(e){ out.innerHTML=aviso('❌ '+e.message,'rd'); }
+  finally{ btn.disabled=false; }
+}
+
+// ── MODO CÓDIGO: validación oficial TAXUD ──
+async function validarCodigo(q, out){
+  const r = await fetch(VALIDAR_EORI, { method:'POST', headers:await cabeceras(), body:JSON.stringify({eori:q}) });
+  const d = await r.json();
+  if(d.error){ out.innerHTML=aviso('⚠️ '+d.error,'am'); return; }
+
+  if(d.estado==='valido'){
+    out.innerHTML = `
+    <div class="card" style="overflow:hidden">
+      <div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-bottom:1px solid #bbf7d0;padding:14px 20px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:22px">✅</span>
+        <div><div style="font-weight:700;font-size:15px">EORI válido</div>
+        <div style="font-size:12px;color:var(--gr600)">Verificado en el registro oficial de la Comisión Europea</div></div>
+      </div>
+      <div style="padding:18px 20px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <span class="tag-eori" style="font-size:15px">${esc(d.eori)}</span>
+          <span style="font-size:12px;color:var(--g400)">${esc(d.pais||'')}</span>
+        </div>
+        ${d.nombre?`
+          <div style="margin-bottom:8px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);font-weight:700">Titular</div>
+          <div style="font-size:14px;font-weight:600">${esc(d.nombre)}</div></div>` : ''}
+        ${d.direccion?`
+          <div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);font-weight:700">Dirección</div>
+          <div style="font-size:13px;color:var(--g600)">${esc(d.direccion)}</div></div>` : ''}
+        ${!d.publicacion_consentida?`<div style="margin-top:12px;font-size:12px;color:var(--am600);background:var(--am50);padding:10px 12px;border-radius:8px">El EORI es válido, pero el operador no ha autorizado publicar su nombre y dirección. Es normal y no afecta a la validez.</div>`:''}
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-s btn-sm" onclick="copiar(this,'${esc(d.eori)}')">📋 Copiar EORI</button>
+          <button class="btn btn-s btn-sm" onclick="window.open('https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp','_blank')">🇪🇺 Ver en la Comisión ↗</button>
+        </div>
+      </div>
+    </div>`;
+  } else if(d.estado==='no_valido'){
+    out.innerHTML = `
+    <div class="card" style="overflow:hidden">
+      <div style="background:var(--rd50);border-bottom:1px solid #fecdd3;padding:14px 20px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:22px">❌</span>
+        <div><div style="font-weight:700;font-size:15px">EORI no encontrado</div>
+        <div style="font-size:12px;color:var(--rd600)">${esc(d.mensaje)}</div></div>
+      </div>
+      <div style="padding:16px 20px;font-size:13px;color:var(--g600)">
+        Comprueba que el número está bien escrito, incluido el código de país inicial. Si crees que debería existir, el registro puede tardar en reflejar altas recientes.
+      </div>
+    </div>`;
+  } else {
+    out.innerHTML=aviso('⚠️ '+(d.mensaje||'No se pudo validar.'),'am');
+  }
+}
+
+// ── MODO EMPRESA: grounding con Google Search ──
+async function buscarEmpresa(q, out){
+  const prompt = `Busca información oficial sobre la empresa "${q}" en la Unión Europea. Necesito:
+1. Su número EORI.
+2. Su dirección fiscal o registrada completa.
+3. Su NIF/CIF o identificador fiscal nacional.
+Elige la entidad principal si hay varias. Si no encuentras el EORI con fundamento, dilo claramente en vez de inventarlo. Responde en español, breve y estructurado.`;
+
+  const r = await fetch(GEM_PROXY, { method:'POST', headers:await cabeceras(), body:JSON.stringify({
+    model:'gemini-2.5-flash',
+    messages:[
+      {role:'system', content:'Eres un asistente experto en aduanas de la UE. Das datos verificados sobre empresas y EORI usando búsqueda web. NUNCA inventes un EORI: si no lo encuentras, indícalo.'},
+      {role:'user', content:prompt}
+    ],
+    grounding:true, maxTokens:1800, temperature:0.1, stream:true
+  })});
+  if(!r.ok){ let m='Error '+r.status; try{const j=await r.json();if(j.error)m=j.error;}catch(_){} throw new Error(m); }
+
+  const reader=r.body.getReader(), dec=new TextDecoder(); let buf='', full='';
+  const pintar = (t,fin)=>{ out.innerHTML = renderEmpresa(t, fin); };
+  while(true){
+    const {done,value}=await reader.read(); if(done)break;
+    buf+=dec.decode(value,{stream:true});
+    const ls=buf.split('\n'); buf=ls.pop()||'';
+    for(const l of ls){ if(!l.startsWith('data: '))continue; const dd=l.slice(6).trim();
+      if(dd==='[DONE]')continue;
+      try{const p=JSON.parse(dd),delta=p?.choices?.[0]?.delta?.content||''; if(delta){full+=delta; pintar(full,false);}}catch(_){}
+    }
+  }
+  if(!full.trim()) out.innerHTML=aviso('No se obtuvo respuesta. Reintenta o valida directamente en la web de la Comisión.','am');
+  else pintar(full,true);
+}
+
+function renderEmpresa(texto, fin){
+  const html = esc(texto)
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\b([A-Z]{2}[A-Z0-9]{7,15})\b/g,'<span class="tag-eori">$1</span>')
+    .replace(/\n/g,'<br>');
+  // Detectar un EORI para ofrecer validarlo directamente
+  const m = texto.match(/\b([A-Z]{2}[A-Z0-9]{7,15})\b/);
+  return `
+    <div class="card" style="padding:18px 20px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);font-weight:700;margin-bottom:8px">Resultado orientativo (IA + búsqueda web)</div>
+      <div style="font-size:13px;line-height:1.75;color:var(--g700)">${html}</div>
+      ${fin?`<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--g100);display:flex;gap:8px;flex-wrap:wrap">
+        ${m?`<button class="btn btn-p btn-sm" onclick="document.getElementById('q').value='${m[1]}';setModo('codigo');buscar()">✅ Validar ${m[1]} oficialmente</button>`:''}
+        <button class="btn btn-s btn-sm" onclick="copiar(this,'${esc(texto).replace(/\n/g,' ').substring(0,400)}')">📋 Copiar</button>
+      </div>`:''}
+    </div>`;
+}
+
+function aviso(txt, color){
+  const c = color==='rd'?'--rd600':color==='am'?'--am600':'--g600';
+  return `<div class="card" style="padding:16px 20px;font-size:14px;color:var(${c})">${txt}</div>`;
+}
+async function copiar(btn, txt){
+  try{ await navigator.clipboard.writeText(String(txt)); const o=btn.textContent; btn.textContent='✓ Copiado'; setTimeout(()=>btn.textContent=o,1200); }catch(_){}
+}
+</script>
+</body>
+</html>
