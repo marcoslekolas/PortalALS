@@ -2413,6 +2413,70 @@ function cuadreHtml(f){
 
 // Fusiona todas las facturas del lote en una sola tabla, marcando cada línea
 // con la factura de la que viene, y repinta el panel con una tarjeta por documento.
+// ═══ VALIDACIÓN DE EORI DEL EXPORTADOR ═══
+// Cache de EORI ya validados en la Comisión. Verde para siempre.
+let EORI_VALIDADOS = null;   // Map eori -> {nombre, validado_en}
+
+async function cargarEoriValidados(eoris){
+  const lista = [...new Set((eoris||[]).map(e=>String(e||'').toUpperCase().replace(/\s/g,'')).filter(Boolean))];
+  if(!lista.length){ EORI_VALIDADOS = EORI_VALIDADOS || new Map(); return; }
+  try{
+    const { data } = await sbT().from('eori_validados')
+      .select('eori,nombre,validado_en').in('eori', lista);
+    EORI_VALIDADOS = EORI_VALIDADOS || new Map();
+    (data||[]).forEach(r => EORI_VALIDADOS.set(r.eori, r));
+  }catch(e){ console.warn('No se pudieron cargar EORI validados:', e.message); EORI_VALIDADOS = EORI_VALIDADOS || new Map(); }
+}
+
+// Chip de estado del EORI del exportador, con acción según el caso
+function chipEori(exp){
+  const eori = String((exp&&exp.eori)||'').toUpperCase().replace(/\s/g,'');
+  if(!eori){
+    return `<span class="badge" style="background:var(--am50);color:var(--am600);font-size:10px" title="El exportador no declara EORI en la factura. Búscalo antes del despacho.">⚠ Sin EORI</span>`;
+  }
+  const val = EORI_VALIDADOS && EORI_VALIDADOS.get(eori);
+  if(val){
+    const f = val.validado_en ? new Date(val.validado_en).toLocaleDateString('es-ES') : '';
+    return `<span class="badge" style="background:var(--gr50);color:var(--gr600);font-size:10px" title="Validado en la Comisión el ${f}">✅ EORI validado${f?' · '+f:''}</span>`;
+  }
+  // Sin validar: botón para abrir la Comisión + marcar como validado
+  const nombre = (exp.nombre||'').replace(/'/g,"\\'");
+  const dir = (exp.direccion||'').replace(/'/g,"\\'");
+  const pais = (exp.pais||eori.substring(0,2));
+  return `<span style="display:inline-flex;gap:4px;align-items:center">
+    <button class="badge" style="background:var(--b50);color:var(--b700);font-size:10px;border:0;cursor:pointer"
+      onclick="validarEoriComision('${eori}')" title="Abre la validación oficial de la Comisión con el EORI precargado">🔎 Validar EORI</button>
+    <button class="badge" style="background:var(--g100);color:var(--g600);font-size:10px;border:0;cursor:pointer"
+      onclick="marcarEoriValidado('${eori}','${nombre}','${dir}','${pais}',this)" title="Guardar como validado tras comprobarlo en la Comisión">✓ Marcar validado</button>
+  </span>`;
+}
+
+function validarEoriComision(eori){
+  const num = String(eori||'').toUpperCase().replace(/\s/g,'');
+  if(num.startsWith('GB')) window.open('https://www.gov.uk/check-eori-number','_blank');
+  else window.open('https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Lang=es&EoriNumb='+encodeURIComponent(num)+'&Expand=true','_blank');
+}
+
+async function marcarEoriValidado(eori, nombre, direccion, pais, btn){
+  const num = String(eori||'').toUpperCase().replace(/\s/g,'');
+  try{
+    const cu = (typeof PortalGuard!=='undefined' && PortalGuard.CU) ? PortalGuard.CU : {};
+    const { error } = await sbT().from('eori_validados').upsert({
+      eori:num, nombre:nombre||null, direccion:direccion||null,
+      pais:(pais||num.substring(0,2)).substring(0,2),
+      validado_por: cu.auth_user_id || null
+    }, { onConflict:'eori' });
+    if(error) throw error;
+    if(!EORI_VALIDADOS) EORI_VALIDADOS = new Map();
+    EORI_VALIDADOS.set(num, { nombre, validado_en:new Date().toISOString() });
+    // Reemplazar el control por el chip verde in situ
+    if(btn){
+      const cont = btn.closest('span');
+      if(cont) cont.outerHTML = `<span class="badge" style="background:var(--gr50);color:var(--gr600);font-size:10px">✅ EORI validado · ${new Date().toLocaleDateString('es-ES')}</span>`;
+    }
+  }catch(e){ showToast('No se pudo guardar: '+e.message); }
+}
+
 async function renderLoteFacturas(){
   const conLineas = FACTURAS.filter(f => f.lineas.length);
   if(!conLineas.length) return;
@@ -2442,6 +2506,9 @@ async function renderLoteFacturas(){
   const chip = (t,v) => v ? `<span class="badge badge-blue" style="font-size:10px">${t}: ${v}</span>` : '';
   const fallidas = FACTURAS.filter(f => f.error);
 
+  // Precargar el estado de validación de los EORI de exportador del lote
+  await cargarEoriValidados(conLineas.map(f => (f.cabecera&&f.cabecera.exportador&&f.cabecera.exportador.eori)||''));
+
   document.getElementById('factura-info').innerHTML = `
     <div class="card" style="padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:700">${conLineas.length} factura${conLineas.length>1?'s':''} · ${todas.length} líneas</span>
@@ -2460,6 +2527,7 @@ async function renderLoteFacturas(){
               ? `<span class="badge" style="background:var(--am50);color:var(--am600);font-size:10px" title="No consta en la factura; valor por defecto del portal">Origen: ${c.pais_origen} (asumido)</span>`
               : chip('Origen', c.pais_origen)}
             ${chip('Total', c.total_factura?c.total_factura+' '+(c.moneda||''):'')}
+            ${chipEori(e)}
           </div>
         </div>
         ${cuadreHtml(f)}
