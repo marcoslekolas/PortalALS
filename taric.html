@@ -3090,6 +3090,9 @@ async function exportarFactura(){
     });
     const nf = (l._cab && l._cab.numero_factura) || cab.numero_factura || '';
     if(nf && !g.facturas.includes(nf)) g.facturas.push(nf);
+    // Fecha de la factura (para la hoja resumen), sin repetir
+    const ff = (l._cab && l._cab.fecha) || cab.fecha || '';
+    if(ff && !(g.fechas=g.fechas||[]).includes(ff)) g.fechas.push(ff);
     g.bultos += num(l.bultos)||0;
     // Peso: usa el real; si no hay, cae a la estimación y marca el grupo
     const pReal = num(l.peso_bruto);
@@ -3119,6 +3122,7 @@ async function exportarFactura(){
   };
   const resumen = Object.keys(grupos).sort().map(k => ({
     'Nº Factura': grupos[k].facturas.join(', '),
+    'Fecha': (grupos[k].fechas||[]).join(', '),
     'TARIC 10 díg.': modaTaric(grupos[k]),
     'Total Bultos': grupos[k].bultos||'-',
     'Total Peso Bruto (kg)': grupos[k].bruto ? (grupos[k].bruto + (grupos[k].tieneEst?' (incl. est.)':'')) : '-',
@@ -3134,7 +3138,7 @@ async function exportarFactura(){
     'Nº Líneas': grupos[k].lineas
   }));
   resumen.push({
-    'Nº Factura':'TOTAL', 'TARIC 10 díg.':'',
+    'Nº Factura':'TOTAL', 'Fecha':'', 'TARIC 10 díg.':'',
     'Total Bultos': resumen.reduce((a,r)=>a+(Number(r['Total Bultos'])||0),0)||'-',
     'Total Peso Bruto (kg)': resumen.reduce((a,r)=>a+(parseFloat(String(r['Total Peso Bruto (kg)']))||0),0)||'-',
     'Total Cantidad / Kilos Netos': resumen.reduce((a,r)=>a+(Number(r['Total Cantidad / Kilos Netos'])||0),0)||'-',
@@ -3143,11 +3147,11 @@ async function exportarFactura(){
     'Descripción agrupada (casilla 31)':'', 'Descripción':'', 'Nº Líneas': lineas.length
   });
   const ws1 = XLSX.utils.json_to_sheet(resumen);
-  ws1['!cols'] = [{wch:24},{wch:16},{wch:13},{wch:20},{wch:26},{wch:15},{wch:14},{wch:34},{wch:20},{wch:70},{wch:46},{wch:10}];
+  ws1['!cols'] = [{wch:24},{wch:12},{wch:16},{wch:13},{wch:20},{wch:26},{wch:15},{wch:14},{wch:34},{wch:20},{wch:70},{wch:46},{wch:10}];
   // La descripción agrupada puede ser larga: ajuste de texto y filas más altas
   const rango = XLSX.utils.decode_range(ws1['!ref']);
   for(let R=1; R<=rango.e.r; R++){
-    [7,9].forEach(col => {
+    [8,10].forEach(col => {
       const c = ws1[XLSX.utils.encode_cell({r:R,c:col})];
       if(c){ c.s = Object.assign({}, c.s, {alignment:{wrapText:true,vertical:'top'}}); }
     });
