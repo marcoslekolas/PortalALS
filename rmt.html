@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RMT · Portal ALS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<style>
+:root{
+  --w:#fff;--g50:#f8f9fa;--g100:#f1f3f5;--g200:#e9ecef;--g300:#dee2e6;--g400:#ced4da;--g500:#adb5bd;--g600:#6c757d;--g700:#495057;--g800:#343a40;--g900:#212529;
+  --b50:#e7f1ff;--b100:#c5dbff;--b500:#3b82f6;--b600:#2563eb;--b700:#1d4ed8;
+  --gr50:#f0fdf4;--gr600:#16a34a;--gr700:#15803d;--rd50:#fff1f2;--rd600:#dc2626;--am50:#fffbeb;--am600:#d97706;
+  --f:'Inter',system-ui,sans-serif;--mono:'DM Mono',ui-monospace,monospace;
+  --r:8px;--rl:12px;--rxl:16px;--sh:0 1px 3px rgba(0,0,0,.08);--shl:0 4px 16px rgba(0,0,0,.1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--g50);color:var(--g900);font-family:var(--f);font-size:14px}
+button,input,select{font-family:inherit;font-size:inherit}
+.top{background:var(--w);border-bottom:1px solid var(--g200);padding:12px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:5}
+.top a{color:var(--g600);text-decoration:none;font-size:13px}
+.top a:hover{color:var(--b600)}
+.top h1{font-size:16px;font-weight:600;margin:0}
+.top .user{margin-left:auto;font-size:12px;color:var(--g600)}
+main{max-width:1180px;margin:0 auto;padding:20px}
+.grid{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);box-shadow:var(--sh)}
+.card h2{font-size:14px;font-weight:600;margin:0;padding:14px 16px;border-bottom:1px solid var(--g200)}
+.drop{border:2px dashed var(--g300);border-radius:var(--rl);background:var(--w);padding:28px 20px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.drop:hover,.drop.over{border-color:var(--b500);background:var(--b50)}
+.drop strong{display:block;font-size:15px;margin-bottom:4px}
+.drop span{color:var(--g600);font-size:13px}
+.drop:focus-visible{outline:2px solid var(--b600);outline-offset:2px}
+.tblwrap{overflow-x:auto}
+table.docs{width:100%;border-collapse:collapse;font-size:13px}
+table.docs th{text-align:left;font-weight:500;color:var(--g600);font-size:12px;padding:8px 10px;border-bottom:1px solid var(--g200);white-space:nowrap}
+table.docs td{padding:7px 10px;border-bottom:1px solid var(--g100);vertical-align:top}
+table.docs tr.off td{opacity:.45}
+table.docs input[type=text],table.docs input[type=number],table.docs select{width:100%;border:1px solid transparent;background:transparent;border-radius:6px;padding:4px 6px}
+table.docs input:hover,table.docs select:hover{border-color:var(--g300)}
+table.docs input:focus,table.docs select:focus{border-color:var(--b500);outline:none;background:var(--w)}
+.mono{font-family:var(--mono);font-size:12.5px}
+.num{text-align:right}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:500;background:var(--g100);color:var(--g700)}
+.pill.warn{background:var(--am50);color:var(--am600)}
+.pill.err{background:var(--rd50);color:var(--rd600)}
+.avisos td{padding-top:0!important;font-size:12px;color:var(--am600)}
+.x{border:0;background:none;color:var(--g500);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;border-radius:6px}
+.x:hover{color:var(--rd600);background:var(--rd50)}
+.empty{padding:28px 16px;text-align:center;color:var(--g600)}
+.side{padding:16px;display:flex;flex-direction:column;gap:14px}
+.side label{font-size:12px;color:var(--g600);display:block;margin-bottom:5px}
+.plate{width:100%;font-family:var(--mono);font-size:22px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;padding:10px 12px;border:1px solid var(--g300);border-radius:var(--r)}
+.plate:focus,.side input[type=date]:focus{outline:none;border-color:var(--b500);box-shadow:0 0 0 3px var(--b50)}
+.side input[type=date]{width:100%;padding:8px 10px;border:1px solid var(--g300);border-radius:var(--r)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--g300);background:var(--w);border-radius:99px;padding:3px 10px;font-family:var(--mono);font-size:12px;cursor:pointer}
+.chip.on{border-color:var(--b600);background:var(--b50);color:var(--b700)}
+.note{font-size:12.5px;border-radius:var(--r);padding:9px 11px;line-height:1.45}
+.note.warn{background:var(--am50);color:#92400e}
+.note.ok{background:var(--gr50);color:var(--gr700)}
+.tot{display:flex;justify-content:space-between;font-size:13px;color:var(--g700)}
+.tot b{font-variant-numeric:tabular-nums}
+.btn{border:0;border-radius:var(--r);padding:11px 14px;font-weight:600;cursor:pointer}
+.btn.pri{background:var(--b600);color:#fff}
+.btn.pri:hover{background:var(--b700)}
+.btn.pri:disabled{background:var(--g300);color:var(--g600);cursor:not-allowed}
+.btn.sec{background:var(--g100);color:var(--g700)}
+.btn:focus-visible{outline:2px solid var(--b600);outline-offset:2px}
+.busy{font-size:12.5px;color:var(--g600);padding:10px 16px}
+
+/* ---------- Documento RMT (solo impresión) ---------- */
+#print-area{display:none}
+@page{size:A4 portrait;margin:14mm 14mm}
+@media print{
+  body{background:#fff}
+  .top,main{display:none!important}
+  #print-area{display:block;font-family:Arial,Helvetica,sans-serif;color:#000;font-size:8.5pt}
+}
+.rmt h1{text-align:center;font-size:14pt;margin:0 0 6pt;letter-spacing:.05em}
+.rmt .sub{font-weight:bold;font-size:8.5pt;margin-bottom:8pt}
+.rmt table.cab{width:92%;border-collapse:collapse;border-top:1.5pt solid #000;border-bottom:1.5pt solid #000;margin-bottom:10pt}
+.rmt table.cab td{padding:6pt 4pt;border-bottom:.6pt solid #000;white-space:nowrap}
+.rmt table.cab tr:last-child td{border-bottom:0}
+.rmt .b{font-weight:bold}
+.rmt .rel{font-weight:bold;font-size:8pt;margin:0 0 14pt}
+.rmt table.lin{width:100%;border-collapse:collapse;table-layout:fixed;border:1.2pt solid #000}
+.rmt table.lin th,.rmt table.lin td{border:.6pt solid #000;padding:2pt 3pt;font-weight:normal;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rmt table.lin td.r{text-align:right}
+.rmt table.lin td.m{font-size:6.5pt}
+.rmt .pie{display:flex;justify-content:space-between;margin-top:22pt;width:78%}
+.rmt .pie table{border-collapse:collapse;border:1.2pt solid #000}
+.rmt .pie td{padding:2pt 4pt;border:.6pt solid #000}
+.rmt .firma{font-weight:bold;font-size:8pt}
+.rmt .transp{font-weight:bold;font-size:8pt;margin-top:22pt}
+</style>
+</head>
+<body>
+<header class="top">
+  <a href="index.html">← Portal</a>
+  <h1>Generador de RMT</h1>
+  <span class="user" id="user"></span>
+</header>
+<main>
+  <div class="grid">
+    <section>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Añadir PDF">
+        <strong>Arrastra aquí los T2GI, T1GI, T2, IM…</strong>
+        <span>o pulsa para seleccionarlos. Los PDF se leen en este equipo y no se suben a ningún sitio.</span>
+        <input type="file" id="file" accept="application/pdf,.pdf" multiple hidden>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2 id="docs-title">Documentos</h2>
+        <div id="busy" class="busy" hidden></div>
+        <div class="tblwrap" id="docs"></div>
+      </div>
+    </section>
+    <aside class="card side" id="side"></aside>
+  </div>
+</main>
+<div id="print-area"></div>
+<script>
+/* ===== Núcleo RMT: lectura de PDF y parseo de TAD (T1/T2/T2GI…) y DUA levante (IM/EX…) ===== */
+
+// Extrae cada página como filas [{y, cells:[{x,s}], text}] ordenadas de arriba abajo
+async function pdfRows(pdfjsLib, data) {
+  const doc = await pdfjsLib.getDocument({ data, verbosity: 0 }).promise;
+  const pages = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    const tc = await page.getTextContent();
+    const rows = [];
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const y = it.transform[5], x = it.transform[4];
+      let r = rows.find(r => Math.abs(r.y - y) < 2.5);
+      if (!r) { r = { y, cells: [] }; rows.push(r); }
+      r.cells.push({ x, s: it.str });
+    }
+    rows.sort((a, b) => b.y - a.y);
+    rows.forEach(r => {
+      r.cells.sort((a, b) => a.x - b.x);
+      r.text = r.cells.map(c => c.s.trim()).join(' | ');
+    });
+    pages.push(rows);
+  }
+  return pages;
+}
+
+// Números en formato AEAT: "1.400" = 1400 ; "1.400,5" = 1400.5 ; "20500" ; "308.60" = 308.6
+function parseNum(v) {
+  if (v == null) return null;
+  v = String(v).trim();
+  if (!v) return null;
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(v)) return parseFloat(v.replace(/\./g, '').replace(',', '.'));
+  if (/^\d+,\d+$/.test(v)) return parseFloat(v.replace(',', '.'));
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
+
+const RE_MRN = /\b\d{2}[A-Z]{2}[A-Z0-9]{14}\b/;
+const RE_CSV = /C\.S\.V\.\s*\|\s*([A-Z0-9]{16})\b/;
+const RE_DOCCODE = /^([A-Z]\d{3}|\d{4})\s/;   // N830 …, 7020 …, C672 …
+
+function idxOf(rows, re) { return rows.findIndex(r => re.test(r.text)); }
+function lastCells(row, n) { const c = row.cells.map(c => c.s.trim()); return c.slice(-n); }
+
+function detectType(pages) {
+  const all = pages[0].map(r => r.text).join('\n');
+  if (/TRANSIT ACCOMPANYING DOCUMENT|Type \[11 01\]/.test(all)) return 'TAD';
+  if (/TIPO DE DECLARACI|Importador|Exportador|Fecha de Levante/i.test(all)) return 'DUA';
+  return null;
+}
+
+/* ---------- TAD: T1 / T2 / T2GI / T1GI / T2F … ---------- */
+function parseTAD(pages) {
+  const p1 = pages[0], w = [];
+  const txt = p1.map(r => r.text).join('\n');
+  const out = { familia: 'TAD' };
+
+  const it = idxOf(p1, /Type \[11 01\]/);
+  out.tipo = it >= 0 && p1[it + 1] ? p1[it + 1].cells[0].s.trim() : '';
+  if (!/^T/.test(out.tipo)) { const m = txt.match(/\b(T1GI|T2GI|T2F|T2L|T1|T2)\b/); out.tipo = m ? m[1] : ''; }
+
+  const mm = txt.match(RE_MRN); out.mrn = mm ? mm[0] : '';
+
+  const iTot = idxOf(p1, /Total packages/);
+  if (iTot >= 0 && p1[iTot + 1]) {
+    const [pk, gm] = lastCells(p1[iTot + 1], 3); // packages | gross | security
+    out.bultos = parseNum(pk); out.peso = parseNum(gm);
+  }
+
+  const mp = txt.match(/^(\d{1,2})\s*-\s*([A-Z0-9]{4,12})\s*-\s*[A-Z]{2}$/m);
+  out.matricula = mp ? mp[2] : '';
+
+  const mr = txt.match(/Result:\s*\|\s*([AB]\d)\s*([^|\n]*)/);
+  out.resultado = mr ? (mr[1] + ' ' + mr[2]).trim() : '';
+  out.cir = mr && /^A[12]$/.test(mr[1]) ? 'Verde' : '';
+  if (!out.cir) w.push('Resultado de control no conforme o no encontrado: revisa el CIR');
+
+  const mc = txt.match(RE_CSV); out.csv = mc ? mc[1] : '';
+
+  // Primera partida (lista de partidas, normalmente página 2; si no, página 1)
+  out.descripcion = ''; out.tipoBulto = '';
+  for (const rows of pages) {
+    const i0 = rows.findIndex(r => /^0*1 \| 0*1 \|/.test(r.text) && r.cells.length >= 3);
+    if (i0 < 0) continue;
+    const descX = rows[i0].cells[2].x;
+    const partes = [];
+    for (let i = i0; i < rows.length; i++) {
+      if (i > i0 && /^\d{5} \| \d{5}/.test(rows[i].text)) break;
+      if (!out.tipoBulto && i <= i0 + 2) {
+        const mb = rows[i].text.match(/\|\s*\d+\s*\|\s*([A-Z0-9]{2})\s+[A-ZÁÉÍÓÚÑ]{2,}/);
+        if (mb) out.tipoBulto = mb[1];
+      }
+      const c = rows[i].cells.find(c => Math.abs(c.x - descX) < 4);
+      if (!c) continue;
+      if (RE_DOCCODE.test(c.s.trim()) && i > i0) break;
+      partes.push(c.s);
+    }
+    // Las líneas de la AEAT se cortan a 58 caracteres: si la línea llena el ancho, se une sin espacio
+    let d = '';
+    partes.forEach((s, i) => { d += (i === 0 ? '' : (partes[i - 1].length >= 58 ? '' : ' ')) + s.trim(); });
+    out.descripcion = d.replace(/\s+/g, ' ').trim();
+    break;
+  }
+  if (!out.descripcion) w.push('No se encontró la descripción de la partida 1');
+  if (!out.tipoBulto) w.push('No se encontró el tipo de bulto');
+  out.avisos = w;
+  return out;
+}
+
+/* ---------- DUA con levante: IM / EX / CO … ---------- */
+function parseDUA(pages) {
+  const p1 = pages[0], w = [];
+  const txt = pages.map(rs => rs.map(r => r.text).join('\n')).join('\n');
+  const out = { familia: 'DUA' };
+
+  const mt = txt.match(/^(IM|EX|CO|EU)\s*\|\s*[A-Z]\b/m); out.tipo = mt ? mt[1] : 'IM';
+  const mm = txt.match(RE_MRN); out.mrn = mm ? mm[0] : '';
+
+  const iM = idxOf(p1, /Total Masa/);
+  if (iM >= 0) {
+    for (let k = 1; k <= 3 && p1[iM + k]; k++) {
+      if (/^[\d | .,]+$/.test(p1[iM + k].text)) { out.peso = parseNum(lastCells(p1[iM + k], 1)[0]); break; }
+    }
+  }
+  const iB = idxOf(p1, /Total Bultos/);
+  if (iB >= 0) {
+    for (let k = 1; k <= 3 && p1[iB + k]; k++) {
+      if (/^\d+ \| \d+$/.test(p1[iB + k].text)) { out.bultos = parseNum(lastCells(p1[iB + k], 1)[0]); break; }
+    }
+  }
+
+  const iT = idxOf(p1, /Identificador del Medio de Transporte/);
+  out.matricula = iT >= 0 && p1[iT + 1] ? p1[iT + 1].cells[0].s.trim().replace(/\s+/g, '') : '';
+
+  out.levante = (txt.match(/Fecha de Levante\s*\|\s*(\d{2}-\d{2}-\d{4})/) || [])[1] || '';
+  out.cir = out.levante ? 'Verde' : '';
+  if (!out.levante) w.push('No aparece fecha de levante: revisa el CIR');
+
+  const mc = txt.match(RE_CSV); out.csv = mc ? mc[1] : '';
+
+  out.descripcion = ''; out.tipoBulto = '';
+  const i0 = idxOf(p1, /^0*1$/);
+  if (i0 >= 0) {
+    const mb = p1[i0 + 1] && p1[i0 + 1].text.match(/\|\s*([A-Z0-9]{2})$/);
+    if (mb) out.tipoBulto = mb[1];
+    const partes = [];
+    for (let i = i0 + 3; i < p1.length; i++) {
+      if (RE_DOCCODE.test(p1[i].cells[0].s.trim() + ' ')) break;
+      if (/^Control por la Aduana/.test(p1[i].text)) break;
+      partes.push(p1[i].cells.map(c => c.s.trim()).join(' '));
+    }
+    out.descripcion = partes.join(' ').replace(/\s+/g, ' ').trim();
+  }
+  if (!out.descripcion) w.push('No se encontró la descripción de la partida 1');
+  out.avisos = w;
+  return out;
+}
+
+async function parseDoc(pdfjsLib, data, nombre) {
+  const pages = await pdfRows(pdfjsLib, data);
+  const tipo = detectType(pages);
+  let d;
+  if (tipo === 'TAD') d = parseTAD(pages);
+  else if (tipo === 'DUA') d = parseDUA(pages);
+  else return { fichero: nombre, error: 'No es un TAD ni un DUA de la AEAT (¿escaneado o RMT?)' };
+  d.fichero = nombre;
+  if (!d.mrn) d.avisos.push('No se encontró el MRN');
+  if (!d.csv) d.avisos.push('No se encontró el CSV');
+  if (d.peso == null) d.avisos.push('No se encontró el peso bruto');
+  if (d.bultos == null) d.avisos.push('No se encontró el nº de bultos');
+  return d;
+}
+
+if (typeof module !== 'undefined') module.exports = { parseDoc, parseNum };
+
+</script>
+<script>
+var CU = null;
+try { CU = JSON.parse(sessionStorage.getItem('als_cu') || localStorage.getItem('als_cu') || 'null'); } catch (e) {}
+var ROLES_PERMITIDOS = ['admin', 'aduanas', 'oficina'];
+var rolesUsuario = CU ? [CU.rol].concat(CU.roles || []) : [];
+if (!CU || !rolesUsuario.some(function (r) { return ROLES_PERMITIDOS.indexOf(r) >= 0; })) {
+  document.body.innerHTML = '<div style="font-family:Inter,sans-serif;max-width:420px;margin:15vh auto;padding:28px;background:#fff;border:1px solid #e9ecef;border-radius:12px;text-align:center">' +
+    '<h2 style="margin:0 0 8px;font-size:18px">Acceso restringido</h2><p style="color:#6c757d;margin:0 0 18px">Inicia sesión en el portal con un usuario de oficina o aduanas.</p>' +
+    '<a href="index.html" style="background:#2563eb;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600">Ir al portal</a></div>';
+} else {
+  iniciarRMT();
+}
+
+function iniciarRMT() {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  document.getElementById('user').textContent = CU.nombre || '';
+
+  const AGENCIA = '* ALGECIRAS LOGISTIC SOLUTIONS, S.L.';
+  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const st = { docs: [], errores: [], matricula: '', matriculaTocada: false, fecha: hoyISO() };
+
+  const drop = document.getElementById('drop'), file = document.getElementById('file');
+  drop.addEventListener('click', () => file.click());
+  drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } });
+  file.addEventListener('change', () => { cargar(file.files); file.value = ''; });
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => cargar(e.dataTransfer.files));
+  // Evitar que un PDF soltado fuera de la zona abra el visor del navegador
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => e.preventDefault());
+
+  function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function miles(n) { // 3100 -> "3.100" ; 1400,5 -> "1.400,5"
+    if (n == null || isNaN(n)) return '';
+    const [e, d] = String(Math.round(n * 100) / 100).split('.');
+    return e.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (d ? ',' + d : '');
+  }
+  function simple(n) { if (n == null || isNaN(n)) return ''; const r = Math.round(n * 100) / 100; return String(r).replace('.', ','); }
+
+  async function cargar(files) {
+    const pdfs = [...files].filter(f => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
+    if (!pdfs.length) return;
+    const busy = document.getElementById('busy');
+    busy.hidden = false;
+    for (let i = 0; i < pdfs.length; i++) {
+      busy.textContent = 'Leyendo ' + pdfs[i].name + ' (' + (i + 1) + ' de ' + pdfs.length + ')';
+      try {
+        const d = await parseDoc(pdfjsLib, new Uint8Array(await pdfs[i].arrayBuffer()), pdfs[i].name);
+        if (d.error) { st.errores.push(d); continue; }
+        if (d.mrn && st.docs.some(x => x.mrn === d.mrn)) { st.errores.push({ fichero: d.fichero, error: 'MRN ' + d.mrn + ' ya estaba cargado' }); continue; }
+        d.incluido = true;
+        st.docs.push(d);
+      } catch (err) {
+        console.error(err);
+        st.errores.push({ fichero: pdfs[i].name, error: 'No se pudo leer el PDF (' + err.message + ')' });
+      }
+    }
+    busy.hidden = true;
+    st.docs.sort((a, b) => (a.mrn || '').localeCompare(b.mrn || ''));
+    if (!st.matriculaTocada) st.matricula = matriculaMayoritaria();
+    aplicarFiltroMatricula();
+    render();
+  }
+
+  function matriculaMayoritaria() {
+    const c = {};
+    st.docs.forEach(d => { if (d.matricula) c[d.matricula] = (c[d.matricula] || 0) + 1; });
+    return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || '';
+  }
+  function norm(m) { return String(m || '').toUpperCase().replace(/[\s-]/g, ''); }
+  function aplicarFiltroMatricula() {
+    const m = norm(st.matricula);
+    st.docs.forEach(d => { d.incluido = !m || !d.matricula || norm(d.matricula) === m; });
+  }
+  function incluidos() { return st.docs.filter(d => d.incluido); }
+
+  function render() { renderDocs(); renderSide(); }
+
+  function renderDocs() {
+    const el = document.getElementById('docs');
+    document.getElementById('docs-title').textContent = st.docs.length ? 'Documentos (' + incluidos().length + ' de ' + st.docs.length + ' en la RMT)' : 'Documentos';
+    let h = '';
+    if (st.errores.length) {
+      h += '<div style="padding:10px 16px 0">' + st.errores.map((e, i) =>
+        '<div class="note warn" style="margin-bottom:6px;display:flex;justify-content:space-between;gap:8px"><span><b>' + esc(e.fichero) + ':</b> ' + esc(e.error) + '</span><button class="x" data-err="' + i + '" aria-label="Descartar">&times;</button></div>').join('') + '</div>';
+    }
+    if (!st.docs.length) { el.innerHTML = h + '<div class="empty">Añade los justificantes para empezar.</div>'; bindDocs(el); return; }
+    h += '<table class="docs"><thead><tr><th></th><th>Tipo</th><th>MRN / CSV</th><th>Matrícula</th><th>CIR</th><th style="min-width:220px">Mercancía</th><th class="num">Bultos</th><th>Tipo</th><th class="num">P. bruto</th><th></th></tr></thead><tbody>';
+    st.docs.forEach((d, i) => {
+      const distinta = st.matricula && d.matricula && norm(d.matricula) !== norm(st.matricula);
+      h += '<tr class="' + (d.incluido ? '' : 'off') + '">' +
+        '<td><input type="checkbox" data-i="' + i + '" data-k="incluido" ' + (d.incluido ? 'checked' : '') + ' aria-label="Incluir en la RMT"></td>' +
+        '<td><span class="pill">' + esc(d.tipo) + '</span></td>' +
+        '<td class="mono">' + esc(d.mrn) + '<br><span style="color:var(--g600)">' + esc(d.csv) + '</span></td>' +
+        '<td class="mono">' + (distinta ? '<span class="pill warn mono">' + esc(d.matricula) + '</span>' : esc(d.matricula || '—')) + '</td>' +
+        '<td><select data-i="' + i + '" data-k="cir" style="min-width:86px">' + ['', 'Verde', 'Naranja', 'Rojo'].map(o => '<option ' + (d.cir === o ? 'selected' : '') + '>' + o + '</option>').join('') + '</select></td>' +
+        '<td><input type="text" data-i="' + i + '" data-k="descripcion" value="' + esc(d.descripcion) + '" title="' + esc(d.descripcion) + '"></td>' +
+        '<td><input type="number" class="num" min="0" data-i="' + i + '" data-k="bultos" value="' + esc(d.bultos) + '" style="width:64px"></td>' +
+        '<td><input type="text" class="mono" maxlength="2" data-i="' + i + '" data-k="tipoBulto" value="' + esc(d.tipoBulto) + '" style="width:44px;text-transform:uppercase"></td>' +
+        '<td><input type="number" class="num" min="0" step="any" data-i="' + i + '" data-k="peso" value="' + esc(d.peso) + '" style="width:84px"></td>' +
+        '<td><button class="x" data-del="' + i + '" aria-label="Quitar ' + esc(d.mrn) + '">&times;</button></td></tr>';
+      const avisos = d.avisos || [];
+      if (avisos.length) h += '<tr class="avisos"><td></td><td colspan="9">' + avisos.map(esc).join(' · ') + '</td></tr>';
+    });
+    h += '</tbody></table>';
+    el.innerHTML = h;
+    bindDocs(el);
+  }
+
+  function bindDocs(el) {
+    el.querySelectorAll('[data-k]').forEach(inp => inp.addEventListener('change', () => {
+      const d = st.docs[+inp.dataset.i], k = inp.dataset.k;
+      if (k === 'incluido') d.incluido = inp.checked;
+      else if (k === 'bultos' || k === 'peso') d[k] = inp.value === '' ? null : parseFloat(inp.value);
+      else if (k === 'tipoBulto') d[k] = inp.value.toUpperCase();
+      else d[k] = inp.value;
+      render();
+    }));
+    el.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => { st.docs.splice(+b.dataset.del, 1); if (!st.matriculaTocada) { st.matricula = matriculaMayoritaria(); aplicarFiltroMatricula(); } render(); }));
+    el.querySelectorAll('[data-err]').forEach(b => b.addEventListener('click', () => { st.errores.splice(+b.dataset.err, 1); render(); }));
+  }
+
+  function renderSide() {
+    const side = document.getElementById('side');
+    const inc = incluidos();
+    const plates = [...new Set(st.docs.map(d => d.matricula).filter(Boolean))];
+    const sinCir = inc.filter(d => !d.cir).length;
+    const bultos = inc.reduce((s, d) => s + (d.bultos || 0), 0);
+    const peso = inc.reduce((s, d) => s + (d.peso || 0), 0);
+    let aviso = '';
+    if (plates.length > 1) aviso = '<div class="note warn">Hay documentos con matrículas distintas (' + plates.map(esc).join(', ') + '). Solo entran en la RMT los de la matrícula confirmada; puedes marcar otros a mano.</div>';
+    else if (plates.length === 1 && norm(plates[0]) === norm(st.matricula)) aviso = '<div class="note ok">Todos los documentos coinciden con esta matrícula.</div>';
+    if (sinCir) aviso += '<div class="note warn">' + sinCir + ' documento(s) sin CIR asignado.</div>';
+
+    side.innerHTML =
+      '<div><label for="mat">Matrícula del vehículo</label>' +
+      '<input id="mat" class="plate" autocomplete="off" spellcheck="false" value="' + esc(st.matricula) + '" placeholder="0000XXX">' +
+      (plates.length > 1 ? '<div class="chips" style="margin-top:8px">' + plates.map(p => '<button class="chip ' + (norm(p) === norm(st.matricula) ? 'on' : '') + '" data-plate="' + esc(p) + '">' + esc(p) + '</button>').join('') + '</div>' : '') +
+      '</div>' + aviso +
+      '<div><label for="fec">Fecha de la RMT</label><input id="fec" type="date" value="' + esc(st.fecha) + '"></div>' +
+      '<div><div class="tot"><span>Documentos</span><b>' + inc.length + '</b></div><div class="tot"><span>Bultos</span><b>' + bultos + '</b></div><div class="tot"><span>Peso bruto</span><b>' + miles(peso) + ' kg</b></div></div>' +
+      '<button class="btn pri" id="gen" ' + (inc.length && st.matricula.trim() ? '' : 'disabled') + '>Confirmar matrícula y generar RMT</button>' +
+      (st.docs.length ? '<button class="btn sec" id="clr">Empezar otra RMT</button>' : '');
+
+    const mat = side.querySelector('#mat');
+    mat.addEventListener('input', () => { st.matricula = mat.value.toUpperCase(); st.matriculaTocada = true; });
+    mat.addEventListener('change', () => { aplicarFiltroMatricula(); render(); document.getElementById('mat').focus(); });
+    side.querySelectorAll('[data-plate]').forEach(b => b.addEventListener('click', () => { st.matricula = b.dataset.plate; st.matriculaTocada = true; aplicarFiltroMatricula(); render(); }));
+    side.querySelector('#fec').addEventListener('change', e => { st.fecha = e.target.value || hoyISO(); });
+    side.querySelector('#gen').addEventListener('click', () => { st.matricula = norm(document.getElementById('mat').value); aplicarFiltroMatricula(); render(); generar(); });
+    const clr = side.querySelector('#clr');
+    if (clr) clr.addEventListener('click', () => { st.docs = []; st.errores = []; st.matricula = ''; st.matriculaTocada = false; st.fecha = hoyISO(); render(); });
+  }
+
+  function generar() {
+    const inc = incluidos();
+    if (!inc.length) return;
+    const [y, m, d] = st.fecha.split('-');
+    const fLarga = (+d) + ' - ' + MESES[+m - 1] + ' - ' + y, fPie = (+d) + ' ' + MESES[+m - 1] + ' ' + y;
+    const bultos = inc.reduce((s, x) => s + (x.bultos || 0), 0);
+    const peso = inc.reduce((s, x) => s + (x.peso || 0), 0);
+    const filas = inc.map((x, i) => '<tr><td class="r">' + String(i + 1).padStart(2, '0') + '</td><td>' + esc(x.tipo) + '</td><td>' + esc(x.mrn) + '</td><td>' + esc(x.cir) +
+      '</td><td class="m">' + esc(x.descripcion) + '</td><td class="r">' + esc(x.bultos ?? '') + '</td><td>' + esc(x.tipoBulto) + '</td><td class="r">' + simple(x.peso) + '</td><td>' + esc(x.csv) + '</td></tr>').join('');
+    document.getElementById('print-area').innerHTML =
+      '<div class="rmt"><h1>R. M. T.</h1><div class="sub">Agrupación de documentos presentados para su despacho y posterior embarque</div>' +
+      '<table class="cab"><colgroup><col style="width:16%"><col style="width:38%"><col style="width:19%"><col style="width:27%"></colgroup><tr><td>AGENCIA:</td><td class="b">' + esc(AGENCIA) + '</td><td>FECHA:</td><td class="b">' + fLarga + '</td></tr>' +
+      '<tr><td>DESTINO:</td><td></td><td>MATRICULA/BUQUE:</td><td class="b">' + esc(st.matricula) + '</td></tr>' +
+      '<tr><td>MATRÍCULA/CONTR:</td><td></td><td>Nº DE ESCALA:</td><td></td></tr></table>' +
+      '<div class="rel">Relación de documentos presentados en Aduana, para su registro y posterior embarque en el buque de referencia</div>' +
+      '<table class="lin"><colgroup><col style="width:6%"><col style="width:6%"><col style="width:20%"><col style="width:7%"><col style="width:17%"><col style="width:7%"><col style="width:6%"><col style="width:8%"><col style="width:23%"></colgroup>' +
+      '<thead><tr><th>Orden</th><th>Dto.</th><th>Nº Documento</th><th>CIR</th><th>Mercancía</th><th>Bultos</th><th>Tipo</th><th>P. Bruto</th><th>CSV</th></tr></thead><tbody>' + filas +
+      '<tr><td colspan="5">TOTAL</td><td class="r">' + bultos + '</td><td></td><td class="r">' + miles(peso) + '</td><td></td></tr></tbody></table>' +
+      '<div class="pie"><table><tr><td>FECHA</td><td style="min-width:110pt">' + fPie + '</td></tr></table><div class="firma">ADUANAS<br>FIRMA Y SELLO</div></div>' +
+      '<div class="transp">EL TRANSPORTISTA</div></div>';
+    const t = document.title;
+    document.title = 'RMT_' + st.matricula + '_' + st.fecha;
+    setTimeout(() => { window.print(); document.title = t; }, 50);
+  }
+
+  render();
+}
+
+</script>
+</body>
+</html>
