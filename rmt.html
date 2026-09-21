@@ -3,9 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RMT · Portal ALS</title>
+<title>RMT · Aduanas · Portal ALS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="auth-guard.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <style>
 :root{
@@ -76,7 +78,7 @@ table.docs input:focus,table.docs select:focus{border-color:var(--b500);outline:
 @page{size:A4 portrait;margin:14mm 14mm}
 @media print{
   body{background:#fff}
-  .top,main{display:none!important}
+  .top-app,main{display:none!important}
   #print-area{display:block;font-family:Arial,Helvetica,sans-serif;color:#000;font-size:8.5pt}
 }
 .rmt h1{text-align:center;font-size:14pt;margin:0 0 6pt;letter-spacing:.05em}
@@ -96,13 +98,10 @@ table.docs input:focus,table.docs select:focus{border-color:var(--b500);outline:
 .rmt .firma{font-weight:bold;font-size:8pt}
 .rmt .transp{font-weight:bold;font-size:8pt;margin-top:22pt}
 </style>
+<link rel="stylesheet" href="portal-theme.css"><!-- PORTAL THEME -->
 </head>
 <body>
-<header class="top">
-  <a href="index.html">← Portal</a>
-  <h1>Generador de RMT</h1>
-  <span class="user" id="user"></span>
-</header>
+<div id="pg-header-app" class="top-app"></div>
 <main>
   <div class="grid">
     <section>
@@ -300,21 +299,24 @@ if (typeof module !== 'undefined') module.exports = { parseDoc, parseNum };
 
 </script>
 <script>
-var CU = null;
-try { CU = JSON.parse(sessionStorage.getItem('als_cu') || localStorage.getItem('als_cu') || 'null'); } catch (e) {}
-var ROLES_PERMITIDOS = ['admin', 'aduanas', 'oficina'];
-var rolesUsuario = CU ? [CU.rol].concat(CU.roles || []) : [];
-if (!CU || !rolesUsuario.some(function (r) { return ROLES_PERMITIDOS.indexOf(r) >= 0; })) {
-  document.body.innerHTML = '<div style="font-family:Inter,sans-serif;max-width:420px;margin:15vh auto;padding:28px;background:#fff;border:1px solid #e9ecef;border-radius:12px;text-align:center">' +
-    '<h2 style="margin:0 0 8px;font-size:18px">Acceso restringido</h2><p style="color:#6c757d;margin:0 0 18px">Inicia sesión en el portal con un usuario de oficina o aduanas.</p>' +
-    '<a href="index.html" style="background:#2563eb;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600">Ir al portal</a></div>';
-} else {
+// Guard: sesión Supabase vía PortalGuard + permiso DUA o TARIC (mismo criterio que el menú Aduanas)
+(async function () {
+  if (!window.PortalGuard) { document.body.innerHTML = '<p style="font-family:sans-serif;padding:2rem">No se pudo cargar auth-guard.js</p>'; return; }
+  const ok = await PortalGuard.require(null);
+  if (!ok) return;
+  if (!(PortalGuard.puedeAcceder('dua', 'ver') || PortalGuard.puedeAcceder('taric', 'ver'))) {
+    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f8f9fa"><div style="text-align:center;padding:2rem">' +
+      '<div style="font-size:48px;margin-bottom:12px">🔒</div><h2 style="margin-bottom:8px;color:#212529">Acceso denegado</h2>' +
+      '<p style="color:#6c757d;margin-bottom:20px">No tienes permisos para el generador de RMT.</p>' +
+      '<a href="index.html" style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">← Volver al portal</a></div></div>';
+    return;
+  }
+  try { PortalGuard.mountHeader({ mount: '#pg-header-app', module: 'Aduanas', section: 'RMT' }); } catch (e) {}
   iniciarRMT();
-}
+})();
 
 function iniciarRMT() {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-  document.getElementById('user').textContent = CU.nombre || '';
 
   const AGENCIA = '* ALGECIRAS LOGISTIC SOLUTIONS, S.L.';
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
