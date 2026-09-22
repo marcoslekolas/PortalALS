@@ -604,7 +604,8 @@ textarea.fi{resize:vertical;min-height:80px}
             <div class="ps">Sube una factura en PDF o imagen — la IA extraerá y clasificará todas las líneas de mercancía</div>
           </div>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-g btn-sm" onclick="exportarFactura()" id="btn-exp-fact" style="display:none">⬇️ CSV</button>
+            <button class="btn btn-g btn-sm" onclick="exportarFactura()" id="btn-exp-fact" style="display:none">⬇️ Excel</button>
+            <button class="btn btn-p btn-sm" onclick="abrirModalVT()" id="btn-exp-vt" style="display:none">🚢 VisualTrans (DUA)</button>
             <button class="btn btn-s btn-sm" onclick="limpiarFactura()">Limpiar</button>
           </div>
         </div>
@@ -2251,7 +2252,7 @@ async function handleFiles(fileList){
 
   document.getElementById('factura-upload-area').style.display='none';
   document.getElementById('factura-result').style.display='block';
-  document.getElementById('btn-exp-fact').style.display='none';
+  document.getElementById('btn-exp-fact').style.display='none';var _bvt=document.getElementById('btn-exp-vt');if(_bvt)_bvt.style.display='none';
   document.getElementById('factura-tbody').innerHTML = '';
 
   // Estado inicial de la cola
@@ -2316,7 +2317,7 @@ async function handleFiles(fileList){
     return;
   }
   renderLoteFacturas();
-  document.getElementById('btn-exp-fact').style.display='';
+  document.getElementById('btn-exp-fact').style.display='';var _bvt2=document.getElementById('btn-exp-vt');if(_bvt2)_bvt2.style.display='';
 }
 
 // Prepara el fichero y lo manda a la Edge Function. No toca la UI global.
@@ -3010,7 +3011,7 @@ async function renderLineasFactura(data, filename){
 function limpiarFactura(){
   document.getElementById('factura-upload-area').style.display='';
   document.getElementById('factura-result').style.display='none';
-  document.getElementById('btn-exp-fact').style.display='none';
+  document.getElementById('btn-exp-fact').style.display='none';var _bvt=document.getElementById('btn-exp-vt');if(_bvt)_bvt.style.display='none';
   const fi = document.getElementById('file-input');
   if(fi) fi.value='';
 }
@@ -3061,11 +3062,280 @@ async function clasificarTextoFactura(){
       return;
     }
     await renderLineasFactura(resultado, 'Texto pegado');
-    document.getElementById('btn-exp-fact').style.display='';
+    document.getElementById('btn-exp-fact').style.display='';var _bvt2=document.getElementById('btn-exp-vt');if(_bvt2)_bvt2.style.display='';
   } catch(e){
     document.getElementById('factura-info').innerHTML = `<div style="padding:12px;color:var(--rd600)">❌ ${e.message}</div>`;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// EXPORTACIÓN A VISUALTRANS — formato Doss_Exp (EX-A) y Doss_IMP (H1)
+// Toma los datos que YA produjo "leer factura" y genera el fichero de
+// importación de VisualTrans, sin re-clasificar. Regla de oro: cada fila
+// empieza por un código de tipo (AES cabecera export / H1 cabecera import /
+// DOCS auxiliar / sin prefijo = partida).
+// ═══════════════════════════════════════════════════════════════════════
+
+// Aduanas de despacho habituales de Customs Way
+const VT_ADUANAS = {
+  'lalinea':   { cod:'ES001167', nombre:'La Línea' },
+  'algeciras': { cod:'ES001131', nombre:'Algeciras Marítima' },
+  'malaga':    { cod:'ES000551', nombre:'Aeropuerto de Málaga' },
+  'cernaval':  { cod:'ES001167OOLL03', nombre:'Cernaval' },
+};
+// Regímenes que usa Customs Way
+const VT_REGIMENES_EXP = ['10.00','23.00','31.00','31.51'];   // exportación
+const VT_REGIMENES_IMP = ['40.00','61.23'];                    // importación
+
+function _vtNum(v){
+  if(v==null||v==='') return '';
+  const n = parseFloat(String(v).replace(/\./g,'').replace(',','.'));
+  return isNaN(n) ? '' : n;
+}
+function _vtTaric(t){
+  const s = String(t||'').replace(/\D/g,'');
+  return s.length===10 ? s : '';
+}
+function _vtPaisISO(p){
+  const s = String(p||'').trim().toUpperCase();
+  if(/^[A-Z]{2}$/.test(s)) return s;
+  const m = {'ESPAÑA':'ES','ESPANA':'ES','GIBRALTAR':'GI','REINO UNIDO':'GB',
+    'PORTUGAL':'PT','FRANCIA':'FR','MARRUECOS':'MA','EGIPTO':'EG','CHILE':'CL',
+    'ECUADOR':'EC','SUDAFRICA':'ZA','SUDÁFRICA':'ZA','CHINA':'CN','ITALIA':'IT'};
+  return m[s] || s.substring(0,2);
+}
+
+// ── EXPORTACIÓN (EX-A). exportador = proveedor de la factura ──
+function construirFilasExport(cab, lineas, cfg){
+  cab = cab || {}; cfg = cfg || {};
+  const exp = cab.exportador || {};   // proveedor emisor de la factura
+  const des = cab.destinatario || {}; // cliente en Gibraltar
+  const modoTr = cfg.transporte || '1';
+  const docTr = { '1':'N705','2':'N720','3':'N730','4':'N740' }[modoTr] || 'N705';
+  const aduana = (VT_ADUANAS[cfg.aduana] || {}).cod || cfg.aduana || 'ES001167';
+
+  const C = new Array(87).fill('');
+  C[0]='AES'; C[1]='E';
+  C[2]=cfg.casilla1a||'EX'; C[3]=cfg.casilla1b||'A'; C[4]=cfg.casilla1c||'';
+  C[5]=aduana;
+  C[6]=exp.nombre||''; C[7]=exp.nif||exp.eori||''; C[8]=exp.direccion||'';
+  C[11]=_vtPaisISO(exp.pais)||'ES';
+  C[12]=des.nombre||''; C[13]=des.nif||des.eori||''; C[14]=des.direccion||'';
+  C[17]=_vtPaisISO(des.pais)||'GI';
+  C[18]=_vtPaisISO(cab.pais_origen)||'ES';           // C.15 país expedición
+  C[19]=_vtPaisISO(des.pais||cab.pais_destino)||'GI';// C.17a país destino
+  C[22]=cfg.incoterm||cab.incoterm||'';
+  C[24]=cfg.buque||cab.buque||'';
+  C[26]=cab.moneda||'EUR';
+  C[28]=modoTr;
+  C[30]=cfg.ubicacion||''; C[31]=cfg.ubicacionCod||'';
+  const totBultos=lineas.reduce((a,l)=>a+(_vtNum(l.bultos)||0),0);
+  const totBruto=_vtNum(cab.peso_bruto_total)||lineas.reduce((a,l)=>a+(_vtNum(l.peso_bruto)||_vtNum(l.peso_estimado)||0),0);
+  const totNeto=_vtNum(cab.peso_neto_total)||totBruto;
+  C[32]=totBultos||''; C[33]=totBruto||''; C[34]=totNeto||'';
+  C[35]=cab.numero_factura||'';
+  C[37]=_vtNum(cab.total_factura)||'';
+  C[39]=cfg.representante_nif||'';
+  C[40]=cfg.refInterna||cab.numero_factura||'';
+  C[57]=cfg.observaciones||'';
+
+  const filas=[C];
+  if(cab.numero_factura) filas.push(['DOCS','N380',cab.numero_factura]);
+  filas.push(['DOCS',docTr,cfg.docTransporteRef||'']);
+
+  lineas.forEach(l=>{
+    const P=new Array(77).fill('');
+    const c44=(l._c44||[]);
+    P[0]=_vtNum(l.bultos)||'';
+    P[1]=_vtNum(l.peso_bruto)||_vtNum(l.peso_estimado)||'';
+    P[2]=_vtNum(l.cantidad)||_vtNum(l.peso_bruto)||'';
+    P[3]=(l._casilla31||l.descripcion_es||l.descripcion_original||'').trim();
+    P[4]=l.unidad||'';
+    P[5]=_vtNum(l.unidades_suplementarias)||_vtNum(l.cantidad)||'';
+    P[6]=_vtTaric(l.codigo_taric);
+    P[7]=_vtNum(l.importe)||'';   // valor = importe factura, sin ajustes
+    P[9]=_vtPaisISO((l._cab&&l._cab.pais_origen)||cab.pais_origen)||'ES';
+    P[13]=cfg.regimen||'10.00';
+    const docs=[['N380',cab.numero_factura||'',cab.fecha||''],[docTr,cfg.docTransporteRef||'','']];
+    c44.forEach(d=>{ if(d.codigo_doc) docs.push([d.codigo_doc,'',cab.fecha||'']); });
+    docs.slice(0,15).forEach((d,k)=>{ const b=17+k*3; P[b]=d[0]||''; P[b+1]=d[1]||''; P[b+2]=d[2]||''; });
+    filas.push(P);
+  });
+  return filas;
+}
+
+// ── IMPORTACIÓN (H1). exportador(C2)=proveedor, importador(C8)=cliente ──
+function construirFilasImport(cab, lineas, cfg){
+  cab = cab || {}; cfg = cfg || {};
+  const exp = cab.exportador || {};    // proveedor extranjero (casilla 2 expedidor)
+  const imp = cab.destinatario || {};  // cliente español = importador (casilla 8)
+  const modoTr = cfg.transporte || '1';
+  const docTr = { '1':'N705','2':'N720','3':'N730','4':'N740' }[modoTr] || 'N705';
+  const aduana = (VT_ADUANAS[cfg.aduana] || {}).cod || cfg.aduana || 'ES001131';
+
+  const C = new Array(87).fill('');
+  C[0]='H1';
+  C[2]=cfg.casilla1a||'IM'; C[3]=cfg.casilla1b||'A'; C[4]=cfg.casilla1c||'';
+  C[5]=aduana;
+  C[6]=exp.nombre||''; C[7]=exp.nif||exp.eori||''; C[8]=exp.direccion||'';
+  C[11]=_vtPaisISO(exp.pais)||'';
+  C[12]=imp.nombre||''; C[13]=imp.nif||imp.eori||''; C[14]=imp.direccion||'';
+  C[17]=_vtPaisISO(imp.pais)||'ES';
+  C[18]=_vtPaisISO(cab.pais_origen)||_vtPaisISO(exp.pais)||''; // C.15
+  C[19]='ES';                                                  // C.17a destino
+  C[22]=cfg.incoterm||cab.incoterm||'';
+  C[26]=cab.moneda||'EUR';
+  C[28]=modoTr;
+  C[30]=cfg.ubicacion||''; C[31]=cfg.ubicacionCod||'';
+  const totBultos=lineas.reduce((a,l)=>a+(_vtNum(l.bultos)||0),0);
+  const totBruto=_vtNum(cab.peso_bruto_total)||lineas.reduce((a,l)=>a+(_vtNum(l.peso_bruto)||_vtNum(l.peso_estimado)||0),0);
+  const totNeto=_vtNum(cab.peso_neto_total)||totBruto;
+  C[32]=totBultos||''; C[33]=totBruto||''; C[34]=totNeto||'';
+  C[35]=cab.numero_factura||'';
+  C[37]=_vtNum(cab.total_factura)||'';
+  C[39]=cfg.representante_nif||'';
+  C[40]=cfg.refInterna||cab.numero_factura||'';
+
+  const filas=[C];
+  if(cab.numero_factura) filas.push(['DOCS','N380',cab.numero_factura]);
+  filas.push(['DOCS',docTr,cfg.docTransporteRef||'']);
+
+  lineas.forEach(l=>{
+    const P=new Array(105).fill('');
+    const c44=(l._c44||[]);
+    P[0]=_vtNum(l.bultos)||'';
+    P[1]=_vtNum(l.peso_bruto)||_vtNum(l.peso_estimado)||'';
+    P[2]=_vtNum(l.cantidad)||_vtNum(l.peso_bruto)||'';
+    P[3]=(l._casilla31||l.descripcion_es||l.descripcion_original||'').trim();
+    P[4]=l.unidad||'';
+    P[5]=_vtNum(l.unidades_suplementarias)||_vtNum(l.cantidad)||'';
+    P[6]=_vtTaric(l.codigo_taric);
+    P[7]=_vtNum(l.importe)||'';
+    P[9]=_vtPaisISO((l._cab&&l._cab.pais_origen)||cab.pais_origen)||'';
+    P[13]=cfg.regimen||'40.00';
+    P[103]='1';   // método valoración: 1 = valor de transacción
+    const docs=[['N380',cab.numero_factura||'',cab.fecha||''],[docTr,cfg.docTransporteRef||'','']];
+    c44.forEach(d=>{ if(d.codigo_doc) docs.push([d.codigo_doc,'',cab.fecha||'']); });
+    docs.slice(0,15).forEach((d,k)=>{ const b=17+k*3; P[b]=d[0]||''; P[b+1]=d[1]||''; P[b+2]=d[2]||''; });
+    filas.push(P);
+  });
+  return filas;
+}
+
+async function exportarVisualTrans(){
+  const lineas = window._facturaLineas || [];
+  if(!lineas.length){ showToast('Primero lee una factura para tener datos que exportar'); return; }
+  await loadXLSX();
+  const cab = FACTURA_CABECERA || {};
+  const cfg = window._cfgDUA || {};
+  const esImport = /^(40|61|H1|IM)/i.test(cfg.regimen||'') || cfg.tipo==='import';
+
+  const filas = esImport ? construirFilasImport(cab, lineas, cfg)
+                         : construirFilasExport(cab, lineas, cfg);
+
+  const wb = window.XLSX.utils.book_new();
+  const ws = window.XLSX.utils.aoa_to_sheet(filas);
+  window.XLSX.utils.book_append_sheet(wb, ws, esImport?'Dossier_Import':'Dossier_Export');
+  const nombre = 'VisualTrans_'+(esImport?'IMP_':'EXP_')+(cab.numero_factura||'dua').replace(/[^\w\-]/g,'_')+'.xlsx';
+  window.XLSX.writeFile(wb, nombre);
+  showToast('Fichero VisualTrans generado: '+nombre);
+}
+
+
+// ═══ MODAL DE CONFIGURACIÓN VISUALTRANS ═══
+function abrirModalVT(){
+  if(!(window._facturaLineas||[]).length){ showToast('Primero lee una factura'); return; }
+  const cab = FACTURA_CABECERA || {};
+  // Prefijar régimen según origen: si origen ≠ ES probablemente sea importación
+  document.getElementById('modal-vt')?.remove();
+  const d=document.createElement('div');
+  d.id='modal-vt';
+  d.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  d.innerHTML=`
+    <div class="card" style="max-width:520px;width:100%;padding:20px 22px;max-height:90vh;overflow:auto" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:15px;font-weight:700">🚢 Exportar a VisualTrans</div>
+        <button onclick="document.getElementById('modal-vt').remove()" style="border:0;background:none;font-size:20px;cursor:pointer;color:var(--g400)">×</button>
+      </div>
+      <div style="font-size:12px;color:var(--g500);margin-bottom:14px">
+        Factura <strong>${esc(cab.numero_factura||'—')}</strong> · ${(window._facturaLineas||[]).length} partidas · genera el fichero de importación de dossier para VisualTrans.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Tipo de DUA</label>
+          <select id="vt-tipo" class="fi" onchange="_vtToggleReg()">
+            <option value="export">Exportación (EX-A)</option>
+            <option value="import">Importación (H1)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Aduana</label>
+          <select id="vt-aduana" class="fi">
+            <option value="lalinea">La Línea</option>
+            <option value="algeciras">Algeciras Marítima</option>
+            <option value="malaga">Aeropuerto de Málaga</option>
+            <option value="cernaval">Cernaval</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Régimen</label>
+          <select id="vt-regimen" class="fi"></select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Transporte frontera</label>
+          <select id="vt-transporte" class="fi">
+            <option value="1">1 · Marítimo (N705 B/L)</option>
+            <option value="3">3 · Carretera (N730 CMR)</option>
+            <option value="4">4 · Aéreo (N740 AWB)</option>
+            <option value="2">2 · Ferroviario (N720)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Ref. transporte (opcional)</label>
+          <input id="vt-doctr" class="fi" placeholder="Nº B/L, CMR, AWB…">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Ubicación C.30 (opcional)</label>
+          <input id="vt-ubic" class="fi" placeholder="Código localización">
+        </div>
+        <div style="grid-column:1/3">
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Observaciones (opcional)</label>
+          <input id="vt-obs" class="fi">
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+        <button class="btn btn-s btn-sm" onclick="document.getElementById('modal-vt').remove()">Cancelar</button>
+        <button class="btn btn-p" onclick="confirmarVT()">🚢 Generar fichero</button>
+      </div>
+    </div>`;
+  d.onclick=()=>d.remove();
+  document.body.appendChild(d);
+  _vtToggleReg();
+  // Sugerir tipo por el origen de la factura
+  if(cab.pais_origen && String(cab.pais_origen).toUpperCase().replace(/[^A-Z]/g,'').substring(0,2)!=='ES'){
+    // origen extranjero: podría ser importación, pero export a Gibraltar también. Se deja export por defecto.
+  }
+}
+function _vtToggleReg(){
+  const tipo=document.getElementById('vt-tipo').value;
+  const sel=document.getElementById('vt-regimen');
+  const regs = tipo==='import' ? ['40.00','61.23'] : ['10.00','23.00','31.00','31.51'];
+  sel.innerHTML = regs.map(r=>`<option value="${r}">${r}</option>`).join('');
+}
+function confirmarVT(){
+  window._cfgDUA = {
+    tipo: document.getElementById('vt-tipo').value,
+    aduana: document.getElementById('vt-aduana').value,
+    regimen: document.getElementById('vt-regimen').value,
+    transporte: document.getElementById('vt-transporte').value,
+    docTransporteRef: document.getElementById('vt-doctr').value.trim(),
+    ubicacion: document.getElementById('vt-ubic').value.trim(),
+    observaciones: document.getElementById('vt-obs').value.trim(),
+  };
+  document.getElementById('modal-vt').remove();
+  exportarVisualTrans();
+}
+
 
 async function exportarFactura(){
   const lineas = window._facturaLineas || [];
