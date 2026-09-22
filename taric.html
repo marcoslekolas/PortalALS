@@ -3223,11 +3223,13 @@ function construirFilasImport(cab, lineas, cfg){
 }
 
 async function exportarVisualTrans(){
-  const lineas = window._facturaLineas || [];
-  if(!lineas.length){ showToast('Primero lee una factura para tener datos que exportar'); return; }
+  const detalle = window._facturaLineas || [];
+  if(!detalle.length){ showToast('Primero lee una factura para tener datos que exportar'); return; }
   await loadXLSX();
   const cab = FACTURA_CABECERA || {};
   const cfg = window._cfgDUA || {};
+  // Resumen (agrupado por partida) o detalle (línea a línea)
+  const lineas = (cfg.origen === 'detalle') ? detalle : agruparLineasParaDUA(detalle, cab);
   const esImport = /^(40|61|H1|IM)/i.test(cfg.regimen||'') || cfg.tipo==='import';
 
   const filas = esImport ? construirFilasImport(cab, lineas, cfg)
@@ -3236,9 +3238,9 @@ async function exportarVisualTrans(){
   const wb = window.XLSX.utils.book_new();
   const ws = window.XLSX.utils.aoa_to_sheet(filas);
   window.XLSX.utils.book_append_sheet(wb, ws, esImport?'Dossier_Import':'Dossier_Export');
-  const nombre = 'VisualTrans_'+(esImport?'IMP_':'EXP_')+(cab.numero_factura||'dua').replace(/[^\w\-]/g,'_')+'.xlsx';
+  const nombre = 'VisualTrans_'+(esImport?'IMP_':'EXP_')+(cfg.origen==='detalle'?'det_':'agr_')+(cab.numero_factura||'dua').replace(/[^\w\-]/g,'_')+'.xlsx';
   window.XLSX.writeFile(wb, nombre);
-  showToast('Fichero VisualTrans generado: '+nombre);
+  showToast('Fichero VisualTrans generado ('+lineas.length+' partidas): '+nombre);
 }
 
 
@@ -3261,6 +3263,13 @@ function abrirModalVT(){
         Factura <strong>${esc(cab.numero_factura||'—')}</strong> · ${(window._facturaLineas||[]).length} partidas · genera el fichero de importación de dossier para VisualTrans.
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Generar desde</label>
+          <select id="vt-origen" class="fi" title="Resumen: una partida por código de 4 dígitos (agrupado). Detalle: una partida por cada línea de la factura (p. ej. si lleva SOIVRE).">
+            <option value="resumen">Resumen (agrupado por partida)</option>
+            <option value="detalle">Detalle (línea a línea)</option>
+          </select>
+        </div>
         <div>
           <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Tipo de DUA</label>
           <select id="vt-tipo" class="fi" onchange="_vtToggleReg()">
@@ -3324,6 +3333,7 @@ function _vtToggleReg(){
 }
 function confirmarVT(){
   window._cfgDUA = {
+    origen: document.getElementById('vt-origen').value,
     tipo: document.getElementById('vt-tipo').value,
     aduana: document.getElementById('vt-aduana').value,
     regimen: document.getElementById('vt-regimen').value,
@@ -3336,6 +3346,55 @@ function confirmarVT(){
   exportarVisualTrans();
 }
 
+
+// Agrupa las líneas por partida de 4 dígitos igual que la hoja Resumen, y
+// devuelve "líneas" consolidadas en el formato que consume el generador VT.
+// Suma bultos/pesos/cantidad/importe, usa la moda del TARIC, concatena las
+// descripciones con ' + ' y une los códigos de casilla 44 del grupo.
+function agruparLineasParaDUA(lineas, cabGlobal){
+  const num = v => { const n=parseFloat(String(v||'').replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; };
+  const grupos = {};
+  lineas.forEach(l => {
+    const k = (l.codigo_taric||'').substring(0,4) || '----';
+    if(!grupos[k]) grupos[k] = { bultos:0, bruto:0, cantidad:0, importe:0, frec:{}, descs:[], c44:new Map(), _cab:l._cab||null, unidad:l.unidad||'' };
+    const g = grupos[k];
+    (l._c44 || (typeof casilla44De==='function'?casilla44De(l):[]) || []).forEach(d => { if(d.codigo_doc && !g.c44.has(d.codigo_doc)) g.c44.set(d.codigo_doc, d); });
+    g.bultos += num(l.bultos)||0;
+    const pReal = num(l.peso_bruto);
+    if(pReal) g.bruto += pReal; else if(num(l.peso_estimado)) g.bruto += num(l.peso_estimado);
+    g.cantidad += num(l.cantidad)||0;
+    g.importe += num(l.importe)||0;
+    if(l.codigo_taric && l.codigo_taric.length===10){
+      const f = g.frec[l.codigo_taric] || (g.frec[l.codigo_taric]={n:0,kg:0,imp:0});
+      f.n++; f.kg += num(l.cantidad)||0; f.imp += num(l.importe)||0;
+    }
+    const d = (l._casilla31 || l.descripcion_es || l.descripcion_original || '').trim();
+    if(d && !g.descs.includes(d)) g.descs.push(d);
+  });
+  const moda = g => {
+    const c = Object.keys(g.frec);
+    if(!c.length) return '';
+    c.sort((a,b)=>(g.frec[b].n-g.frec[a].n)||(g.frec[b].kg-g.frec[a].kg)||(g.frec[b].imp-g.frec[a].imp)||(a<b?1:-1));
+    return c[0];
+  };
+  // Devolver como "líneas" en el formato del generador VT
+  return Object.keys(grupos).sort().map(k => {
+    const g = grupos[k];
+    const cod = moda(g);
+    return {
+      bultos: g.bultos || '',
+      peso_bruto: g.bruto || '',
+      cantidad: g.cantidad || '',
+      importe: g.importe || '',
+      unidad: g.unidad || '',
+      codigo_taric: cod,
+      _casilla31: g.descs.join(' + '),
+      descripcion_original: g.descs.join(' + '),
+      _c44: [...g.c44.values()],
+      _cab: g._cab,
+    };
+  });
+}
 
 async function exportarFactura(){
   const lineas = window._facturaLineas || [];
