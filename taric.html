@@ -3225,7 +3225,6 @@ function construirFilasImport(cab, lineas, cfg){
 async function exportarVisualTrans(){
   const detalle = window._facturaLineas || [];
   if(!detalle.length){ showToast('Primero lee una factura para tener datos que exportar'); return; }
-  await loadXLSX();
   const cab = FACTURA_CABECERA || {};
   const cfg = window._cfgDUA || {};
   // Resumen (agrupado por partida) o detalle (línea a línea)
@@ -3235,12 +3234,27 @@ async function exportarVisualTrans(){
   const filas = esImport ? construirFilasImport(cab, lineas, cfg)
                          : construirFilasExport(cab, lineas, cfg);
 
-  const wb = window.XLSX.utils.book_new();
-  const ws = window.XLSX.utils.aoa_to_sheet(filas);
-  window.XLSX.utils.book_append_sheet(wb, ws, esImport?'Dossier_Import':'Dossier_Export');
-  const nombre = 'VisualTrans_'+(esImport?'IMP_':'EXP_')+(cfg.origen==='detalle'?'det_':'agr_')+(cab.numero_factura||'dua').replace(/[^\w\-]/g,'_')+'.xlsx';
-  window.XLSX.writeFile(wb, nombre);
-  showToast('Fichero VisualTrans generado ('+lineas.length+' partidas): '+nombre);
+  // VisualTrans importa CSV plano separado por PUNTO Y COMA. Cada fila empieza
+  // por su código de tipo (AES/DOCS/partida). Se escapa el ; dentro de campos.
+  const escCampo = v => {
+    let s = (v==null?'':String(v));
+    // Coma decimal española; punto y coma es el separador, así que no debe
+    // aparecer suelto dentro de un campo: se sustituye por coma.
+    if(s.includes(';')) s = s.replace(/;/g,',');
+    if(s.includes('\n')) s = s.replace(/[\r\n]+/g,' ');
+    return s;
+  };
+  const csv = filas.map(fila => fila.map(escCampo).join(';')).join('\r\n');
+
+  // BOM para que Excel/VisualTrans respeten los acentos (UTF-8)
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'VisualTrans_'+(esImport?'IMP_':'EXP_')+(cfg.origen==='detalle'?'det_':'agr_')+(cab.numero_factura||'dua').replace(/[^\w\-]/g,'_')+'.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  showToast('CSV VisualTrans generado ('+lineas.length+' partidas): '+a.download);
 }
 
 
