@@ -2797,11 +2797,122 @@ async function crearEntradaYExpedicion(){
   if(lastId) setTimeout(function(){ crearExpedicionDesdeAC(lastId); }, 400);
   else { closeModal(); loadView(); }
 }
+// ── Email automático de costes al registrar fecha de retirada ────────────────
+async function emailCostesRetirada(e){
+  var d=desglose(e);
+  if(!d){return;} // sin tarifa automática → sin email
+
+  var awb=formatAwb(e.awb||'—');
+  var hoy=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  var fLlegada=e.fecha_llegada?new Date(e.fecha_llegada).toLocaleDateString('es-ES'):'—';
+  var fRetirada=e.fecha_retirada?new Date(e.fecha_retirada).toLocaleDateString('es-ES'):'—';
+  var TS='border:1px solid #cbd5e1;padding:7px 12px;font-size:12px;';
+  var TH=TS+'background:#f1f5f9;font-weight:700;width:220px;color:#334155;';
+
+  function fila(label,valor,destacado){
+    return '<tr>'+
+      '<td style="'+TH+'">'+label+'</td>'+
+      '<td style="'+TS+(destacado?';font-weight:700;color:#1e40af':'')+'">'+valor+'</td>'+
+    '</tr>';
+  }
+  function filaCoste(label,importe,opcional){
+    if(!importe)return '';
+    return '<tr>'+
+      '<td style="'+TH+(opcional?';color:#6b7280':'')+'">'+label+'</td>'+
+      '<td style="'+TS+(opcional?';color:#6b7280':';font-weight:600')+'">'+fc(importe)+'</td>'+
+    '</tr>';
+  }
+
+  var html=
+    '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1a1a1a;max-width:680px;line-height:1.5">'+
+
+    // Cabecera
+    '<div style="background:#1e3a5f;color:#fff;padding:14px 20px;border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:space-between">'+
+      '<div>'+
+        '<div style="font-size:16px;font-weight:800;letter-spacing:.3px">✈️ Airport Cargo · ALS</div>'+
+        '<div style="font-size:11px;opacity:.8;margin-top:3px">Coste de handling generado automáticamente</div>'+
+      '</div>'+
+      '<div style="text-align:right;font-size:11px;opacity:.75">'+hoy+'</div>'+
+    '</div>'+
+
+    // Datos expedición
+    '<table style="width:100%;border-collapse:collapse;margin:0">'+
+      fila('AWB','<strong style="font-family:monospace;font-size:14px">'+awb+'</strong>',false)+
+      fila('Consignatario',e.consignatario||'—',false)+
+      (e.cliente&&e.cliente!==e.consignatario?fila('Cliente',e.cliente,false):'')+
+      fila('Handling',e.handling||'—',false)+
+      fila('Aeropuerto',e.aeropuerto||'—',false)+
+      fila('Bultos / Kilos tasables',(e.bultos||'—')+' bultos · '+(e.kilos_tasables||'—')+' kg',false)+
+      fila('Fecha llegada',fLlegada,false)+
+      fila('Fecha retirada',fRetirada,false)+
+      fila('Días facturables',d.dias+' día'+(d.dias!==1?'s':''),false)+
+    '</table>'+
+
+    // Desglose de costes
+    '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-top:none;padding:4px 0">'+
+      '<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px;padding:8px 12px 4px">Desglose de costes</div>'+
+      '<table style="width:100%;border-collapse:collapse">'+
+        filaCoste('📦 Almacenaje ('+d.dias+'d × '+Math.ceil((parseFloat(e.kilos_tasables)||0)/100)+' fracc.)',d.alm,false)+
+        filaCoste('📄 Gestión Documental',d.gd,false)+
+        filaCoste('🏛️ Tasa Utilización Recinto',d.tr,false)+
+        filaCoste('🔧 Tasa Mantenimiento Servicio',d.tm,false)+
+        filaCoste('📅 Fin de semana / festivos',d.fi,true)+
+        filaCoste('⚡ Handling Express',d.ex,true)+
+        filaCoste('🚛 Carga Camión',d.cc,true)+
+        filaCoste('🔓 Apertura Fuera Horario',d.ap,true)+
+        filaCoste('☢️ Manipulación DGR',d.dgr,true)+
+        filaCoste('📶 Recargo Continuidad Servicio',d.rc,true)+
+      '</table>'+
+      // Total
+      '<div style="display:flex;justify-content:space-between;align-items:center;background:#1e3a5f;color:#fff;padding:11px 14px;margin-top:2px">'+
+        '<span style="font-size:14px;font-weight:700">TOTAL HANDLING ESTIMADO</span>'+
+        '<span style="font-size:18px;font-weight:800;font-family:monospace">'+fc(d.total)+'</span>'+
+      '</div>'+
+    '</div>'+
+
+    // Nota
+    '<div style="font-size:11px;color:#94a3b8;padding:10px 12px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;background:#fff">'+
+      '⚠️ Coste <strong>estimado</strong> basado en las tarifas vigentes de '+e.handling+' '+d.yr+'. '+
+      'Generado automáticamente al registrar la fecha de retirada. Pendiente de factura definitiva del handling.'+
+      '<br>ALS · Algeciras Logistic Solutions · als@alsalgeciras.com'+
+    '</div>'+
+  '</div>';
+
+  var subj='[Airport Cargo] Coste handling — '+awb+' — '+e.consignatario+' — '+fRetirada;
+
+  // Envío silencioso vía send-notif (sin diálogo)
+  try{
+    var token=SB_KEY;
+    try{var sess=await sb.auth.getSession();token=(sess&&sess.data&&sess.data.session&&sess.data.session.access_token)||SB_KEY;}catch(_){}
+    var resp=await fetch(SB_URL+'/functions/v1/send-notif',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SB_KEY},
+      body:JSON.stringify({
+        to:'als@alsalgeciras.com',
+        subject:subj,
+        html:html,
+        sender_name:'ALS · Airport Cargo',
+        sender_email:'als@alsalgeciras.com'
+      })
+    });
+    if(resp.ok){
+      toast('📧 Resumen de costes enviado a als@alsalgeciras.com');
+    } else {
+      var err=await resp.text().catch(function(){return '';});
+      console.warn('emailCostesRetirada send-notif:',resp.status,err);
+      toast('⚠️ Email de costes no enviado ('+resp.status+') — revisa la consola');
+    }
+  }catch(ex){
+    console.warn('emailCostesRetirada fetch error:',ex);
+  }
+}
+
 async function saveEntrada(id){
   var o=buildObj();
   if(!o.awb){alert('AWB obligatorio');return;}
-  // Capturar estado anterior para el historial
+  // Capturar estado anterior para el historial y detectar nueva fecha_retirada
   var antes=ALL.find(function(e){return String(e.id)===String(id);})||{};
+  var eraRetirada=antes.fecha_retirada;
   var r=await sb.from('airport_cargo').update(o).eq('id',id);
   if(r.error){alert('Error: '+r.error.message);return;}
   // Guardar campos extendidos
@@ -2811,6 +2922,10 @@ async function saveEntrada(id){
   try{await logCambios(id,antes,Object.assign({},o,oExt));}catch(ex){}
   // Sincronizar con expedición vinculada si hay vuelo/fecha/hora
   try{await sincronizarExpedicion(id, Object.assign({},o,oExt));}catch(ex){}
+  // ── Email automático de costes al registrar fecha de retirada ─────────
+  if(!eraRetirada && o.fecha_retirada) {
+    try { await emailCostesRetirada(Object.assign({},antes,o,oExt,{id:id})); } catch(ex) { console.warn('emailCostesRetirada:',ex); }
+  }
   toast('Guardado ✅');closeModal();await loadAll();loadView();
 }
 
