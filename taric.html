@@ -2341,27 +2341,67 @@ async function procesarUnaFactura(file){
 }
 
 async function leerFacturaConIA(base64, mediaType, textoPlano){
-  // Toda la lógica (system instruction TARIC, schema forzado, cascada de modelos
-  // y pase de rescate OCR) vive en la Edge Function clasificar-factura.
-  const r = await fetch(FACTURA_ENDPOINT, {
-    method:'POST',
-    headers: await cabecerasTaric(),
-    body: JSON.stringify({
-      base64: base64 || null,
-      mimeType: mediaType || 'application/pdf',
-      fileName: (window._facturaFileName || ''),
-      texto: textoPlano || null
-    })
-  });
-  if(!r.ok){
-    let msg = 'Error ' + r.status;
-    try { const j = await r.json(); if(j && j.error) msg = j.error; } catch(_){}
+  // Intento normal: una sola petición. Vale para la mayoría de facturas.
+  const cuerpoBase = {
+    base64: base64 || null,
+    mimeType: mediaType || 'application/pdf',
+    fileName: (window._facturaFileName || ''),
+    texto: textoPlano || null
+  };
+  try {
+    const r = await fetch(FACTURA_ENDPOINT, { method:'POST', headers: await cabecerasTaric(), body: JSON.stringify(cuerpoBase) });
+    if(r.ok){
+      const data = await r.json();
+      FACTURA_CABECERA = data.cabecera || null;
+      logUsoIA('taric-factura','gemini-2.5-flash').catch(()=>{});
+      return data;
+    }
+    // Error con cuerpo (cuota, etc.): propagarlo tal cual
+    let msg='Error '+r.status; try{ const j=await r.json(); if(j&&j.error)msg=j.error; }catch(_){}
     throw new Error(msg);
+  } catch(e){
+    // "Failed to fetch" = el navegador cortó la conexión por tardar demasiado
+    // (factura grande). Se pasa a extracción POR LOTES desde el cliente: cada
+    // lote es una petición corta e independiente.
+    const esCorte = /failed to fetch|networkerror|load failed/i.test(e.message||'');
+    if(!esCorte) throw e;
+    return await leerFacturaPorLotes(cuerpoBase);
   }
-  const data = await r.json();
-  FACTURA_CABECERA = data.cabecera || null;
-  logUsoIA('taric-factura', 'gemini-2.5-flash').catch(()=>{});
-  return data;
+}
+
+async function leerFacturaPorLotes(cuerpoBase){
+  showToast('Factura extensa: procesando por lotes…');
+  const LOTE = 25;
+  let cabecera = null;
+  const todas = [];
+  for(let iter=0; iter<10; iter++){   // máx 250 líneas
+    const desde = iter*LOTE + 1, hasta = desde + LOTE - 1;
+    const r = await fetch(FACTURA_ENDPOINT, {
+      method:'POST', headers: await cabecerasTaric(),
+      body: JSON.stringify({ ...cuerpoBase, lote:{desde, hasta} })
+    });
+    if(!r.ok){
+      let msg='Error '+r.status; try{ const j=await r.json(); if(j&&j.error)msg=j.error; }catch(_){}
+      if(iter===0) throw new Error(msg);   // si falla el primer lote, error real
+      break;                                // si falla uno posterior, usar lo que haya
+    }
+    const parcial = await r.json();
+    if(!cabecera && parcial.cabecera) cabecera = parcial.cabecera;
+    const lin = Array.isArray(parcial.lineas) ? parcial.lineas : [];
+    if(!lin.length) break;                  // no quedan más líneas
+    todas.push(...lin);
+    if(lin.length < LOTE) break;            // último lote incompleto
+  }
+  // Deduplicar por descripción+importe+cantidad (solapes de lote)
+  const vistas = new Set(), dedup = [];
+  for(const l of todas){
+    const k=[(l.descripcion_original||'').trim().toLowerCase(),(l.importe||''),(l.cantidad||'')].join('|');
+    if(vistas.has(k)) continue; vistas.add(k); dedup.push(l);
+  }
+  FACTURA_CABECERA = cabecera || null;
+  logUsoIA('taric-factura','gemini-2.5-flash').catch(()=>{});
+  showToast('Factura procesada: '+dedup.length+' líneas');
+  return { ...(cabecera||{}), cabecera, lineas: dedup };
 }
 
 // Compara el desglose de líneas con los totales declarados en la factura.
@@ -2399,6 +2439,15 @@ function cuadreHtml(f){
     ['Bultos',     num(c.bultos_totales),      sum('bultos')],
     ['Peso bruto', num(c.peso_bruto_total),    sum('peso_bruto')]
   ].filter(([,dec]) => dec !== null && dec > 0);
+
+  // Importe: comparar contra la BASE IMPONIBLE (suma de líneas sin IVA), no
+  // contra el total con IVA. Si la factura solo da el total con IVA, no se
+  // compara el importe (siempre "descuadraría" por los impuestos).
+  const sumImporte = sum('importe');
+  const base = num(c.base_imponible);
+  if(base && base > 0){
+    filas.push(['Importe (base)', base, sumImporte]);
+  }
   if(!filas.length) return '';
 
   const malas = filas.filter(([,dec,calc]) => calc > 0 && Math.abs(calc-dec)/dec > 0.05);
