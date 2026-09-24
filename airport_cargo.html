@@ -839,20 +839,33 @@ function calcCC(ap,kg,h,yr){var t=getH(h,yr);if(!ap||!t||!t.cc)return 0;return M
 function calcAp(ap,kg,h,yr){var t=getH(h,yr);if(!ap||!t||!t.ap)return 0;var fijo=t.ap.fijo||0;return Math.max(fijo+kg*t.ap.u,t.ap.min);}
 function calcDgr(dgr,h,yr){if(!dgr)return 0;var t=getH(h,yr);if(!t||!t.dgr)return 0;return t.dgr.u||0;}
 function calcRC(h,yr){var t=getH(h,yr);if(!t||!t.rc)return 0;return t.rc.u||0;}
+// ── Detectar "2 veces / 2 entregas / recoge en 2" en observaciones ───────────
+function detectaDosVeces(obs){
+  if(!obs)return false;
+  var t=obs.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,''); // quitar tildes
+  return /\b2\s*veces\b|\bdos\s*veces\b|\b2\s*entregas?\b|\bdos\s*entregas?\b|\b2\s*recogidas?\b|\bdos\s*recogidas?\b|\b2\s*retiradas?\b|\bdos\s*retiradas?\b|\bllega\s*en\s*2\b|\bllega\s*en\s*dos\b|\brecoge\s*en\s*2\b|\brecoge\s*en\s*dos\b|\brecogida\s*en\s*2\b|\brecogida\s*en\s*dos\b|\bdividid[ao]\s*en\s*2\b/.test(t);
+}
+
 function calcTotal(e){
   if(!e.handling||!hasH(e.handling))return parseFloat(e.coste_manual)||0;
   if(!e.fecha_retirada)return 0;
   var yr=new Date(e.fecha_retirada).getFullYear();
   var kg=parseFloat(e.kilos_tasables)||0;
   var d=diasFact(e.fecha_llegada,e.fecha_retirada,e.handling);
-  return calcAlm(kg,d,e.handling,yr)+calcGD(e.handling,yr)+calcMD(e.aplica_mismo_dia,e.handling,yr)+calcTR(kg,e.handling,yr)+calcTM(e.handling,yr)+calcFi(e.aplica_finde,e.handling,yr)+calcEx(e.aplica_express,kg,e.handling,yr)+calcCC(e.aplica_carga_camion,kg,e.handling,yr)+calcAp(e.aplica_apertura,kg,e.handling,yr)+calcDgr(e.aplica_dgr,e.handling,yr)+calcRC(e.handling,yr);
+  var m=detectaDosVeces(e.observaciones)?2:1;
+  return calcAlm(kg,d,e.handling,yr)+calcGD(e.handling,yr)*m+calcMD(e.aplica_mismo_dia,e.handling,yr)+calcTR(kg,e.handling,yr)*m+calcTM(e.handling,yr)+calcFi(e.aplica_finde,e.handling,yr)+calcEx(e.aplica_express,kg,e.handling,yr)+calcCC(e.aplica_carga_camion,kg,e.handling,yr)+calcAp(e.aplica_apertura,kg,e.handling,yr)+calcDgr(e.aplica_dgr,e.handling,yr)+calcRC(e.handling,yr);
 }
 function desglose(e){
   if(!e.handling||!hasH(e.handling)||!e.fecha_retirada)return null;
   var kg=parseFloat(e.kilos_tasables)||0,h=e.handling;
   var yr=new Date(e.fecha_retirada).getFullYear();
   var d=diasFact(e.fecha_llegada,e.fecha_retirada,h);
-  return{yr:yr,dias:d,alm:calcAlm(kg,d,h,yr),gd:calcGD(h,yr),md:calcMD(e.aplica_mismo_dia,h,yr),tr:calcTR(kg,h,yr),tm:calcTM(h,yr),fi:calcFi(e.aplica_finde,h,yr),ex:calcEx(e.aplica_express,kg,h,yr),cc:calcCC(e.aplica_carga_camion,kg,h,yr),ap:calcAp(e.aplica_apertura,kg,h,yr),dgr:calcDgr(e.aplica_dgr,h,yr),rc:calcRC(h,yr),total:calcTotal(e)};
+  var m=detectaDosVeces(e.observaciones)?2:1;
+  var gd=calcGD(h,yr)*m;
+  var tr=calcTR(kg,h,yr)*m;
+  var tot=calcAlm(kg,d,h,yr)+gd+calcMD(e.aplica_mismo_dia,h,yr)+tr+calcTM(h,yr)+calcFi(e.aplica_finde,h,yr)+calcEx(e.aplica_express,kg,h,yr)+calcCC(e.aplica_carga_camion,kg,h,yr)+calcAp(e.aplica_apertura,kg,h,yr)+calcDgr(e.aplica_dgr,h,yr)+calcRC(h,yr);
+  return{yr:yr,dias:d,dosVeces:m===2,alm:calcAlm(kg,d,h,yr),gd:gd,md:calcMD(e.aplica_mismo_dia,h,yr),tr:tr,tm:calcTM(h,yr),fi:calcFi(e.aplica_finde,h,yr),ex:calcEx(e.aplica_express,kg,h,yr),cc:calcCC(e.aplica_carga_camion,kg,h,yr),ap:calcAp(e.aplica_apertura,kg,h,yr),dgr:calcDgr(e.aplica_dgr,h,yr),rc:calcRC(h,yr),total:tot};
 }
 
 // ── DATOS ────────────────────────────────────────────────
@@ -2712,10 +2725,11 @@ function liveCalc(){
   var d=desglose(tmpE);if(!d){el.innerHTML='';return;}
   el.innerHTML='<div style="background:var(--b50);border:1px solid var(--b100);border-radius:var(--r);padding:12px">'+
     '<div class="sect" style="margin-top:0;color:var(--b600)">Vista previa — '+h+' '+yr+'</div>'+
+    (d.dosVeces?'<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;color:#92400e;margin-bottom:8px">⚠️ Recogida/llegada en 2 veces detectada — GD y Tasa Recinto ×2</div>':'')+
     '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--g700);padding:2px 0"><span>Días facturables:</span><strong>'+d.dias+'</strong></div>'+
     '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--g700);padding:2px 0"><span>Almacenaje:</span><span>'+fc(d.alm)+'</span></div>'+
-    '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--g700);padding:2px 0"><span>Gestión Documental:</span><span>'+fc(d.gd)+'</span></div>'+
-    '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--g700);padding:2px 0"><span>Tasa Recinto:</span><span>'+fc(d.tr)+'</span></div>'+
+    '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--g700);padding:2px 0"><span>Gestión Documental'+(d.dosVeces?' ×2':'')+':</span><span>'+fc(d.gd)+'</span></div>'+
+    '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--g700);padding:2px 0"><span>Tasa Recinto'+(d.dosVeces?' ×2':'')+':</span><span>'+fc(d.tr)+'</span></div>'+
     '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--g700);padding:2px 0;margin-bottom:4px"><span>Tasa Mantenimiento:</span><span>'+fc(d.tm)+'</span></div>'+
     (d.fi?'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gr600);padding:2px 0"><span>+ Fin semana:</span><span>'+fc(d.fi)+'</span></div>':'')+
     (d.ex?'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gr600);padding:2px 0"><span>+ Express:</span><span>'+fc(d.ex)+'</span></div>':'')+
@@ -2853,8 +2867,8 @@ async function emailCostesRetirada(e){
       '<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px;padding:8px 12px 4px">Desglose de costes</div>'+
       '<table style="width:100%;border-collapse:collapse">'+
         filaCoste('📦 Almacenaje ('+d.dias+'d × '+Math.ceil((parseFloat(e.kilos_tasables)||0)/100)+' fracc.)',d.alm,false)+
-        filaCoste('📄 Gestión Documental',d.gd,false)+
-        filaCoste('🏛️ Tasa Utilización Recinto',d.tr,false)+
+        filaCoste('📄 Gestión Documental'+(d.dosVeces?' ×2 (recogida en 2 veces)':''),d.gd,false)+
+        filaCoste('🏛️ Tasa Utilización Recinto'+(d.dosVeces?' ×2 (recogida en 2 veces)':''),d.tr,false)+
         filaCoste('🔧 Tasa Mantenimiento Servicio',d.tm,false)+
         filaCoste('📅 Fin de semana / festivos',d.fi,true)+
         filaCoste('⚡ Handling Express',d.ex,true)+
