@@ -2941,6 +2941,38 @@ async function renderLineasFactura(data, filename){
   if(Array.isArray(data)) lineas = data;
   else if(data && Array.isArray(data.lineas)) lineas = data.lineas;
   else lineas = [];
+
+  // ── CORRECCIÓN DE PESOS INFLADOS POR ERROR DE DECIMAL ──
+  // Algunas facturas técnicas (FastReport) usan punto decimal y el modelo lee
+  // inconsistentemente: "760.860 kg" (=760,86) lo toma como 760860. Se corrige
+  // de forma determinista: un peso de línea desproporcionado frente al peso
+  // bruto TOTAL de la factura está inflado por mil. No gasta IA.
+  (function corregirPesos(){
+    const cab = (data && data.cabecera) || FACTURA_CABECERA || {};
+    const num = v => { const n=parseFloat(String(v==null?'':v).replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; };
+    const numPunto = v => { const n=parseFloat(String(v==null?'':v).replace(/,/g,'')); return isNaN(n)?0:n; };
+    // Peso bruto total declarado (puede venir con punto o coma decimal)
+    let totalDecl = parseFloat(String(cab.peso_bruto_total||'').replace(/\s/g,'').replace(',','.').replace(/\.(?=\d{3}\b)/g,''));
+    if(!(totalDecl>0)) return;
+    lineas.forEach(l => {
+      // Interpretar el peso tal cual y ver si es absurdo respecto al total
+      const bruto = parseFloat(String(l.peso_bruto||'').replace(',','.'));
+      if(isNaN(bruto)) return;
+      // Si un solo peso de línea supera al total declarado, o supera 3000 kg
+      // cuando el total es de pocos miles, está inflado por mil.
+      if(bruto > totalDecl && bruto/1000 <= totalDecl*1.2){
+        l.peso_bruto = String(Math.round(bruto/10)/100).replace('.',',');
+        l._pesoCorregido = true;
+      } else if(bruto > 3000 && totalDecl < 30000 && bruto/1000 < totalDecl){
+        l.peso_bruto = String(Math.round(bruto/10)/100).replace('.',',');
+        l._pesoCorregido = true;
+      }
+    });
+    // Verificación: si tras corregir la suma se acerca al total, perfecto
+    const suma = lineas.reduce((a,l)=>a+parseFloat(String(l.peso_bruto||'').replace(',','.'))||0,0);
+    console.log('Pesos: total declarado', totalDecl, '· suma tras corrección', Math.round(suma*100)/100);
+  })();
+
   const info = document.getElementById('factura-info');
   const tbody = document.getElementById('factura-tbody');
 
