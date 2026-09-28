@@ -2371,10 +2371,10 @@ async function leerFacturaConIA(base64, mediaType, textoPlano){
 
 async function leerFacturaPorLotes(cuerpoBase){
   showToast('Factura extensa: procesando por lotes…');
-  const LOTE = 25;
+  const LOTE = 20;
   let cabecera = null;
   const todas = [];
-  for(let iter=0; iter<10; iter++){   // máx 250 líneas
+  for(let iter=0; iter<15; iter++){   // máx 300 líneas
     const desde = iter*LOTE + 1, hasta = desde + LOTE - 1;
     const r = await fetch(FACTURA_ENDPOINT, {
       method:'POST', headers: await cabecerasTaric(),
@@ -2382,20 +2382,25 @@ async function leerFacturaPorLotes(cuerpoBase){
     });
     if(!r.ok){
       let msg='Error '+r.status; try{ const j=await r.json(); if(j&&j.error)msg=j.error; }catch(_){}
-      if(iter===0) throw new Error(msg);   // si falla el primer lote, error real
-      break;                                // si falla uno posterior, usar lo que haya
+      if(iter===0) throw new Error(msg);
+      break;
     }
     const parcial = await r.json();
     if(!cabecera && parcial.cabecera) cabecera = parcial.cabecera;
     const lin = Array.isArray(parcial.lineas) ? parcial.lineas : [];
-    if(!lin.length) break;                  // no quedan más líneas
+    showToast('Procesando… '+(todas.length+lin.length)+' líneas');
+    if(!lin.length){ break; }   // lote vacío = no quedan más líneas
     todas.push(...lin);
-    if(lin.length < LOTE) break;            // último lote incompleto
+    // Solo se para de verdad cuando un lote viene vacío, no por venir corto.
   }
   // Deduplicar por descripción+importe+cantidad (solapes de lote)
   const vistas = new Set(), dedup = [];
   for(const l of todas){
-    const k=[(l.descripcion_original||'').trim().toLowerCase(),(l.importe||''),(l.cantidad||'')].join('|');
+    // Clave de deduplicación: código de artículo (si consta al inicio de la
+    // descripción) + importe. Los lotes solapados repiten líneas idénticas.
+    const desc = (l.descripcion_original||'').trim();
+    const codArt = (desc.match(/^(\d{4,6})/)||[])[1] || desc.toLowerCase().substring(0,25);
+    const k=[codArt, (l.importe||''), (l.cantidad||'')].join('|');
     if(vistas.has(k)) continue; vistas.add(k); dedup.push(l);
   }
   FACTURA_CABECERA = cabecera || null;
@@ -2813,11 +2818,17 @@ async function cargarCatalogoTaric(lineas){
                  || String(l.codigo_taric||'').replace(/\D/g,'').substring(0,8))
                  .filter(x => x.length === 8))];
   if(!nc8s.length) return false;
+  // Partidas de 4 dígitos: para poder corregir NC8 que no existan, buscando
+  // la subpartida real dentro de su misma partida. Sin gastar IA.
+  const partidas4 = [...new Set(nc8s.map(n => n.substring(0,4)))];
   try{
-    const [nom, dua] = await Promise.all([
+    const [nom, nomP, dua] = await Promise.all([
       sbT().from('taric_nomenclatura')
            .select('codigo,nc8,descripcion')
            .in('nc8', nc8s).eq('declarable', 1),
+      sbT().from('taric_nomenclatura')
+           .select('codigo,nc8,partida4,descripcion')
+           .in('partida4', partidas4).eq('declarable', 1),
       TARIC_DB.dua ? Promise.resolve({data:TARIC_DB.dua}) :
         sbT().from('cw_medidas_dua')
              .select('clave,categoria,codigo_doc,formato,obligatorio,negativa,descripcion,orden')
@@ -2827,9 +2838,20 @@ async function cargarCatalogoTaric(lineas){
     if(dua.error) throw dua.error;
 
     TARIC_DB.nom.clear(); TARIC_DB.desc.clear();
-    (nom.data||[]).forEach(r => {
+    if(!TARIC_DB.porPartida) TARIC_DB.porPartida = new Map();
+    TARIC_DB.porPartida.clear();
+    // Índice por NC8 (exacto) y por partida4 (para reclasificar inexistentes)
+    (nomP.data||[]).forEach(r => {
       if(!TARIC_DB.nom.has(r.nc8)) TARIC_DB.nom.set(r.nc8, []);
       TARIC_DB.nom.get(r.nc8).push(r.codigo);
+      TARIC_DB.desc.set(r.codigo, r.descripcion || '');
+      const p4 = String(r.partida4||r.codigo.substring(0,4));
+      if(!TARIC_DB.porPartida.has(p4)) TARIC_DB.porPartida.set(p4, []);
+      TARIC_DB.porPartida.get(p4).push({codigo:r.codigo, nc8:r.nc8, desc:r.descripcion||''});
+    });
+    (nom.data||[]).forEach(r => {  // asegurar que las NC8 exactas están
+      if(!TARIC_DB.nom.has(r.nc8)) TARIC_DB.nom.set(r.nc8, []);
+      if(!TARIC_DB.nom.get(r.nc8).includes(r.codigo)) TARIC_DB.nom.get(r.nc8).push(r.codigo);
       TARIC_DB.desc.set(r.codigo, r.descripcion || '');
     });
     TARIC_DB.nom.forEach(v => v.sort());
@@ -2884,9 +2906,21 @@ function verificarSubpartida(l){
   if(nc8.length !== 8) return { estado:'sin_nc8' };
   const cand = candidatosDe(nc8);
   if(!cand || !cand.length){
-    // Si el catálogo está cargado y esa NC8 no aparece, no es una duda:
-    // es que no existe en la nomenclatura. La clasificación está mal.
-    return { estado: TARIC_DB.ok ? 'nc8_invalido' : 'fuera_catalogo', nc8 };
+    if(!TARIC_DB.ok) return { estado:'fuera_catalogo', nc8 };
+    // La NC8 no existe. Intentar reclasificar dentro de su partida de 4 dígitos:
+    // el modelo suele acertar la partida y errar los últimos dígitos.
+    const p4 = nc8.substring(0,4);
+    const subs = (TARIC_DB.porPartida && TARIC_DB.porPartida.get(p4)) || [];
+    if(subs.length){
+      // Preferir una subpartida cuyos primeros 6 dígitos coincidan (más cercana);
+      // si no, la más genérica de la partida (código más alto).
+      const nc6 = nc8.substring(0,6);
+      const mismos6 = subs.filter(s => s.codigo.substring(0,6) === nc6);
+      const pool = mismos6.length ? mismos6 : subs;
+      const elegido = pool.map(s=>s.codigo).sort().pop();
+      return { estado:'reclasificado', nc8, codigo:elegido, previo:taric, porPartida:true };
+    }
+    return { estado:'nc8_invalido', nc8 };
   }
   if(cand.length === 1){
     if(cand[0] === taric)  return { estado:'ok', nc8, codigo:cand[0] };
@@ -2950,7 +2984,7 @@ async function renderLineasFactura(data, filename){
   for(const l of lineas){
     // Contrastar los dígitos 9-10 con el catálogo y corregir si hay una sola opción
     l._verif = verificarSubpartida(l);
-    if(l._verif.estado === 'corregido' || l._verif.estado === 'completado') l.codigo_taric = l._verif.codigo;
+    if(l._verif.estado === 'corregido' || l._verif.estado === 'completado' || l._verif.estado === 'reclasificado') l.codigo_taric = l._verif.codigo;
     // Sin 10 dígitos fiables se muestra la NC8 con los dos últimos pendientes
     if(!l.codigo_taric && l.nc8) l._mostrar = l.nc8;
     // Descripción oficial desde la base; la del modelo queda de respaldo
