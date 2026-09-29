@@ -2790,23 +2790,52 @@ async function crearEntrada(){
   if(!o.awb){alert('AWB obligatorio');return;}
   if(!o.consignatario){alert('Consignatario obligatorio');return;}
   if(!o.kilos_tasables){alert('Kilos tasables obligatorios');return;}
-  var r=await sb.from('airport_cargo').insert(o);
-  if(r.error){alert('Error al crear: '+r.error.message);return;}
-  // Obtener ID del registro recién creado para los campos extendidos
-  var lastId=null;
-  try{var lr=await sb.from('airport_cargo').select('id').eq('awb',o.awb).order('id',{ascending:false}).limit(1);if(lr.data&&lr.data.length)lastId=lr.data[0].id;}catch(ex){}
-  if(lastId){try{await sb.from('airport_cargo').update(buildObjExtended()).eq('id',lastId);}catch(ex){console.warn('buildObjExtended update:',ex);}}
-  toast('Entrada creada ✅');
+
+  // INSERT principal
+  var r=await sb.from('airport_cargo').insert(o).select('id').single();
+  console.log('[crearEntrada] INSERT resultado:', JSON.stringify(r));
+  if(r.error){alert('Error al crear: '+r.error.message+'\n\nCódigo: '+r.error.code);return;}
+
+  var lastId=r.data&&r.data.id?r.data.id:null;
+  console.log('[crearEntrada] ID creado:', lastId);
+
+  // UPDATE campos extendidos — solo uno a uno para aislar errores
+  if(lastId){
+    var ext=buildObjExtended();
+    console.log('[crearEntrada] buildObjExtended:', JSON.stringify(ext));
+    var ru=await sb.from('airport_cargo').update(ext).eq('id',lastId).select('id');
+    if(ru.error){
+      console.warn('[crearEntrada] UPDATE extendido falló (no crítico):', ru.error.message, ru.error.code);
+      // No abortar — el registro principal ya existe
+    } else {
+      console.log('[crearEntrada] UPDATE extendido OK');
+    }
+  }
+
+  // Verificar que el registro existe en Supabase antes de recargar
+  if(lastId){
+    var chk=await sb.from('airport_cargo').select('id,awb,fecha_retirada').eq('id',lastId).single();
+    console.log('[crearEntrada] Verificación post-insert:', JSON.stringify(chk));
+    if(chk.error||!chk.data){
+      alert('⚠️ El registro se creó pero no se puede verificar en Supabase.\nRevisa la consola del navegador.');
+      return;
+    }
+    if(chk.data.fecha_retirada){
+      alert('⚠️ El registro tiene fecha_retirada asignada automáticamente: '+chk.data.fecha_retirada+'\nEsto lo excluye de la vista de pendientes.');
+    }
+  }
+
+  toast('Entrada creada ✅ (ID: '+(lastId||'desconocido')+')');
   closeModal();
   await loadAll();
+  console.log('[crearEntrada] ALL tras loadAll:', ALL.length, 'registros. ¿Está el nuevo?', ALL.some(function(e){return String(e.id)===String(lastId);}));
   loadView();
-  // Si no tiene fecha_llegada, el registro cae en "Sin fecha" al final —
-  // hacer scroll hasta él para que no parezca que ha desaparecido
-  if(!o.fecha_llegada && lastId){
+  if(lastId){
     setTimeout(function(){
       var fila=document.querySelector('tr[data-id="'+lastId+'"]');
+      console.log('[crearEntrada] Fila en DOM:', fila?'encontrada':'NO ENCONTRADA');
       if(fila) fila.scrollIntoView({behavior:'smooth',block:'center'});
-    }, 400);
+    }, 500);
   }
 }
 
