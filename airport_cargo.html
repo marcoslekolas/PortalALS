@@ -1649,7 +1649,12 @@ function filtrar(){
     if(RET_FILT==='curso' && !esSolicitada(e)) return false;
     if(q&&!(_nb(e.awb)+_nb(e.consignatario)+_nb(e.buque)).includes(q))return false;
     if(h&&e.handling!==h)return false;
-    if(y||m){var mo=calcMes(e.fecha_llegada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
+    if(y||m){
+      var mo=calcMes(e.fecha_llegada);
+      if(!mo) return true; // sin fecha → siempre visible aunque haya filtro de mes
+      if(y&&!mo.startsWith(y))return false;
+      if(m&&!mo.includes(m))return false;
+    }
     return true;
   });
   // Orden estable: fecha_llegada → hora_llegada (normalizada HH:MM) → id
@@ -2786,12 +2791,23 @@ async function crearEntrada(){
   if(!o.consignatario){alert('Consignatario obligatorio');return;}
   if(!o.kilos_tasables){alert('Kilos tasables obligatorios');return;}
   var r=await sb.from('airport_cargo').insert(o);
-  if(r.error){alert('Error: '+r.error.message);return;}
-  // Intentar guardar campos extendidos si las columnas existen en Supabase
+  if(r.error){alert('Error al crear: '+r.error.message);return;}
+  // Obtener ID del registro recién creado para los campos extendidos
   var lastId=null;
   try{var lr=await sb.from('airport_cargo').select('id').eq('awb',o.awb).order('id',{ascending:false}).limit(1);if(lr.data&&lr.data.length)lastId=lr.data[0].id;}catch(ex){}
-  if(lastId){try{await sb.from('airport_cargo').update(buildObjExtended()).eq('id',lastId);}catch(ex){}}
-  toast('Entrada creada ✅');closeModal();await loadAll();loadView();
+  if(lastId){try{await sb.from('airport_cargo').update(buildObjExtended()).eq('id',lastId);}catch(ex){console.warn('buildObjExtended update:',ex);}}
+  toast('Entrada creada ✅');
+  closeModal();
+  await loadAll();
+  loadView();
+  // Si no tiene fecha_llegada, el registro cae en "Sin fecha" al final —
+  // hacer scroll hasta él para que no parezca que ha desaparecido
+  if(!o.fecha_llegada && lastId){
+    setTimeout(function(){
+      var fila=document.querySelector('tr[data-id="'+lastId+'"]');
+      if(fila) fila.scrollIntoView({behavior:'smooth',block:'center'});
+    }, 400);
+  }
 }
 
 async function crearEntradaYExpedicion(){
