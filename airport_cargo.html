@@ -872,9 +872,33 @@ function desglose(e){
 var ALL=[];
 async function loadAll(){
   try{
-    var res=await sb.from('airport_cargo').select('*').order('fecha_llegada',{ascending:true,nullsFirst:false}).order('hora_llegada',{ascending:true,nullsFirst:false});
-    if(res.error){console.error('loadAll:',res.error.message);ALL=[];}
-    else ALL=res.data||[];
+    // Pendientes (sin fecha_retirada): cargar todos con paginación
+    var pendientes=[];
+    var desde=0;
+    var tam=1000;
+    while(true){
+      var rp=await sb.from('airport_cargo')
+        .select('*')
+        .is('fecha_retirada',null)
+        .order('fecha_llegada',{ascending:true,nullsFirst:false})
+        .order('hora_llegada',{ascending:true,nullsFirst:false})
+        .range(desde,desde+tam-1);
+      if(rp.error){console.error('loadAll pendientes:',rp.error.message);break;}
+      var chunk=rp.data||[];
+      pendientes=pendientes.concat(chunk);
+      if(chunk.length<tam)break;
+      desde+=tam;
+    }
+    // Finalizados (con fecha_retirada): solo los últimos 6 meses para vista "Finalizadas"
+    var hace6m=new Date();hace6m.setMonth(hace6m.getMonth()-6);
+    var rf=await sb.from('airport_cargo')
+      .select('*')
+      .not('fecha_retirada','is',null)
+      .gte('fecha_retirada',hace6m.toISOString().slice(0,10))
+      .order('fecha_retirada',{ascending:false})
+      .limit(2000);
+    var finalizados=(rf.error?[]:(rf.data||[]));
+    ALL=pendientes.concat(finalizados);
   }catch(e){console.error('loadAll exception:',e.message);ALL=[];}
   return ALL;
 }
