@@ -2341,72 +2341,27 @@ async function procesarUnaFactura(file){
 }
 
 async function leerFacturaConIA(base64, mediaType, textoPlano){
-  // Intento normal: una sola petición. Vale para la mayoría de facturas.
-  const cuerpoBase = {
-    base64: base64 || null,
-    mimeType: mediaType || 'application/pdf',
-    fileName: (window._facturaFileName || ''),
-    texto: textoPlano || null
-  };
-  try {
-    const r = await fetch(FACTURA_ENDPOINT, { method:'POST', headers: await cabecerasTaric(), body: JSON.stringify(cuerpoBase) });
-    if(r.ok){
-      const data = await r.json();
-      FACTURA_CABECERA = data.cabecera || null;
-      logUsoIA('taric-factura','gemini-2.5-flash').catch(()=>{});
-      return data;
-    }
-    // Error con cuerpo (cuota, etc.): propagarlo tal cual
-    let msg='Error '+r.status; try{ const j=await r.json(); if(j&&j.error)msg=j.error; }catch(_){}
+  // Una sola petición con la factura completa. La Edge Function extrae y
+  // clasifica todo en una llamada (sin lotes, que causaban duplicados).
+  const r = await fetch(FACTURA_ENDPOINT, {
+    method:'POST',
+    headers: await cabecerasTaric(),
+    body: JSON.stringify({
+      base64: base64 || null,
+      mimeType: mediaType || 'application/pdf',
+      fileName: (window._facturaFileName || ''),
+      texto: textoPlano || null
+    })
+  });
+  if(!r.ok){
+    let msg='Error '+r.status;
+    try{ const j=await r.json(); if(j&&j.error)msg=j.error; }catch(_){}
     throw new Error(msg);
-  } catch(e){
-    // "Failed to fetch" = el navegador cortó la conexión por tardar demasiado
-    // (factura grande). Se pasa a extracción POR LOTES desde el cliente: cada
-    // lote es una petición corta e independiente.
-    const esCorte = /failed to fetch|networkerror|load failed/i.test(e.message||'');
-    if(!esCorte) throw e;
-    return await leerFacturaPorLotes(cuerpoBase);
   }
-}
-
-async function leerFacturaPorLotes(cuerpoBase){
-  showToast('Factura extensa: procesando por lotes…');
-  const LOTE = 20;
-  let cabecera = null;
-  const todas = [];
-  for(let iter=0; iter<15; iter++){   // máx 300 líneas
-    const desde = iter*LOTE + 1, hasta = desde + LOTE - 1;
-    const r = await fetch(FACTURA_ENDPOINT, {
-      method:'POST', headers: await cabecerasTaric(),
-      body: JSON.stringify({ ...cuerpoBase, lote:{desde, hasta} })
-    });
-    if(!r.ok){
-      let msg='Error '+r.status; try{ const j=await r.json(); if(j&&j.error)msg=j.error; }catch(_){}
-      if(iter===0) throw new Error(msg);
-      break;
-    }
-    const parcial = await r.json();
-    if(!cabecera && parcial.cabecera) cabecera = parcial.cabecera;
-    const lin = Array.isArray(parcial.lineas) ? parcial.lineas : [];
-    showToast('Procesando… '+(todas.length+lin.length)+' líneas');
-    if(!lin.length){ break; }   // lote vacío = no quedan más líneas
-    todas.push(...lin);
-    // Solo se para de verdad cuando un lote viene vacío, no por venir corto.
-  }
-  // Deduplicar por descripción+importe+cantidad (solapes de lote)
-  const vistas = new Set(), dedup = [];
-  for(const l of todas){
-    // Clave de deduplicación: código de artículo (si consta al inicio de la
-    // descripción) + importe. Los lotes solapados repiten líneas idénticas.
-    const desc = (l.descripcion_original||'').trim();
-    const codArt = (desc.match(/^(\d{4,6})/)||[])[1] || desc.toLowerCase().substring(0,25);
-    const k=[codArt, (l.importe||''), (l.cantidad||'')].join('|');
-    if(vistas.has(k)) continue; vistas.add(k); dedup.push(l);
-  }
-  FACTURA_CABECERA = cabecera || null;
+  const data = await r.json();
+  FACTURA_CABECERA = data.cabecera || null;
   logUsoIA('taric-factura','gemini-2.5-flash').catch(()=>{});
-  showToast('Factura procesada: '+dedup.length+' líneas');
-  return { ...(cabecera||{}), cabecera, lineas: dedup };
+  return data;
 }
 
 // Compara el desglose de líneas con los totales declarados en la factura.
@@ -2943,34 +2898,52 @@ async function renderLineasFactura(data, filename){
   else lineas = [];
 
   // ── CORRECCIÓN DE PESOS INFLADOS POR ERROR DE DECIMAL ──
-  // Algunas facturas técnicas (FastReport) usan punto decimal y el modelo lee
-  // inconsistentemente: "760.860 kg" (=760,86) lo toma como 760860. Se corrige
-  // de forma determinista: un peso de línea desproporcionado frente al peso
-  // bruto TOTAL de la factura está inflado por mil. No gasta IA.
+  // Facturas técnicas (FastReport) usan punto decimal y el modelo lo lee mal:
+  // "760.860 kg" (=760,86) lo toma como 760860. Se corrige de forma
+  // determinista. No depende del total declarado (que en lotes puede faltar):
+  // usa la coherencia con el importe y la magnitud absoluta. No gasta IA.
   (function corregirPesos(){
     const cab = (data && data.cabecera) || FACTURA_CABECERA || {};
-    const num = v => { const n=parseFloat(String(v==null?'':v).replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; };
-    const numPunto = v => { const n=parseFloat(String(v==null?'':v).replace(/,/g,'')); return isNaN(n)?0:n; };
-    // Peso bruto total declarado (puede venir con punto o coma decimal)
-    let totalDecl = parseFloat(String(cab.peso_bruto_total||'').replace(/\s/g,'').replace(',','.').replace(/\.(?=\d{3}\b)/g,''));
-    if(!(totalDecl>0)) return;
+    // Total declarado, si está disponible (referencia preferente)
+    const parsePeso = s => { s=String(s==null?'':s).trim(); if(!s)return 0;
+      // formato con punto decimal (760.86) o coma (760,86) o miles
+      const uc=s.lastIndexOf(','), up=s.lastIndexOf('.');
+      if(uc>-1&&up>-1){ s = uc>up ? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,''); }
+      else if(uc>-1){ const d=s.length-uc-1; s = (d===3)? s.replace(/,/g,'') : s.replace(',','.'); }
+      const n=parseFloat(s); return isNaN(n)?0:n; };
+    const totalDecl = parsePeso(cab.peso_bruto_total);
+
+    let corregidas = 0;
     lineas.forEach(l => {
-      // Interpretar el peso tal cual y ver si es absurdo respecto al total
-      const bruto = parseFloat(String(l.peso_bruto||'').replace(',','.'));
-      if(isNaN(bruto)) return;
-      // Si un solo peso de línea supera al total declarado, o supera 3000 kg
-      // cuando el total es de pocos miles, está inflado por mil.
-      if(bruto > totalDecl && bruto/1000 <= totalDecl*1.2){
+      const raw = String(l.peso_bruto==null?'':l.peso_bruto).trim();
+      if(!raw) return;
+      // Interpretar el número de forma inteligente: si tiene UN punto o UNA coma
+      // con 1-2 decimales, es decimal legítimo (1036.8 = 1036,8, no inflado).
+      // Solo se considera inflado si es un ENTERO grande sin decimales.
+      const tienePuntoDecimal = /^\d{1,4}\.\d{1,2}$/.test(raw);   // 1036.8
+      const tieneComaDecimal  = /^\d{1,4},\d{1,2}$/.test(raw);    // 1036,8
+      if(tienePuntoDecimal || tieneComaDecimal) return;          // ya está bien
+      // Entero (o con separadores de miles): candidato a error de decimal
+      const bruto = parseFloat(raw.replace(/[.,]/g,'')) || 0;
+      if(!bruto) return;
+      const importe = parseFloat(String(l.importe||'').replace(/\./g,'').replace(',','.')) || 0;
+
+      let inflado = false;
+      if(totalDecl>0 && bruto>totalDecl && bruto/1000 <= totalDecl*1.3) inflado = true;
+      else if(bruto >= 10000){
+        const div = bruto/1000;
+        if(!importe || (importe/div) >= 0.05) inflado = true;
+      }
+      if(inflado){
         l.peso_bruto = String(Math.round(bruto/10)/100).replace('.',',');
         l._pesoCorregido = true;
-      } else if(bruto > 3000 && totalDecl < 30000 && bruto/1000 < totalDecl){
-        l.peso_bruto = String(Math.round(bruto/10)/100).replace('.',',');
-        l._pesoCorregido = true;
+        corregidas++;
       }
     });
-    // Verificación: si tras corregir la suma se acerca al total, perfecto
-    const suma = lineas.reduce((a,l)=>a+parseFloat(String(l.peso_bruto||'').replace(',','.'))||0,0);
-    console.log('Pesos: total declarado', totalDecl, '· suma tras corrección', Math.round(suma*100)/100);
+    if(corregidas){
+      const suma = lineas.reduce((a,l)=>a+(parseFloat(String(l.peso_bruto||'').replace(/\./g,'').replace(',','.'))||0),0);
+      console.log('Pesos corregidos:', corregidas, '· suma resultante', Math.round(suma*100)/100, totalDecl?('· declarado '+totalDecl):'');
+    }
   })();
 
   const info = document.getElementById('factura-info');
