@@ -872,38 +872,24 @@ function desglose(e){
 var ALL=[];
 async function loadAll(){
   try{
-    // Pendientes: fecha_retirada IS NULL o vacía — paginación completa
+    // Pendientes (fecha_retirada IS NULL): paginación completa
     var pendientes=[];
     var desde=0;
     var tam=1000;
     while(true){
       var rp=await sb.from('airport_cargo')
         .select('*')
-        .or('fecha_retirada.is.null,fecha_retirada.eq.')
+        .is('fecha_retirada',null)
         .order('fecha_llegada',{ascending:true,nullsFirst:false})
         .order('hora_llegada',{ascending:true,nullsFirst:false})
         .range(desde,desde+tam-1);
-      if(rp.error){
-        console.warn('loadAll pendientes (or) falló, reintentando con is.null:',rp.error.message);
-        // Fallback: solo NULL
-        var rp2=await sb.from('airport_cargo')
-          .select('*')
-          .is('fecha_retirada',null)
-          .order('fecha_llegada',{ascending:true,nullsFirst:false})
-          .range(desde,desde+tam-1);
-        if(rp2.error){console.error('loadAll pendientes fallback:',rp2.error.message);break;}
-        var chunk2=rp2.data||[];
-        pendientes=pendientes.concat(chunk2);
-        if(chunk2.length<tam)break;
-        desde+=tam;
-        continue;
-      }
+      if(rp.error){console.error('loadAll pendientes:',rp.error.message);break;}
       var chunk=rp.data||[];
       pendientes=pendientes.concat(chunk);
       if(chunk.length<tam)break;
       desde+=tam;
     }
-    console.log('[loadAll] Pendientes cargados:',pendientes.length);
+    console.log('[loadAll] Pendientes:',pendientes.length);
 
     // Finalizados: últimos 6 meses
     var hace6m=new Date();hace6m.setMonth(hace6m.getMonth()-6);
@@ -913,11 +899,11 @@ async function loadAll(){
       .gte('fecha_retirada',hace6m.toISOString().slice(0,10))
       .order('fecha_retirada',{ascending:false})
       .limit(2000);
-    var finalizados=(rf.error?[]:(rf.data||[]));
-    console.log('[loadAll] Finalizados (6m) cargados:',finalizados.length);
+    var finalizados=rf.error?[]:(rf.data||[]);
+    console.log('[loadAll] Finalizados (6m):',finalizados.length);
 
     ALL=pendientes.concat(finalizados);
-    console.log('[loadAll] Total ALL:',ALL.length);
+    console.log('[loadAll] Total:',ALL.length);
   }catch(e){console.error('loadAll exception:',e.message);ALL=[];}
   return ALL;
 }
@@ -1216,10 +1202,11 @@ function initRealtime(){
 
   async function poll(){
     try{
-      var res=await sb.from('airport_cargo').select('*')
-        .order('fecha_llegada',{ascending:true,nullsFirst:false})
-        .order('hora_llegada',{ascending:true,nullsFirst:false});
-      if(!res.error) applyUpdates(res.data||[]);
+      // Usar el mismo loadAll paginado para no perder pendientes
+      await loadAll();
+      loadView();
+      actualizarBadgeAlertas();
+      if(CV==='dashboard') loadDashboard();
       setRTStatus('#22c55e','Datos actualizados · cada 30 s');
     }catch(e){
       setRTStatus('#ef4444','Error de conexión');
