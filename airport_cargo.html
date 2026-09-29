@@ -452,7 +452,7 @@ html,body{height:100%;background:var(--g50);color:var(--g900);font-family:var(--
           <input type="date" class="fi" id="fil-rd-hasta" style="width:auto;padding:6px 8px;font-size:12px" onchange="filtrarFin()" title="Retirada hasta">
           <button class="btn btn-s btn-sm" onclick="document.getElementById('fil-rd-desde').value='';document.getElementById('fil-rd-hasta').value='';filtrarFin()" title="Limpiar rango de fechas">✕</button>
         </div>
-        <div class="tc"><table class="tbl costs-hidden">
+        <div class="tc"><table class="tbl costs-hidden" id="tbl-fin">
           <thead><tr>
             <th style="width:44px;padding:0"></th>
             <th>AWB</th><th>Consignatario / Cliente</th><th>Buque</th><th>Handler</th><th>Apto</th>
@@ -1640,31 +1640,117 @@ async function loadEntradas(){
 
 async function loadFinalizadas(){
   await loadAll();
-  // Finalizadas = con fecha de retirada, más recientes primero
-  var fin=ALL.filter(function(e){return !!e.fecha_retirada;})
-    .sort(function(a,b){return new Date(b.fecha_retirada)-new Date(a.fecha_retirada);});
-  renderRows(fin,'tbody-fin');
-  setTimeout(function(){initResizableTable(document.querySelector('#tbody-fin').closest('table'),'ac_col_fin');},0);
+  renderFinalizadas('');
+  setTimeout(function(){initResizableTable(document.getElementById('tbl-fin'),'ac_col_fin');},0);
 }
 
-function filtrarFin(){
-  var q=(document.getElementById('src-fin').value||'').toLowerCase();
+function renderFinalizadas(q){
   var h=document.getElementById('fil-h-fin').value||'';
   var y=document.getElementById('fil-y-fin').value||'';
   var m=document.getElementById('fil-m-fin').value||'';
   var rd=(document.getElementById('fil-rd-desde')||{}).value||'';
   var rh=(document.getElementById('fil-rd-hasta')||{}).value||'';
+  var ql=(q||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
   var f=ALL.filter(function(e){
-    if(!e.fecha_retirada) return false;
+    if(!e.fecha_retirada)return false;
     var fr=String(e.fecha_retirada).slice(0,10);
     if(rd&&fr<rd)return false;
     if(rh&&fr>rh)return false;
-    if(q&&!((e.awb||'')+(e.consignatario||'')+(e.buque||'')).toLowerCase().includes(q))return false;
     if(h&&e.handling!==h)return false;
-    if(y||m){var mo=calcMes(e.fecha_retirada);if(y&&!mo.startsWith(y))return false;if(m&&!mo.includes(m))return false;}
+    // Filtros año/mes desactivados cuando hay búsqueda de texto — busca en todos los meses
+    if(!ql&&(y||m)){
+      var mo=calcMes(e.fecha_retirada);
+      if(y&&!mo.startsWith(y))return false;
+      if(m&&!mo.includes(m))return false;
+    }
+    if(ql){
+      var txt=((e.awb||'')+(e.consignatario||'')+(e.buque||'')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if(!txt.includes(ql))return false;
+    }
     return true;
+  }).sort(function(a,b){return new Date(b.fecha_retirada)-new Date(a.fecha_retirada);});
+
+  var tbody=document.getElementById('tbody-fin');
+  if(!f.length){
+    tbody.innerHTML='<tr><td colspan="25" style="text-align:center;padding:32px;color:var(--g400);font-size:13px">Sin expediciones finalizadas</td></tr>';
+    return;
+  }
+
+  // Con búsqueda o rango de fechas → lista plana sin grupos
+  if(ql||rd||rh){
+    renderRows(f,'tbody-fin');
+    return;
+  }
+
+  // Sin búsqueda → agrupar por mes de retirada
+  var colapsados=JSON.parse(localStorage.getItem('fin_grupos')||'{}');
+  var grupos={};var orden=[];
+  f.forEach(function(e){
+    var mes=calcMes(e.fecha_retirada)||'Sin fecha';
+    if(!grupos[mes]){grupos[mes]=[];orden.push(mes);}
+    grupos[mes].push(e);
   });
-  renderRows(f,'tbody-fin');
+
+  // Generar filas: cabecera de grupo + filas de datos
+  var tmpDiv=document.createElement('div');
+  var allHtml='';
+  orden.forEach(function(mes,idx){
+    var items=grupos[mes];
+    // Primer mes (más reciente) expandido por defecto; el resto según localStorage
+    var abierto=colapsados.hasOwnProperty(mes)?colapsados[mes]:(idx===0);
+    var totalMes=items.reduce(function(s,e){return s+(calcTotal(e)||0);},0);
+    var nCols=25;
+    allHtml+='<tr class="fin-ghdr" data-mes="'+encodeURIComponent(mes)+'" onclick="toggleFinGrupo(this)" style="cursor:pointer;background:var(--b50);border-top:2px solid var(--b100)">'+
+      '<td colspan="'+nCols+'" style="padding:8px 14px;user-select:none">'+
+        '<span style="font-size:13px;font-weight:700;color:var(--b700)">'+
+          '<span style="display:inline-block;transition:transform .2s;transform:rotate('+(abierto?90:0)+'deg);margin-right:7px;font-size:10px">▶</span>'+
+          mes+
+        '</span>'+
+        '<span style="margin-left:10px;font-size:11px;color:var(--g500)">'+items.length+' exp.</span>'+
+        '<span style="float:right;font-size:12px;font-weight:700;color:var(--b700)">'+fc(totalMes)+'</span>'+
+      '</td>'+
+    '</tr>';
+    // Filas del grupo — con ID único por mes para renderRows
+    var gid='fg-'+idx;
+    allHtml+='<tr class="fin-gitem" data-mes="'+encodeURIComponent(mes)+'" style="'+(abierto?'':'display:none')+'"><td colspan="'+nCols+'" style="padding:0;border:none"><table style="width:100%;border-collapse:collapse"><tbody id="'+gid+'"></tbody></table></td></tr>';
+  });
+  tbody.innerHTML=allHtml;
+
+  // Renderizar filas de cada grupo expandido
+  orden.forEach(function(mes,idx){
+    var colapsados2=JSON.parse(localStorage.getItem('fin_grupos')||'{}');
+    var abierto=colapsados2.hasOwnProperty(mes)?colapsados2[mes]:(idx===0);
+    if(abierto){
+      renderRows(grupos[mes],'fg-'+idx);
+    }
+  });
+}
+
+function toggleFinGrupo(hdrTr){
+  var mes=hdrTr.getAttribute('data-mes');
+  var arrow=hdrTr.querySelector('span span');
+  var colapsados=JSON.parse(localStorage.getItem('fin_grupos')||'{}');
+  // Siguiente elemento sibling con misma data-mes
+  var bodyTr=hdrTr.nextElementSibling;
+  if(!bodyTr)return;
+  var abierto=bodyTr.style.display==='none'||bodyTr.style.display==='';
+  // Determinar estado actual
+  var estaOculto=bodyTr.style.display==='none';
+  if(estaOculto){
+    bodyTr.style.display='';
+    if(arrow)arrow.style.transform='rotate(90deg)';
+    colapsados[decodeURIComponent(mes)]=true;
+  }else{
+    bodyTr.style.display='none';
+    if(arrow)arrow.style.transform='rotate(0deg)';
+    colapsados[decodeURIComponent(mes)]=false;
+  }
+  localStorage.setItem('fin_grupos',JSON.stringify(colapsados));
+}
+
+function filtrarFin(){
+  renderFinalizadas(document.getElementById('src-fin').value||'');
 }
 
 function filtrar(){
