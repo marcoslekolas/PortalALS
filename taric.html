@@ -1618,7 +1618,23 @@ async function llamarGeminiAPI(prompt, modelOverride){
 
 // Mantener nombre para compatibilidad
 async function llamarClaudeAPI(descripcion){
-  return llamarGeminiAPI(buildPromptClasificacion(descripcion));
+  // Búsqueda libre por la MISMA Edge Function (Gemini + catálogo + pase 3) que
+  // "leer factura", para que los criterios de clasificación sean idénticos.
+  // Ya no usa OpenRouter (que agota saldo y clasifica distinto).
+  const r = await fetch(FACTURA_ENDPOINT, {
+    method:'POST',
+    headers: await cabecerasTaric(),
+    body: JSON.stringify({ texto: descripcion, modo: 'clasificar_texto' })
+  });
+  if(!r.ok){
+    let msg='Error '+r.status;
+    try{ const j=await r.json(); if(j&&j.error)msg=j.error; }catch(_){}
+    throw new Error(msg);
+  }
+  const d = await r.json();
+  if(d.error) throw new Error(d.error);
+  logUsoIA('taric-busqueda','gemini-2.5-flash').catch(()=>{});
+  return d;   // { codigo_taric, nc8, descripcion_nc, arancel_erga_omnes, medidas_adicionales, confianza }
 }
 
 function buildPromptClasificacion(descripcion){
