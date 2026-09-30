@@ -464,10 +464,6 @@ textarea.fi{resize:vertical;min-height:80px}
           <span class="ni">📄</span>
           <span class="nav-item-txt">Leer factura</span>
         </div>
-        <div class="nav-item" onclick="nav('dua',this)">
-          <span class="ni">📝</span>
-          <span class="nav-item-txt">Borrador DUA</span>
-        </div>
 
         <div class="sb-sec">Consultas</div>
         <div class="nav-item" onclick="nav('historial',this)">
@@ -495,48 +491,6 @@ textarea.fi{resize:vertical;min-height:80px}
       </div>
 
       <div class="sb-bot">
-        <!-- Config OpenRouter API Key -->
-        <div id="sb-apikey-wrap" style="padding:8px 10px;border-bottom:1px solid var(--g100)">
-          <div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;display:flex;align-items:center;gap:4px">⚙️ <span class="nav-item-txt">API Key (opcional)</span></div>
-          <div style="font-size:10px;color:var(--gr600);margin-bottom:5px;font-weight:600" class="nav-item-txt">✅ Servicio activo — no requiere configuración</div>
-          <div style="display:flex;gap:4px" class="nav-item-txt">
-            <input id="sb-apikey-input" class="fi" type="password"
-              placeholder="Tu key personal (opcional)..."
-              style="font-size:11px;padding:5px 8px;flex:1;min-width:0"
-              oninput="saveOpenRouterKey(this.value)"
-              title="Opcional — el servicio funciona sin configuración. Introduce tu propia key para mayor capacidad.">
-            <button onclick="(function(){var i=document.getElementById('sb-apikey-input');i.type=i.type==='password'?'text':'password';this.textContent=i.type==='password'?'👁':'🙈';}).call(this)"
-              style="background:var(--g100);border:1px solid var(--g200);border-radius:6px;padding:4px 7px;font-size:12px;cursor:pointer;flex-shrink:0" title="Ver/ocultar key">👁</button>
-            <button onclick="(function(){var v=document.getElementById('sb-apikey-input').value;if(!v){showToast('⚠️ No hay key guardada');return;}navigator.clipboard.writeText(v).then(function(){showToast('✅ Key copiada');}).catch(function(){showToast('⚠️ Selecciona el texto manualmente');});}).call(this)"
-              style="background:var(--g100);border:1px solid var(--g200);border-radius:6px;padding:4px 7px;font-size:12px;cursor:pointer;flex-shrink:0" title="Copiar key">📋</button>
-            <div id="sb-apikey-status" style="width:22px;height:22px;border-radius:6px;background:var(--gr50);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;align-self:center">✅</div>
-          </div>
-          <div style="font-size:10px;color:var(--g400);margin-top:4px" class="nav-item-txt">
-            Key propia para mayor capacidad: <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--b600);text-decoration:none">openrouter.ai/keys ↗</a>
-          </div>
-          <!-- Selector de modelo -->
-          <select id="sb-model-select" class="fi" style="font-size:11px;padding:4px 6px;margin-top:6px;width:100%" class="nav-item-txt"
-            onchange="guardarModeloSupabase(this.value);localStorage.setItem('als_or_model',this.value);showToast('Modelo: '+this.value.split('/').pop())">
-            <option value="mistralai/mistral-small-2603">Mistral Small 4 💳 (recomendado)</option>
-            <option value="google/gemma-3-12b-it:free">Gemma 3 12B 🆓</option>
-            <option value="google/gemma-3-27b-it:free">Gemma 3 27B 🆓</option>
-            <option value="google/gemma-3-4b-it:free">Gemma 3 4B 🆓</option>
-            <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B 🆓 (solo texto)</option>
-          </select>
-          <div style="display:flex;gap:4px;margin-top:6px" class="nav-item-txt">
-            <a href="https://openrouter.ai/credits" target="_blank"
-              style="flex:1;text-align:center;background:linear-gradient(135deg,#065f46,#047857);color:#fff;border-radius:6px;padding:5px 6px;font-size:10px;font-weight:700;text-decoration:none;display:block">
-              💳 Recargar créditos ↗
-            </a>
-            <a href="https://openrouter.ai/activity" target="_blank"
-              style="flex:1;text-align:center;background:var(--g100);color:var(--g600);border:1px solid var(--g200);border-radius:6px;padding:5px 6px;font-size:10px;font-weight:600;text-decoration:none;display:block">
-              📊 Ver uso ↗
-            </a>
-          </div>
-          <div style="font-size:10px;color:var(--am600);margin-top:4px;line-height:1.4" class="nav-item-txt">
-            Con crédito propio: ~4.000 ops/$5 · Sin crédito: modelos gratis automáticos
-          </div>
-        </div>
         <!-- User -->
         <div class="sb-user" onclick="goHome()">
           <div class="sb-av" id="sb-av" style="background:linear-gradient(135deg,#2e4170,#22335c);font-family:monospace;font-size:10px;letter-spacing:.5px">CW</div>
@@ -701,65 +655,6 @@ textarea.fi{resize:vertical;min-height:80px}
       </div>
 
       <!-- VISTA: BORRADOR DUA -->
-      <div class="view" id="view-dua">
-        <div class="ph">
-          <div>
-            <div class="pt">📝 Borrador DUA</div>
-            <div class="ps">Extracción automática de datos de factura → borrador DUA con todas las casillas · Compatible Visual Trans</div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button class="btn btn-g btn-sm" onclick="mostrarHistorialDUA()" title="Ver borradores anteriores">📋 Historial</button>
-            <button class="btn btn-g btn-sm" onclick="validarTARICOnline()" id="btn-validar-taric" style="display:none" title="Verificar códigos TARIC contra base UE">🔍 Validar TARIC</button>
-            <span id="btn-exp-dua" style="display:none"></span>
-            <button class="btn btn-s btn-sm" onclick="limpiarDUA()">Limpiar</button>
-          </div>
-        </div>
-        <div class="view-body">
-
-          <!-- Info sobre integración VT -->
-          <div class="card" style="margin-bottom:16px;border-left:3px solid var(--b600);padding:14px 16px">
-            <div style="display:flex;align-items:flex-start;gap:10px">
-              <span style="font-size:20px;flex-shrink:0">⚡</span>
-              <div>
-                <div style="font-size:13px;font-weight:700;color:var(--g900);margin-bottom:4px">Integración con Visual Trans</div>
-                <div style="font-size:12px;color:var(--g600);line-height:1.6">
-                  Este módulo genera un <strong>borrador completo del DUA</strong> con todas las casillas numeradas según la resolución AEAT vigente.
-                  La IA extrae e infiere automáticamente los datos de la factura: TARIC, valor aduanero, origen, régimen, casillas 31, 40, 44, 47, S29, S32 y más.
-                  Para importar directamente a Visual Trans se requiere el schema XML de importación de dossiers de VT — consultar soporte VT o
-                  <a href="https://visualtrans.com/" target="_blank" style="color:var(--b600)">visualtrans.com ↗</a>.
-                </div>
-                <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-                  <span class="badge badge-blue">DUA Importación H1</span>
-                  <span class="badge badge-blue">DUA Exportación EX-A</span>
-                  <span class="badge badge-teal">Tránsito T1/T2</span>
-                  <span class="badge badge-grey">Visual Trans compatible</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div id="dua-upload-area">
-            <div class="drop-zone" id="dua-drop-zone" onclick="document.getElementById('dua-file-input').click()">
-              <input type="file" id="dua-file-input" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="abrirModalConfigDUA(this.files[0])">
-              <div class="drop-zone-icon">📄</div>
-              <div class="drop-zone-title">Arrastra la factura comercial</div>
-              <div class="drop-zone-sub">PDF, JPG, PNG · La IA extraerá todos los datos para el DUA</div>
-              <div style="margin-top:10px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
-                <span class="badge badge-blue">Casilla 1 · Régimen</span>
-                <span class="badge badge-blue">Casilla 31 · Mercancía</span>
-                <span class="badge badge-blue">Casilla 33 · TARIC</span>
-                <span class="badge badge-blue">Casilla 44 · Docs.</span>
-                <span class="badge badge-blue">Casilla 47 · Liquidación</span>
-              </div>
-            </div>
-          </div>
-
-          <div id="dua-result" style="display:none"></div>
-
-        </div>
-      </div>
-
-      <!-- VISTA: CAV -->
       <div class="view" id="view-cav">
         <div class="ph">
           <div>
@@ -4941,22 +4836,9 @@ async function mostrarHistorialDUA(){
 }
 
 async function recuperarDUA(id){
-  if(!sb) return;
-  try {
-    const {data} = await sb.from('als_historial_dua').select('dua_json,filename').eq('id',id).single();
-    if(data?.dua_json){
-      closeModal();
-      nav('dua');
-      document.getElementById('dua-upload-area').style.display='none';
-      const resultEl = document.getElementById('dua-result');
-      resultEl.style.display='block';
-      renderBorradorDUA(data.dua_json, resultEl, data.filename||'historial');
-      document.getElementById('btn-exp-dua').style.display='';
-      document.getElementById('btn-validar-taric').style.display='';
-      window._ultimoDUA = data.dua_json;
-      showToast('✅ Borrador DUA recuperado del historial');
-    }
-  } catch(e){ showToast('❌ Error al recuperar: '+e.message); }
+  // Módulo Borrador DUA jubilado: el DUA se genera ahora en "Leer factura" y
+  // se guarda en VisualTrans, no aquí. Esta función queda inerte.
+  showToast('El borrador DUA se genera ahora desde "Leer factura"');
 }
 
 // ── Log de uso IA — auditoría ─────────────────────────────────────
