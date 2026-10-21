@@ -860,9 +860,14 @@ function mergeWithDefaults(savedSections){
       const insertAfter = DEFAULT_SECTIONS.slice(0,defIdx).map(d=>d.id).reverse().find(id=>savedIds.has(id));
       const pos = insertAfter ? merged.findIndex(s=>s.id===insertAfter)+1 : merged.length;
       const copia = JSON.parse(JSON.stringify(def));
-      // La sección entra DESACTIVADA (no altera el documento hasta que se marque),
-      // pero sus conceptos conservan el check del catálogo.
+      // La sección entra DESACTIVADA y sus conceptos DESMARCADOS y marcados como
+      // nuevos. Antes conservaban el check del catálogo: eso escribía en la oferta
+      // una sección entera con precios de catálogo que quedaban congelados y se
+      // volvían obsoletos a la siguiente revisión de tarifas; al marcar la sección
+      // se cotizaban precios viejos sin aviso.
       copia.defaultOn = false;
+      copia.rates.forEach(r => { r.check = false; r._new = true; });
+      addedRates += copia.rates.length;
       merged.splice(pos, 0, copia);
       savedIds.add(def.id);   // para que la siguiente sección nueva se coloque detrás
       addedSections++;
