@@ -2421,6 +2421,11 @@ async function renderLoteFacturas(){
   const conLineas = FACTURAS.filter(f => f.lineas.length);
   if(!conLineas.length) return;
 
+  // Reconcilia los pesos de CADA factura contra SUS propios totales, sobre las
+  // líneas originales, ANTES de construir el lote y de pintar el cuadre. Así el
+  // cuadre en pantalla y el Excel ven exactamente los mismos pesos corregidos.
+  conLineas.forEach(f => reconciliarPesosFactura(f.lineas, f.cabecera || {}));
+
   const todas = [];
   conLineas.forEach(f => {
     const c = f.cabecera || {};
@@ -2820,71 +2825,48 @@ function verificarSubpartida(l){
            nc8, codigo:generico, previo: taric || null, candidatos:cand, ambiguo:true };
 }
 
-async function renderLineasFactura(data, filename){
-  // data puede ser: objeto con .lineas, array directo, o el resultado de parseClaudeResponse
-  let lineas = [];
-  if(Array.isArray(data)) lineas = data;
-  else if(data && Array.isArray(data.lineas)) lineas = data.lineas;
-  else lineas = [];
-
-  // ── CORRECCIÓN DE PESOS INFLADOS POR ERROR DE DECIMAL ──
-  // Facturas técnicas (FastReport) usan punto decimal y el modelo lo lee mal:
-  // "760.860 kg" (=760,86) lo toma como 760860. Se corrige de forma
-  // determinista. No depende del total declarado (que en lotes puede faltar):
-  // usa la coherencia con el importe y la magnitud absoluta. No gasta IA.
+// Reconciliación determinista de pesos de UNA factura (sin IA). Dos pasos:
+//  1) corrige pesos de línea inflados por error de separador decimal
+//     ("760.860"=760,86 leído como 760860), por coherencia con importe/magnitud
+//     y, si consta, con el peso bruto total declarado;
+//  2) cuando los kilos por línea viajan en `cantidad` (cárnicas) y su suma es un
+//     múltiplo limpio (x1000/x100/x10) del neto/bruto declarado, reescala todo el
+//     campo y borra las estimaciones por reparto (que falsean el bruto).
+// Idempotente: repetirla no cambia nada. Se aplica por factura (no sobre un lote
+// mezclado), para que cada una se reconcilie contra SUS propios totales.
+function reconciliarPesosFactura(lineas, cab){
+  cab = cab || {};
+  // ── Paso 1: pesos de línea inflados por error de decimal ──
   (function corregirPesos(){
-    const cab = (data && data.cabecera) || FACTURA_CABECERA || {};
-    // Total declarado, si está disponible (referencia preferente)
     const parsePeso = s => { s=String(s==null?'':s).trim(); if(!s)return 0;
-      // formato con punto decimal (760.86) o coma (760,86) o miles
       const uc=s.lastIndexOf(','), up=s.lastIndexOf('.');
       if(uc>-1&&up>-1){ s = uc>up ? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,''); }
       else if(uc>-1){ const d=s.length-uc-1; s = (d===3)? s.replace(/,/g,'') : s.replace(',','.'); }
       const n=parseFloat(s); return isNaN(n)?0:n; };
     const totalDecl = parsePeso(cab.peso_bruto_total);
-
     let corregidas = 0;
     lineas.forEach(l => {
       const raw = String(l.peso_bruto==null?'':l.peso_bruto).trim();
       if(!raw) return;
-      // Interpretar el número de forma inteligente: si tiene UN punto o UNA coma
-      // con 1-2 decimales, es decimal legítimo (1036.8 = 1036,8, no inflado).
-      // Solo se considera inflado si es un ENTERO grande sin decimales.
       const tienePuntoDecimal = /^\d{1,4}\.\d{1,2}$/.test(raw);   // 1036.8
       const tieneComaDecimal  = /^\d{1,4},\d{1,2}$/.test(raw);    // 1036,8
       if(tienePuntoDecimal || tieneComaDecimal) return;          // ya está bien
-      // Entero (o con separadores de miles): candidato a error de decimal
       const bruto = parseFloat(raw.replace(/[.,]/g,'')) || 0;
       if(!bruto) return;
       const importe = parseFloat(String(l.importe||'').replace(/\./g,'').replace(',','.')) || 0;
-
       let inflado = false;
       if(totalDecl>0 && bruto>totalDecl && bruto/1000 <= totalDecl*1.3) inflado = true;
-      else if(bruto >= 10000){
-        const div = bruto/1000;
-        if(!importe || (importe/div) >= 0.05) inflado = true;
-      }
-      if(inflado){
-        l.peso_bruto = String(Math.round(bruto/10)/100).replace('.',',');
-        l._pesoCorregido = true;
-        corregidas++;
-      }
+      else if(bruto >= 10000){ const div = bruto/1000; if(!importe || (importe/div) >= 0.05) inflado = true; }
+      if(inflado){ l.peso_bruto = String(Math.round(bruto/10)/100).replace('.',','); l._pesoCorregido = true; corregidas++; }
     });
     if(corregidas){
       const suma = lineas.reduce((a,l)=>a+(parseFloat(String(l.peso_bruto||'').replace(/\./g,'').replace(',','.'))||0),0);
       console.log('Pesos corregidos:', corregidas, '· suma resultante', Math.round(suma*100)/100, totalDecl?('· declarado '+totalDecl):'');
     }
   })();
-
-  // Reconciliación de escala cuando los kilos por línea viajan en `cantidad`
-  // (típico en cárnicas: la columna KILOS es el neto por línea). La coma como
-  // separador se malinterpreta fácil (429,500 -> 429500). Se usa el TOTAL
-  // declarado como ancla: si la suma de líneas es un múltiplo limpio
-  // (x1000/x100/x10) del neto (o bruto) declarado, se reescala todo el campo.
-  // Determinista, sin IA, y solo actúa con un factor limpio contra un total real.
+  // ── Paso 2: cantidad en kg reconciliada contra el total declarado ──
   (function reconciliarCantidadKg(){
-    const cab2 = (data && data.cabecera) || FACTURA_CABECERA || {};
-    const anchor = parseNum(cab2.peso_neto_total) || parseNum(cab2.peso_bruto_total);
+    const anchor = parseNum(cab.peso_neto_total) || parseNum(cab.peso_bruto_total);
     if(!(anchor > 0)) return;
     if(lineas.some(l => parseNum(l.peso_bruto))) return;   // el peso real va en peso_bruto, ya tratado arriba
     const nKg = lineas.filter(l => /kg/i.test(l.unidad || '')).length;
@@ -2892,7 +2874,6 @@ async function renderLineasFactura(data, filename){
     let sumC = lineas.reduce((a,l) => a + (parseNum(l.cantidad) || 0), 0);
     if(!(sumC > 0)) return;
     const fmt = n => { const r = Math.round(n * 100) / 100; return String(r).replace('.', ','); };
-    // 1) Reescala global si hay un factor limpio contra el total declarado
     const ratio = sumC / anchor;
     const factores = esKg ? [1000, 100, 10] : [1000, 100];
     const tol = esKg ? 0.02 : 0.01;
@@ -2904,12 +2885,22 @@ async function renderLineasFactura(data, filename){
         break;
       }
     }
-    // 2) Si la cantidad en kg ya representa el neto real y cuadra, la estimación
-    //    por reparto sobra: falseaba el bruto en el Excel y el DUA. Se limpia.
     if(esKg && Math.abs(sumC - anchor) / anchor < 0.05){
       lineas.forEach(l => { l.peso_estimado = ''; l.peso_estimado_base = ''; });
     }
   })();
+}
+
+async function renderLineasFactura(data, filename){
+  // data puede ser: objeto con .lineas, array directo, o el resultado de parseClaudeResponse
+  let lineas = [];
+  if(Array.isArray(data)) lineas = data;
+  else if(data && Array.isArray(data.lineas)) lineas = data.lineas;
+  else lineas = [];
+
+  // Reconciliación determinista de pesos (escala inflada por decimales +
+  // cantidad-kg contra el total declarado). Se aplica por factura.
+  reconciliarPesosFactura(lineas, (data && data.cabecera) || FACTURA_CABECERA || {});
 
   const info = document.getElementById('factura-info');
   const tbody = document.getElementById('factura-tbody');
