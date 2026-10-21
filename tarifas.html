@@ -954,7 +954,7 @@ function duplicateOffer(id) {
   document.getElementById('validity').value       = orig.validity||'31/12/2026';
   document.getElementById('global-notes').value   = orig.global_notes||'';
   document.getElementById('cond-generales').value = orig.cond_generales||'';
-  state.sections  = mergeWithDefaults(orig.sections||DEFAULT_SECTIONS).sections;
+  state.sections  = mergeWithDefaults(orig.sections||blankSections()).sections;
   state.editingId = null;  // nueva oferta
   document.getElementById('editing-notice').classList.remove('show');
   document.getElementById('btn-save').innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Guardar (copia)';
@@ -1127,7 +1127,22 @@ function toggleSection(si,v){
   if(blocks[si]) blocks[si].className='section-block'+(v?' sec-active':'');
   renderDoc();
 }
-function toggleRate(si,ri,v){state.sections[si].rates[ri].check=v;renderDoc();}
+function toggleRate(si,ri,v){
+  const sec=state.sections[si];
+  sec.rates[ri].check=v;
+  // Marcar un concepto activa su sección: con todo desmarcado de inicio, si no
+  // se hiciera, el concepto no saldría en el documento y parecería un fallo.
+  if(v && !sec.defaultOn){
+    sec.defaultOn=true;
+    const blk=document.querySelectorAll('.section-block')[si];
+    if(blk){
+      blk.className='section-block sec-active';
+      const cb=blk.querySelector('h3 input[type=checkbox]');
+      if(cb) cb.checked=true;
+    }
+  }
+  renderDoc();
+}
 function updatePrice(si,ri,v){state.sections[si].rates[ri].price=v;renderDoc();}
 function updateLabel(si,ri,v){state.sections[si].rates[ri].label=v;renderDoc();}
 function updateUnit(si,ri,v){state.sections[si].rates[ri].unit=v;renderDoc();}
@@ -1143,14 +1158,14 @@ function addRate(si){
   const blk=g.querySelectorAll('.section-block');
   if(blk[si]){const inp=blk[si].querySelectorAll('.lbl-edit');const last=inp[inp.length-1];if(last){last.focus();last.select();}}
 }
-function resetSections(){state.sections=JSON.parse(JSON.stringify(DEFAULT_SECTIONS));buildSectionsGrid();renderDoc();}
+function resetSections(){state.sections=blankSections();buildSectionsGrid();renderDoc();}
 
 function resetForm(){
   ['client-name','client-addr','client-contact','client-cif','client-email','created-by','global-notes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('doc-date').value=new Date().toISOString().split('T')[0];
   document.getElementById('validity').value='31/12/2026';
   document.getElementById('cond-generales').value=COND_DEFAULT;
-  state.sections=JSON.parse(JSON.stringify(DEFAULT_SECTIONS));state.editingId=null;
+  state.sections=blankSections();state.editingId=null;
   document.getElementById('editing-notice').classList.remove('show');
   document.getElementById('btn-save').innerHTML='<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Guardar';
   document.getElementById('btn-descartar').style.display='none';
