@@ -661,8 +661,17 @@ const DEFAULT_SECTIONS = [
 // ══════════════════════════════════════════════════════
 //  ESTADO GLOBAL
 // ══════════════════════════════════════════════════════
+// Catálogo en blanco: mismos conceptos y precios, pero TODO desmarcado.
+// Las ofertas nuevas arrancan así para que nada se cuele en el PDF sin
+// que se haya marcado a mano, concepto a concepto.
+function blankSections(){
+  const c = JSON.parse(JSON.stringify(DEFAULT_SECTIONS));
+  c.forEach(s => { s.defaultOn = false; (s.rates||[]).forEach(r => { r.check = false; }); });
+  return c;
+}
+
 const state = {
-  sections: JSON.parse(JSON.stringify(DEFAULT_SECTIONS)),
+  sections: blankSections(),
   history: [],
   editingId: null
 };
