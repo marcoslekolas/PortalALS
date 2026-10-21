@@ -2303,33 +2303,52 @@ function parseNum(v){
 
 function cuadreHtml(f){
   const c = f.cabecera || {};
-  const num = v => { const n = parseNum(v); return n; };
+  const num = v => parseNum(v);
   const sum = campo => f.lineas.reduce((a,l)=>a+(num(l[campo])||0), 0);
-  const filas = [
+
+  // Carrier del peso NETO por línea: peso_neto si existe; si no, la cantidad
+  // cuando está en kg (cárnicas). Así el neto declarado también se reconcilia.
+  const hayPesoNetoLinea = f.lineas.some(l => num(l.peso_neto));
+  const cantEsKg = f.lineas.filter(l => /kg/i.test(l.unidad||'')).length >= Math.max(1, f.lineas.length/2);
+  const sumNeto = hayPesoNetoLinea ? sum('peso_neto') : (cantEsKg ? sum('cantidad') : 0);
+
+  // [etiqueta, declarado, calculado]
+  const cand = [
     ['Partidas',   num(c.partidas_declaradas), f.lineas.length],
     ['Bultos',     num(c.bultos_totales),      sum('bultos')],
-    ['Peso bruto', num(c.peso_bruto_total),    sum('peso_bruto')]
-  ].filter(([,dec]) => dec !== null && dec > 0);
-
-  // Importe: comparar contra la BASE IMPONIBLE (suma de líneas sin IVA), no
-  // contra el total con IVA. Si la factura solo da el total con IVA, no se
-  // compara el importe (siempre "descuadraría" por los impuestos).
-  const sumImporte = sum('importe');
+    ['Peso bruto', num(c.peso_bruto_total),    sum('peso_bruto')],
+    ['Peso neto',  num(c.peso_neto_total),     sumNeto],
+  ];
+  // Importe: contra la BASE IMPONIBLE (suma de líneas sin IVA), no el total con IVA.
   const base = num(c.base_imponible);
-  if(base && base > 0){
-    filas.push(['Importe (base)', base, sumImporte]);
-  }
-  if(!filas.length) return '';
+  if(base && base > 0) cand.push(['Importe (base)', base, sum('importe')]);
 
-  const malas = filas.filter(([,dec,calc]) => calc > 0 && Math.abs(calc-dec)/dec > 0.05);
-  if(!malas.length){
-    return `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--g100);font-size:11px;color:var(--gr600)">
-      ✔ Desglose cuadrado con los totales de la factura (${filas.map(([n,d])=>n.toLowerCase()+': '+d).join(' · ')})</div>`;
+  // Solo filas con un total declarado real.
+  const conDecl = cand.filter(([,dec]) => dec !== null && dec > 0);
+  if(!conDecl.length) return '';
+
+  // Verificables = tienen desglose por línea (calc>0). El resto no se puede
+  // verificar: NO se afirma que cuadra (ese era el bug: un sumatorio 0 pasaba
+  // como "cuadrado"), se informa de que se usará el total declarado.
+  const verificables = conDecl.filter(([,,calc]) => calc > 0);
+  const noVerif      = conDecl.filter(([,,calc]) => !(calc > 0));
+  const malas        = verificables.filter(([,dec,calc]) => Math.abs(calc-dec)/dec > 0.05);
+
+  if(malas.length){
+    return `<div style="margin-top:8px;padding:8px 10px;background:var(--am50);border-radius:6px;font-size:11px;color:var(--am600)">
+      <strong>⚠ El desglose no cuadra con la factura.</strong> Revisa antes de usarlo en el DUA:
+      ${malas.map(([n,dec,calc])=>`<br>· ${n}: la factura declara <strong>${dec}</strong> y la suma de líneas da <strong>${Math.round(calc*100)/100}</strong>`).join('')}
+    </div>`;
   }
-  return `<div style="margin-top:8px;padding:8px 10px;background:var(--am50);border-radius:6px;font-size:11px;color:var(--am600)">
-    <strong>⚠ El desglose no cuadra con la factura.</strong> Revisa antes de usarlo en el DUA:
-    ${malas.map(([n,dec,calc])=>`<br>· ${n}: la factura declara <strong>${dec}</strong> y la suma de líneas da <strong>${Math.round(calc*100)/100}</strong>`).join('')}
-  </div>`;
+
+  let txt = '';
+  if(verificables.length){
+    txt += `✔ Desglose cuadrado con los totales de la factura (${verificables.map(([n,d])=>n.toLowerCase()+': '+d).join(' · ')})`;
+  }
+  if(noVerif.length){
+    txt += (txt ? '<br>' : '') + `ℹ Sin desglose por línea para ${noVerif.map(([n])=>n.toLowerCase()).join(', ')}: se usará el total declarado de la factura.`;
+  }
+  return `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--g100);font-size:11px;color:var(--gr600)">${txt}</div>`;
 }
 
 // Fusiona todas las facturas del lote en una sola tabla, marcando cada línea
@@ -2857,6 +2876,41 @@ async function renderLineasFactura(data, filename){
     }
   })();
 
+  // Reconciliación de escala cuando los kilos por línea viajan en `cantidad`
+  // (típico en cárnicas: la columna KILOS es el neto por línea). La coma como
+  // separador se malinterpreta fácil (429,500 -> 429500). Se usa el TOTAL
+  // declarado como ancla: si la suma de líneas es un múltiplo limpio
+  // (x1000/x100/x10) del neto (o bruto) declarado, se reescala todo el campo.
+  // Determinista, sin IA, y solo actúa con un factor limpio contra un total real.
+  (function reconciliarCantidadKg(){
+    const cab2 = (data && data.cabecera) || FACTURA_CABECERA || {};
+    const anchor = parseNum(cab2.peso_neto_total) || parseNum(cab2.peso_bruto_total);
+    if(!(anchor > 0)) return;
+    if(lineas.some(l => parseNum(l.peso_bruto))) return;   // el peso real va en peso_bruto, ya tratado arriba
+    const nKg = lineas.filter(l => /kg/i.test(l.unidad || '')).length;
+    const esKg = nKg >= Math.max(1, lineas.length / 2);
+    let sumC = lineas.reduce((a,l) => a + (parseNum(l.cantidad) || 0), 0);
+    if(!(sumC > 0)) return;
+    const fmt = n => { const r = Math.round(n * 100) / 100; return String(r).replace('.', ','); };
+    // 1) Reescala global si hay un factor limpio contra el total declarado
+    const ratio = sumC / anchor;
+    const factores = esKg ? [1000, 100, 10] : [1000, 100];
+    const tol = esKg ? 0.02 : 0.01;
+    for(const f of factores){
+      if(Math.abs(ratio - f) / f < tol){
+        lineas.forEach(l => { const v = parseNum(l.cantidad); if(v) l.cantidad = fmt(v / f); });
+        sumC = sumC / f;
+        console.log('cantidad(kg) reescalada /' + f + ' -> suma ' + sumC.toFixed(2) + ' vs declarado ' + anchor);
+        break;
+      }
+    }
+    // 2) Si la cantidad en kg ya representa el neto real y cuadra, la estimación
+    //    por reparto sobra: falseaba el bruto en el Excel y el DUA. Se limpia.
+    if(esKg && Math.abs(sumC - anchor) / anchor < 0.05){
+      lineas.forEach(l => { l.peso_estimado = ''; l.peso_estimado_base = ''; });
+    }
+  })();
+
   const info = document.getElementById('factura-info');
   const tbody = document.getElementById('factura-tbody');
 
@@ -3086,11 +3140,7 @@ const VT_ADUANAS = {
 const VT_REGIMENES_EXP = ['10.00','23.00','31.00','31.51'];   // exportación
 const VT_REGIMENES_IMP = ['40.00','61.23'];                    // importación
 
-function _vtNum(v){
-  if(v==null||v==='') return '';
-  const n = parseFloat(String(v).replace(/\./g,'').replace(',','.'));
-  return isNaN(n) ? '' : n;
-}
+function _vtNum(v){ const n = parseNum(v); return (n==null) ? '' : n; }
 function _vtTaric(t){
   const s = String(t||'').replace(/\D/g,'');
   return s.length===10 ? s : '';
@@ -4919,7 +4969,7 @@ function _vtFecha(str){
 }
 
 function _vtStr(v){ return String(v||'').replace(/\|/g,' ').trim(); }
-function _vtNum(v){ return String(parseFloat(v)||0).replace(',','.'); }
+function _vtNum(v){ const n = parseNum(v); return (n==null) ? '' : n; }
 
 function _paisIso(pais){
   if(!pais) return '';
