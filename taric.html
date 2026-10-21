@@ -932,6 +932,18 @@ let FACTURA_CABECERA = null;
 // País de origen cuando la factura no lo declara (ISO alfa-2).
 // Las facturas de avituallamiento no suelen indicarlo. Cambiar aquí si procede.
 const ORIGEN_POR_DEFECTO = 'ES';
+
+// Página de recarga de saldo de la API de Gemini (AI Studio), proyecto de Customs-Way.
+const AISTUDIO_BILLING_URL = 'https://aistudio.google.com/billing?billing=01B38A-C1FA35-84A6BE';
+// ¿El error de lectura es por saldo/crédito agotado de Gemini?
+function esErrorSaldo(msg){ return /saldo|cr[eé]dito|CREDITOS|prepay|billing|facturaci[oó]n/i.test(String(msg||'')); }
+// Botón que lleva directo a la recarga.
+function botonRecargaHTML(){
+  return `<a href="${AISTUDIO_BILLING_URL}" target="_blank" rel="noopener" `
+    + `style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:9px 16px;`
+    + `background:var(--rd600,#d12d2d);color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none">`
+    + `↻ Recargar saldo de Gemini</a>`;
+}
 let _proxyDisponible = null; // null=sin probar, true=funciona, false=no disponible
 // Modelo por defecto — con crédito usa mistral-small-4 (vision); sin crédito usa gemma-3-12b
 const OR_MODEL_DEFAULT = 'mistralai/mistral-small-2603';  // $0.15/$0.60 por M tokens, vision ✅
@@ -2183,6 +2195,10 @@ async function handleFiles(fileList){
             </div>
             ${e.lineas?`<span class="badge badge-blue" style="font-size:10px">${e.lineas} líneas</span>`:''}
           </div>`).join('')}
+        ${estados.some(e=>e.estado==='error' && esErrorSaldo(e.msg)) ? `
+          <div style="margin-top:10px;padding:10px 12px;background:var(--rd50,#fde8e8);border-radius:6px;font-size:11px;color:var(--rd600,#d12d2d)">
+            <strong>Saldo de Gemini agotado.</strong> Recarga para poder leer facturas:<br>${botonRecargaHTML()}
+          </div>` : ''}
       </div>`;
   };
   pintarCola();
@@ -2223,8 +2239,11 @@ async function handleFiles(fileList){
 
   const conLineas = FACTURAS.filter(f => f.lineas.length);
   if(!conLineas.length){
+    const saldo = FACTURAS.some(f => f.error && esErrorSaldo(f.error));
     document.getElementById('factura-tbody').innerHTML =
-      '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--rd600)">No se pudo extraer ninguna línea de los documentos.</td></tr>';
+      '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--rd600)">No se pudo extraer ninguna línea de los documentos.'
+      + (saldo ? '<br><br>Parece que se agotó el saldo de Gemini.<br>' + botonRecargaHTML() : '')
+      + '</td></tr>';
     return;
   }
   renderLoteFacturas();
