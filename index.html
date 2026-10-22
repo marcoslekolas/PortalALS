@@ -8346,9 +8346,31 @@ async function loadAgenda(){
     consultas.push(sb.from('buques').select('id,nombre,eta_buque,puerto_terminal,estado_operacion,ref_visual_trans').not('eta_buque','is',null).gte('eta_buque',iniISO).lte('eta_buque',finISO).order('eta_buque'));
   else consultas.push(Promise.resolve({data:[]}));
 
-  if(activas.includes('expediciones'))
-    consultas.push(sb.from('expediciones').select('id,nº_expedicion,fecha_max_despacho,estado_semaforo,estado_carga,hora_de_carga,buques(nombre,eta_buque),empresas(nombre)').not('fecha_max_despacho','is',null).gte('fecha_max_despacho',dIni).lte('fecha_max_despacho',dFin).order('fecha_max_despacho'));
-  else consultas.push(Promise.resolve({data:[]}));
+  // Expediciones: todas las vinculadas a los buques del rango (independientemente de fecha_max_despacho)
+  // Si no se cargan buques, filtrar por fecha_max_despacho del propio rango como fallback
+  if(activas.includes('expediciones')){
+    const selectExp='id,nº_expedicion,buque_id,fecha_max_despacho,estado_semaforo,estado_carga,hora_de_carga,ubicacion,bultos,kilos,buques(id,nombre,eta_buque),empresas(nombre)';
+    if(activas.includes('buques')){
+      // Las expediciones se filtran por el buque: todas las que viajen en los buques del rango
+      consultas.push(
+        sb.from('buques').select('id').not('eta_buque','is',null).gte('eta_buque',iniISO).lte('eta_buque',finISO)
+          .then(async bqR=>{
+            const buqueIds=(bqR.data||[]).map(b=>b.id);
+            // También incluimos expediciones sin buque pero con fecha_max_despacho en el rango
+            if(!buqueIds.length){
+              return sb.from('expediciones').select(selectExp).not('fecha_max_despacho','is',null).gte('fecha_max_despacho',dIni).lte('fecha_max_despacho',dFin);
+            }
+            const [enBuques, sinBuque] = await Promise.all([
+              sb.from('expediciones').select(selectExp).in('buque_id',buqueIds),
+              sb.from('expediciones').select(selectExp).is('buque_id',null).not('fecha_max_despacho','is',null).gte('fecha_max_despacho',dIni).lte('fecha_max_despacho',dFin)
+            ]);
+            return {data:[...(enBuques.data||[]), ...(sinBuque.data||[])]};
+          })
+      );
+    } else {
+      consultas.push(sb.from('expediciones').select(selectExp).not('fecha_max_despacho','is',null).gte('fecha_max_despacho',dIni).lte('fecha_max_despacho',dFin).order('fecha_max_despacho'));
+    }
+  } else consultas.push(Promise.resolve({data:[]}));
 
   if(activas.includes('eventos'))
     consultas.push(sb.from('eventos').select('id,titulo,descripcion,fecha_inicio,color,usuario_nombre').not('fecha_inicio','is',null).gte('fecha_inicio',iniISO).lte('fecha_inicio',finISO).order('fecha_inicio'));
@@ -8380,32 +8402,56 @@ async function loadAgenda(){
 
   const fmtHora=f=>{ try{ const d=new Date(f); const hh=String(d.getHours()).padStart(2,'0'); const mm=String(d.getMinutes()).padStart(2,'0'); return (hh==='00'&&mm==='00')?'':`${hh}:${mm}`; }catch(e){ return ''; } };
 
+  // Indice buque_id → item buque, para anidar expediciones debajo
+  const buqueItemIdx={};
+
   (bqsR.data||[]).forEach(b=>{
     const estCol=(b.estado_operacion||'').toLowerCase().includes('embarc')?'#2e7d32':(b.estado_operacion||'').toLowerCase().includes('cancel')?'#c62828':'#1565c0';
-    items.push({
+    const buqueItem={
       fecha:b.eta_buque, tipo:'buques', color:'#1565c0',
       titulo:`🚢 ${b.nombre||'—'}`,
       subtitulo:`${b.puerto_terminal||'—'} · ETA ${new Date(b.eta_buque).toLocaleDateString('es-ES')}${fmtHora(b.eta_buque)?' '+fmtHora(b.eta_buque):''}`,
       badge:b.estado_operacion||'',
       badgeCol:estCol,
-      onclick:`openBuque('${b.id}')`
-    });
+      onclick:`openBuque('${b.id}')`,
+      children:[], // expediciones anidadas
+      buqueId:b.id
+    };
+    items.push(buqueItem);
+    buqueItemIdx[b.id]=buqueItem;
   });
+
+  const _semColor=sem=>{
+    if(sem.includes('🟢')) return '#2e7d32';
+    if(sem.includes('🟡')||sem.includes('🟠')) return '#ef6c00';
+    if(sem.includes('🔴')) return '#c62828';
+    return '#64748b';
+  };
 
   (expR.data||[]).forEach(e=>{
     const sem=e.estado_semaforo||'';
-    let semCol='#64748b';
-    if(sem.includes('🟢')) semCol='#2e7d32';
-    else if(sem.includes('🟡')||sem.includes('🟠')) semCol='#ef6c00';
-    else if(sem.includes('🔴')) semCol='#c62828';
-    items.push({
-      fecha:e.fecha_max_despacho, tipo:'expediciones', color:'#0f766e',
+    const semCol=_semColor(sem);
+    const empresa=e.empresas?.nombre||'—';
+    const detalles=[];
+    if(e.bultos) detalles.push(e.bultos+' blt');
+    if(e.kilos) detalles.push(e.kilos+' kg');
+    if(e.ubicacion) detalles.push('📍 '+e.ubicacion);
+    if(e.estado_carga) detalles.push(e.estado_carga);
+    const expItem={
+      fecha:e.fecha_max_despacho||e.buques?.eta_buque||null,
+      tipo:'expediciones', color:'#0f766e',
       titulo:`📦 Exp. ${e['nº_expedicion']||e.id}`,
-      subtitulo:`${e.empresas?.nombre||'—'}${e.buques?.nombre?' · '+e.buques.nombre:''} · Despacho ${new Date(e.fecha_max_despacho).toLocaleDateString('es-ES')}`,
+      subtitulo:`${empresa}${detalles.length?' · '+detalles.join(' · '):''}${e.fecha_max_despacho?' · Despacho '+new Date(e.fecha_max_despacho).toLocaleDateString('es-ES'):''}`,
       badge:sem,
       badgeCol:semCol,
       onclick:`openExpD('${e.id}')`
-    });
+    };
+    // Si pertenece a un buque cargado, anidarla; si no, mostrarla suelta
+    if(e.buque_id && buqueItemIdx[e.buque_id]){
+      buqueItemIdx[e.buque_id].children.push(expItem);
+    } else {
+      items.push(expItem);
+    }
   });
 
   (evR.data||[]).forEach(ev=>{
@@ -8456,10 +8502,13 @@ async function loadAgenda(){
   const itemsFil = prefs.ocultarPasados ? items.filter(i=>!esPasado(i.fecha)) : items;
   itemsFil.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
 
-  // Resumen contadores
+  // Resumen contadores — también cuenta expediciones anidadas en buques
   const porSec={};
   AGENDA_SECCIONES_DEF.forEach(s=>porSec[s.key]=0);
-  itemsFil.forEach(i=>{ porSec[i.tipo]=(porSec[i.tipo]||0)+1; });
+  itemsFil.forEach(i=>{
+    porSec[i.tipo]=(porSec[i.tipo]||0)+1;
+    (i.children||[]).forEach(ch=>{ porSec[ch.tipo]=(porSec[ch.tipo]||0)+1; });
+  });
   const resumen=`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
     ${AGENDA_SECCIONES_DEF.filter(s=>prefs.secciones.includes(s.key)).map(s=>`
       <div style="background:${s.color}10;border:1px solid ${s.color}30;border-radius:8px;padding:6px 12px;display:flex;align-items:center;gap:6px">
@@ -8468,20 +8517,41 @@ async function loadAgenda(){
       </div>`).join('')}
   </div>`;
 
-  // Renderizar — por día o por sección
+  // Renderizar un item (con hijos anidados si los tiene)
+  const renderChild=(ch)=>{
+    const bd=ch.badge?`<span style="font-size:10px;font-weight:700;background:${ch.badgeCol||ch.color}15;color:${ch.badgeCol||ch.color};border:1px solid ${ch.badgeCol||ch.color}40;padding:2px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0">${ch.badge}</span>`:'';
+    return `<div onclick="event.stopPropagation();${ch.onclick}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#f8fafc;border:1px solid var(--g200);border-left:3px solid ${ch.color};border-radius:6px;cursor:pointer;transition:all .15s" onmouseenter="this.style.background='#f1f5f9';this.style.borderLeftWidth='4px'" onmouseleave="this.style.background='#f8fafc';this.style.borderLeftWidth='3px'">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;color:var(--g900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ch.titulo}</div>
+        ${ch.subtitulo?`<div style="font-size:11px;color:var(--g500);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ch.subtitulo}</div>`:''}
+      </div>
+      ${bd}
+    </div>`;
+  };
+
   const renderItem=(it,showFecha)=>{
     const dt=new Date(it.fecha);
     const hora=fmtHora(it.fecha);
     const pasado=esPasado(it.fecha);
-    const bd=it.badge?`<span style="font-size:10px;font-weight:700;background:${it.badgeCol||it.color}15;color:${it.badgeCol||it.color};border:1px solid ${it.badgeCol||it.color}40;padding:2px 7px;border-radius:10px;white-space:nowrap">${it.badge}</span>`:'';
+    const bd=it.badge?`<span style="font-size:10px;font-weight:700;background:${it.badgeCol||it.color}15;color:${it.badgeCol||it.color};border:1px solid ${it.badgeCol||it.color}40;padding:2px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0">${it.badge}</span>`:'';
     const fechaCorta=showFecha?`<span style="font-size:11px;color:var(--g500);margin-right:6px">${dt.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})}${hora?' '+hora:''}</span>`:'';
-    return `<div onclick="${it.onclick}" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fff;border:1px solid var(--g200);border-left:4px solid ${it.color};border-radius:8px;cursor:pointer;transition:all .15s;${pasado?'opacity:.65;':''}" onmouseenter="this.style.transform='translateX(2px)';this.style.boxShadow='0 2px 8px rgba(0,0,0,.06)'" onmouseleave="this.style.transform='';this.style.boxShadow=''">
-      ${hora?`<div style="font-size:12px;font-weight:700;color:var(--g600);min-width:46px;text-align:center;padding:4px 6px;background:var(--g50);border-radius:4px">${hora}</div>`:''}
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700;color:var(--g900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fechaCorta}${it.titulo}</div>
-        ${it.subtitulo?`<div style="font-size:12px;color:var(--g500);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${it.subtitulo}</div>`:''}
+    const hasChildren=it.children&&it.children.length;
+    const childrenHtml=hasChildren
+      ? `<div style="margin-left:18px;margin-top:8px;padding-left:14px;border-left:2px dashed var(--g300);display:flex;flex-direction:column;gap:5px">
+          <div style="font-size:10px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">${it.children.length} expedición${it.children.length!==1?'es':''} en este buque</div>
+          ${it.children.map(renderChild).join('')}
+        </div>`
+      : '';
+    return `<div style="${pasado?'opacity:.65;':''}">
+      <div onclick="${it.onclick}" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fff;border:1px solid var(--g200);border-left:4px solid ${it.color};border-radius:8px;cursor:pointer;transition:all .15s" onmouseenter="this.style.transform='translateX(2px)';this.style.boxShadow='0 2px 8px rgba(0,0,0,.06)'" onmouseleave="this.style.transform='';this.style.boxShadow=''">
+        ${hora?`<div style="font-size:12px;font-weight:700;color:var(--g600);min-width:46px;text-align:center;padding:4px 6px;background:var(--g50);border-radius:4px">${hora}</div>`:''}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;color:var(--g900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fechaCorta}${it.titulo}</div>
+          ${it.subtitulo?`<div style="font-size:12px;color:var(--g500);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${it.subtitulo}</div>`:''}
+        </div>
+        ${bd}
       </div>
-      ${bd}
+      ${childrenHtml}
     </div>`;
   };
 
@@ -8514,9 +8584,14 @@ async function loadAgenda(){
       </div>`;
     }).join('');
   } else {
-    // Agrupado por sección
+    // Agrupado por sección — aplanar expediciones anidadas para que aparezcan en la sección "expediciones"
+    const flat=[];
+    itemsFil.forEach(i=>{
+      flat.push(i);
+      (i.children||[]).forEach(ch=>flat.push({...ch, fecha:ch.fecha||i.fecha}));
+    });
     cuerpo=AGENDA_SECCIONES_DEF.filter(s=>prefs.secciones.includes(s.key)).map(s=>{
-      const grp=itemsFil.filter(i=>i.tipo===s.key);
+      const grp=flat.filter(i=>i.tipo===s.key);
       if(!grp.length) return '';
       return `<div style="margin-bottom:20px">
         <div style="font-size:12px;font-weight:700;color:${s.color};text-transform:uppercase;letter-spacing:.5px;padding:0 0 8px 2px;border-bottom:1px solid ${s.color}30;margin-bottom:10px">${s.label} <span style="color:var(--g400);font-weight:500;margin-left:6px">(${grp.length})</span></div>
