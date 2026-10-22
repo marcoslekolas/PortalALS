@@ -1,6 +1,6 @@
 // ── ALS Portal Operativo — Service Worker ────────────────────────────
 // Versión: actualizar este string al desplegar cambios importantes
-const CACHE_NAME = 'als-cw-v3-agenda-buque';
+const CACHE_NAME = 'als-cw-v4-agenda-exp-fix';
 
 // Recursos que se cachean en instalación (shell de la app)
 const PRECACHE = [

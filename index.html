@@ -8336,53 +8336,72 @@ async function loadAgenda(){
       </div>
     </div>`;
 
-  // Cargar datos en paralelo según secciones activas
+  // Cargar datos — buques primero (secuencial) para después poder filtrar expediciones por sus IDs
   const activas=prefs.secciones;
-  const consultas=[];
   const dIni=ini.toISOString().split('T')[0];
   const dFin=fin.toISOString().split('T')[0];
 
-  if(activas.includes('buques'))
-    consultas.push(sb.from('buques').select('id,nombre,eta_buque,puerto_terminal,estado_operacion,ref_visual_trans').not('eta_buque','is',null).gte('eta_buque',iniISO).lte('eta_buque',finISO).order('eta_buque'));
-  else consultas.push(Promise.resolve({data:[]}));
+  // 1. BUQUES del rango
+  let bqsR={data:[]};
+  if(activas.includes('buques')){
+    try{
+      bqsR = await sb.from('buques').select('id,nombre,eta_buque,puerto_terminal,estado_operacion,ref_visual_trans').not('eta_buque','is',null).gte('eta_buque',iniISO).lte('eta_buque',finISO).order('eta_buque');
+      if(bqsR.error){ console.warn('[Agenda] Error buques:', bqsR.error.message); bqsR={data:[]}; }
+    }catch(e){ console.warn('[Agenda] Exception buques:', e?.message); bqsR={data:[]}; }
+  }
+  const buqueIds=(bqsR.data||[]).map(b=>b.id);
 
-  // Expediciones: todas las vinculadas a los buques del rango (independientemente de fecha_max_despacho)
-  // Si no se cargan buques, filtrar por fecha_max_despacho del propio rango como fallback
+  // 2. EXPEDICIONES — todas las que viajan en los buques del rango + opcionalmente las sin buque con fecha_max_despacho en rango
+  let expR={data:[]};
   if(activas.includes('expediciones')){
-    const selectExp='id,nº_expedicion,buque_id,fecha_max_despacho,estado_semaforo,estado_carga,hora_de_carga,ubicacion,bultos,kilos,buques(id,nombre,eta_buque),empresas(nombre)';
-    if(activas.includes('buques')){
-      // Las expediciones se filtran por el buque: todas las que viajen en los buques del rango
-      consultas.push(
-        sb.from('buques').select('id').not('eta_buque','is',null).gte('eta_buque',iniISO).lte('eta_buque',finISO)
-          .then(async bqR=>{
-            const buqueIds=(bqR.data||[]).map(b=>b.id);
-            // También incluimos expediciones sin buque pero con fecha_max_despacho en el rango
-            if(!buqueIds.length){
-              return sb.from('expediciones').select(selectExp).not('fecha_max_despacho','is',null).gte('fecha_max_despacho',dIni).lte('fecha_max_despacho',dFin);
-            }
-            const [enBuques, sinBuque] = await Promise.all([
-              sb.from('expediciones').select(selectExp).in('buque_id',buqueIds),
-              sb.from('expediciones').select(selectExp).is('buque_id',null).not('fecha_max_despacho','is',null).gte('fecha_max_despacho',dIni).lte('fecha_max_despacho',dFin)
-            ]);
-            return {data:[...(enBuques.data||[]), ...(sinBuque.data||[])]};
-          })
-      );
-    } else {
-      consultas.push(sb.from('expediciones').select(selectExp).not('fecha_max_despacho','is',null).gte('fecha_max_despacho',dIni).lte('fecha_max_despacho',dFin).order('fecha_max_despacho'));
+    try{
+      // Intentar con el select completo; si falla por columna inexistente, cae al select mínimo
+      const selectCompleto='id,nº_expedicion,buque_id,fecha_max_despacho,estado_semaforo,estado_carga,ubicacion,bultos,kilos,buques(id,nombre,eta_buque),empresas(nombre)';
+      const selectMinimo='id,nº_expedicion,buque_id,fecha_max_despacho,estado_semaforo,estado_carga,ubicacion,bultos,kilos';
+
+      async function cargarExp(select){
+        if(buqueIds.length){
+          // Cargar expediciones de los buques del rango
+          const r = await sb.from('expediciones').select(select).in('buque_id', buqueIds);
+          if(r.error) throw r.error;
+          return r.data||[];
+        } else if(activas.includes('expediciones') && !activas.includes('buques')){
+          // Si no se cargaron buques pero sí expediciones: traer por fecha_max_despacho
+          const r = await sb.from('expediciones').select(select).not('fecha_max_despacho','is',null).gte('fecha_max_despacho',dIni).lte('fecha_max_despacho',dFin);
+          if(r.error) throw r.error;
+          return r.data||[];
+        }
+        return [];
+      }
+
+      let expData;
+      try{ expData = await cargarExp(selectCompleto); }
+      catch(e){
+        console.warn('[Agenda] Select completo falló, probando mínimo:', e?.message);
+        expData = await cargarExp(selectMinimo);
+      }
+      expR={data: expData};
+      console.log('[Agenda] Expediciones cargadas:', expData.length, 'para', buqueIds.length, 'buques');
+    }catch(e){
+      console.warn('[Agenda] Error expediciones:', e?.message);
+      expR={data:[]};
     }
-  } else consultas.push(Promise.resolve({data:[]}));
+  }
+
+  // 3. Resto de secciones en paralelo
+  const otrasConsultas=[];
 
   if(activas.includes('eventos'))
-    consultas.push(sb.from('eventos').select('id,titulo,descripcion,fecha_inicio,color,usuario_nombre').not('fecha_inicio','is',null).gte('fecha_inicio',iniISO).lte('fecha_inicio',finISO).order('fecha_inicio'));
-  else consultas.push(Promise.resolve({data:[]}));
+    otrasConsultas.push(sb.from('eventos').select('id,titulo,descripcion,fecha_inicio,color,usuario_nombre').not('fecha_inicio','is',null).gte('fecha_inicio',iniISO).lte('fecha_inicio',finISO).order('fecha_inicio'));
+  else otrasConsultas.push(Promise.resolve({data:[]}));
 
   if(activas.includes('incidencias'))
-    consultas.push(sb.from('incidencias').select('id,tipo,nombre,descripcion,estado,created_at,expediciones(nº_expedicion)').neq('estado','Cerrada').order('created_at',{ascending:false}));
-  else consultas.push(Promise.resolve({data:[]}));
+    otrasConsultas.push(sb.from('incidencias').select('id,tipo,nombre,descripcion,estado,created_at,expediciones(nº_expedicion)').neq('estado','Cerrada').order('created_at',{ascending:false}));
+  else otrasConsultas.push(Promise.resolve({data:[]}));
 
   if(activas.includes('camiones'))
-    consultas.push(sb.from('camiones_consolidados').select('id,referencia,fecha_salida,estado,destino,matricula').not('fecha_salida','is',null).gte('fecha_salida',dIni).lte('fecha_salida',dFin).order('fecha_salida'));
-  else consultas.push(Promise.resolve({data:[]}));
+    otrasConsultas.push(sb.from('camiones_consolidados').select('id,referencia,fecha_salida,estado,destino,matricula').not('fecha_salida','is',null).gte('fecha_salida',dIni).lte('fecha_salida',dFin).order('fecha_salida'));
+  else otrasConsultas.push(Promise.resolve({data:[]}));
 
   let alertasList=[];
   if(activas.includes('alertas')){
@@ -8392,8 +8411,7 @@ async function loadAgenda(){
     }catch(e){}
   }
 
-  const resultados=await Promise.all(consultas);
-  const [bqsR, expR, evR, incR, camR] = resultados;
+  const [evR, incR, camR] = await Promise.all(otrasConsultas);
 
   // Normalizar a estructura unificada {fecha, tipo, titulo, subtitulo, color, onclick, badge}
   const items=[];
