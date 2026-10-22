@@ -393,6 +393,7 @@ if('serviceWorker' in navigator){
         <button type="button" class="nav-item" onclick="nav('calendario',this)"><span class="ni">📅</span><span class="nav-item-txt">Calendario</span></button>
         <button type="button" class="nav-item" onclick="nav('timeline',this)"><span class="ni">📊</span><span class="nav-item-txt">Timeline</span></button>
         <button type="button" class="nav-item" onclick="nav('mensual',this)"><span class="ni">🗓️</span><span class="nav-item-txt">Vista mensual</span></button>
+        <button type="button" class="nav-item" onclick="nav('agenda',this)"><span class="ni">📋</span><span class="nav-item-txt">Agenda</span></button>
         <button type="button" class="nav-item" onclick="nav('kanban',this)"><span class="ni">🎛</span><span class="nav-item-txt">Panel Kanban</span></button>
         <div class="sb-sec">Gestión operativa</div>
         <button type="button" class="nav-item" onclick="nav('buques',this)"><span class="ni">⚓</span><span class="nav-item-txt">Buques</span></button>
@@ -709,6 +710,7 @@ if('serviceWorker' in navigator){
       </div>
       <div class="view" id="view-timeline"><div id="tl-wrap"></div></div>
       <div class="view" id="view-mensual"><div id="mv-wrap"></div></div>
+      <div class="view" id="view-agenda"><div id="ag-wrap"></div></div>
       <div class="view" id="view-alertas"><div id="alertas-list"></div></div>
       <div class="view" id="view-alm-dashboard">
         <div class="kpi-grid" id="alm-kpi-grid"></div>
@@ -3997,7 +3999,7 @@ window.addEventListener('unhandledrejection', function(ev){
   try{ logError('promesa no gestionada', ev.reason); }catch(_){}
 });
 
-const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',camiones:'Camiones consolidados',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',mensual:'Vista mensual',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas',rendimiento:'Rendimiento del equipo',ejecutivo:'Estadísticas'};
+const PG={dashboard:'Dashboard',flota:'Flota en vivo',buques:'Buques / Embarques',camiones:'Camiones consolidados',expediciones:'Expediciones',kanban:'Panel de control',calendario:'Calendario',timeline:'Timeline',mensual:'Vista mensual',agenda:'Agenda',alertas:'Alertas',almacen:'Acciones almacén','alm-dashboard':'Dashboard Almacén','alm-fotos':'Fotos & Confirmar','alm-exp-buque':'Expediciones por buque',ubicaciones:'Ubicaciones',listos:'Listos para embarcar',incidencias:'Incidencias',empresas:'Empresas',usuarios:'Usuarios',log:'Log de actividad',estadisticas:'Estadísticas',rendimiento:'Rendimiento del equipo',ejecutivo:'Estadísticas'};
 let CV='dashboard';
 function nav(view,el){
   // Fade suave en cambio de vista
@@ -5431,6 +5433,7 @@ async function loadView(view){
     case 'calendario':await renderCal();break;
     case 'timeline':await loadTL();break;
     case 'mensual':await loadMensual();break;
+    case 'agenda':await loadAgenda();break;
     case 'alertas':await loadAlertas();break;
     case 'almacen':await loadAlmacen();break;
     case 'alm-dashboard':await loadAlmDash();break;
@@ -8142,6 +8145,394 @@ async function loadMensual(){
     }).join('')+'</div>';
   }
   wrap.innerHTML=header+`<div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:2px">${dowHdr}</div>${filas}`;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// PREFERENCIAS DE USUARIO — Sincronizadas en Supabase (CU.preferencias)
+// ══════════════════════════════════════════════════════════════════
+// Las preferencias viven en usuarios.preferencias (JSONB) → siguen al usuario
+// entre dispositivos. localStorage se usa solo como caché optimista para
+// que la UI responda instantáneamente mientras Supabase persiste en background.
+//
+// SQL REQUERIDO (ejecutar una vez en Supabase SQL Editor):
+//   ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS preferencias jsonb DEFAULT '{}'::jsonb;
+
+function _prefsLocalKey(){ return 'als_user_prefs_'+(CU?.id||'anon'); }
+
+// Debounce writes para no saturar Supabase con cada click
+let _prefsSaveTimer = null;
+let _prefsSavePending = false;
+
+async function _prefsFlushSupabase(){
+  if(!CU?.id || !sb) return;
+  _prefsSavePending = false;
+  try{
+    const {error} = await sb.from('usuarios').update({preferencias: CU.preferencias||{}}).eq('id', CU.id);
+    if(error){
+      if(error.message && error.message.includes('preferencias')){
+        // Columna no existe aún: avisar una vez, seguir con localStorage
+        if(!window._prefsColumnWarned){
+          window._prefsColumnWarned = true;
+          console.warn('[Preferencias] Columna usuarios.preferencias no existe. Ejecuta: ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS preferencias jsonb DEFAULT \'{}\'::jsonb;');
+        }
+      } else {
+        console.warn('[Preferencias] Error al guardar:', error.message);
+      }
+    }
+  }catch(e){ console.warn('[Preferencias] Exception:', e?.message); }
+}
+
+function _prefsSaveDebounced(){
+  _prefsSavePending = true;
+  if(_prefsSaveTimer) clearTimeout(_prefsSaveTimer);
+  _prefsSaveTimer = setTimeout(_prefsFlushSupabase, 600);
+}
+
+// Lee una sección de preferencias con valores por defecto fusionados
+function getUserPref(seccion, defaults){
+  if(!CU) return {...defaults};
+  CU.preferencias = CU.preferencias || {};
+  // Si CU todavía no tiene datos (p.ej. recién logueado y aún no cargados),
+  // intentar leer de localStorage como caché optimista
+  if(!CU.preferencias[seccion]){
+    try{
+      const raw = localStorage.getItem(_prefsLocalKey());
+      if(raw){
+        const cached = JSON.parse(raw);
+        if(cached && cached[seccion]) CU.preferencias[seccion] = cached[seccion];
+      }
+    }catch(e){}
+  }
+  return {...defaults, ...(CU.preferencias[seccion]||{})};
+}
+
+// Guarda una sección completa de preferencias (optimista: UI responde ya)
+function setUserPref(seccion, data){
+  if(!CU) return;
+  CU.preferencias = CU.preferencias || {};
+  CU.preferencias[seccion] = {...(CU.preferencias[seccion]||{}), ...data};
+  // Caché local inmediata — por si el usuario recarga antes de que Supabase persista
+  try{ localStorage.setItem(_prefsLocalKey(), JSON.stringify(CU.preferencias)); }catch(e){}
+  // Persistir a Supabase con debounce
+  _prefsSaveDebounced();
+}
+
+// Guardar al cerrar/recargar la pestaña si hay escritura pendiente
+window.addEventListener('beforeunload', ()=>{
+  if(_prefsSavePending && CU?.id && sb){
+    try{
+      // sendBeacon para que no se cancele al cerrar
+      const payload = JSON.stringify({preferencias: CU.preferencias||{}});
+      navigator.sendBeacon(SB_URL+'/rest/v1/usuarios?id=eq.'+CU.id,
+        new Blob([payload], {type:'application/json'}));
+    }catch(e){}
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// VISTA AGENDA — Lista cronológica personalizable por usuario
+// ══════════════════════════════════════════════════════════════════
+// Preferencias por usuario sincronizadas en Supabase (usuarios.preferencias.agenda)
+// Secciones disponibles: buques (ETAs), expediciones (fechas despacho),
+// eventos (agenda propia), incidencias abiertas, alertas, camiones consolidados
+// Rango de visualización: hoy / semana / mes / próximos 7/14/30 días
+
+const AGENDA_SECCIONES_DEF = [
+  {key:'buques',       label:'🚢 Buques (ETA)',       color:'#1565c0'},
+  {key:'expediciones', label:'📦 Expediciones',        color:'#0f766e'},
+  {key:'eventos',      label:'📅 Eventos de agenda',   color:'#6d28d9'},
+  {key:'incidencias',  label:'⚠️ Incidencias abiertas',color:'#c62828'},
+  {key:'camiones',     label:'🚛 Camiones consolidados',color:'#92400e'},
+  {key:'alertas',      label:'🔔 Alertas',             color:'#be185d'}
+];
+
+const AGENDA_DEFAULTS = {
+  rango:'semana', // hoy, semana, mes, 7, 14, 30
+  secciones: AGENDA_SECCIONES_DEF.map(s=>s.key),
+  agrupar:'dia', // dia, seccion
+  ocultarPasados:false
+};
+
+function _agendaGetPrefs(){
+  const p = getUserPref('agenda', AGENDA_DEFAULTS);
+  // Garantizar que secciones es un array (JSONB puede devolver cosas inesperadas)
+  if(!Array.isArray(p.secciones)) p.secciones = [...AGENDA_DEFAULTS.secciones];
+  return p;
+}
+
+function agendaTogglePref(key, val){
+  const p=_agendaGetPrefs();
+  if(key==='seccion'){
+    const idx=p.secciones.indexOf(val);
+    if(idx>=0) p.secciones.splice(idx,1); else p.secciones.push(val);
+  } else {
+    p[key]=val;
+  }
+  setUserPref('agenda', p);
+  loadAgenda();
+}
+
+function _agendaRango(rango){
+  const hoy=new Date(); hoy.setHours(0,0,0,0);
+  let ini=new Date(hoy), fin=new Date(hoy);
+  if(rango==='hoy'){ fin.setHours(23,59,59,999); }
+  else if(rango==='semana'){
+    const dow=(hoy.getDay()+6)%7; // lunes=0
+    ini.setDate(hoy.getDate()-dow);
+    fin=new Date(ini); fin.setDate(ini.getDate()+6); fin.setHours(23,59,59,999);
+  }
+  else if(rango==='mes'){
+    ini=new Date(hoy.getFullYear(),hoy.getMonth(),1);
+    fin=new Date(hoy.getFullYear(),hoy.getMonth()+1,0,23,59,59,999);
+  }
+  else if(rango==='7' || rango==='14' || rango==='30'){
+    const dias=parseInt(rango,10);
+    fin=new Date(hoy); fin.setDate(hoy.getDate()+dias); fin.setHours(23,59,59,999);
+  }
+  return {ini, fin};
+}
+
+async function loadAgenda(){
+  const wrap=document.getElementById('ag-wrap');
+  if(!wrap) return;
+  const prefs=_agendaGetPrefs();
+  const {ini, fin}=_agendaRango(prefs.rango);
+  const iniISO=ini.toISOString(), finISO=fin.toISOString();
+
+  // Toolbar superior — selector rango + secciones + agrupación
+  const rangoBtn=(k,txt)=>`<button onclick="agendaTogglePref('rango','${k}')" style="padding:6px 12px;border:1px solid ${prefs.rango===k?'var(--b600)':'var(--g300)'};background:${prefs.rango===k?'var(--b50)':'#fff'};color:${prefs.rango===k?'var(--b700)':'var(--g700)'};border-radius:6px;font-size:12px;font-weight:${prefs.rango===k?700:500};cursor:pointer">${txt}</button>`;
+  const secChip=s=>{
+    const on=prefs.secciones.includes(s.key);
+    return `<label style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border:1px solid ${on?s.color:'var(--g300)'};background:${on?s.color+'15':'#fff'};color:${on?s.color:'var(--g600)'};border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;user-select:none">
+      <input type="checkbox" ${on?'checked':''} onchange="agendaTogglePref('seccion','${s.key}')" style="accent-color:${s.color};width:12px;height:12px;cursor:pointer">
+      ${s.label}
+    </label>`;
+  };
+  const toolbar=`
+    <div style="background:#fff;border:1px solid var(--g200);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.5px;margin-right:4px">Rango</span>
+          ${rangoBtn('hoy','Hoy')}
+          ${rangoBtn('semana','Esta semana')}
+          ${rangoBtn('mes','Este mes')}
+          ${rangoBtn('7','7 días')}
+          ${rangoBtn('14','14 días')}
+          ${rangoBtn('30','30 días')}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--g600);cursor:pointer">
+            <input type="checkbox" ${prefs.ocultarPasados?'checked':''} onchange="agendaTogglePref('ocultarPasados',this.checked)" style="accent-color:var(--b600)"> Ocultar pasados
+          </label>
+          <select onchange="agendaTogglePref('agrupar',this.value)" style="padding:5px 10px;border:1px solid var(--g300);border-radius:6px;font-size:12px;background:#fff;cursor:pointer">
+            <option value="dia" ${prefs.agrupar==='dia'?'selected':''}>Agrupar por día</option>
+            <option value="seccion" ${prefs.agrupar==='seccion'?'selected':''}>Agrupar por sección</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;padding-top:10px;border-top:1px solid var(--g100)">
+        <span style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.5px;align-self:center;margin-right:4px">Secciones</span>
+        ${AGENDA_SECCIONES_DEF.map(secChip).join('')}
+      </div>
+    </div>`;
+
+  // Cargar datos en paralelo según secciones activas
+  const activas=prefs.secciones;
+  const consultas=[];
+  const dIni=ini.toISOString().split('T')[0];
+  const dFin=fin.toISOString().split('T')[0];
+
+  if(activas.includes('buques'))
+    consultas.push(sb.from('buques').select('id,nombre,eta_buque,puerto_terminal,estado_operacion,ref_visual_trans').not('eta_buque','is',null).gte('eta_buque',iniISO).lte('eta_buque',finISO).order('eta_buque'));
+  else consultas.push(Promise.resolve({data:[]}));
+
+  if(activas.includes('expediciones'))
+    consultas.push(sb.from('expediciones').select('id,nº_expedicion,fecha_max_despacho,estado_semaforo,estado_carga,hora_de_carga,buques(nombre,eta_buque),empresas(nombre)').not('fecha_max_despacho','is',null).gte('fecha_max_despacho',dIni).lte('fecha_max_despacho',dFin).order('fecha_max_despacho'));
+  else consultas.push(Promise.resolve({data:[]}));
+
+  if(activas.includes('eventos'))
+    consultas.push(sb.from('eventos').select('id,titulo,descripcion,fecha_inicio,color,usuario_nombre').not('fecha_inicio','is',null).gte('fecha_inicio',iniISO).lte('fecha_inicio',finISO).order('fecha_inicio'));
+  else consultas.push(Promise.resolve({data:[]}));
+
+  if(activas.includes('incidencias'))
+    consultas.push(sb.from('incidencias').select('id,tipo,nombre,descripcion,estado,created_at,expediciones(nº_expedicion)').neq('estado','Cerrada').order('created_at',{ascending:false}));
+  else consultas.push(Promise.resolve({data:[]}));
+
+  if(activas.includes('camiones'))
+    consultas.push(sb.from('camiones_consolidados').select('id,referencia,fecha_salida,estado,destino,matricula').not('fecha_salida','is',null).gte('fecha_salida',dIni).lte('fecha_salida',dFin).order('fecha_salida'));
+  else consultas.push(Promise.resolve({data:[]}));
+
+  let alertasList=[];
+  if(activas.includes('alertas')){
+    try{
+      const {data}=await sb.from('v_alertas').select('*').limit(50);
+      alertasList=data||[];
+    }catch(e){}
+  }
+
+  const resultados=await Promise.all(consultas);
+  const [bqsR, expR, evR, incR, camR] = resultados;
+
+  // Normalizar a estructura unificada {fecha, tipo, titulo, subtitulo, color, onclick, badge}
+  const items=[];
+  const hoyTs=new Date(); hoyTs.setHours(0,0,0,0);
+  const esPasado=f=>{ try{ return new Date(f) < hoyTs; }catch(e){ return false; } };
+
+  const fmtHora=f=>{ try{ const d=new Date(f); const hh=String(d.getHours()).padStart(2,'0'); const mm=String(d.getMinutes()).padStart(2,'0'); return (hh==='00'&&mm==='00')?'':`${hh}:${mm}`; }catch(e){ return ''; } };
+
+  (bqsR.data||[]).forEach(b=>{
+    const estCol=(b.estado_operacion||'').toLowerCase().includes('embarc')?'#2e7d32':(b.estado_operacion||'').toLowerCase().includes('cancel')?'#c62828':'#1565c0';
+    items.push({
+      fecha:b.eta_buque, tipo:'buques', color:'#1565c0',
+      titulo:`🚢 ${b.nombre||'—'}`,
+      subtitulo:`${b.puerto_terminal||'—'} · ETA ${new Date(b.eta_buque).toLocaleDateString('es-ES')}${fmtHora(b.eta_buque)?' '+fmtHora(b.eta_buque):''}`,
+      badge:b.estado_operacion||'',
+      badgeCol:estCol,
+      onclick:`openBuque('${b.id}')`
+    });
+  });
+
+  (expR.data||[]).forEach(e=>{
+    const sem=e.estado_semaforo||'';
+    let semCol='#64748b';
+    if(sem.includes('🟢')) semCol='#2e7d32';
+    else if(sem.includes('🟡')||sem.includes('🟠')) semCol='#ef6c00';
+    else if(sem.includes('🔴')) semCol='#c62828';
+    items.push({
+      fecha:e.fecha_max_despacho, tipo:'expediciones', color:'#0f766e',
+      titulo:`📦 Exp. ${e['nº_expedicion']||e.id}`,
+      subtitulo:`${e.empresas?.nombre||'—'}${e.buques?.nombre?' · '+e.buques.nombre:''} · Despacho ${new Date(e.fecha_max_despacho).toLocaleDateString('es-ES')}`,
+      badge:sem,
+      badgeCol:semCol,
+      onclick:`openExpD('${e.id}')`
+    });
+  });
+
+  (evR.data||[]).forEach(ev=>{
+    items.push({
+      fecha:ev.fecha_inicio, tipo:'eventos', color:ev.color||'#6d28d9',
+      titulo:`📅 ${ev.titulo||'Evento'}`,
+      subtitulo:`${ev.descripcion||''}${ev.usuario_nombre?' · por '+ev.usuario_nombre:''}${fmtHora(ev.fecha_inicio)?' · '+fmtHora(ev.fecha_inicio):''}`,
+      badge:'',
+      onclick:`openEventoFromAgenda('${ev.id}')`
+    });
+  });
+
+  (incR.data||[]).forEach(i=>{
+    items.push({
+      fecha:i.created_at, tipo:'incidencias', color:'#c62828',
+      titulo:`⚠️ ${i.nombre||i.tipo||'Incidencia'}`,
+      subtitulo:`${i.expediciones?.['nº_expedicion']?'Exp. '+i.expediciones['nº_expedicion']+' · ':''}${(i.descripcion||'').substring(0,120)}`,
+      badge:i.estado||'Abierta',
+      badgeCol:'#c62828',
+      onclick:`nav('incidencias',null)`
+    });
+  });
+
+  (camR.data||[]).forEach(c=>{
+    items.push({
+      fecha:c.fecha_salida, tipo:'camiones', color:'#92400e',
+      titulo:`🚛 ${c.referencia||c.matricula||'Camión'}`,
+      subtitulo:`${c.destino||'—'} · Salida ${new Date(c.fecha_salida).toLocaleDateString('es-ES')}`,
+      badge:c.estado||'',
+      badgeCol:'#92400e',
+      onclick:`nav('camiones',null)`
+    });
+  });
+
+  alertasList.forEach(a=>{
+    const f=a.created_at||a.fecha||new Date().toISOString();
+    items.push({
+      fecha:f, tipo:'alertas', color:'#be185d',
+      titulo:`🔔 ${a.titulo||a.tipo||'Alerta'}`,
+      subtitulo:(a.descripcion||a.mensaje||'').substring(0,120),
+      badge:a.prioridad||'',
+      badgeCol:'#be185d',
+      onclick:`nav('alertas',null)`
+    });
+  });
+
+  // Filtrar pasados si procede
+  const itemsFil = prefs.ocultarPasados ? items.filter(i=>!esPasado(i.fecha)) : items;
+  itemsFil.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
+
+  // Resumen contadores
+  const porSec={};
+  AGENDA_SECCIONES_DEF.forEach(s=>porSec[s.key]=0);
+  itemsFil.forEach(i=>{ porSec[i.tipo]=(porSec[i.tipo]||0)+1; });
+  const resumen=`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+    ${AGENDA_SECCIONES_DEF.filter(s=>prefs.secciones.includes(s.key)).map(s=>`
+      <div style="background:${s.color}10;border:1px solid ${s.color}30;border-radius:8px;padding:6px 12px;display:flex;align-items:center;gap:6px">
+        <span style="font-size:18px;font-weight:800;color:${s.color}">${porSec[s.key]||0}</span>
+        <span style="font-size:11px;color:${s.color};font-weight:600">${s.label.replace(/^[^\s]+\s/,'')}</span>
+      </div>`).join('')}
+  </div>`;
+
+  // Renderizar — por día o por sección
+  const renderItem=(it,showFecha)=>{
+    const dt=new Date(it.fecha);
+    const hora=fmtHora(it.fecha);
+    const pasado=esPasado(it.fecha);
+    const bd=it.badge?`<span style="font-size:10px;font-weight:700;background:${it.badgeCol||it.color}15;color:${it.badgeCol||it.color};border:1px solid ${it.badgeCol||it.color}40;padding:2px 7px;border-radius:10px;white-space:nowrap">${it.badge}</span>`:'';
+    const fechaCorta=showFecha?`<span style="font-size:11px;color:var(--g500);margin-right:6px">${dt.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})}${hora?' '+hora:''}</span>`:'';
+    return `<div onclick="${it.onclick}" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fff;border:1px solid var(--g200);border-left:4px solid ${it.color};border-radius:8px;cursor:pointer;transition:all .15s;${pasado?'opacity:.65;':''}" onmouseenter="this.style.transform='translateX(2px)';this.style.boxShadow='0 2px 8px rgba(0,0,0,.06)'" onmouseleave="this.style.transform='';this.style.boxShadow=''">
+      ${hora?`<div style="font-size:12px;font-weight:700;color:var(--g600);min-width:46px;text-align:center;padding:4px 6px;background:var(--g50);border-radius:4px">${hora}</div>`:''}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:var(--g900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fechaCorta}${it.titulo}</div>
+        ${it.subtitulo?`<div style="font-size:12px;color:var(--g500);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${it.subtitulo}</div>`:''}
+      </div>
+      ${bd}
+    </div>`;
+  };
+
+  let cuerpo='';
+  if(!itemsFil.length){
+    cuerpo=`<div style="text-align:center;padding:60px 20px;color:var(--g400)">
+      <div style="font-size:48px;margin-bottom:12px">📋</div>
+      <div style="font-size:14px;font-weight:600">Nada en la agenda para este rango</div>
+      <div style="font-size:12px;margin-top:4px">Prueba cambiar el rango o activar más secciones arriba</div>
+    </div>`;
+  } else if(prefs.agrupar==='dia'){
+    const porDia={};
+    itemsFil.forEach(i=>{
+      const d=new Date(i.fecha); d.setHours(0,0,0,0);
+      const k=d.toISOString().split('T')[0];
+      (porDia[k]=porDia[k]||[]).push(i);
+    });
+    const DOW=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    cuerpo=Object.keys(porDia).sort().map(k=>{
+      const d=new Date(k+'T00:00:00');
+      const esHoy=d.toDateString()===hoyTs.toDateString();
+      const manana=new Date(hoyTs); manana.setDate(manana.getDate()+1);
+      const esManana=d.toDateString()===manana.toDateString();
+      let lbl=`${DOW[d.getDay()]} ${d.getDate()} ${['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()]}`;
+      if(esHoy) lbl+=' · HOY';
+      else if(esManana) lbl+=' · Mañana';
+      return `<div style="margin-bottom:20px">
+        <div style="font-size:12px;font-weight:700;color:${esHoy?'var(--b600)':'var(--g500)'};text-transform:uppercase;letter-spacing:.5px;padding:0 0 8px 2px;border-bottom:1px solid var(--g200);margin-bottom:10px">${lbl} <span style="color:var(--g400);font-weight:500;margin-left:6px">(${porDia[k].length})</span></div>
+        <div style="display:flex;flex-direction:column;gap:6px">${porDia[k].map(it=>renderItem(it,false)).join('')}</div>
+      </div>`;
+    }).join('');
+  } else {
+    // Agrupado por sección
+    cuerpo=AGENDA_SECCIONES_DEF.filter(s=>prefs.secciones.includes(s.key)).map(s=>{
+      const grp=itemsFil.filter(i=>i.tipo===s.key);
+      if(!grp.length) return '';
+      return `<div style="margin-bottom:20px">
+        <div style="font-size:12px;font-weight:700;color:${s.color};text-transform:uppercase;letter-spacing:.5px;padding:0 0 8px 2px;border-bottom:1px solid ${s.color}30;margin-bottom:10px">${s.label} <span style="color:var(--g400);font-weight:500;margin-left:6px">(${grp.length})</span></div>
+        <div style="display:flex;flex-direction:column;gap:6px">${grp.map(it=>renderItem(it,true)).join('')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  wrap.innerHTML=toolbar+resumen+cuerpo;
+}
+
+// Helper para abrir eventos desde la agenda (usa la función existente si está)
+function openEventoFromAgenda(id){
+  if(typeof editarEvento==='function'){ editarEvento(id); return; }
+  if(typeof mostrarDetalleEvento==='function'){ mostrarDetalleEvento({id}); return; }
+  nav('calendario', null);
 }
 
 async function loadTL(){
