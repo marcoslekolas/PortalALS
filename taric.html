@@ -3150,6 +3150,84 @@ const VT_ADUANAS = {
 const VT_REGIMENES_EXP = ['10.00','23.00','31.00','31.51'];   // exportación
 const VT_REGIMENES_IMP = ['40.00','61.23'];                    // importación
 
+// ─────────────────────────────────────────────────────────────────────────
+// ESCENARIOS GIBRALTAR (guía técnica DUAs). Autocompletan la config del DUA
+// para VisualTrans. Rellenan SOLO campos con posición segura en el CSV (tipo
+// declaración, aduana, régimen). La preferencia (36), el régimen adicional
+// (37.2) y los documentos de casilla 44 se muestran en el asistente para
+// teclearlos en VisualTrans: sus posiciones en el fichero no están confirmadas
+// y no se inyectan para no corromper el formato de importación.
+// ─────────────────────────────────────────────────────────────────────────
+const GUIA_ESC_VT = {
+  'export_ue_gi': {
+    label:'Exportación UE → Gibraltar (EX/H1)',
+    tipo:'export', aduana:'lalinea', transporte:'3',
+    regimenes:['10.00','21.00','22.00','23.00'], regimenDefault:'10.00',
+    preferencia:'100',
+    adicionalPorRegimen:{ '10.00':['5GI'] },
+    c44:[],
+    notas:['NO se declara IVA (solo deuda aduanera).','Requiere T2GI de acompañamiento.','Exportación por mar: solo Algeciras.'],
+    checklist:['C1 tipo: EX','C15a país destino: GI','C36 preferencia: 100','C37 adicional: 5GI si régimen 1000','T2GI obligatorio']
+  },
+  'reexport_gi': {
+    label:'Reexportación desde Gibraltar (EX, tierra)',
+    tipo:'export', aduana:'lalinea', transporte:'3',
+    regimenes:['31.00','31.21','31.22','31.23'], regimenDefault:'31.00',
+    preferencia:'300',
+    adicionalPorRegimen:{},
+    c44:[{codigo:'1240', ref:'MRN/partida T2GI o T1GI de entrada', pedir:true}],
+    notas:['Preferencia 300 (libre circulación en GI).','C44 1240 obligatorio: MRN del T2GI/T1GI de entrada.'],
+    checklist:['C1 tipo: EX','C15 exp: GI · C15a: ES','C36 preferencia: 300','C37 régimen: 3100','C44: 1240 + MRN T2GI']
+  },
+  'avituallamiento': {
+    label:'Reexportación GI — Avituallamiento (mar/aire)',
+    tipo:'export', aduana:'lalinea', transporte:'1',
+    regimenes:['31.00'], regimenDefault:'31.00',
+    preferencia:'300',
+    adicionalPorRegimen:{ '31.00':['F61'] },
+    c44:[{codigo:'1241', ref:'MRN T1/T2GI de entrada', pedir:true},{codigo:'5012', ref:'IMO del buque (5013 si no hay IMO)', pedir:true},{codigo:'1005', ref:'OSRE', pedir:false}],
+    notas:['Solo aduana La Línea (ES001167).','C37 adicional F61 obligatorio.','5013 + identificación compañía si no hay IMO.','País destino: Q + código (excepto Qatar).'],
+    checklist:['C1 tipo: A','C29 aduana: La Línea','C36: 300','C37: 3100 + F61','C44: 1241 + 5012 (IMO)']
+  },
+  'import_gi_ue': {
+    label:'Importación Gibraltar → UE (IM/H1, libre circulación)',
+    tipo:'import', aduana:'algeciras', transporte:'3',
+    regimenes:['40.00','01.00','07.00','42.00','44.00','51.00','53.00','61.00','63.00','71.00'], regimenDefault:'40.00',
+    preferencia:'400',
+    adicionalPorRegimen:{ '44.00':['5GS'], '51.00':['5GS'], '53.00':['5GS'] },
+    c44:[{codigo:'1240', ref:'MRN T2GI de vuelta', pedir:true}],
+    notas:['Preferencia 400 obligatoria (unión aduanera).','C40 documento precedente: MRN del T2GI de vuelta.','Si la mercancía necesita PIF: aduana Algeciras.'],
+    checklist:['C1 tipo: IM','C15 exp: GI','C36 preferencia: 400','C37 adicional: 5GS si 44/51/53','C44: 1240 + MRN T2GI']
+  },
+  'terceros_gi': {
+    label:'Terceros → Gibraltar (IM/H1, no comunitaria)',
+    tipo:'import', aduana:'algeciras', transporte:'1',
+    regimenes:['40.00','51.00','53.00','71.00'], regimenDefault:'40.00',
+    preferencia:'100',
+    adicionalPorRegimen:{ '40.00':['5GI'], '51.00':['5GP'], '53.00':['5GT'], '71.00':['7018'] },
+    c44:[{codigo:'1249', ref:'Circunstancias excepcionales (entrada por mar)', pedir:false},{codigo:'9ZZZ', ref:'Documento precedente genérico', pedir:false}],
+    notas:['Destino GI (subcabecera).','NO se declara IVA · NO contingentes.','Requiere T1GI de acompañamiento.','Régimen 7100 → casilla 44 9ZZZ + adicional 7018.'],
+    checklist:['C1 tipo: IM','C15a destino: GI','C36: 100','C37 adicional según régimen','T1GI obligatorio']
+  }
+};
+
+// Códigos de régimen adicional (casilla 37.2) que aplican al régimen elegido.
+function adicionalesVT(esc, regimen){
+  if(!esc || !esc.adicionalPorRegimen) return [];
+  return (esc.adicionalPorRegimen[regimen] || []).slice(0,3);
+}
+
+// Deduce el escenario a partir de los países de la factura (editable por el usuario).
+function inferEscenarioVT(cab){
+  cab = cab || {};
+  const pais = o => _vtPaisISO(((cab[o]||{}).pais)||'').toUpperCase();
+  const exp = pais('exportador'), des = pais('destinatario');
+  const org = _vtPaisISO(cab.pais_origen||'').toUpperCase();
+  if(des === 'GI'){ return (exp === 'ES' || org === 'ES' || !exp) ? 'export_ue_gi' : 'terceros_gi'; }
+  if(exp === 'GI') return 'import_gi_ue';
+  return '';
+}
+
 function _vtNum(v){ const n = parseNum(v); return (n==null) ? '' : n; }
 function _vtTaric(t){
   const s = String(t||'').replace(/\D/g,'');
@@ -3215,8 +3293,12 @@ function construirFilasExport(cab, lineas, cfg){
     P[7]=_vtNum(l.importe)||'';   // valor = importe factura, sin ajustes
     P[9]=_vtPaisISO((l._cab&&l._cab.pais_origen)||cab.pais_origen)||'ES';
     P[13]=cfg.regimen||'10.00';
+    // Escenario Gibraltar: casilla 36 (preferencia → col 63) y 37.2 (adicional → col 65-67)
+    if(cfg.preferencia) P[63]=cfg.preferencia;
+    const _adic=cfg.adicionales||[]; if(_adic[0])P[65]=_adic[0]; if(_adic[1])P[66]=_adic[1]; if(_adic[2])P[67]=_adic[2];
     const docs=[['N380',cab.numero_factura||'',cab.fecha||''],[docTr,cfg.docTransporteRef||'','']];
     c44.forEach(d=>{ if(d.codigo_doc) docs.push([d.codigo_doc,'',cab.fecha||'']); });
+    (cfg.docsEscenario||[]).forEach(d=>{ if(d.codigo) docs.push([d.codigo, d.valor||'', cab.fecha||'']); });
     docs.slice(0,15).forEach((d,k)=>{ const b=17+k*3; P[b]=d[0]||''; P[b+1]=d[1]||''; P[b+2]=d[2]||''; });
     filas.push(P);
   });
@@ -3273,8 +3355,12 @@ function construirFilasImport(cab, lineas, cfg){
     P[9]=_vtPaisISO((l._cab&&l._cab.pais_origen)||cab.pais_origen)||'';
     P[13]=cfg.regimen||'40.00';
     P[103]='1';   // método valoración: 1 = valor de transacción
+    // Escenario Gibraltar: casilla 36 (preferencia → col 63) y 37.2 (adicional → col 65-67)
+    if(cfg.preferencia) P[63]=cfg.preferencia;
+    const _adic=cfg.adicionales||[]; if(_adic[0])P[65]=_adic[0]; if(_adic[1])P[66]=_adic[1]; if(_adic[2])P[67]=_adic[2];
     const docs=[['N380',cab.numero_factura||'',cab.fecha||''],[docTr,cfg.docTransporteRef||'','']];
     c44.forEach(d=>{ if(d.codigo_doc) docs.push([d.codigo_doc,'',cab.fecha||'']); });
+    (cfg.docsEscenario||[]).forEach(d=>{ if(d.codigo) docs.push([d.codigo, d.valor||'', cab.fecha||'']); });
     docs.slice(0,15).forEach((d,k)=>{ const b=17+k*3; P[b]=d[0]||''; P[b+1]=d[1]||''; P[b+2]=d[2]||''; });
     filas.push(P);
   });
@@ -3336,6 +3422,17 @@ function abrirModalVT(){
       <div style="font-size:12px;color:var(--g500);margin-bottom:14px">
         Factura <strong>${escHtml(cab.numero_factura||'—')}</strong> · ${(window._facturaLineas||[]).length} partidas · genera el fichero de importación de dossier para VisualTrans.
       </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:11px;font-weight:700;color:var(--b700);text-transform:uppercase;letter-spacing:.04em">Escenario Gibraltar (autocompleta la config)</label>
+        <select id="vt-escenario" class="fi" style="width:100%" onchange="aplicarEscenarioVT()">
+          <option value="">— Manual (sin autocompletar) —</option>
+          <option value="export_ue_gi">Exportación UE → Gibraltar</option>
+          <option value="reexport_gi">Reexportación desde Gibraltar (tierra)</option>
+          <option value="avituallamiento">Reexportación GI — Avituallamiento (mar/aire)</option>
+          <option value="import_gi_ue">Importación Gibraltar → UE</option>
+          <option value="terceros_gi">Terceros → Gibraltar (no comunitaria)</option>
+        </select>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
           <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Generar desde</label>
@@ -3386,6 +3483,7 @@ function abrirModalVT(){
           <input id="vt-obs" class="fi">
         </div>
       </div>
+      <div id="vt-asistente" style="margin-top:14px"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
         <button class="btn btn-s btn-sm" onclick="document.getElementById('modal-vt').remove()">Cancelar</button>
         <button class="btn btn-p" onclick="confirmarVT()">🚢 Generar fichero</button>
@@ -3394,27 +3492,100 @@ function abrirModalVT(){
   d.onclick=()=>d.remove();
   document.body.appendChild(d);
   _vtToggleReg();
-  // Sugerir tipo por el origen de la factura
-  if(cab.pais_origen && String(cab.pais_origen).toUpperCase().replace(/[^A-Z]/g,'').substring(0,2)!=='ES'){
-    // origen extranjero: podría ser importación, pero export a Gibraltar también. Se deja export por defecto.
-  }
+  // Deducir el escenario de Gibraltar a partir de la factura y autocompletar.
+  const escInf = inferEscenarioVT(cab);
+  if(escInf){ document.getElementById('vt-escenario').value = escInf; aplicarEscenarioVT(); }
 }
 function _vtToggleReg(){
   const tipo=document.getElementById('vt-tipo').value;
   const sel=document.getElementById('vt-regimen');
   const regs = tipo==='import' ? ['40.00','61.23'] : ['10.00','23.00','31.00','31.51'];
   sel.innerHTML = regs.map(r=>`<option value="${r}">${r}</option>`).join('');
+  // Cambiar el tipo a mano rompe el autocompletado: vuelve a modo manual.
+  const esc=document.getElementById('vt-escenario');
+  if(esc && esc.value && GUIA_ESC_VT[esc.value] && GUIA_ESC_VT[esc.value].tipo!==tipo){
+    esc.value=''; const a=document.getElementById('vt-asistente'); if(a) a.innerHTML='';
+  }
+}
+
+// Autocompleta la config del fichero VT según el escenario de Gibraltar elegido.
+// Rellena SOLO los campos con posición segura en el CSV (tipo, aduana, régimen,
+// transporte) y pinta el asistente con lo que va tecleado en VisualTrans.
+function aplicarEscenarioVT(){
+  const key=document.getElementById('vt-escenario').value;
+  const asist=document.getElementById('vt-asistente');
+  const esc=GUIA_ESC_VT[key];
+  if(!esc){ if(asist) asist.innerHTML=''; _vtToggleReg(); return; }
+  // Tipo de DUA (export/import) y su lista de regímenes del escenario
+  document.getElementById('vt-tipo').value=esc.tipo;
+  const sel=document.getElementById('vt-regimen');
+  sel.innerHTML=esc.regimenes.map(r=>`<option value="${r}">${r}</option>`).join('');
+  sel.value=esc.regimenDefault;
+  // Aduana y transporte por defecto del escenario
+  if(esc.aduana) document.getElementById('vt-aduana').value=esc.aduana;
+  if(esc.transporte) document.getElementById('vt-transporte').value=esc.transporte;
+  if(asist) asist.innerHTML=renderAsistenteVT(esc);
+}
+
+// Panel del escenario: preferencia (36→col63), régimen adicional (37.2→col65-67)
+// y casilla 44 (col17-61) YA se escriben en el fichero. Aquí solo se teclea el
+// MRN/IMO que el sistema no puede conocer. Checklist y notas como ayuda.
+function renderAsistenteVT(esc){
+  const esch = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const adicMap = esc.adicionalPorRegimen||{};
+  const adicTxt = Object.keys(adicMap).length
+    ? Object.entries(adicMap).map(([r,cs])=>`${r}→${cs.join('+')}`).join(' · ')
+    : '—';
+  const c44 = (esc.c44&&esc.c44.length)
+    ? esc.c44.map(d => d.pedir
+        ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+             <span style="min-width:46px;font-weight:700">${esch(d.codigo)}</span>
+             <input id="vt-c44-${esch(d.codigo)}" class="fi" style="flex:1;font-size:11px" placeholder="${esch(d.ref)}">
+           </div>`
+        : `<div style="margin-top:4px"><strong>${esch(d.codigo)}</strong> — ${esch(d.ref)}</div>`
+      ).join('')
+    : '<div style="color:var(--g500)">Documentos comerciales habituales</div>';
+  return `
+    <div style="background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;font-size:11px;color:#166534">
+      <div style="font-weight:700;margin-bottom:6px">✅ Se incluye automáticamente en el fichero VisualTrans</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin-bottom:8px">
+        <div><span style="color:var(--g500)">Preferencia (C.36):</span> <strong>${esch(esc.preferencia)}</strong></div>
+        <div><span style="color:var(--g500)">Régimen adicional (C.37.2):</span> <strong>${esch(adicTxt)}</strong></div>
+      </div>
+      <div><span style="color:var(--g500)">Casilla 44 — teclea el MRN/IMO donde se pida:</span>${c44}</div>
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;font-weight:600">Checklist y notas del escenario</summary>
+        <ul style="margin:6px 0 0;padding-left:18px">${esc.checklist.map(x=>`<li>${esch(x)}</li>`).join('')}</ul>
+        <div style="margin-top:6px;color:var(--g500)">${esc.notas.map(esch).join('<br>')}</div>
+      </details>
+    </div>`;
 }
 function confirmarVT(){
+  const escKey = document.getElementById('vt-escenario').value;
+  const esc = GUIA_ESC_VT[escKey];
+  const regimen = document.getElementById('vt-regimen').value;
+  // Documentos de casilla 44 del escenario, con el MRN/IMO que haya tecleado el operador
+  const docsEsc = [];
+  if(esc){
+    (esc.c44||[]).forEach(d => {
+      let valor = '';
+      if(d.pedir){ const el=document.getElementById('vt-c44-'+d.codigo); valor = el ? el.value.trim() : ''; }
+      docsEsc.push({ codigo:d.codigo, valor });
+    });
+  }
   window._cfgDUA = {
     origen: document.getElementById('vt-origen').value,
     tipo: document.getElementById('vt-tipo').value,
     aduana: document.getElementById('vt-aduana').value,
-    regimen: document.getElementById('vt-regimen').value,
+    regimen: regimen,
     transporte: document.getElementById('vt-transporte').value,
     docTransporteRef: document.getElementById('vt-doctr').value.trim(),
     ubicacion: document.getElementById('vt-ubic').value.trim(),
     observaciones: document.getElementById('vt-obs').value.trim(),
+    escenario: escKey || '',
+    preferencia: esc ? (esc.preferencia||'') : '',
+    adicionales: esc ? adicionalesVT(esc, regimen) : [],
+    docsEscenario: docsEsc,
   };
   document.getElementById('modal-vt').remove();
   exportarVisualTrans();
