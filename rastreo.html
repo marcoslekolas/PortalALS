@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>Localizando envío…</title>
+<script>
+(function(){
+  var h=location.hostname, isCW=h.includes('customsway');
+  document.title='Localizando envío · '+(isCW?'CUSTOMS WAY':'ALS');
+  var svg=isCW
+    ?'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#0369a1"/><text x="16" y="25" font-family="Arial Black,Arial,sans-serif" font-size="17" font-weight="900" fill="white" text-anchor="middle">CW</text></svg>'
+    :'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#1e3a8a"/><text x="16" y="24" font-family="Arial Black,Arial,sans-serif" font-size="14" font-weight="900" fill="white" text-anchor="middle">ALS</text></svg>';
+  var lnk=document.createElement('link');
+  lnk.rel='icon';lnk.type='image/svg+xml';
+  lnk.href='data:image/svg+xml,'+encodeURIComponent(svg);
+  document.head.appendChild(lnk);
+})();
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f4f6fb; --card:#fff; --ink:#1e293b; --sub:#64748b;
+  --brand:#1e3a5f; --brand2:#22335c; --accent:#2563eb; --line:#e5e9f0;
+}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#0f0f1a;--card:#1a1a2e;--ink:#e8eaf0;--sub:#9aa5b4;--brand:#0d2a4a;--brand2:#12122a;--accent:#60a5fa;--line:#1e1e3f}
+}
+html,body{height:100%}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);
+  display:flex;align-items:center;justify-content:center;
+  padding:24px;min-height:100vh;
+}
+.card{
+  background:var(--card);border:1px solid var(--line);border-radius:18px;
+  padding:34px 30px;width:100%;max-width:400px;text-align:center;
+  box-shadow:0 12px 40px rgba(15,23,42,.10);
+}
+.mark{
+  width:52px;height:52px;border-radius:13px;margin:0 auto 18px;
+  background:linear-gradient(135deg,var(--brand),var(--brand2));
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:900;font-size:16px;letter-spacing:.5px;
+}
+.plane{font-size:30px;margin-bottom:6px;line-height:1}
+h1{font-size:17px;font-weight:700;margin-bottom:4px}
+.awb{
+  font-family:'Roboto Mono',ui-monospace,monospace;font-size:14px;
+  color:var(--accent);font-weight:600;margin-bottom:22px;letter-spacing:.3px;
+}
+.spinner{
+  width:38px;height:38px;margin:4px auto 16px;
+  border:3px solid var(--line);border-top-color:var(--accent);
+  border-radius:50%;animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.status{font-size:13px;color:var(--sub);min-height:20px;line-height:1.5}
+.dots::after{content:'';animation:dots 1.4s steps(4,end) infinite}
+@keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+.actions{margin-top:22px;display:none;flex-direction:column;gap:10px}
+.actions.show{display:flex}
+.btn{
+  display:block;width:100%;padding:12px 16px;border-radius:11px;border:none;
+  font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;
+  text-decoration:none;transition:transform .1s,filter .12s;
+}
+.btn:active{transform:scale(.98)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{filter:brightness(1.08)}
+.btn-ghost{background:transparent;color:var(--sub);border:1px solid var(--line)}
+.btn-ghost:hover{color:var(--ink)}
+.note{font-size:11px;color:var(--sub);margin-top:14px;line-height:1.5}
+.err{color:#dc2626}
+@media(prefers-color-scheme:dark){.err{color:#f87171}}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="mark" id="mark">ALS</div>
+    <div class="plane">✈️</div>
+    <h1>Rastreando envío</h1>
+    <div class="awb" id="awb">—</div>
+    <div class="spinner" id="spinner"></div>
+    <div class="status" id="status"><span>Localizando en la aerolínea</span><span class="dots"></span></div>
+    <div class="actions" id="actions">
+      <a class="btn btn-primary" id="btn-manual" target="_self">🔎 Abrir en track-trace</a>
+      <button class="btn btn-ghost" id="btn-retry">↻ Reintentar</button>
+    </div>
+    <div class="note" id="note"></div>
+  </div>
+
+<script>
+// ── Config ────────────────────────────────────────────────
+var SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
+var TIMEOUT_MS=6000;           // tiempo máx. esperando a la Edge Function
+var TRACKTRACE='https://www.track-trace.com/aircargo#';
+
+// ── AWB desde la URL ──────────────────────────────────────
+var params=new URLSearchParams(location.search);
+var awbRaw=(params.get('awb')||'').trim();
+var clean=awbRaw.replace(/[-\s]/g,'');
+
+// Marca ALS / Customs Way
+document.getElementById('mark').textContent=location.hostname.includes('customsway')?'CW':'ALS';
+
+// Formato visual 123-12345678
+function fmtAwb(a){
+  if(!a) return '—';
+  var c=a.replace(/[-\s]/g,'');
+  return c.length>=8 ? c.substring(0,3)+'-'+c.substring(3) : c;
+}
+document.getElementById('awb').textContent=fmtAwb(awbRaw);
+
+var statusEl=document.getElementById('status');
+var spinnerEl=document.getElementById('spinner');
+var actionsEl=document.getElementById('actions');
+var noteEl=document.getElementById('note');
+var btnManual=document.getElementById('btn-manual');
+var btnRetry=document.getElementById('btn-retry');
+
+// El fallback manual siempre apunta al método clásico
+btnManual.href=TRACKTRACE+encodeURIComponent(clean);
+btnRetry.onclick=function(){ location.reload(); };
+
+// ── Mostrar fallback (cuando no hay URL directa) ──────────
+function mostrarFallback(msg, esError){
+  spinnerEl.style.display='none';
+  statusEl.innerHTML='<span'+(esError?' class="err"':'')+'>'+msg+'</span>';
+  actionsEl.classList.add('show');
+  noteEl.textContent='El rastreo directo no está disponible ahora mismo. Puedes consultarlo en track-trace con un clic.';
+}
+
+// ── Sin AWB ───────────────────────────────────────────────
+if(!clean){
+  mostrarFallback('No se ha indicado ningún AWB.', true);
+  btnManual.href=TRACKTRACE;
+} else {
+  // ── Llamada a la Edge Function con timeout ──────────────
+  var ctrl=new AbortController();
+  var timer=setTimeout(function(){ ctrl.abort(); }, TIMEOUT_MS);
+
+  fetch(SB_URL+'/functions/v1/track-awb?awb='+encodeURIComponent(clean), {signal:ctrl.signal})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      clearTimeout(timer);
+      var url=d && d.url;
+      // URL directa válida de la aerolínea (no la home de track-trace)
+      if(url && url.indexOf('http')===0 && url.indexOf('track-trace')===-1){
+        statusEl.innerHTML='<span>Envío localizado — abriendo</span><span class="dots"></span>';
+        // replace() para no dejar la puente en el historial (botón Atrás limpio)
+        location.replace(url);
+      } else {
+        mostrarFallback('No se pudo obtener el seguimiento directo.', false);
+      }
+    })
+    .catch(function(err){
+      clearTimeout(timer);
+      var msg=(err && err.name==='AbortError')
+        ? 'El servicio de rastreo tardó demasiado en responder.'
+        : 'No se pudo contactar con el servicio de rastreo.';
+      mostrarFallback(msg, true);
+    });
+}
+</script>
+</body>
+</html>
