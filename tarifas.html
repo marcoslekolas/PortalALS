@@ -174,6 +174,10 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
 .rate-row input[type=checkbox]{width:13px;height:13px;accent-color:var(--g700);flex-shrink:0;cursor:pointer}
 .rate-row.rate-new{background:#fffbeb;border-left:3px solid #f59e0b;border-radius:4px;padding:2px 4px 2px 3px;margin-left:-3px}
 .rate-row.rate-new::before{content:'NUEVO';font-size:8px;font-weight:700;letter-spacing:.4px;color:#b45309;background:#fde68a;border-radius:3px;padding:1px 4px;flex-shrink:0;order:99}
+.rate-row.rate-noen{background:#eff6ff;border-left:3px solid #3b82f6;border-radius:4px;padding:2px 4px 2px 3px;margin-left:-3px}
+.rate-row.rate-noen::after{content:'SIN EN';font-size:8px;font-weight:700;letter-spacing:.4px;color:#1d4ed8;background:#dbeafe;border-radius:3px;padding:1px 4px;flex-shrink:0;order:100}
+.rate-row.rate-noen .lbl-edit::placeholder{color:#93a3b8;font-style:italic}
+.lang-tag{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.4px;color:#1d4ed8;background:#dbeafe;border-radius:3px;padding:1px 4px;vertical-align:middle;margin-left:4px}
 .rate-row .lbl-edit{flex:1;font-size:12px;border:1px solid transparent;border-radius:4px;padding:2px 6px;background:transparent;font-family:var(--f);color:var(--g900);min-width:0}
 .rate-row .lbl-edit:hover{border-color:var(--g300);background:#fff}
 .rate-row .lbl-edit:focus{outline:none;border-color:var(--b500);background:#fff}
@@ -381,6 +385,7 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
                 <div class="form-group"><label>Creada por</label><input type="text" id="created-by" placeholder="Tu nombre…"></div>
                 <div class="form-group"><label>Fecha de emisión</label><input type="date" id="doc-date" oninput="renderDoc()"></div>
                 <div class="form-group"><label>Válida hasta</label><input type="text" id="validity" value="31/12/2026" oninput="renderDoc()"></div>
+                <div class="form-group"><label>Idioma del documento</label><select id="doc-lang" onchange="setLang(this.value)"><option value="es">Castellano</option><option value="en">English</option></select></div>
                 <div class="form-group full"><label>Observaciones / Condiciones especiales</label><input type="text" id="global-notes" placeholder="Descuentos, condiciones particulares…" oninput="renderDoc()"></div>
                 <div class="form-group full"><label>Condiciones Generales</label><textarea id="cond-generales" rows="3" oninput="renderDoc()">Manipulación y almacenaje incluidos con servicios logísticos propios hasta 20 días · Carga/descarga en cliente por cuenta de la mercancía · No incluye despacho en La Línea ni Gibraltar salvo contratación expresa · Precios sin IVA · Tarifas sujetas a revisión anual.</textarea></div>
               </div>
@@ -551,110 +556,185 @@ const TABLA = 'cw_tarifas_ofertas';
 //  DATOS DE SECCIONES POR DEFECTO
 // ══════════════════════════════════════════════════════
 const COND_DEFAULT = 'Manipulación y almacenaje incluidos con servicios logísticos propios hasta 20 días · Carga/descarga en cliente por cuenta de la mercancía · No incluye despacho en La Línea ni Gibraltar salvo contratación expresa · Precios sin IVA · Tarifas sujetas a revisión anual.';
+const COND_DEFAULT_EN = 'Handling and storage included when using our own logistics services for up to 20 days · Loading/unloading at the customer\'s premises for the account of the goods · Customs clearance in La Línea or Gibraltar not included unless expressly contracted · Prices exclude VAT · Rates subject to annual review.';
+
+// ══════════════════════════════════════════════════════
+//  IDIOMA DEL DOCUMENTO (es / en)
+//  Los conceptos llevan su traducción en el catálogo (label_en);
+//  aquí van los rótulos fijos del documento, el PDF y el email.
+// ══════════════════════════════════════════════════════
+const I18N = {
+  es: {
+    docTitle:'Oferta de Tarifas Generales 2026',
+    docTitlePdf:'OFERTA DE TARIFAS GENERALES 2026',
+    taxId:'CIF B75847053',
+    date:'Fecha', validUntil:'Válida hasta',
+    recipient:'Destinatario', recipientPdf:'DESTINATARIO',
+    cifLabel:'CIF', attn:'Attn',
+    colConcept:'Concepto', colUnit:'Unidad', colRate:'Tarifa',
+    notesTitle:'Observaciones y condiciones particulares',
+    notesTitlePdf:'OBSERVACIONES Y CONDICIONES PARTICULARES',
+    condTitle:'Condiciones Generales',
+    condTitlePdf:'CONDICIONES GENERALES',
+    emptyDoc:'Activa al menos una sección.', draft:'(borrador)', phone:'Tlf.',
+    cont:'(cont.)', poa:'A/C', locale:'es-ES',
+    mailSubject:ref => 'Oferta de Tarifas Customs-Way SL - '+ref,
+    mailBody:(ref,client) => 'Estimado/a cliente,\r\n\r\nAdjunto encontrará la oferta de tarifas '+ref+' dirigida a '+client+
+      '.\r\n\r\nQuedamos a su disposición para cualquier consulta.\r\n\r\nUn saludo,\r\nCustoms-Way SL\r\naduana@customsway.eu | Tlf. 856 035 002'
+  },
+  en: {
+    docTitle:'General Rates Quotation 2026',
+    docTitlePdf:'GENERAL RATES QUOTATION 2026',
+    taxId:'Tax ID B75847053',
+    date:'Date', validUntil:'Valid until',
+    recipient:'Addressee', recipientPdf:'ADDRESSEE',
+    cifLabel:'Tax ID', attn:'Attn',
+    colConcept:'Service', colUnit:'Unit', colRate:'Rate',
+    notesTitle:'Remarks and specific conditions',
+    notesTitlePdf:'REMARKS AND SPECIFIC CONDITIONS',
+    condTitle:'General Conditions',
+    condTitlePdf:'GENERAL CONDITIONS',
+    emptyDoc:'Enable at least one section.', draft:'(draft)', phone:'Tel.',
+    cont:'(cont.)', poa:'POA', locale:'en-GB',
+    mailSubject:ref => 'Customs-Way SL Rates Quotation - '+ref,
+    mailBody:(ref,client) => 'Dear Sir or Madam,\r\n\r\nPlease find attached rates quotation '+ref+' addressed to '+client+
+      '.\r\n\r\nWe remain at your disposal for any queries.\r\n\r\nKind regards,\r\nCustoms-Way SL\r\naduana@customsway.eu | Tel. +34 856 035 002'
+  }
+};
+
+// Rótulos fijos del idioma pedido (por defecto castellano)
+function T(lang){ return I18N[lang==='en'?'en':'es']; }
+
+// Texto de un concepto o sección en el idioma pedido.
+// Si falta la traducción cae al castellano, nunca deja la celda vacía.
+function L(obj, field, lang){
+  if(!obj) return '';
+  if(lang==='en'){
+    const en = obj[field+'_en'];
+    if(en && String(en).trim()) return en;
+  }
+  return obj[field]||'';
+}
+
+// Precio formateado según idioma: 1.234,50 € en ES, €1,234.50 en EN.
+// 'A/C' (a consultar) se rotula POA en inglés.
+function fmtPrice(price, lang){
+  const t=T(lang);
+  if(price===''||price===null||price===undefined) return '';
+  if(isNaN(price)) return (String(price).trim().toUpperCase()==='A/C') ? t.poa : String(price);
+  const n=parseFloat(price);
+  return lang==='en'
+    ? '€'+n.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})
+    : n.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+}
+
+// ¿Este concepto puede imprimirse en inglés? (los que el usuario añade a mano
+// o renombra no tienen traducción del catálogo y hay que escribirla)
+function needsEn(r){ return !(r && r.label_en && String(r.label_en).trim()); }
 
 const DEFAULT_SECTIONS = [
-  {id:'transp_ll', title:'Transporte La Línea → Gibraltar', defaultOn:true,
-   note:'Servicio directo puerta a puerta. Entrega al día siguiente. Conversión: 1m³ = 270 kg.',
+  {id:'transp_ll', title:'Transporte La Línea → Gibraltar', title_en:'Transport La Línea → Gibraltar', defaultOn:true,
+   note:'Servicio directo puerta a puerta. Entrega al día siguiente. Conversión: 1m³ = 270 kg.', note_en:'Direct door-to-door service. Next-day delivery. Conversion: 1m³ = 270 kg.',
    rates:[
-    {id:'tl1',label:'0 – 50 kg',price:80,unit:'€',check:true},
-    {id:'tl2',label:'51 – 100 kg',price:90,unit:'€',check:true},
-    {id:'tl3',label:'101 – 500 kg',price:105,unit:'€',check:true},
-    {id:'tl4',label:'501 – 1.200 kg',price:150,unit:'€',check:true},
-    {id:'tl5',label:'1.201 – 1.500 kg',price:210,unit:'€',check:true},
-    {id:'tl6',label:'Resto',price:'A/C',unit:'',check:true}
+    {id:'tl1',label:'0 – 50 kg',label_en:'0 – 50 kg',price:80,unit:'€',check:true},
+    {id:'tl2',label:'51 – 100 kg',label_en:'51 – 100 kg',price:90,unit:'€',check:true},
+    {id:'tl3',label:'101 – 500 kg',label_en:'101 – 500 kg',price:105,unit:'€',check:true},
+    {id:'tl4',label:'501 – 1.200 kg',label_en:'501 – 1,200 kg',price:150,unit:'€',check:true},
+    {id:'tl5',label:'1.201 – 1.500 kg',label_en:'1,201 – 1,500 kg',price:210,unit:'€',check:true},
+    {id:'tl6',label:'Resto',label_en:'Remainder',price:'A/C',unit:'',check:true}
   ]},
-  {id:'transp_alg', title:'Transporte Algeciras → Gibraltar', defaultOn:false,
-   note:'Conversión volumétrica: 1m³ = 270 kg.',
+  {id:'transp_alg', title:'Transporte Algeciras → Gibraltar', title_en:'Transport Algeciras → Gibraltar', defaultOn:false,
+   note:'Conversión volumétrica: 1m³ = 270 kg.', note_en:'Volumetric conversion: 1m³ = 270 kg.',
    rates:[
-    {id:'ta1',label:'0 – 50 kg',price:105,unit:'€',check:true},
-    {id:'ta2',label:'51 – 100 kg',price:120,unit:'€',check:true},
-    {id:'ta3',label:'101 – 500 kg',price:150,unit:'€',check:true},
-    {id:'ta4',label:'501 – 1.200 kg',price:175,unit:'€',check:true},
-    {id:'ta5',label:'1.201 – 1.500 kg',price:250,unit:'€',check:true},
-    {id:'ta6',label:'Resto',price:'A/C',unit:'',check:true}
+    {id:'ta1',label:'0 – 50 kg',label_en:'0 – 50 kg',price:105,unit:'€',check:true},
+    {id:'ta2',label:'51 – 100 kg',label_en:'51 – 100 kg',price:120,unit:'€',check:true},
+    {id:'ta3',label:'101 – 500 kg',label_en:'101 – 500 kg',price:150,unit:'€',check:true},
+    {id:'ta4',label:'501 – 1.200 kg',label_en:'501 – 1,200 kg',price:175,unit:'€',check:true},
+    {id:'ta5',label:'1.201 – 1.500 kg',label_en:'1,201 – 1,500 kg',price:250,unit:'€',check:true},
+    {id:'ta6',label:'Resto',label_en:'Remainder',price:'A/C',unit:'',check:true}
   ]},
-  {id:'despacho_ll', title:'Despacho Aduanas La Línea', defaultOn:true, note:'',
+  {id:'despacho_ll', title:'Despacho Aduanas La Línea', title_en:'Customs Clearance – La Línea', defaultOn:true, note:'',
    rates:[
-    {id:'dll1',label:'Reimportaciones de temporales',price:110,unit:'€',check:true},
-    {id:'dll2',label:'Exportaciones definitivas',price:35,unit:'€',check:true},
-    {id:'dll3',label:'Exportaciones temporales',price:40,unit:'€',check:true},
-    {id:'dll4',label:'RPA (Régimen Perfeccionamiento Activo)',price:110,unit:'€',check:true},
-    {id:'dll5',label:'Importaciones a consumo',price:110,unit:'€',check:true},
-    {id:'dll6',label:'Recepción de tránsitos',price:55,unit:'€ (incl. EXS)',check:true},
-    {id:'dll7',label:'Recepción de DAEs',price:25,unit:'€',check:true},
-    {id:'dll8',label:'Reexportaciones y Ultimación de RPA',price:45,unit:'€',check:true},
-    {id:'dll9',label:'T1 de expedición',price:150,unit:'€',check:true},
-    {id:'dll10',label:'ICS2 (ENS)',price:45,unit:'€',check:true},
-    {id:'dll11',label:'RMT',price:30,unit:'€',check:true},
-    {id:'dll12',label:'ROSH / RAE',price:30,unit:'€',check:true},
-    {id:'dll13',label:'JEMU',price:30,unit:'€',check:true},
-    {id:'dll14',label:'Instancia de anulación trámite aduanero',price:30,unit:'€',check:true},
-    {id:'dll15',label:'Modificación ICS2 (ENS)',price:45,unit:'€',check:true},
-    {id:'dll16',label:'H1 7100 (vinculación a depósito aduanero)',price:30,unit:'€',check:true},
-    {id:'dll17',label:'H1 4000 (despacho a libre práctica y consumo)',price:50,unit:'€',check:true},
-    {id:'dll18',label:'T1GI (tránsito a Gibraltar)',price:35,unit:'€',check:true},
-    {id:'dll19',label:'T2GI (tránsito a Gibraltar)',price:25,unit:'€',check:true},
-    {id:'dll20',label:'Reexportación Avituallamiento Gibraltar',price:25,unit:'€',check:true}
+    {id:'dll1',label:'Reimportaciones de temporales',label_en:'Re-importation of temporarily exported goods',price:110,unit:'€',check:true},
+    {id:'dll2',label:'Exportaciones definitivas',label_en:'Permanent export declarations',price:35,unit:'€',check:true},
+    {id:'dll3',label:'Exportaciones temporales',label_en:'Temporary export declarations',price:40,unit:'€',check:true},
+    {id:'dll4',label:'RPA (Régimen Perfeccionamiento Activo)',label_en:'IPR (Inward Processing Relief)',price:110,unit:'€',check:true},
+    {id:'dll5',label:'Importaciones a consumo',label_en:'Import for home use',price:110,unit:'€',check:true},
+    {id:'dll6',label:'Recepción de tránsitos',label_en:'Receipt of transit declarations',price:55,unit:'€ (incl. EXS)',unit_en:'€ (EXS incl.)',check:true},
+    {id:'dll7',label:'Recepción de DAEs',label_en:'Receipt of EAD (export accompanying document)',price:25,unit:'€',check:true},
+    {id:'dll8',label:'Reexportaciones y Ultimación de RPA',label_en:'Re-exports and discharge of IPR',price:45,unit:'€',check:true},
+    {id:'dll9',label:'T1 de expedición',label_en:'T1 transit issuance',price:150,unit:'€',check:true},
+    {id:'dll10',label:'ICS2 (ENS)',label_en:'ICS2 (ENS entry summary declaration)',price:45,unit:'€',check:true},
+    {id:'dll11',label:'RMT',label_en:'RMT',price:30,unit:'€',check:true},
+    {id:'dll12',label:'ROSH / RAE',label_en:'ROSH / RAE',price:30,unit:'€',check:true},
+    {id:'dll13',label:'JEMU',label_en:'JEMU',price:30,unit:'€',check:true},
+    {id:'dll14',label:'Instancia de anulación trámite aduanero',label_en:'Application to cancel a customs formality',price:30,unit:'€',check:true},
+    {id:'dll15',label:'Modificación ICS2 (ENS)',label_en:'ICS2 (ENS) amendment',price:45,unit:'€',check:true},
+    {id:'dll16',label:'H1 7100 (vinculación a depósito aduanero)',label_en:'H1 7100 (entry into customs warehousing)',price:30,unit:'€',check:true},
+    {id:'dll17',label:'H1 4000 (despacho a libre práctica y consumo)',label_en:'H1 4000 (release for free circulation and home use)',price:50,unit:'€',check:true},
+    {id:'dll18',label:'T1GI (tránsito a Gibraltar)',label_en:'T1GI (transit to Gibraltar)',price:35,unit:'€',check:true},
+    {id:'dll19',label:'T2GI (tránsito a Gibraltar)',label_en:'T2GI (transit to Gibraltar)',price:25,unit:'€',check:true},
+    {id:'dll20',label:'Reexportación Avituallamiento Gibraltar',label_en:'Re-export – Gibraltar ship supplies (victualling)',price:25,unit:'€',check:true}
   ]},
-  {id:'despacho_agp', title:'Despacho Aduanas Algeciras', defaultOn:false, note:'',
+  {id:'despacho_agp', title:'Despacho Aduanas Algeciras', title_en:'Customs Clearance – Algeciras', defaultOn:false, note:'',
    rates:[
-    {id:'dagp1',label:'Reimportaciones de temporales',price:110,unit:'€',check:true},
-    {id:'dagp2',label:'Exportaciones definitivas',price:35,unit:'€',check:true},
-    {id:'dagp3',label:'Exportaciones temporales',price:40,unit:'€',check:true},
-    {id:'dagp4',label:'RPA (Régimen Perfeccionamiento Activo)',price:110,unit:'€',check:true},
-    {id:'dagp5',label:'Importaciones a consumo',price:110,unit:'€',check:true},
-    {id:'dagp6',label:'Recepción de tránsitos',price:55,unit:'€ (incl. EXS)',check:true},
-    {id:'dagp7',label:'Recepción de DAEs',price:25,unit:'€',check:true},
-    {id:'dagp8',label:'Reexportaciones y Ultimación de RPA',price:45,unit:'€',check:true},
-    {id:'dagp9',label:'T1 expedición AGP',price:150,unit:'€',check:true},
-    {id:'dagp10',label:'ICS2 (ENS)',price:45,unit:'€',check:true},
-    {id:'dagp11',label:'RMT',price:30,unit:'€',check:true},
-    {id:'dagp12',label:'ROSH / RAE',price:30,unit:'€',check:true},
-    {id:'dagp13',label:'JEMU',price:30,unit:'€',check:true},
-    {id:'dagp14',label:'Instancia de anulación trámite aduanero',price:30,unit:'€',check:true},
-    {id:'dagp15',label:'Modificación ICS2 (ENS)',price:45,unit:'€',check:true},
-    {id:'dagp16',label:'H1 7100 (vinculación a depósito aduanero)',price:30,unit:'€',check:true},
-    {id:'dagp17',label:'H1 4000 (despacho a libre práctica y consumo)',price:50,unit:'€',check:true},
-    {id:'dagp18',label:'T1GI (tránsito a Gibraltar)',price:35,unit:'€',check:true},
-    {id:'dagp19',label:'T2GI (tránsito a Gibraltar)',price:25,unit:'€',check:true}
+    {id:'dagp1',label:'Reimportaciones de temporales',label_en:'Re-importation of temporarily exported goods',price:110,unit:'€',check:true},
+    {id:'dagp2',label:'Exportaciones definitivas',label_en:'Permanent export declarations',price:35,unit:'€',check:true},
+    {id:'dagp3',label:'Exportaciones temporales',label_en:'Temporary export declarations',price:40,unit:'€',check:true},
+    {id:'dagp4',label:'RPA (Régimen Perfeccionamiento Activo)',label_en:'IPR (Inward Processing Relief)',price:110,unit:'€',check:true},
+    {id:'dagp5',label:'Importaciones a consumo',label_en:'Import for home use',price:110,unit:'€',check:true},
+    {id:'dagp6',label:'Recepción de tránsitos',label_en:'Receipt of transit declarations',price:55,unit:'€ (incl. EXS)',unit_en:'€ (EXS incl.)',check:true},
+    {id:'dagp7',label:'Recepción de DAEs',label_en:'Receipt of EAD (export accompanying document)',price:25,unit:'€',check:true},
+    {id:'dagp8',label:'Reexportaciones y Ultimación de RPA',label_en:'Re-exports and discharge of IPR',price:45,unit:'€',check:true},
+    {id:'dagp9',label:'T1 expedición AGP',label_en:'T1 transit issuance (Algeciras)',price:150,unit:'€',check:true},
+    {id:'dagp10',label:'ICS2 (ENS)',label_en:'ICS2 (ENS entry summary declaration)',price:45,unit:'€',check:true},
+    {id:'dagp11',label:'RMT',label_en:'RMT',price:30,unit:'€',check:true},
+    {id:'dagp12',label:'ROSH / RAE',label_en:'ROSH / RAE',price:30,unit:'€',check:true},
+    {id:'dagp13',label:'JEMU',label_en:'JEMU',price:30,unit:'€',check:true},
+    {id:'dagp14',label:'Instancia de anulación trámite aduanero',label_en:'Application to cancel a customs formality',price:30,unit:'€',check:true},
+    {id:'dagp15',label:'Modificación ICS2 (ENS)',label_en:'ICS2 (ENS) amendment',price:45,unit:'€',check:true},
+    {id:'dagp16',label:'H1 7100 (vinculación a depósito aduanero)',label_en:'H1 7100 (entry into customs warehousing)',price:30,unit:'€',check:true},
+    {id:'dagp17',label:'H1 4000 (despacho a libre práctica y consumo)',label_en:'H1 4000 (release for free circulation and home use)',price:50,unit:'€',check:true},
+    {id:'dagp18',label:'T1GI (tránsito a Gibraltar)',label_en:'T1GI (transit to Gibraltar)',price:35,unit:'€',check:true},
+    {id:'dagp19',label:'T2GI (tránsito a Gibraltar)',label_en:'T2GI (transit to Gibraltar)',price:25,unit:'€',check:true}
   ]},
-  {id:'adt', title:'Servicios ADT / Almacén', defaultOn:false, note:'',
+  {id:'adt', title:'Servicios ADT / Almacén', title_en:'Temporary Storage (ADT) / Warehouse Services', defaultOn:false, note:'',
    rates:[
-    {id:'a1',label:'Recepción en ADT',price:50,unit:'€',check:true},
-    {id:'a2',label:'Emisión T1 posterior LL→LL',price:100,unit:'€',check:true},
-    {id:'a3',label:'Transporte almacén → Gibraltar (1 pallet)',price:50,unit:'€',check:true},
-    {id:'a4',label:'Pallet adicional (hasta 4)',price:25,unit:'€/pallet',check:true},
-    {id:'a5',label:'Despacho aduana LL (TR)',price:45,unit:'€',check:true},
-    {id:'a6',label:'C/D ADT',price:8,unit:'€/pallet',check:true},
-    {id:'a7',label:'Almacenaje ADT',price:1,unit:'€/pallet/día',check:true}
+    {id:'a1',label:'Recepción en ADT',label_en:'Receipt at temporary storage facility (ADT)',price:50,unit:'€',check:true},
+    {id:'a2',label:'Emisión T1 posterior LL→LL',label_en:'Subsequent T1 issuance (La Línea → La Línea)',price:100,unit:'€',check:true},
+    {id:'a3',label:'Transporte almacén → Gibraltar (1 pallet)',label_en:'Transport warehouse → Gibraltar (1 pallet)',price:50,unit:'€',check:true},
+    {id:'a4',label:'Pallet adicional (hasta 4)',label_en:'Additional pallet (up to 4)',price:25,unit:'€/pallet',check:true},
+    {id:'a5',label:'Despacho aduana LL (TR)',label_en:'Customs clearance La Línea (TR)',price:45,unit:'€',check:true},
+    {id:'a6',label:'C/D ADT',label_en:'Loading/unloading at ADT',price:8,unit:'€/pallet',check:true},
+    {id:'a7',label:'Almacenaje ADT',label_en:'Storage at ADT',price:1,unit:'€/pallet/día',unit_en:'€/pallet/day',check:true}
   ]},
-  {id:'almacenaje', title:'Almacenaje y Manipulación', defaultOn:false,
-   note:'Solo sin uso de servicios logísticos propios. Con servicio completo, incluido hasta 20 días.',
+  {id:'almacenaje', title:'Almacenaje y Manipulación', title_en:'Storage and Handling', defaultOn:false,
+   note:'Solo sin uso de servicios logísticos propios. Con servicio completo, incluido hasta 20 días.', note_en:'Applies only when our own logistics services are not used. With the full service, included for up to 20 days.',
    rates:[
-    {id:'al1',label:'Almacenaje – pallet/día',price:1.5,unit:'€',check:true},
-    {id:'al2',label:'Manipulación – pallet',price:5,unit:'€',check:true}
+    {id:'al1',label:'Almacenaje – pallet/día',label_en:'Storage – per pallet/day',price:1.5,unit:'€',check:true},
+    {id:'al2',label:'Manipulación – pallet',label_en:'Handling – per pallet',price:5,unit:'€',check:true}
   ]},
-  {id:'ups', title:'Tráfico UPS / Paquetería Express', defaultOn:false,
-   note:'Facturación mínima diaria: 40 €. Abono mínimo diario: 10 €.',
+  {id:'ups', title:'Tráfico UPS / Paquetería Express', title_en:'UPS Traffic / Express Parcels', defaultOn:false,
+   note:'Facturación mínima diaria: 40 €. Abono mínimo diario: 10 €.', note_en:'Minimum daily billing: €40. Minimum daily credit: €10.',
    rates:[
-    {id:'u1',label:'1er tramo – hasta 10 docs',price:40,unit:'€/día',check:true},
-    {id:'u2',label:'2º tramo – 11 a 25 docs',price:75,unit:'€/día',check:true},
-    {id:'u3',label:'3er tramo – 26 a 50 docs',price:100,unit:'€/día',check:true},
-    {id:'u4',label:'4º tramo – 51 a 75 docs',price:120,unit:'€/día',check:true}
+    {id:'u1',label:'1er tramo – hasta 10 docs',label_en:'Band 1 – up to 10 docs',price:40,unit:'€/día',unit_en:'€/day',check:true},
+    {id:'u2',label:'2º tramo – 11 a 25 docs',label_en:'Band 2 – 11 to 25 docs',price:75,unit:'€/día',unit_en:'€/day',check:true},
+    {id:'u3',label:'3er tramo – 26 a 50 docs',label_en:'Band 3 – 26 to 50 docs',price:100,unit:'€/día',unit_en:'€/day',check:true},
+    {id:'u4',label:'4º tramo – 51 a 75 docs',label_en:'Band 4 – 51 to 75 docs',price:120,unit:'€/día',unit_en:'€/day',check:true}
   ]},
-  {id:'aeropuerto', title:'Tarifas Aeropuerto', defaultOn:false, note:'',
+  {id:'aeropuerto', title:'Tarifas Aeropuerto', title_en:'Airport Rates', defaultOn:false, note:'',
    rates:[
-    {id:'ae1',label:'Gestión Comunitario AGP',price:'A/C',unit:'',check:true},
-    {id:'ae2',label:'Tránsito AGP',price:'A/C',unit:'',check:true},
-    {id:'ae3',label:'Otros aeropuertos',price:'A/C',unit:'',check:true},
-    {id:'ae4',label:'Servicio extra (fines de semana y festivos)',price:'A/C',unit:'',check:true}
+    {id:'ae1',label:'Gestión Comunitario AGP',label_en:'EU status handling (AGP)',price:'A/C',unit:'',check:true},
+    {id:'ae2',label:'Tránsito AGP',label_en:'Transit (AGP)',price:'A/C',unit:'',check:true},
+    {id:'ae3',label:'Otros aeropuertos',label_en:'Other airports',price:'A/C',unit:'',check:true},
+    {id:'ae4',label:'Servicio extra (fines de semana y festivos)',label_en:'Out-of-hours surcharge (weekends and public holidays)',price:'A/C',unit:'',check:true}
   ]},
-  {id:'honorarios', title:'Honorarios y Gestiones Varias', defaultOn:false, note:'',
+  {id:'honorarios', title:'Honorarios y Gestiones Varias', title_en:'Fees and Miscellaneous Services', defaultOn:false, note:'',
    rates:[
-    {id:'h1',label:'Apertura de expediente',price:15,unit:'€',check:true},
-    {id:'h2',label:'Minutas de gestión (hora)',price:60,unit:'€/h',check:true},
-    {id:'h3',label:'Gestión de incidencias',price:35,unit:'€',check:true},
-    {id:'h4',label:'Representación fiscal',price:'A/C',unit:'',check:true}
+    {id:'h1',label:'Apertura de expediente',label_en:'File opening fee',price:15,unit:'€',check:true},
+    {id:'h2',label:'Minutas de gestión (hora)',label_en:'Handling fees (per hour)',price:60,unit:'€/h',check:true},
+    {id:'h3',label:'Gestión de incidencias',label_en:'Incident handling',price:35,unit:'€',check:true},
+    {id:'h4',label:'Representación fiscal',label_en:'Fiscal representation',price:'A/C',unit:'',check:true}
   ]}
 ];
 
@@ -673,7 +753,8 @@ function blankSections(){
 const state = {
   sections: blankSections(),
   history: [],
-  editingId: null
+  editingId: null,
+  lang: 'es'          // idioma del documento que se envía al cliente
 };
 
 let _modalOfertaId = null;
@@ -829,6 +910,7 @@ async function saveOfferUI() {
     global_notes: document.getElementById('global-notes').value,
     cond_generales: document.getElementById('cond-generales').value,
     next_review: nr.toISOString().split('T')[0],
+    lang: state.lang,
     sections: stripNewFlags(state.sections)
   };
 
@@ -900,13 +982,39 @@ function mergeWithDefaults(savedSections){
     });
   });
 
-  return {sections: merged, addedRates, addedSections};
+  // 3) Traducciones al inglés, con carácter retroactivo.
+  //    Se copian del catálogo emparejando por id, SIN tocar ni el precio ni la
+  //    etiqueta castellana (que puede estar pactada o editada a mano).
+  //    Guarda importante: si la etiqueta guardada NO coincide con la del
+  //    catálogo, el concepto fue renombrado en esa oferta y ya no es el mismo
+  //    servicio (p. ej. un dll18 reetiquetado como T2GI desde Gibraltar).
+  //    Copiar ahí la traducción del catálogo imprimiría al cliente un concepto
+  //    distinto del que dice la línea en castellano, así que se deja sin
+  //    traducir y se marca para escribirla a mano.
+  let addedEn = 0, pendingEn = 0;
+  merged.forEach(sec => {
+    const def = DEFAULT_SECTIONS.find(d=>d.id===sec.id);
+    if(def && !sec.title_en && def.title_en) sec.title_en = def.title_en;
+    if(def && !sec.note_en  && def.note_en)  sec.note_en  = def.note_en;
+    (sec.rates||[]).forEach(r => {
+      const dr = def && def.rates.find(x=>x.id===r.id);
+      if(dr && String(r.label||'').trim() === String(dr.label||'').trim()){
+        if(needsEn(r) && dr.label_en){ r.label_en = dr.label_en; addedEn++; }
+        if(!r.unit_en && dr.unit_en) r.unit_en = dr.unit_en;
+      } else if(needsEn(r)){
+        r._enPend = true;      // renombrado o concepto a medida: traducir a mano
+        pendingEn++;
+      }
+    });
+  });
+
+  return {sections: merged, addedRates, addedSections, addedEn, pendingEn};
 }
 
 // Quita los flags internos _new antes de persistir en Supabase
 function stripNewFlags(sections){
   const c = JSON.parse(JSON.stringify(sections||[]));
-  c.forEach(s => (s.rates||[]).forEach(r => { delete r._new; }));
+  c.forEach(s => (s.rates||[]).forEach(r => { delete r._new; delete r._enPend; }));
   return c;
 }
 
@@ -921,8 +1029,12 @@ function loadOfferInForm(id) {
   document.getElementById('doc-date').value = e.date||'';
   document.getElementById('validity').value = e.validity||'31/12/2026';
   document.getElementById('global-notes').value = e.global_notes||'';
-  document.getElementById('cond-generales').value = e.cond_generales||COND_DEFAULT;
-  // Merge: mantener lo guardado + añadir secciones y conceptos nuevos del catálogo
+  // Idioma con el que se guardó la oferta (las de antes de esta versión no lo
+  // llevan y se tratan como castellano)
+  state.lang = e.lang==='en' ? 'en' : 'es';
+  const selL = document.getElementById('doc-lang'); if(selL) selL.value = state.lang;
+  document.getElementById('cond-generales').value = e.cond_generales||(state.lang==='en'?COND_DEFAULT_EN:COND_DEFAULT);
+  // Merge: mantener lo guardado + añadir secciones, conceptos y traducciones del catálogo
   const mrg = mergeWithDefaults(e.sections);
   state.sections = mrg.sections;
   if(mrg.addedRates || mrg.addedSections){
@@ -931,6 +1043,8 @@ function loadOfferInForm(id) {
     if(mrg.addedRates)    p.push(mrg.addedRates+' concepto(s)');
     setTimeout(()=>toast('Catálogo actualizado: '+p.join(' y ')+' disponibles sin marcar — actívalos si quieres incluirlos'), 400);
   }
+  if(mrg.pendingEn)
+    setTimeout(()=>toast(mrg.pendingEn+' concepto(s) renombrado(s) o a medida sin traducción — escríbela en modo English'), 1200);
   state.editingId = id;
   document.getElementById('editing-notice').classList.add('show');
   document.getElementById('btn-save').innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Actualizar';
@@ -953,6 +1067,8 @@ function duplicateOffer(id) {
   document.getElementById('doc-date').value       = new Date().toISOString().split('T')[0];
   document.getElementById('validity').value       = orig.validity||'31/12/2026';
   document.getElementById('global-notes').value   = orig.global_notes||'';
+  state.lang = orig.lang==='en' ? 'en' : 'es';
+  const selD = document.getElementById('doc-lang'); if(selD) selD.value = state.lang;
   document.getElementById('cond-generales').value = orig.cond_generales||'';
   state.sections  = mergeWithDefaults(orig.sections||blankSections()).sections;
   state.editingId = null;  // nueva oferta
@@ -967,12 +1083,12 @@ function duplicateOffer(id) {
 
 // Imprimir/descargar PDF desde el formulario activo (sin guardar)
 function printCurrentOffer() {
-  const client = document.getElementById('client-name').value||'(borrador)';
+  const client = document.getElementById('client-name').value||T(state.lang).draft;
   const rawDate = document.getElementById('doc-date').value;
   const oferta = {
     ref: state.editingId
-      ? (state.history.find(x=>x.id===state.editingId)||{}).ref||'(borrador)'
-      : '(borrador)',
+      ? (state.history.find(x=>x.id===state.editingId)||{}).ref||T(state.lang).draft
+      : T(state.lang).draft,
     client,
     client_addr:    document.getElementById('client-addr').value,
     client_contact: document.getElementById('client-contact').value,
@@ -981,6 +1097,7 @@ function printCurrentOffer() {
     validity:       document.getElementById('validity').value||'31/12/2026',
     global_notes:   document.getElementById('global-notes').value,
     cond_generales: document.getElementById('cond-generales').value,
+    lang:           state.lang,
     sections:       state.sections
   };
   try {
@@ -1046,9 +1163,10 @@ function renderHistory() {
     const rev=due?`<span class="rev-due">⚠ ${e.next_review}</span>`:s30?`<span class="rev-soon">⏰ ${e.next_review}</span>`:`<span class="rev-ok">✓ ${e.next_review}</span>`;
     const d=e.date?new Date(e.date+'T00:00:00').toLocaleDateString('es-ES'):'—';
     const secs=(e.sections||[]).filter(s=>s.defaultOn).map(s=>s.title.split('→')[0].trim().split(' ').slice(0,2).join(' ')).join(' · ');
+    const flag = e.lang==='en' ? ' <span class="lang-tag" title="Documento en inglés">EN</span>' : '';
     return `<tr ondblclick="openModal('${e.id}')">
       <td><span class="vbadge">${e.ref||'—'}</span></td>
-      <td style="font-weight:500">${e.client}</td>
+      <td style="font-weight:500">${e.client}${flag}</td>
       <td style="color:var(--g600);font-size:12px">${e.client_cif||'—'}</td>
       <td style="color:var(--g600);font-size:12px">${d}</td>
       <td style="color:var(--g600);font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${secs}</td>
@@ -1101,16 +1219,26 @@ function buildSectionsGrid() {
   state.sections.forEach((sec, si) => {
     const d = document.createElement('div');
     d.className = 'section-block' + (sec.defaultOn?' sec-active':'');
-    const rows = sec.rates.map((r,ri)=>
-      `<div class="rate-row${r._new?' rate-new':''}"${r._new?' title="Concepto nuevo del catálogo — márcalo para incluirlo"':''}>
+    const en = state.lang==='en';
+    const rows = sec.rates.map((r,ri)=>{
+      // En modo inglés el campo edita la traducción, no el castellano: así se ve
+      // exactamente lo que va a salir en el PDF y se pueden rellenar los que
+      // falten (conceptos a medida o renombrados).
+      const falta = en && needsEn(r);
+      const cls = 'rate-row' + (r._new?' rate-new':'') + (falta?' rate-noen':'');
+      const tip = falta ? 'Sin traducción — escríbela aquí o saldrá en castellano'
+                : r._new ? 'Concepto nuevo del catálogo — márcalo para incluirlo' : '';
+      const val = en ? (r.label_en||'') : (r.label||'');
+      const ph  = en ? escH(r.label||'') : '';
+      return `<div class="${cls}"${tip?' title="'+escH(tip)+'"':''}>
         <input type="checkbox" ${r.check?'checked':''} onchange="toggleRate(${si},${ri},this.checked)">
-        <input class="lbl-edit" type="text" value="${escH(r.label)}" onchange="updateLabel(${si},${ri},this.value)" oninput="renderDoc()">
+        <input class="lbl-edit" type="text" value="${escH(val)}" placeholder="${ph}" onchange="updateLabel(${si},${ri},this.value)" oninput="renderDoc()">
         <input class="price" type="text" value="${r.price}" onchange="updatePrice(${si},${ri},this.value)">
-        <input class="unit-edit" type="text" value="${escH(r.unit)}" onchange="updateUnit(${si},${ri},this.value)">
+        <input class="unit-edit" type="text" value="${escH(en?(r.unit_en||r.unit||''):(r.unit||''))}" onchange="updateUnit(${si},${ri},this.value)">
         <button class="del-rate" title="Eliminar" onclick="deleteRate(${si},${ri})">×</button>
-      </div>`
-    ).join('');
-    d.innerHTML=`<h3><input type="checkbox" ${sec.defaultOn?'checked':''} onchange="toggleSection(${si},this.checked)">${escH(sec.title)}</h3>${rows}
+      </div>`;
+    }).join('');
+    d.innerHTML=`<h3><input type="checkbox" ${sec.defaultOn?'checked':''} onchange="toggleSection(${si},this.checked)">${escH(L(sec,'title',state.lang))}</h3>${rows}
       <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
         <input class="note-input" style="flex:1;margin:0" placeholder="Nota de sección…" value="${escH(sec.customNote||'')}" oninput="updateNote(${si},this.value)">
         <button class="add-rate" onclick="addRate(${si})">+ Concepto</button>
@@ -1144,15 +1272,59 @@ function toggleRate(si,ri,v){
   renderDoc();
 }
 function updatePrice(si,ri,v){state.sections[si].rates[ri].price=v;renderDoc();}
-function updateLabel(si,ri,v){state.sections[si].rates[ri].label=v;renderDoc();}
-function updateUnit(si,ri,v){state.sections[si].rates[ri].unit=v;renderDoc();}
+function updateLabel(si,ri,v){
+  const r=state.sections[si].rates[ri];
+  // En modo inglés se edita la traducción; el castellano queda intacto.
+  if(state.lang==='en'){ r.label_en=v; if(v&&v.trim()) delete r._enPend; }
+  else r.label=v;
+  renderDoc();
+}
+function updateUnit(si,ri,v){
+  const r=state.sections[si].rates[ri];
+  if(state.lang==='en') r.unit_en=v; else r.unit=v;
+  renderDoc();
+}
 function updateNote(si,v){state.sections[si].customNote=v;renderDoc();}
 function deleteRate(si,ri){
   if(state.sections[si].rates.length<=1){toast('La sección debe tener al menos un concepto',true);return;}
   state.sections[si].rates.splice(ri,1);buildSectionsGrid();renderDoc();
 }
+// Cambio de idioma del documento. Solo afecta a lo que se imprime: ni toca
+// precios ni marcas. Las condiciones generales se cambian únicamente si siguen
+// siendo el texto por defecto; si están editadas a mano se respetan y se avisa,
+// porque son texto libre y no hay forma de traducirlas sola.
+function setLang(v){
+  const nuevo = v==='en' ? 'en' : 'es';
+  if(nuevo===state.lang) return;
+  const prev = state.lang;
+  state.lang = nuevo;
+  const sel=document.getElementById('doc-lang'); if(sel) sel.value=nuevo;
+
+  const ta=document.getElementById('cond-generales');
+  if(ta){
+    const actual=(ta.value||'').trim();
+    const defPrev = prev==='en' ? COND_DEFAULT_EN : COND_DEFAULT;
+    const defNuevo= nuevo==='en' ? COND_DEFAULT_EN : COND_DEFAULT;
+    if(actual===defPrev.trim() || actual===''){
+      ta.value = defNuevo;
+    } else {
+      toast(nuevo==='en'
+        ? 'Condiciones generales editadas a mano: revísalas, siguen en castellano'
+        : 'Condiciones generales editadas a mano: revísalas, siguen en inglés');
+    }
+  }
+
+  buildSectionsGrid(); renderDoc();
+
+  if(nuevo==='en'){
+    let faltan=0;
+    state.sections.forEach(s=>(s.rates||[]).forEach(r=>{ if(needsEn(r)) faltan++; }));
+    if(faltan) setTimeout(()=>toast(faltan+' concepto(s) sin traducir — se imprimirán en castellano si los marcas'),600);
+  }
+}
+
 function addRate(si){
-  state.sections[si].rates.push({id:'custom_'+Date.now(),label:'Nuevo concepto',price:0,unit:'€',check:true});
+  state.sections[si].rates.push({id:'custom_'+Date.now(),label:'Nuevo concepto',label_en:'New item',price:0,unit:'€',check:true});
   buildSectionsGrid();renderDoc();
   const g=document.getElementById('sections-grid');
   const blk=g.querySelectorAll('.section-block');
@@ -1164,6 +1336,8 @@ function resetForm(){
   ['client-name','client-addr','client-contact','client-cif','client-email','created-by','global-notes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('doc-date').value=new Date().toISOString().split('T')[0];
   document.getElementById('validity').value='31/12/2026';
+  state.lang='es';
+  const selR=document.getElementById('doc-lang'); if(selR) selR.value='es';
   document.getElementById('cond-generales').value=COND_DEFAULT;
   state.sections=blankSections();state.editingId=null;
   document.getElementById('editing-notice').classList.remove('show');
@@ -1177,25 +1351,27 @@ function resetForm(){
 // ══════════════════════════════════════════════════════
 function buildDocHTML(secs, meta) {
   const {client,addr,contact,cif,docDate,validity,ref,gNotes,cond}=meta;
+  const lang = meta.lang==='en' ? 'en' : 'es';
+  const t = T(lang);
   let secHtml='';
   secs.filter(s=>s.defaultOn).forEach(sec=>{
     const active=sec.rates.filter(r=>r.check);if(!active.length)return;
-    secHtml+=`<div class="sec-title">${sec.title}</div>`;
-    secHtml+=`<table class="rates-table"><thead><tr><th style="width:56%">Concepto</th><th style="width:24%">Unidad</th><th style="width:20%;text-align:right">Tarifa</th></tr></thead><tbody>`;
+    secHtml+=`<div class="sec-title">${L(sec,'title',lang)}</div>`;
+    secHtml+=`<table class="rates-table"><thead><tr><th style="width:56%">${t.colConcept}</th><th style="width:24%">${t.colUnit}</th><th style="width:20%;text-align:right">${t.colRate}</th></tr></thead><tbody>`;
     active.forEach(r=>{
-      const ps=isNaN(r.price)?r.price:(parseFloat(r.price).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €');
+      const ps=fmtPrice(r.price,lang);
       const star=r.id==='d9'?' <span style="color:#d97706;font-weight:700">*</span>':'';
-      secHtml+=`<tr><td>${r.label}${star}</td><td style="color:#6c757d;font-size:11px">${r.unit}</td><td>${ps}</td></tr>`;
+      secHtml+=`<tr><td>${L(r,'label',lang)}${star}</td><td style="color:#6c757d;font-size:11px">${L(r,'unit',lang)}</td><td>${ps}</td></tr>`;
     });
     secHtml+='</tbody></table>';
     if(sec.id!=='despacho'){
-      const note=(sec.customNote&&sec.customNote.trim())||sec.note;
+      const note=(sec.customNote&&sec.customNote.trim())||L(sec,'note',lang);
       if(note)secHtml+=`<p class="rates-note">* ${note}</p>`;
     } else {
       if(active.find(r=>r.id==='d9'))secHtml+=`<p class="rates-note">* Hasta 2 precintos incluidos. Precinto adicional: +5 € c/u.</p>`;
     }
   });
-  if(!secHtml)secHtml=`<p style="color:#6c757d;font-size:13px;text-align:center;padding:2rem 0">Activa al menos una sección.</p>`;
+  if(!secHtml)secHtml=`<p style="color:#6c757d;font-size:13px;text-align:center;padding:2rem 0">${t.emptyDoc}</p>`;
   return `<div class="doc-body">
     <div class="doc-header">
       <div>
@@ -1204,33 +1380,34 @@ function buildDocHTML(secs, meta) {
           Avda. 20 de Abril, El Bulevar, Local 16<br>
           11300 La Línea de la Concepción (Cádiz)<br>
           aduana@customsway.eu · Tlf. 856 035 002<br>
-          CIF B75847053
+          ${t.taxId}
         </div>
-        <div class="doc-validity">Válida hasta: ${validity}</div>
+        <div class="doc-validity">${t.validUntil}: ${validity}</div>
       </div>
       <div class="doc-meta">
-        <strong>Oferta de Tarifas Generales 2026</strong>
+        <strong>${t.docTitle}</strong>
         <span class="doc-num">${ref}</span>
-        <br>Fecha: ${docDate}
+        <br>${t.date}: ${docDate}
       </div>
     </div>
     <div class="doc-recipient">
-      <div class="doc-recipient-label">Destinatario</div>
+      <div class="doc-recipient-label">${t.recipient}</div>
       <div class="doc-recipient-name">${client}</div>
-      ${cif?`<div style="font-size:11px;color:#6c757d;margin-top:1px">CIF: ${cif}</div>`:''}
+      ${cif?`<div style="font-size:11px;color:#6c757d;margin-top:1px">${t.cifLabel}: ${cif}</div>`:''}
       ${addr?`<div style="font-size:11px;color:#6c757d">${addr}</div>`:''}
-      ${contact?`<div style="font-size:11px;color:#6c757d">Attn: ${contact}</div>`:''}
+      ${contact?`<div style="font-size:11px;color:#6c757d">${t.attn}: ${contact}</div>`:''}
     </div>
     ${secHtml}
-    ${gNotes?`<div class="doc-conditions"><strong>Observaciones y condiciones particulares</strong>${gNotes}</div>`:''}
-    ${cond?`<div class="doc-conditions"><strong>Condiciones Generales</strong>${cond}</div>`:''}
+    ${gNotes?`<div class="doc-conditions"><strong>${t.notesTitle}</strong>${gNotes}</div>`:''}
+    ${cond?`<div class="doc-conditions"><strong>${t.condTitle}</strong>${cond}</div>`:''}
   </div>`;
 }
 
 function renderDoc() {
   const client=document.getElementById('client-name').value||'[Destinatario]';
   const rawDate=document.getElementById('doc-date').value;
-  const docDate=rawDate?new Date(rawDate+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}):new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  const loc=T(state.lang).locale;
+  const docDate=rawDate?new Date(rawDate+'T00:00:00').toLocaleDateString(loc,{day:'2-digit',month:'long',year:'numeric'}):new Date().toLocaleDateString(loc,{day:'2-digit',month:'long',year:'numeric'});
   const meta={
     client,
     addr:document.getElementById('client-addr').value||'',
@@ -1238,9 +1415,10 @@ function renderDoc() {
     cif:document.getElementById('client-cif').value||'',
     docDate,
     validity:document.getElementById('validity').value||'31/12/2026',
-    ref:state.editingId?(state.history.find(x=>x.id===state.editingId)||{}).ref||'(borrador)':'(borrador)',
+    ref:state.editingId?(state.history.find(x=>x.id===state.editingId)||{}).ref||T(state.lang).draft:T(state.lang).draft,
     gNotes:document.getElementById('global-notes').value||'',
-    cond:document.getElementById('cond-generales').value
+    cond:document.getElementById('cond-generales').value,
+    lang:state.lang
   };
   document.getElementById('preview-doc').innerHTML=buildDocHTML(state.sections,meta);
 }
@@ -1251,11 +1429,13 @@ function renderDoc() {
 function openModal(id) {
   const e = state.history.find(x=>x.id===id); if(!e) return;
   _modalOfertaId = id;
-  const docDate=e.date?new Date(e.date+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}):'';
+  const lang=e.lang==='en'?'en':'es';
+  const docDate=e.date?new Date(e.date+'T00:00:00').toLocaleDateString(T(lang).locale,{day:'2-digit',month:'long',year:'numeric'}):'';
   const meta={
     client:e.client||'',addr:e.client_addr||'',contact:e.client_contact||'',cif:e.client_cif||'',
     docDate,validity:e.validity||'',ref:e.ref||'',
-    gNotes:e.global_notes||'',cond:e.cond_generales||COND_DEFAULT
+    gNotes:e.global_notes||'',cond:e.cond_generales||(lang==='en'?COND_DEFAULT_EN:COND_DEFAULT),
+    lang
   };
   const html = buildDocHTML(e.sections||[],meta);
   const title = (e.ref||'')+(e.client?' · '+e.client:'');
@@ -1330,6 +1510,10 @@ function buildOfertaPDF(oferta) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
 
+  // Idioma del documento: el guardado en la oferta, castellano si no hay
+  const lang = oferta.lang==='en' ? 'en' : 'es';
+  const t = T(lang);
+
   const PW=210, PH=297;
   const ML=15, MR=15;
   const CW=PW-ML-MR;
@@ -1357,29 +1541,31 @@ function buildOfertaPDF(oferta) {
   }
 
   function fmtPrice(p) {
-    if(p==='A/C'||p===''||p===null||p===undefined||isNaN(Number(p))) return 'A/C';
-    return parseFloat(p).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+    if(p==='A/C'||p===''||p===null||p===undefined||isNaN(Number(p))) return t.poa;
+    return lang==='en'
+      ? '\u20ac'+parseFloat(p).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})
+      : parseFloat(p).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' \u20ac';
   }
 
   function drawDocHeader(oferta, y) {
     const dateStr = oferta.date
-      ? new Date(oferta.date+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'})
-      : new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+      ? new Date(oferta.date+'T00:00:00').toLocaleDateString(t.locale,{day:'2-digit',month:'long',year:'numeric'})
+      : new Date().toLocaleDateString(t.locale,{day:'2-digit',month:'long',year:'numeric'});
 
     // Título izquierda
     doc.setFont('helvetica','bold'); doc.setFontSize(12.5); doc.setTextColor(...DARK);
-    doc.text('OFERTA DE TARIFAS GENERALES 2026', ML, y); y+=lh(12.5)+1.5;
+    doc.text(t.docTitlePdf, ML, y); y+=lh(12.5)+1.5;
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GRAY);
-    doc.text('Customs-Way SL  ·  CIF B75847053', ML, y); y+=lh(8)+1;
-    doc.text('aduana@customsway.eu  ·  Tlf. 856 035 002', ML, y);
+    doc.text('Customs-Way SL  ·  '+t.taxId, ML, y); y+=lh(8)+1;
+    doc.text('aduana@customsway.eu  \u00b7  '+t.phone+' 856 035 002', ML, y);
 
     // Ref + fecha derecha (alineado al inicio del bloque título)
     const ry0 = y - lh(8)*2 - lh(12.5) - 1.5;
     doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(...BLUE);
-    doc.text(oferta.ref||'(borrador)', PW-MR, ry0, {align:'right'});
+    doc.text(oferta.ref||t.draft, PW-MR, ry0, {align:'right'});
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GRAY);
-    doc.text('Fecha: '+dateStr, PW-MR, ry0+lh(10.5)+1.5, {align:'right'});
-    doc.text('Válida hasta: '+(oferta.validity||'31/12/2026'), PW-MR, ry0+lh(10.5)+lh(8)+3, {align:'right'});
+    doc.text(t.date+': '+dateStr, PW-MR, ry0+lh(10.5)+1.5, {align:'right'});
+    doc.text(t.validUntil+': '+(oferta.validity||'31/12/2026'), PW-MR, ry0+lh(10.5)+lh(8)+3, {align:'right'});
 
     // Línea divisoria
     y += 5;
@@ -1389,9 +1575,9 @@ function buildOfertaPDF(oferta) {
     // Bloque destinatario
     const BOX_W = CW*0.62;
     const lines = [];
-    if(oferta.client_cif) lines.push('CIF: '+oferta.client_cif);
+    if(oferta.client_cif) lines.push(t.cifLabel+': '+oferta.client_cif);
     if(oferta.client_addr) lines.push(oferta.client_addr);
-    if(oferta.client_contact) lines.push('Attn: '+oferta.client_contact);
+    if(oferta.client_contact) lines.push(t.attn+': '+oferta.client_contact);
     const BOX_H = 8 + 5 + lines.length*4.5 + 4;
 
     // Franja izquierda azul
@@ -1401,7 +1587,7 @@ function buildOfertaPDF(oferta) {
 
     let dy = y+5;
     doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...BLUE2);
-    doc.text('DESTINATARIO', ML+4, dy); dy+=4.5;
+    doc.text(t.recipientPdf, ML+4, dy); dy+=4.5;
     doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.setTextColor(...DARK);
     doc.text(oferta.client||'', ML+4, dy); dy+=5.5;
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GRAY);
@@ -1411,7 +1597,16 @@ function buildOfertaPDF(oferta) {
     return y;
   }
 
+  // jsPDF usa Helvetica con codificación WinAnsi, que no incluye la flecha →
+  // (U+2192): salía como basura en los títulos de transporte, también en los PDF
+  // en castellano. Se sustituye por un guión solo en el PDF; la vista previa
+  // HTML la pinta bien y el catálogo se queda como está.
+  function pdfSafe(s){
+    return String(s==null?'':s).replace(/[\u2190\u2192\u279c\u27a1]/g,'-');
+  }
+
   function drawSecHeader(title, y) {
+    title = pdfSafe(title);
     doc.setFillColor(...DARK);
     doc.rect(ML, y, CW, 6.5, 'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...WHITE);
@@ -1423,9 +1618,9 @@ function buildOfertaPDF(oferta) {
     const W1=CW*0.57, W2=CW*0.20, W3=CW*0.23;
     doc.setFillColor(...NAVY); doc.rect(ML, y, CW, 5.5, 'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...WHITE);
-    doc.text('Concepto', ML+2, y+3.8);
-    doc.text('Unidad', ML+W1+W2/2, y+3.8, {align:'center'});
-    doc.text('Tarifa', ML+W1+W2+W3-2, y+3.8, {align:'right'});
+    doc.text(t.colConcept, ML+2, y+3.8);
+    doc.text(t.colUnit, ML+W1+W2/2, y+3.8, {align:'center'});
+    doc.text(t.colRate, ML+W1+W2+W3-2, y+3.8, {align:'right'});
     return y+5.5;
   }
 
@@ -1437,14 +1632,14 @@ function buildOfertaPDF(oferta) {
       doc.line(ML, y+ROW_H, ML+CW, y+ROW_H);
 
       // Label — split si largo
-      const lns = doc.splitTextToSize(String(r.label||''), W1-5);
+      const lns = doc.splitTextToSize(pdfSafe(L(r,'label',lang)), W1-5);
       const rowH = Math.max(ROW_H, lns.length*lh(8)+2);
       if(i%2===1 && rowH>ROW_H) { doc.setFillColor(...LGRAY); doc.rect(ML,y,CW,rowH,'F'); }
 
       doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...DARK);
       doc.text(lns, ML+2, y+3.8);
       doc.setTextColor(...GRAY); doc.setFontSize(7.5);
-      doc.text(String(r.unit||''), ML+W1+W2/2, y+3.8, {align:'center'});
+      doc.text(String(L(r,'unit',lang)||''), ML+W1+W2/2, y+3.8, {align:'center'});
       doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...DARK);
       doc.text(fmtPrice(r.price), ML+W1+W2+W3-2, y+3.8, {align:'right'});
 
@@ -1469,19 +1664,19 @@ function buildOfertaPDF(oferta) {
   (oferta.sections||[]).filter(s=>s.defaultOn&&s.rates.some(r=>r.check)).forEach(sec => {
     // Cabe al menos cabecera + col header + 1 fila antes de dibujar
     y = checkBreak(y, 6.5+5.5+6+4);
-    y = drawSecHeader(sec.title.toUpperCase(), y); y+=1.5;
+    y = drawSecHeader(String(L(sec,'title',lang)).toUpperCase(), y); y+=1.5;
     y = drawTableHeader(y);
 
     // Dibujar fila a fila con salto si se necesita
     const ROW_H=5.8, W1=CW*0.57, W2=CW*0.20, W3=CW*0.23;
     sec.rates.filter(r=>r.check).forEach((r,i) => {
-      const lns = doc.splitTextToSize(String(r.label||''), W1-5);
+      const lns = doc.splitTextToSize(pdfSafe(L(r,'label',lang)), W1-5);
       const rowH = Math.max(ROW_H, lns.length*lh(8)+2);
       // Si no cabe esta fila, saltar página y redibujar cabeceras
       if(y + rowH > CONTENT_MAX_Y) {
         doc.addPage(); drawTemplate();
         y = MT;
-        y = drawSecHeader(sec.title.toUpperCase()+' (cont.)', y); y+=1.5;
+        y = drawSecHeader(String(L(sec,'title',lang)).toUpperCase()+' '+t.cont, y); y+=1.5;
         y = drawTableHeader(y);
       }
       if(i%2===1) { doc.setFillColor(...LGRAY); doc.rect(ML,y,CW,rowH,'F'); }
@@ -1490,13 +1685,13 @@ function buildOfertaPDF(oferta) {
       doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...DARK);
       doc.text(lns, ML+2, y+3.8);
       doc.setTextColor(...GRAY); doc.setFontSize(7.5);
-      doc.text(String(r.unit||''), ML+W1+W2/2, y+3.8, {align:'center'});
+      doc.text(String(L(r,'unit',lang)||''), ML+W1+W2/2, y+3.8, {align:'center'});
       doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...DARK);
       doc.text(fmtPrice(r.price), ML+W1+W2+W3-2, y+3.8, {align:'right'});
       y += rowH;
     });
 
-    const note=(sec.customNote&&sec.customNote.trim())||sec.note;
+    const note=pdfSafe((sec.customNote&&sec.customNote.trim())||L(sec,'note',lang));
     if(note) {
       y = checkBreak(y, 10);
       doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
@@ -1518,19 +1713,19 @@ function buildOfertaPDF(oferta) {
   }
 
   if(oferta.global_notes&&oferta.global_notes.trim())
-    y = drawConds('OBSERVACIONES Y CONDICIONES PARTICULARES', oferta.global_notes, y);
+    y = drawConds(t.notesTitlePdf, oferta.global_notes, y);
   if(oferta.cond_generales&&oferta.cond_generales.trim())
-    drawConds('CONDICIONES GENERALES', oferta.cond_generales, y);
+    drawConds(t.condTitlePdf, oferta.cond_generales, y);
 
   return doc;
 }
 
 function sendEmailModal(id) {
   const e=state.history.find(x=>x.id===id)||{};
+  const t=T(e.lang);
   const to=encodeURIComponent(e.client_email||'');
-  const subj=encodeURIComponent('Oferta de Tarifas Customs-Way SL - '+(e.ref||''));
-  const body=encodeURIComponent('Estimado/a cliente,\r\n\r\nAdjunto encontrará la oferta de tarifas '+(e.ref||'')+' dirigida a '+(e.client||'')+
-    '.\r\n\r\nQuedamos a su disposición para cualquier consulta.\r\n\r\nUn saludo,\r\nCustoms-Way SL\r\naduana@customsway.eu | Tlf. 856 035 002');
+  const subj=encodeURIComponent(t.mailSubject(e.ref||''));
+  const body=encodeURIComponent(t.mailBody(e.ref||'', e.client||''));
   window.location.href='mailto:'+to+'?subject='+subj+'&body='+body;
 }
 
