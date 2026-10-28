@@ -592,6 +592,10 @@ textarea.fi{resize:vertical;min-height:80px}
                   <span class="badge badge-blue">🇨🇳 Chino</span>
                 </div>
               </div>
+              <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--g600);cursor:pointer">
+                <input type="checkbox" id="fact-omitir-p1" style="width:15px;height:15px;cursor:pointer">
+                Omitir la 1ª página del PDF (portadas de reparto / resumen / carta de porte sin líneas)
+              </label>
             </div>
 
             <!-- Panel: Pegar texto (fallback infalible) -->
@@ -2256,8 +2260,14 @@ async function procesarUnaFactura(file){
   let base64 = null, tipo = 'image/jpeg', textoPlano = null;
   try {
     if(mediaType === 'application/pdf'){
-      base64 = await fileToBase64(file);
       tipo = 'application/pdf';
+      const omitirP1 = document.getElementById('fact-omitir-p1')?.checked;
+      if(omitirP1){
+        try { base64 = await pdfBase64SinPrimeraPagina(file); }
+        catch(e){ console.warn('No se pudo quitar la 1ª página; se envía completo:', e); base64 = await fileToBase64(file); }
+      } else {
+        base64 = await fileToBase64(file);
+      }
     } else {
       base64 = await comprimirImagenParaOCR(file);
     }
@@ -4201,6 +4211,40 @@ function fileToBase64(file){
     r.onerror = reject;
     r.readAsDataURL(file);
   });
+}
+
+// Carga pdf-lib bajo demanda (solo cuando hay que recortar un PDF).
+let _pdfLibPromise = null;
+function cargarPdfLib(){
+  if(window.PDFLib) return Promise.resolve(window.PDFLib);
+  if(_pdfLibPromise) return _pdfLibPromise;
+  _pdfLibPromise = new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+    s.onload=()=>res(window.PDFLib);
+    s.onerror=()=>rej(new Error('No se pudo cargar pdf-lib'));
+    document.head.appendChild(s);
+  });
+  return _pdfLibPromise;
+}
+
+// Devuelve el PDF en base64 quitando la PRIMERA página. Si solo tiene una
+// página, o si algo falla, devuelve el PDF completo (nunca deja al usuario sin
+// nada que leer). Sirve para descartar portadas de reparto que confunden al OCR.
+async function pdfBase64SinPrimeraPagina(file){
+  const PDFLib = await cargarPdfLib();
+  const buf = await file.arrayBuffer();
+  const src = await PDFLib.PDFDocument.load(buf, { ignoreEncryption:true });
+  const n = src.getPageCount();
+  if(n <= 1) return fileToBase64(file);   // nada que quitar
+  const out = await PDFLib.PDFDocument.create();
+  const idx = []; for(let i=1;i<n;i++) idx.push(i);
+  const pages = await out.copyPages(src, idx);
+  pages.forEach(p => out.addPage(p));
+  const bytes = await out.save();
+  let bin=''; const CH=0x8000;
+  for(let i=0;i<bytes.length;i+=CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+CH));
+  return btoa(bin);
 }
 
 function getMediaType(type, name){
