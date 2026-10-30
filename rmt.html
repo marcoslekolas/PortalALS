@@ -75,30 +75,6 @@ table.docs input:focus,table.docs select:focus{border-color:var(--b500);outline:
 .btn:focus-visible{outline:2px solid var(--b600);outline-offset:2px}
 .busy{font-size:12.5px;color:var(--g600);padding:10px 16px}
 
-/* ---------- Documento RMT (solo impresión) ---------- */
-#print-area{display:none}
-@page{size:A4 portrait;margin:14mm 14mm}
-@media print{
-  body{background:#fff}
-  .top-app,main{display:none!important}
-  #print-area{display:block;font-family:Arial,Helvetica,sans-serif;color:#000;font-size:8.5pt}
-}
-.rmt h1{text-align:center;font-size:14pt;margin:0 0 6pt;letter-spacing:.05em}
-.rmt .sub{font-weight:bold;font-size:8.5pt;margin-bottom:8pt}
-.rmt table.cab{width:92%;border-collapse:collapse;border-top:1.5pt solid #000;border-bottom:1.5pt solid #000;margin-bottom:10pt}
-.rmt table.cab td{padding:6pt 4pt;border-bottom:.6pt solid #000;white-space:nowrap}
-.rmt table.cab tr:last-child td{border-bottom:0}
-.rmt .b{font-weight:bold}
-.rmt .rel{font-weight:bold;font-size:8pt;margin:0 0 14pt}
-.rmt table.lin{width:100%;border-collapse:collapse;table-layout:fixed;border:1.2pt solid #000}
-.rmt table.lin th,.rmt table.lin td{border:.6pt solid #000;padding:2pt 3pt;font-weight:normal;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rmt table.lin td.r{text-align:right}
-.rmt table.lin td.m{font-size:6.5pt}
-.rmt .pie{display:flex;justify-content:space-between;margin-top:22pt;width:78%}
-.rmt .pie table{border-collapse:collapse;border:1.2pt solid #000}
-.rmt .pie td{padding:2pt 4pt;border:.6pt solid #000}
-.rmt .firma{font-weight:bold;font-size:8pt}
-.rmt .transp{font-weight:bold;font-size:8pt;margin-top:22pt}
 </style>
 <link rel="stylesheet" href="portal-theme.css"><!-- PORTAL THEME -->
 </head>
@@ -121,7 +97,6 @@ table.docs input:focus,table.docs select:focus{border-color:var(--b500);outline:
     <aside class="card side" id="side"></aside>
   </div>
 </main>
-<div id="print-area"></div>
 <script>
 /* ===== Núcleo RMT: lectura de PDF y parseo de TAD (T1/T2/T2GI…) y DUA levante (IM/EX…) ===== */
 
@@ -708,6 +683,143 @@ function a3Construir(jsPDFCtor, opts) {
 }
 
 if (typeof module !== 'undefined') module.exports = { a3Construir, A3_FILAS };
+
+/* ===== RMT La Línea — agrupación de documentos para despacho y embarque =====
+   Reproduce en jsPDF el impreso que venía usando la agencia.
+   Medidas en puntos sobre A4 (595,3 x 841,9); el bloque de contenido mide
+   493,2 pt de ancho y va centrado. */
+
+const RL_DX = 7.7;                                   // centrado del bloque en A4
+const RL_COLS = [43.3, 75.7, 100.2, 198.8, 237.0, 325.6, 358.0, 390.4, 432.1, 536.5].map(x => x + RL_DX);
+const RL_X0 = RL_COLS[0], RL_X1 = RL_COLS[9];
+const RL_CAB_X = [48.2, 97.2, 288.0, 377.3].map(x => x + RL_DX);
+const RL_CAB_R = [79.9, 105.0, 130.2, 155.4];        // reglas horizontales de la cabecera
+const RL_TBL_Y = 194.5, RL_CAB_H = 18.7, RL_FILA_H = 18.0, RL_TOT_H = 19.5;
+const RL_FILAS = 26;                                 // líneas por hoja
+const RL_TIT = ['Orden', 'Dto.', 'Nº Documento', 'CIR', 'Mercancía', 'Bultos', 'Tipo', 'P. Bruto', 'CSV'];
+const RL_DER = [0, 5, 7];                            // columnas alineadas a la derecha
+const RL_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function rlTexto(doc, x, y, s, size, bold, align) {
+  doc.setFont('helvetica', bold ? 'bold' : 'normal').setFontSize(size);
+  doc.text(String(s == null ? '' : s), x, y, align ? { align: align } : undefined);
+}
+
+function rlCabe(doc, s, size, bold, ancho) {
+  doc.setFont('helvetica', bold ? 'bold' : 'normal').setFontSize(size);
+  s = String(s == null ? '' : s);
+  if (doc.getTextWidth(s) <= ancho) return s;
+  while (s.length > 1 && doc.getTextWidth(s + '…') > ancho) s = s.slice(0, -1);
+  return s + '…';
+}
+
+function rlFechaLarga(iso) {
+  const p = String(iso || '').split('-');
+  if (p.length !== 3) return '';
+  return (+p[2]) + ' - ' + RL_MESES[+p[1] - 1] + ' - ' + p[0];
+}
+function rlFechaPie(iso) {
+  const p = String(iso || '').split('-');
+  if (p.length !== 3) return '';
+  return (+p[2]) + ' ' + RL_MESES[+p[1] - 1] + ' ' + p[0];
+}
+
+/* Una hoja: título, cabecera, tabla y, en la última, totales y pie */
+function rlHoja(doc, opts, docs, desde, ultima, hoja, hojas) {
+  doc.setDrawColor(0);
+
+  rlTexto(doc, (RL_X0 + RL_X1) / 2, 50, 'R. M. T.', 14, true, 'center');
+  rlTexto(doc, RL_X0, 67.5, 'Agrupación de documentos presentados para su despacho y posterior embarque', 9, true);
+  if (hojas > 1) rlTexto(doc, RL_X1, 67.5, 'Hoja ' + hoja + ' de ' + hojas, 8, false, 'right');
+
+  // ── Cabecera ──────────────────────────────────────────────────────────
+  RL_CAB_R.forEach(function (y, i) {
+    doc.setLineWidth(i === 0 || i === 3 ? 1.1 : 0.6);
+    doc.line(RL_X0, y, RL_COLS[9] - 11, y);
+  });
+  const anchoVal = RL_COLS[9] - 11 - RL_CAB_X[3];
+  rlTexto(doc, RL_CAB_X[0], 95.9, 'AGENCIA:', 8.5, false);
+  rlTexto(doc, RL_CAB_X[1], 95.9, opts.agencia || '', 8.5, true);
+  rlTexto(doc, RL_CAB_X[2], 95.9, 'FECHA:', 8.5, false);
+  rlTexto(doc, RL_CAB_X[3], 95.9, rlFechaLarga(opts.fecha), 8.5, true);
+  rlTexto(doc, RL_CAB_X[0], 121.0, 'DESTINO:', 8.5, false);
+  rlTexto(doc, RL_CAB_X[1], 121.0, opts.destino || '', 8.5, true);
+  rlTexto(doc, RL_CAB_X[2], 121.0, 'MATRICULA/BUQUE:', 8.5, false);
+  rlTexto(doc, RL_CAB_X[3], 121.0, rlCabe(doc, opts.matricula, 8.5, true, anchoVal), 8.5, true);
+  rlTexto(doc, RL_CAB_X[0], 146.2, 'MATRÍCULA/CONTR:', 8.5, false);
+  rlTexto(doc, RL_CAB_X[1] + 61, 146.2, opts.contenedor || '', 8.5, true);
+  rlTexto(doc, RL_CAB_X[2], 146.2, 'Nº DE ESCALA:', 8.5, false);
+  rlTexto(doc, RL_CAB_X[3], 146.2, opts.escala || '', 8.5, true);
+
+  rlTexto(doc, RL_X0, 174.4, 'Relación de documentos presentados en Aduana, para su registro y posterior embarque en el buque de referencia', 8.5, true);
+
+  // ── Tabla ─────────────────────────────────────────────────────────────
+  const yCab = RL_TBL_Y, yIni = yCab + RL_CAB_H;
+  const yFin = yIni + docs.length * RL_FILA_H;
+  const yTot = ultima ? yFin + RL_TOT_H : yFin;
+
+  doc.setLineWidth(0.6);
+  doc.line(RL_X0, yCab, RL_X1, yCab);
+  doc.line(RL_X0, yIni, RL_X1, yIni);
+  for (let r = 1; r <= docs.length; r++) doc.line(RL_X0, yIni + r * RL_FILA_H, RL_X1, yIni + r * RL_FILA_H);
+  if (ultima) doc.line(RL_X0, yTot, RL_X1, yTot);
+  RL_COLS.forEach(function (x) { doc.line(x, yCab, x, yFin); });
+  if (ultima) [RL_COLS[0], RL_COLS[5], RL_COLS[6], RL_COLS[7], RL_COLS[8], RL_COLS[9]]
+    .forEach(function (x) { doc.line(x, yFin, x, yTot); });
+
+  RL_TIT.forEach(function (t, i) {
+    rlTexto(doc, RL_COLS[i] + 4, yCab + 13.4, rlCabe(doc, t, 8, false, RL_COLS[i + 1] - RL_COLS[i] - 6), 8, false);
+  });
+
+  docs.forEach(function (d, r) {
+    const y = yIni + r * RL_FILA_H + 13.4;
+    const celdas = [
+      String(desde + r + 1).padStart(2, '0'), d.tipo || '', d.mrn || '', d.cir || '',
+      d.descripcion || '', d.bultos == null ? '' : String(d.bultos), d.tipoBulto || '',
+      d.peso == null ? '' : String(d.peso), d.csv || ''
+    ];
+    celdas.forEach(function (t, i) {
+      if (t === '') return;
+      const size = i === 4 ? 6 : 8;                  // la mercancía va en cuerpo menor
+      const ancho = RL_COLS[i + 1] - RL_COLS[i] - 6;
+      const s = rlCabe(doc, t, size, false, ancho);
+      if (RL_DER.indexOf(i) >= 0) rlTexto(doc, RL_COLS[i + 1] - 4, y, s, size, false, 'right');
+      else rlTexto(doc, RL_COLS[i] + 3, y, s, size, false);
+    });
+  });
+
+  if (ultima) {
+    const y = yFin + 14.1;
+    rlTexto(doc, RL_COLS[0] + 4, y, 'TOTAL', 8, false);
+    rlTexto(doc, RL_COLS[6] - 4, y, String(opts.totalBultos), 8, false, 'right');
+    rlTexto(doc, RL_COLS[8] - 4, y, String(opts.totalPeso), 8, false, 'right');
+
+    // ── Pie: fecha, aduanas y transportista ─────────────────────────────
+    const yp = yTot + 28.1, yp2 = yp + 18.7;
+    doc.setLineWidth(0.6);
+    doc.line(RL_X0, yp, RL_X0 + 154.5, yp);
+    doc.line(RL_X0, yp2, RL_X0 + 154.5, yp2);
+    [RL_X0, RL_X0 + 39.6, RL_X0 + 154.8].forEach(function (x) { doc.line(x, yp, x, yp2); });
+    rlTexto(doc, RL_X0 + 4.2, yp + 13.3, 'FECHA', 8, false);
+    rlTexto(doc, RL_X0 + 41.7, yp + 13.3, rlFechaPie(opts.fecha), 8, false);
+    rlTexto(doc, RL_COLS[5] + 6, yp + 13.6, 'ADUANAS', 8, true);
+    rlTexto(doc, RL_COLS[5] + 6, yp + 23.2, 'FIRMA Y SELLO', 8, true);
+    rlTexto(doc, RL_X0 + 4.2, yp + 56.8, 'EL TRANSPORTISTA', 8, true);
+  }
+}
+
+function rlConstruir(jsPDFCtor, opts) {
+  const doc = new jsPDFCtor({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+  const filas = opts.filas || [];
+  const hojas = Math.max(1, Math.ceil(filas.length / RL_FILAS));
+  for (let h = 0; h < hojas; h++) {
+    if (h) doc.addPage();
+    rlHoja(doc, opts, filas.slice(h * RL_FILAS, (h + 1) * RL_FILAS), h * RL_FILAS, h === hojas - 1, h + 1, hojas);
+  }
+  return doc;
+}
+
+if (typeof module !== 'undefined') module.exports = { rlConstruir, RL_FILAS };
 </script>
 <script>
 // Guard: sesión Supabase vía PortalGuard + permiso DUA o TARIC (mismo criterio que el menú Aduanas)
@@ -730,10 +842,10 @@ function iniciarRMT() {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
   const AGENCIA = '* ALGECIRAS LOGISTIC SOLUTIONS, S.L.';
-  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-  // formato: 'embarque' = RMT de agrupación para embarque · 'cernaval' = impreso ANEXO 3 (suministro en campamento)
-  const st = { docs: [], errores: [], formato: 'embarque', formatoTocado: false,
+  // formato: 'linea' = RMT La Línea (agrupación para despacho y embarque)
+  //          'cernaval' = RMT Cernaval (impreso ANEXO 3, suministro en campamento)
+  const st = { docs: [], errores: [], formato: 'linea', formatoTocado: false,
                clave: '', claveTocada: false, cruzar: true, fecha: hoyISO() };
 
   const drop = document.getElementById('drop'), file = document.getElementById('file');
@@ -768,7 +880,7 @@ function iniciarRMT() {
   function detectarFormato() {
     if (st.formatoTocado || !st.docs.length) return;
     const cern = st.docs.filter(esCernaval).length;
-    st.formato = cern > st.docs.length - cern ? 'cernaval' : 'embarque';
+    st.formato = cern > st.docs.length - cern ? 'cernaval' : 'linea';
   }
   function encajaFormato(d) { return esCern() ? esCernaval(d) : !esCernaval(d); }
   function claveMayoritaria() {
@@ -872,22 +984,22 @@ function iniciarRMT() {
     const sinCir = inc.filter(d => !d.cir).length;
     const bultos = inc.reduce((s, d) => s + (d.bultos || 0), 0);
     const peso = inc.reduce((s, d) => s + (d.peso || 0), 0);
-    const cern = st.docs.filter(esCernaval).length;
 
     let aviso = '';
     if (claves.length > 1) aviso = '<div class="note warn">Hay documentos con ' + (esCern() ? 'buques distintos' : 'matrículas distintas') + ' (' + claves.map(esc).join(', ') + '). Solo entran en la RMT los del valor confirmado; puedes marcar otros a mano.</div>';
     else if (claves.length === 1 && norm(claves[0]) === norm(st.clave)) aviso = '<div class="note ok">Todos los documentos coinciden con este ' + etiqueta().toLowerCase() + '.</div>';
     if (sinCir) aviso += '<div class="note warn">' + sinCir + ' documento(s) sin CIR asignado.</div>';
     if (ajenos) aviso += '<div class="note warn">' + ajenos + ' documento(s) no corresponden a este impreso y quedan fuera. Cambia el impreso arriba si te interesan esos.</div>';
-    if (esCern() && inc.length > A3_FILAS) aviso += '<div class="note warn">Más de ' + A3_FILAS + ' documentos: se reparten en varias hojas de carga.</div>';
+    const tope = esCern() ? A3_FILAS : RL_FILAS;
+    if (inc.length > tope) aviso += '<div class="note warn">Más de ' + tope + ' documentos: la relación se reparte en varias hojas.</div>';
 
-    const opciones = [['embarque', 'RMT de embarque'], ['cernaval', 'ANEXO 3 · Suministro en campamento']];
+    const opciones = [['linea', 'La Línea'], ['cernaval', 'Cernaval']];
     let h = '<div><label for="fmt">Impreso</label><select id="fmt" style="width:100%;padding:8px 10px;border:1px solid var(--g300);border-radius:var(--r)">' +
       opciones.map(o => '<option value="' + o[0] + '"' + (st.formato === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
     if (st.docs.length && !st.formatoTocado) {
       h += '<div style="font-size:12px;color:var(--g600);margin-top:5px">' +
-        (esCern() ? 'Detectado por aduana ' + ADUANA_CERNAVAL + ' / ubicación ' + UBIC_CERNAVAL + '.' :
-         (cern ? cern + ' documento(s) son de Cernaval.' : 'Ningún documento es de Cernaval.')) + '</div>';
+        (esCern() ? 'Detectado por aduana ' + ADUANA_CERNAVAL + ' / ubicación ' + UBIC_CERNAVAL + '.'
+                  : 'Sin aduana ' + ADUANA_CERNAVAL + ' ni ubicación ' + UBIC_CERNAVAL + '.') + '</div>';
     }
     h += '</div>';
 
@@ -902,12 +1014,8 @@ function iniciarRMT() {
     h += '<div><div class="tot"><span>Documentos</span><b>' + inc.length + '</b></div><div class="tot"><span>Bultos</span><b>' + bultos + '</b></div><div class="tot"><span>Peso bruto</span><b>' + miles(peso) + ' kg</b></div></div>';
 
     const listo = inc.length && st.clave.trim();
-    if (esCern()) {
-      h += '<button class="btn pri" id="gen" ' + (listo ? '' : 'disabled') + '>Imprimir RMT</button>' +
-           '<button class="btn sec" id="pdf" ' + (listo ? '' : 'disabled') + '>Guardar PDF</button>';
-    } else {
-      h += '<button class="btn pri" id="gen" ' + (listo ? '' : 'disabled') + '>Confirmar matrícula y generar RMT</button>';
-    }
+    h += '<button class="btn pri" id="gen" ' + (listo ? '' : 'disabled') + '>Imprimir RMT</button>' +
+         '<button class="btn sec" id="pdf" ' + (listo ? '' : 'disabled') + '>Guardar PDF</button>';
     h += (st.docs.length ? '<button class="btn sec" id="clr">Empezar otra RMT</button>' : '');
     side.innerHTML = h;
 
@@ -922,13 +1030,12 @@ function iniciarRMT() {
     side.querySelector('#fec').addEventListener('change', e => { st.fecha = e.target.value || hoyISO(); });
     const crz = side.querySelector('#crz');
     if (crz) crz.addEventListener('change', e => { st.cruzar = e.target.checked; });
-    side.querySelector('#gen').addEventListener('click', () => { confirmarClave(); esCern() ? imprimirCernaval() : generarEmbarque(); });
-    const pdf = side.querySelector('#pdf');
-    if (pdf) pdf.addEventListener('click', () => { confirmarClave(); guardarCernaval(); });
+    side.querySelector('#gen').addEventListener('click', () => { confirmarClave(); imprimirRMT(); });
+    side.querySelector('#pdf').addEventListener('click', () => { confirmarClave(); guardarRMT(); });
     const clr = side.querySelector('#clr');
     if (clr) clr.addEventListener('click', () => {
       st.docs = []; st.errores = []; st.clave = ''; st.claveTocada = false;
-      st.formatoTocado = false; st.formato = 'embarque'; st.fecha = hoyISO(); render();
+      st.formatoTocado = false; st.formato = 'linea'; st.fecha = hoyISO(); render();
     });
   }
 
@@ -937,57 +1044,51 @@ function iniciarRMT() {
     aplicarFiltro(); render();
   }
 
-  // ── Impreso ANEXO 3 (Cernaval) ────────────────────────────────────────
+  // ── Generación del PDF ────────────────────────────────────────────────
   function nombreArchivo() {
-    return 'RMT_' + (st.clave || 'SIN_BUQUE').replace(/[^A-Z0-9]+/gi, '_') + '_' + st.fecha + '.pdf';
+    const base = esCern() ? 'RMT_Cernaval' : 'RMT_La_Linea';
+    return base + '_' + (st.clave || 'SIN_DATO').replace(/[^A-Z0-9]+/gi, '_') + '_' + st.fecha + '.pdf';
   }
-  function construirCernaval() {
+
+  function construirPDF() {
     const ctor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
     if (!ctor) { alert('No se pudo cargar jsPDF. Revisa la conexión y vuelve a intentarlo.'); return null; }
-    const filas = incluidos().map((d, i) => ({
-      orden: i + 1, tipo: d.tipo || '', mrn: d.mrn || '', cir: d.cir || '',
-      bultos: d.bultos, peso: simple(d.peso), csv: d.csv || '', obs: d.obs || ''
-    }));
-    return a3Construir(ctor, { IMG_AEAT, IMG_SELLO, buque: st.clave, cruzar: st.cruzar, filas });
+    const inc = incluidos();
+    if (!inc.length) return null;
+
+    if (esCern()) {
+      return a3Construir(ctor, {
+        IMG_AEAT: IMG_AEAT, IMG_SELLO: IMG_SELLO, buque: st.clave, cruzar: st.cruzar,
+        filas: inc.map((d, i) => ({
+          orden: i + 1, tipo: d.tipo || '', mrn: d.mrn || '', cir: d.cir || '',
+          bultos: d.bultos, peso: simple(d.peso), csv: d.csv || '', obs: d.obs || ''
+        }))
+      });
+    }
+    return rlConstruir(ctor, {
+      agencia: AGENCIA, fecha: st.fecha, matricula: st.clave,
+      totalBultos: inc.reduce((a, d) => a + (d.bultos || 0), 0),
+      totalPeso: miles(inc.reduce((a, d) => a + (d.peso || 0), 0)),
+      filas: inc.map(d => ({
+        tipo: d.tipo || '', mrn: d.mrn || '', cir: d.cir || '', descripcion: d.descripcion || '',
+        bultos: d.bultos, tipoBulto: d.tipoBulto || '', peso: simple(d.peso), csv: d.csv || ''
+      }))
+    });
   }
-  function guardarCernaval() {
-    const doc = construirCernaval();
+
+  function guardarRMT() {
+    const doc = construirPDF();
     if (doc) doc.save(nombreArchivo());
   }
-  function imprimirCernaval() {
-    const doc = construirCernaval();
+
+  function imprimirRMT() {
+    const doc = construirPDF();
     if (!doc) return;
     try {
       doc.autoPrint();
       const v = window.open(doc.output('bloburl'), '_blank');
       if (!v) doc.save(nombreArchivo());   // ventana emergente bloqueada: se descarga
     } catch (e) { doc.save(nombreArchivo()); }
-  }
-
-  // ── RMT de embarque (impresión HTML) ──────────────────────────────────
-  function generarEmbarque() {
-    const inc = incluidos();
-    if (!inc.length) return;
-    const [y, m, d] = st.fecha.split('-');
-    const fLarga = (+d) + ' - ' + MESES[+m - 1] + ' - ' + y, fPie = (+d) + ' ' + MESES[+m - 1] + ' ' + y;
-    const bultos = inc.reduce((s, x) => s + (x.bultos || 0), 0);
-    const peso = inc.reduce((s, x) => s + (x.peso || 0), 0);
-    const filas = inc.map((x, i) => '<tr><td class="r">' + String(i + 1).padStart(2, '0') + '</td><td>' + esc(x.tipo) + '</td><td>' + esc(x.mrn) + '</td><td>' + esc(x.cir) +
-      '</td><td class="m">' + esc(x.descripcion) + '</td><td class="r">' + esc(x.bultos ?? '') + '</td><td>' + esc(x.tipoBulto) + '</td><td class="r">' + simple(x.peso) + '</td><td>' + esc(x.csv) + '</td></tr>').join('');
-    document.getElementById('print-area').innerHTML =
-      '<div class="rmt"><h1>R. M. T.</h1><div class="sub">Agrupación de documentos presentados para su despacho y posterior embarque</div>' +
-      '<table class="cab"><colgroup><col style="width:16%"><col style="width:38%"><col style="width:19%"><col style="width:27%"></colgroup><tr><td>AGENCIA:</td><td class="b">' + esc(AGENCIA) + '</td><td>FECHA:</td><td class="b">' + fLarga + '</td></tr>' +
-      '<tr><td>DESTINO:</td><td></td><td>MATRICULA/BUQUE:</td><td class="b">' + esc(st.clave) + '</td></tr>' +
-      '<tr><td>MATRÍCULA/CONTR:</td><td></td><td>Nº DE ESCALA:</td><td></td></tr></table>' +
-      '<div class="rel">Relación de documentos presentados en Aduana, para su registro y posterior embarque en el buque de referencia</div>' +
-      '<table class="lin"><colgroup><col style="width:6%"><col style="width:6%"><col style="width:20%"><col style="width:7%"><col style="width:17%"><col style="width:7%"><col style="width:6%"><col style="width:8%"><col style="width:23%"></colgroup>' +
-      '<thead><tr><th>Orden</th><th>Dto.</th><th>Nº Documento</th><th>CIR</th><th>Mercancía</th><th>Bultos</th><th>Tipo</th><th>P. Bruto</th><th>CSV</th></tr></thead><tbody>' + filas +
-      '<tr><td colspan="5">TOTAL</td><td class="r">' + bultos + '</td><td></td><td class="r">' + miles(peso) + '</td><td></td></tr></tbody></table>' +
-      '<div class="pie"><table><tr><td>FECHA</td><td style="min-width:110pt">' + fPie + '</td></tr></table><div class="firma">ADUANAS<br>FIRMA Y SELLO</div></div>' +
-      '<div class="transp">EL TRANSPORTISTA</div></div>';
-    const t = document.title;
-    document.title = 'RMT_' + st.clave + '_' + st.fecha;
-    setTimeout(() => { window.print(); document.title = t; }, 50);
   }
 
   render();
