@@ -9,6 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="auth-guard.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root{
   --w:#fff;--g50:#f8f9fa;--g100:#f1f3f5;--g200:#e9ecef;--g300:#dee2e6;--g400:#ced4da;--g500:#adb5bd;--g600:#6c757d;--g700:#495057;--g800:#343a40;--g900:#212529;
@@ -47,7 +48,7 @@ table.docs input:focus,table.docs select:focus{border-color:var(--b500);outline:
 .num{text-align:right}
 .pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:500;background:var(--g100);color:var(--g700)}
 .pill.warn{background:var(--am50);color:var(--am600)}
-.pill.err{background:var(--rd50);color:var(--rd600)}
+.pill.err{background:var(--rd50);color:var(--rd600);font-family:var(--f);white-space:nowrap}
 .avisos td{padding-top:0!important;font-size:12px;color:var(--am600)}
 .x{border:0;background:none;color:var(--g500);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;border-radius:6px}
 .x:hover{color:var(--rd600);background:var(--rd50)}
@@ -55,6 +56,7 @@ table.docs input:focus,table.docs select:focus{border-color:var(--b500);outline:
 .side{padding:16px;display:flex;flex-direction:column;gap:14px}
 .side label{font-size:12px;color:var(--g600);display:block;margin-bottom:5px}
 .plate{width:100%;font-family:var(--mono);font-size:22px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;padding:10px 12px;border:1px solid var(--g300);border-radius:var(--r)}
+.plate.ship{font-size:15px;letter-spacing:.01em}
 .plate:focus,.side input[type=date]:focus{outline:none;border-color:var(--b500);box-shadow:0 0 0 3px var(--b50)}
 .side input[type=date]{width:100%;padding:8px 10px;border:1px solid var(--g300);border-radius:var(--r)}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -106,7 +108,7 @@ table.docs input:focus,table.docs select:focus{border-color:var(--b500);outline:
   <div class="grid">
     <section>
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Añadir PDF">
-        <strong>Arrastra aquí los T2GI, T1GI, T2, IM…</strong>
+        <strong>Arrastra aquí los T2GI, T1GI, T2, IM o los levantes de exportación</strong>
         <span>o pulsa para seleccionarlos. Los PDF se leen en este equipo y no se suben a ningún sitio.</span>
         <input type="file" id="file" accept="application/pdf,.pdf" multiple hidden>
       </div>
@@ -168,9 +170,54 @@ function lastCells(row, n) { const c = row.cells.map(c => c.s.trim()); return c.
 
 function detectType(pages) {
   const all = pages[0].map(r => r.text).join('\n');
+  if (/DOCUMENTO DE LEVANTE EN ADUANA DE EXPORTACI/i.test(all)) return 'DUE';
   if (/TRANSIT ACCOMPANYING DOCUMENT|Type \[11 01\]/.test(all)) return 'TAD';
   if (/TIPO DE DECLARACI|Importador|Exportador|Fecha de Levante/i.test(all)) return 'DUA';
   return null;
+}
+
+/* ---------- Ubicaciones que se despachan con el impreso ANEXO 3 (Cernaval / Campamento) ---------- */
+const ADUANA_CERNAVAL = 'ES001165';
+const UBIC_CERNAVAL = '1165OOLL03';
+
+function esCernaval(d) {
+  return !!d && (String(d.aduanaSalida || '').toUpperCase() === ADUANA_CERNAVAL ||
+                 String(d.ubicacion || '').toUpperCase() === UBIC_CERNAVAL);
+}
+
+/* ---------- Documento de levante en aduana de exportación (DUE) ---------- */
+function parseDUE(pages) {
+  const w = [];
+  const txt = pages.map(rs => rs.map(r => r.text).join('\n')).join('\n');
+  const out = { familia: 'DUE', tipo: 'DUE' };
+
+  out.mrn = (txt.match(/MRN de exportaci[^:]*:\s*\|?\s*([A-Z0-9]{18})/i) || [])[1] ||
+            (txt.match(RE_MRN) || [])[0] || '';
+  out.csv = (txt.match(RE_CSV) || [])[1] || '';
+
+  out.aduanaSalida = (txt.match(/Aduana de Salida:\s*\|\s*([A-Z]{2}\d{6})/i) || [])[1] || '';
+  out.ubicacion = (txt.match(/Ubicaci[^|]*en Aduana de Exportaci[^|]*\|\s*(\S+)/i) || [])[1] || '';
+
+  // Buque: el "Identificador" que sigue a "Tipo de identificación: 11 Nombre del buque marítimo"
+  const mb = txt.match(/Tipo de identificaci[^\n]*\n(?:[^\n]*\n)??\s*Identificador:\s*\|\s*([^|\n]+)/i);
+  out.buque = mb ? mb[1].trim().replace(/\s+/g, ' ') : '';
+  if (!out.buque) w.push('No se encontró el nombre del buque');
+
+  out.peso = parseNum((txt.match(/Masa Bruta total:\s*\|\s*([\d.,]+)/i) || [])[1]);
+  out.bultos = parseNum((txt.match(/N[ºo°] de embalajes:\s*\|\s*(\d+)/i) || [])[1]);
+  out.tipoBulto = (txt.match(/Tipo de embalaje:\s*\|\s*([A-Z0-9]{2})\b/i) || [])[1] || '';
+
+  out.levante = (txt.match(/Fecha de Levante[^|]*\|\s*(\d{2}-\d{2}-\d{4})/i) || [])[1] || '';
+  out.cir = out.levante ? 'Verde' : '';
+  if (!out.levante) w.push('No aparece fecha de levante: revisa el CIR');
+
+  const md = txt.match(/Descripci[^|]*de la mercanc[^|]*\|\s*([\s\S]*?)\n(?:Posici[oó]n|Masa|Embalajes|Tipo:)/i);
+  out.descripcion = md ? md[1].replace(/\s*\|\s*/g, ' ').replace(/\s+/g, ' ').trim() : '';
+  if (!out.descripcion) w.push('No se encontró la descripción de la partida 1');
+
+  out.matricula = '';
+  out.avisos = w;
+  return out;
 }
 
 /* ---------- TAD: T1 / T2 / T2GI / T1GI / T2F … ---------- */
@@ -285,8 +332,9 @@ async function parseDoc(pdfjsLib, data, nombre) {
   const tipo = detectType(pages);
   let d;
   if (tipo === 'TAD') d = parseTAD(pages);
+  else if (tipo === 'DUE') d = parseDUE(pages);
   else if (tipo === 'DUA') d = parseDUA(pages);
-  else return { fichero: nombre, error: 'No es un TAD ni un DUA de la AEAT (¿escaneado o RMT?)' };
+  else return { fichero: nombre, error: 'No es un documento de la AEAT reconocible (¿escaneado o ya es una RMT?)' };
   d.fichero = nombre;
   if (!d.mrn) d.avisos.push('No se encontró el MRN');
   if (!d.csv) d.avisos.push('No se encontró el CSV');
@@ -295,8 +343,371 @@ async function parseDoc(pdfjsLib, data, nombre) {
   return d;
 }
 
-if (typeof module !== 'undefined') module.exports = { parseDoc, parseNum };
+if (typeof module !== 'undefined') module.exports = { parseDoc, parseNum, esCernaval };
 
+</script>
+<script>
+/* Logo Agencia Tributaria y sello ALS, extraidos del impreso ANEXO 3 original */
+const IMG_AEAT = 'data:image/png;base64,' +
+  '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';
+const IMG_SELLO = 'data:image/png;base64,' +
+  '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' +
+  'AElFTkSuQmCC';
+
+/* ===== Impreso ANEXO 3 — RMT suministro en campamento (Cernaval) =====
+   Reproduce el impreso oficial de la AEAT · Delegación de Cádiz en jsPDF.
+   Medidas en puntos, tomadas del impreso original (A4 = 595,3 x 841,9 pt). */
+
+const A3_FILAS = 13;                       // líneas de la tabla de carga por hoja
+const A3_COLS = [64.9, 91.7, 127.1, 240.5, 283.1, 318.6, 354.0, 446.1, 531.3];
+const A3_CAB = ['Nº ORDEN', 'TIPO DOC', 'M   R   N', 'CIRCUITO', 'Nº BULTOS', 'PESO BRUTO', 'C S V', 'O B S'];
+const A3_Y0 = 408.4;                       // borde superior de la primera línea
+const A3_H = 12.57;                        // alto de línea
+const A3_DEP = ['Dependencia de Aduanas de', 'Algeciras', '', 'Aduana de La línea'];
+
+function a3Texto(doc, x, y, s, size, bold, align) {
+  doc.setFont('helvetica', bold ? 'bold' : 'normal').setFontSize(size);
+  doc.text(String(s == null ? '' : s), x, y, align ? { align: align } : undefined);
+}
+
+// Recorta el texto al ancho disponible de la celda
+function a3Cabe(doc, s, size, bold, ancho) {
+  doc.setFont('helvetica', bold ? 'bold' : 'normal').setFontSize(size);
+  s = String(s == null ? '' : s);
+  if (doc.getTextWidth(s) <= ancho) return s;
+  while (s.length > 1 && doc.getTextWidth(s + '…') > ancho) s = s.slice(0, -1);
+  return s + '…';
+}
+
+// Mayor cuerpo con el que el texto cabe entero en el ancho dado
+function a3Ajustar(doc, s, bold, ancho, max, min) {
+  doc.setFont('helvetica', bold ? 'bold' : 'normal');
+  for (let size = max; size > min; size -= 0.25) {
+    doc.setFontSize(size);
+    if (doc.getTextWidth(String(s)) <= ancho) return size;
+  }
+  return min;
+}
+
+function a3Encabezado(doc, IMG_AEAT) {
+  doc.addImage(IMG_AEAT, 'PNG', 67.2, 20.2, 117.5, 53.0);
+  doc.setDrawColor(0).setLineWidth(0.6);
+  doc.line(66.5, 73.5, 548.9, 73.5);
+  a3Texto(doc, 452.3, 69.5, 'Delegación de CADIZ', 10, false);
+}
+
+/* Hoja 1 — datos de la carga. Una por cada bloque de 13 documentos. */
+function a3Hoja1(doc, opts, docs, hoja, hojas) {
+  a3Encabezado(doc, opts.IMG_AEAT);
+
+  a3Texto(doc, 70, 118.5, 'ANEXO 3', 11, true);
+  a3Texto(doc, 70, 140, 'RMT SUMINSITRO EN CAMPAMENTO', 11, true);
+  a3Texto(doc, 70, 162, 'NOTA: Este impreso se presentará acompañado de copia de la documentación que se', 11, false);
+  a3Texto(doc, 70, 175.3, 'relaciona en el apartado 1.', 11, false);
+
+  // ── Cuadro de cabecera ────────────────────────────────────────────────
+  const x0 = 70.5, x1 = 183.9, x2 = 399.8, x3 = 531.3, yA = 187.5, yB = 274.2, yC = 317.6;
+  doc.setFillColor(217, 217, 217);
+  doc.rect(x0, yA, x1 - x0, yC - yA, 'F');            // columna izquierda
+  doc.rect(x2, yA, x3 - x2, yC - yA, 'F');            // columna derecha
+  doc.setDrawColor(0).setLineWidth(0.9);
+  doc.line(x0, yA, x3, yA); doc.line(x0, yC, x3, yC); doc.line(x0, yB, x2, yB);
+  doc.line(x0, yA, x0, yC); doc.line(x1, yA, x1, yC);
+  doc.line(x2, yA, x2, yC); doc.line(x3, yA, x3, yC);
+
+  a3Texto(doc, 77.6, 238, 'RMT', 30, true);
+  a3Texto(doc, 75.5, 294.5, 'CAMPAMENTO', 11, true);
+  a3Texto(doc, 187.6, 197.5, A3_DEP[0], 11, false);
+  a3Texto(doc, 187.6, 219, A3_DEP[1], 11, false);
+  a3Texto(doc, 184.2, 241, a3Cabe(doc, opts.buque, 11, true, x2 - 186), 11, true);   // ← buque
+  a3Texto(doc, 187.6, 262, A3_DEP[3], 11, false);
+  a3Texto(doc, 184.4, 286.5, 'CARPETA Nº CS', 8, true);
+  a3Texto(doc, 186.7, 306.5, 'Nota: Formato: CS – nº atraque', 8, false);
+  a3Texto(doc, 400.3, 209, '(1)Nº RMT', 11, false);
+  a3Texto(doc, 124, 327.5, '(1) Dato optativo', 11, false);
+  if (hojas > 1) a3Texto(doc, 531.3, 182, 'Hoja ' + hoja + ' de ' + hojas, 9, false, 'right');
+
+  // ── 1. Datos de la carga ──────────────────────────────────────────────
+  a3Texto(doc, 70, 362, '1.- DATOS DE LA CARGA (A CUMPLIMENTAR POR EL PROVISIONISTA)', 11, true);
+  doc.setLineWidth(0.6); doc.line(68.5, 367.1, 518.5, 367.1);
+
+  // Cabecera de la tabla: fondo negro, texto blanco
+  const yh = 395.6;
+  doc.setFillColor(0, 0, 0).rect(A3_COLS[0], yh, A3_COLS[8] - A3_COLS[0], A3_Y0 - yh, 'F');
+  doc.setTextColor(255, 255, 255);
+  A3_CAB.forEach(function (t, i) {
+    const cx = (A3_COLS[i] + A3_COLS[i + 1]) / 2;
+    const size = a3Ajustar(doc, t, true, A3_COLS[i + 1] - A3_COLS[i] - 3, 8, 4.5);
+    a3Texto(doc, cx, (yh + A3_Y0) / 2 + size * 0.36, t, size, true, 'center');
+  });
+  doc.setTextColor(0, 0, 0);
+
+  // Rejilla
+  doc.setLineWidth(0.6);
+  for (let r = 0; r <= A3_FILAS; r++) {
+    const y = A3_Y0 + r * A3_H;
+    doc.line(A3_COLS[0], y, A3_COLS[8], y);
+  }
+  const yFin = A3_Y0 + A3_FILAS * A3_H;
+  A3_COLS.forEach(function (x) { doc.line(x, A3_Y0, x, yFin); });
+
+  // Filas
+  for (let r = 0; r < docs.length && r < A3_FILAS; r++) {
+    const yTxt = A3_Y0 + r * A3_H + 8.8, d = docs[r];
+    const celdas = [
+      String(d.orden), d.tipo || '', d.mrn || '', (d.cir || '').charAt(0),
+      d.bultos == null ? '' : String(d.bultos), d.peso == null ? '' : String(d.peso), d.csv || '', d.obs || ''
+    ];
+    celdas.forEach(function (t, i) {
+      if (t === '') return;
+      const ancho = A3_COLS[i + 1] - A3_COLS[i] - 4;
+      a3Texto(doc, A3_COLS[i] + 2, yTxt, a3Cabe(doc, t, 8, false, ancho), 8, false);
+    });
+  }
+
+  // "Cruce las líneas no utilizadas invalidándolas." — una diagonal sobre todo el bloque libre
+  if (opts.cruzar && docs.length < A3_FILAS) {
+    const yLibre = A3_Y0 + docs.length * A3_H;
+    doc.setLineWidth(0.8);
+    doc.line(A3_COLS[0] + 1, yLibre + 1, A3_COLS[8] - 1, yFin - 1);
+    doc.setLineWidth(0.6);
+  }
+
+  a3Texto(doc, 70, 581.5, 'Nota: El número de orden deberá constar en la documentación adjunta a la RMT.', 11, true);
+  a3Texto(doc, 70, 594.9, 'Cruce las líneas no utilizadas invalidándolas.', 11, true);
+  a3Texto(doc, 70, 638.2, 'FIRMA Y SELLO DEL PROVISIONISTA', 11, true);
+
+  // Recuadros de firma y sello + sello ALS encima del de firma (como el impreso original)
+  doc.setLineWidth(0.9);
+  doc.rect(129.2, 676.2, 253.4 - 129.2, 742.1 - 676.2);
+  doc.rect(396.1, 676.2, 520.4 - 396.1, 742.1 - 676.2);
+  doc.addImage(opts.IMG_SELLO, 'PNG', 99.9, 671.8, 160.3, 85.5);
+  a3Texto(doc, 70, 756.6, 'Firma', 11, true);
+  a3Texto(doc, 360, 756.6, 'Sello', 11, true);
+}
+
+/* Hoja 2 — admisión y diligencia del resguardo (en blanco, la rellena la Aduana) */
+function a3Hoja2(doc, opts) {
+  a3Encabezado(doc, opts.IMG_AEAT);
+  a3Texto(doc, 70, 120, '2.- ADMISIÓN (A CUMPLIMENTAR POR EL RESGUARDO)', 11, true);
+  doc.setLineWidth(0.6); doc.line(69, 123.9, 519, 123.9);
+
+  a3Texto(doc, 124.2, 165, 'o', 11, false);
+  a3Texto(doc, 124.2, 177.6, 'o', 11, false);
+  doc.setLineWidth(0.9);
+  doc.rect(136.9, 156.8, 11.3, 8.9);
+  doc.rect(136.9, 169.5, 11.3, 9.0);
+  a3Texto(doc, 154.3, 165, 'RMT ADMITIDAPARA SUMINISTRO EL CAMPAMENTO', 11, true);
+  a3Texto(doc, 154.3, 177.7, 'RMT RECHAZADA POR', 11, true);
+  doc.setLineWidth(0.6); doc.line(277.6, 179, 507.1, 179);
+  a3Texto(doc, 507.2, 177.7, '.', 11, true);
+
+  a3Texto(doc, 70, 211.3, 'TIP Y FIRMA', 11, true);
+  a3Texto(doc, 70, 254.6, 'RMT SUMINSITRO EN CAMPAMENTO', 11, true);
+  a3Texto(doc, 70, 298.1, '3.- DILIGENCIA DEL RESGUARDO', 11, true);
+  doc.line(68.5, 302, 518.5, 302);
+  a3Texto(doc, 70, 341.4, 'Comprobación del suministro', 11, true);
+  doc.line(70, 407.7, 461.6, 407.7);
+  a3Texto(doc, 70, 424, '(indicar si es con desplazamiento o documental)', 11, false);
+  a3Texto(doc, 70, 467.4, 'NOTA : Si es documental se permite el suministro', 11, false);
+  a3Texto(doc, 70, 510.6, 'Incidencias/ Resultado de la comprobación', 11, true);
+  doc.setLineWidth(0.9);
+  doc.rect(71.5, 530.2, 508.2 - 71.5, 788.1 - 530.2);
+  a3Texto(doc, 70.1, 745.6, 'El Resguardo :  TIP nº _____________', 11, true);
+  a3Texto(doc, 300.9, 745.6, 'Firma', 11, true);
+}
+
+/* Hoja 3 — pie del resguardo (en blanco) */
+function a3Hoja3(doc, opts) {
+  a3Encabezado(doc, opts.IMG_AEAT);
+  a3Texto(doc, 379.4, 110.2, 'Firma', 11, true);
+  doc.setLineWidth(0.9);
+  doc.rect(375.5, 111, 508.2 - 375.5, 178.8 - 111);
+  a3Texto(doc, 70, 119.9, 'TIP nº', 11, true);
+  doc.setLineWidth(0.6); doc.line(100.8, 120.3, 183.3, 120.3);
+  a3Texto(doc, 70, 163.3, 'En', 11, true);
+  doc.line(87, 163.7, 218.3, 163.7);
+  a3Texto(doc, 70, 206.6, 'Dia:', 11, true);
+  a3Texto(doc, 142.7, 206.6, 'Hora', 11, true);
+  a3Texto(doc, 201.6, 206.6, 'mes', 11, true);
+  a3Texto(doc, 257.1, 206.6, 'año', 11, true);
+  [[90.8, 142.6], [167.7, 201.4], [223.4, 256.9], [276.5, 346.9]].forEach(function (p) {
+    doc.line(p[0], 207, p[1], 207);
+  });
+}
+
+/* Construye el documento completo */
+function a3Construir(jsPDFCtor, opts) {
+  const doc = new jsPDFCtor({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+  const filas = opts.filas || [];
+  const hojas = Math.max(1, Math.ceil(filas.length / A3_FILAS));
+  for (let h = 0; h < hojas; h++) {
+    if (h) doc.addPage();
+    a3Hoja1(doc, opts, filas.slice(h * A3_FILAS, (h + 1) * A3_FILAS), h + 1, hojas);
+  }
+  doc.addPage(); a3Hoja2(doc, opts);
+  doc.addPage(); a3Hoja3(doc, opts);
+  return doc;
+}
+
+if (typeof module !== 'undefined') module.exports = { a3Construir, A3_FILAS };
 </script>
 <script>
 // Guard: sesión Supabase vía PortalGuard + permiso DUA o TARIC (mismo criterio que el menú Aduanas)
@@ -320,7 +731,10 @@ function iniciarRMT() {
 
   const AGENCIA = '* ALGECIRAS LOGISTIC SOLUTIONS, S.L.';
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const st = { docs: [], errores: [], matricula: '', matriculaTocada: false, fecha: hoyISO() };
+
+  // formato: 'embarque' = RMT de agrupación para embarque · 'cernaval' = impreso ANEXO 3 (suministro en campamento)
+  const st = { docs: [], errores: [], formato: 'embarque', formatoTocado: false,
+               clave: '', claveTocada: false, cruzar: true, fecha: hoyISO() };
 
   const drop = document.getElementById('drop'), file = document.getElementById('file');
   drop.addEventListener('click', () => file.click());
@@ -342,6 +756,36 @@ function iniciarRMT() {
   }
   function simple(n) { if (n == null || isNaN(n)) return ''; const r = Math.round(n * 100) / 100; return String(r).replace('.', ','); }
 
+  // ── Formato y clave de agrupación (matrícula del camión o nombre del buque) ──
+  const esCern = () => st.formato === 'cernaval';
+  const etiqueta = () => esCern() ? 'Buque' : 'Matrícula';
+  function claveDe(d) { return (esCern() ? d.buque : d.matricula) || ''; }
+  function norm(v) {
+    const s = String(v || '').toUpperCase().trim();
+    return esCern() ? s.replace(/\s+/g, ' ') : s.replace(/[\s-]/g, '');
+  }
+
+  function detectarFormato() {
+    if (st.formatoTocado || !st.docs.length) return;
+    const cern = st.docs.filter(esCernaval).length;
+    st.formato = cern > st.docs.length - cern ? 'cernaval' : 'embarque';
+  }
+  function encajaFormato(d) { return esCern() ? esCernaval(d) : !esCernaval(d); }
+  function claveMayoritaria() {
+    const c = {};
+    st.docs.filter(encajaFormato).forEach(d => { const k = claveDe(d); if (k) c[k] = (c[k] || 0) + 1; });
+    return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || '';
+  }
+  function aplicarFiltro() {
+    const k = norm(st.clave);
+    st.docs.forEach(d => {
+      const dk = claveDe(d);
+      d.incluido = encajaFormato(d) && (!k || !dk || norm(dk) === k);
+    });
+  }
+  function recalcular() { detectarFormato(); if (!st.claveTocada) st.clave = claveMayoritaria(); aplicarFiltro(); }
+  function incluidos() { return st.docs.filter(d => d.incluido); }
+
   async function cargar(files) {
     const pdfs = [...files].filter(f => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
     if (!pdfs.length) return;
@@ -353,7 +797,7 @@ function iniciarRMT() {
         const d = await parseDoc(pdfjsLib, new Uint8Array(await pdfs[i].arrayBuffer()), pdfs[i].name);
         if (d.error) { st.errores.push(d); continue; }
         if (d.mrn && st.docs.some(x => x.mrn === d.mrn)) { st.errores.push({ fichero: d.fichero, error: 'MRN ' + d.mrn + ' ya estaba cargado' }); continue; }
-        d.incluido = true;
+        d.incluido = true; d.obs = '';
         st.docs.push(d);
       } catch (err) {
         console.error(err);
@@ -362,22 +806,9 @@ function iniciarRMT() {
     }
     busy.hidden = true;
     st.docs.sort((a, b) => (a.mrn || '').localeCompare(b.mrn || ''));
-    if (!st.matriculaTocada) st.matricula = matriculaMayoritaria();
-    aplicarFiltroMatricula();
+    recalcular();
     render();
   }
-
-  function matriculaMayoritaria() {
-    const c = {};
-    st.docs.forEach(d => { if (d.matricula) c[d.matricula] = (c[d.matricula] || 0) + 1; });
-    return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || '';
-  }
-  function norm(m) { return String(m || '').toUpperCase().replace(/[\s-]/g, ''); }
-  function aplicarFiltroMatricula() {
-    const m = norm(st.matricula);
-    st.docs.forEach(d => { d.incluido = !m || !d.matricula || norm(d.matricula) === m; });
-  }
-  function incluidos() { return st.docs.filter(d => d.incluido); }
 
   function render() { renderDocs(); renderSide(); }
 
@@ -390,22 +821,28 @@ function iniciarRMT() {
         '<div class="note warn" style="margin-bottom:6px;display:flex;justify-content:space-between;gap:8px"><span><b>' + esc(e.fichero) + ':</b> ' + esc(e.error) + '</span><button class="x" data-err="' + i + '" aria-label="Descartar">&times;</button></div>').join('') + '</div>';
     }
     if (!st.docs.length) { el.innerHTML = h + '<div class="empty">Añade los justificantes para empezar.</div>'; bindDocs(el); return; }
-    h += '<table class="docs"><thead><tr><th></th><th>Tipo</th><th>MRN / CSV</th><th>Matrícula</th><th>CIR</th><th style="min-width:220px">Mercancía</th><th class="num">Bultos</th><th>Tipo</th><th class="num">P. bruto</th><th></th></tr></thead><tbody>';
+    h += '<table class="docs"><thead><tr><th></th><th>Tipo</th><th>MRN / CSV</th><th>' + etiqueta() + '</th><th>CIR</th>' +
+      '<th style="min-width:200px">Mercancía</th><th class="num">Bultos</th><th>Tipo</th><th class="num">P. bruto</th>' +
+      (esCern() ? '<th>Obs.</th>' : '') + '<th></th></tr></thead><tbody>';
     st.docs.forEach((d, i) => {
-      const distinta = st.matricula && d.matricula && norm(d.matricula) !== norm(st.matricula);
+      const k = claveDe(d);
+      const otroImpreso = !encajaFormato(d);
+      const distinta = !otroImpreso && st.clave && k && norm(k) !== norm(st.clave);
       h += '<tr class="' + (d.incluido ? '' : 'off') + '">' +
         '<td><input type="checkbox" data-i="' + i + '" data-k="incluido" ' + (d.incluido ? 'checked' : '') + ' aria-label="Incluir en la RMT"></td>' +
         '<td><span class="pill">' + esc(d.tipo) + '</span></td>' +
         '<td class="mono">' + esc(d.mrn) + '<br><span style="color:var(--g600)">' + esc(d.csv) + '</span></td>' +
-        '<td class="mono">' + (distinta ? '<span class="pill warn mono">' + esc(d.matricula) + '</span>' : esc(d.matricula || '—')) + '</td>' +
+        '<td class="mono">' + (otroImpreso ? '<span class="pill err">Otro impreso</span>' :
+          distinta ? '<span class="pill warn mono">' + esc(k) + '</span>' : esc(k || '—')) + '</td>' +
         '<td><select data-i="' + i + '" data-k="cir" style="min-width:86px">' + ['', 'Verde', 'Naranja', 'Rojo'].map(o => '<option ' + (d.cir === o ? 'selected' : '') + '>' + o + '</option>').join('') + '</select></td>' +
         '<td><input type="text" data-i="' + i + '" data-k="descripcion" value="' + esc(d.descripcion) + '" title="' + esc(d.descripcion) + '"></td>' +
         '<td><input type="number" class="num" min="0" data-i="' + i + '" data-k="bultos" value="' + esc(d.bultos) + '" style="width:64px"></td>' +
         '<td><input type="text" class="mono" maxlength="2" data-i="' + i + '" data-k="tipoBulto" value="' + esc(d.tipoBulto) + '" style="width:44px;text-transform:uppercase"></td>' +
         '<td><input type="number" class="num" min="0" step="any" data-i="' + i + '" data-k="peso" value="' + esc(d.peso) + '" style="width:84px"></td>' +
+        (esCern() ? '<td><input type="text" data-i="' + i + '" data-k="obs" value="' + esc(d.obs) + '" style="min-width:90px"></td>' : '') +
         '<td><button class="x" data-del="' + i + '" aria-label="Quitar ' + esc(d.mrn) + '">&times;</button></td></tr>';
       const avisos = d.avisos || [];
-      if (avisos.length) h += '<tr class="avisos"><td></td><td colspan="9">' + avisos.map(esc).join(' · ') + '</td></tr>';
+      if (avisos.length) h += '<tr class="avisos"><td></td><td colspan="10">' + avisos.map(esc).join(' · ') + '</td></tr>';
     });
     h += '</tbody></table>';
     el.innerHTML = h;
@@ -421,43 +858,114 @@ function iniciarRMT() {
       else d[k] = inp.value;
       render();
     }));
-    el.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => { st.docs.splice(+b.dataset.del, 1); if (!st.matriculaTocada) { st.matricula = matriculaMayoritaria(); aplicarFiltroMatricula(); } render(); }));
+    el.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+      st.docs.splice(+b.dataset.del, 1); recalcular(); render();
+    }));
     el.querySelectorAll('[data-err]').forEach(b => b.addEventListener('click', () => { st.errores.splice(+b.dataset.err, 1); render(); }));
   }
 
   function renderSide() {
     const side = document.getElementById('side');
     const inc = incluidos();
-    const plates = [...new Set(st.docs.map(d => d.matricula).filter(Boolean))];
+    const claves = [...new Set(st.docs.filter(encajaFormato).map(claveDe).filter(Boolean))];
+    const ajenos = st.docs.filter(d => !encajaFormato(d)).length;
     const sinCir = inc.filter(d => !d.cir).length;
     const bultos = inc.reduce((s, d) => s + (d.bultos || 0), 0);
     const peso = inc.reduce((s, d) => s + (d.peso || 0), 0);
+    const cern = st.docs.filter(esCernaval).length;
+
     let aviso = '';
-    if (plates.length > 1) aviso = '<div class="note warn">Hay documentos con matrículas distintas (' + plates.map(esc).join(', ') + '). Solo entran en la RMT los de la matrícula confirmada; puedes marcar otros a mano.</div>';
-    else if (plates.length === 1 && norm(plates[0]) === norm(st.matricula)) aviso = '<div class="note ok">Todos los documentos coinciden con esta matrícula.</div>';
+    if (claves.length > 1) aviso = '<div class="note warn">Hay documentos con ' + (esCern() ? 'buques distintos' : 'matrículas distintas') + ' (' + claves.map(esc).join(', ') + '). Solo entran en la RMT los del valor confirmado; puedes marcar otros a mano.</div>';
+    else if (claves.length === 1 && norm(claves[0]) === norm(st.clave)) aviso = '<div class="note ok">Todos los documentos coinciden con este ' + etiqueta().toLowerCase() + '.</div>';
     if (sinCir) aviso += '<div class="note warn">' + sinCir + ' documento(s) sin CIR asignado.</div>';
+    if (ajenos) aviso += '<div class="note warn">' + ajenos + ' documento(s) no corresponden a este impreso y quedan fuera. Cambia el impreso arriba si te interesan esos.</div>';
+    if (esCern() && inc.length > A3_FILAS) aviso += '<div class="note warn">Más de ' + A3_FILAS + ' documentos: se reparten en varias hojas de carga.</div>';
 
-    side.innerHTML =
-      '<div><label for="mat">Matrícula del vehículo</label>' +
-      '<input id="mat" class="plate" autocomplete="off" spellcheck="false" value="' + esc(st.matricula) + '" placeholder="0000XXX">' +
-      (plates.length > 1 ? '<div class="chips" style="margin-top:8px">' + plates.map(p => '<button class="chip ' + (norm(p) === norm(st.matricula) ? 'on' : '') + '" data-plate="' + esc(p) + '">' + esc(p) + '</button>').join('') + '</div>' : '') +
+    const opciones = [['embarque', 'RMT de embarque'], ['cernaval', 'ANEXO 3 · Suministro en campamento']];
+    let h = '<div><label for="fmt">Impreso</label><select id="fmt" style="width:100%;padding:8px 10px;border:1px solid var(--g300);border-radius:var(--r)">' +
+      opciones.map(o => '<option value="' + o[0] + '"' + (st.formato === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
+    if (st.docs.length && !st.formatoTocado) {
+      h += '<div style="font-size:12px;color:var(--g600);margin-top:5px">' +
+        (esCern() ? 'Detectado por aduana ' + ADUANA_CERNAVAL + ' / ubicación ' + UBIC_CERNAVAL + '.' :
+         (cern ? cern + ' documento(s) son de Cernaval.' : 'Ningún documento es de Cernaval.')) + '</div>';
+    }
+    h += '</div>';
+
+    h += '<div><label for="mat">' + (esCern() ? 'Buque' : 'Matrícula del vehículo') + '</label>' +
+      '<input id="mat" class="plate' + (esCern() ? ' ship' : '') + '" autocomplete="off" spellcheck="false" value="' + esc(st.clave) + '" placeholder="' + (esCern() ? 'NOMBRE DEL BUQUE' : '0000XXX') + '">' +
+      (claves.length > 1 ? '<div class="chips" style="margin-top:8px">' + claves.map(p => '<button class="chip ' + (norm(p) === norm(st.clave) ? 'on' : '') + '" data-clave="' + esc(p) + '">' + esc(p) + '</button>').join('') + '</div>' : '') +
       '</div>' + aviso +
-      '<div><label for="fec">Fecha de la RMT</label><input id="fec" type="date" value="' + esc(st.fecha) + '"></div>' +
-      '<div><div class="tot"><span>Documentos</span><b>' + inc.length + '</b></div><div class="tot"><span>Bultos</span><b>' + bultos + '</b></div><div class="tot"><span>Peso bruto</span><b>' + miles(peso) + ' kg</b></div></div>' +
-      '<button class="btn pri" id="gen" ' + (inc.length && st.matricula.trim() ? '' : 'disabled') + '>Confirmar matrícula y generar RMT</button>' +
-      (st.docs.length ? '<button class="btn sec" id="clr">Empezar otra RMT</button>' : '');
+      '<div><label for="fec">Fecha de la RMT</label><input id="fec" type="date" value="' + esc(st.fecha) + '"></div>';
 
+    if (esCern()) h += '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--g700);margin:0"><input type="checkbox" id="crz"' + (st.cruzar ? ' checked' : '') + '> Cruzar las líneas no utilizadas</label>';
+
+    h += '<div><div class="tot"><span>Documentos</span><b>' + inc.length + '</b></div><div class="tot"><span>Bultos</span><b>' + bultos + '</b></div><div class="tot"><span>Peso bruto</span><b>' + miles(peso) + ' kg</b></div></div>';
+
+    const listo = inc.length && st.clave.trim();
+    if (esCern()) {
+      h += '<button class="btn pri" id="gen" ' + (listo ? '' : 'disabled') + '>Imprimir RMT</button>' +
+           '<button class="btn sec" id="pdf" ' + (listo ? '' : 'disabled') + '>Guardar PDF</button>';
+    } else {
+      h += '<button class="btn pri" id="gen" ' + (listo ? '' : 'disabled') + '>Confirmar matrícula y generar RMT</button>';
+    }
+    h += (st.docs.length ? '<button class="btn sec" id="clr">Empezar otra RMT</button>' : '');
+    side.innerHTML = h;
+
+    side.querySelector('#fmt').addEventListener('change', e => {
+      st.formato = e.target.value; st.formatoTocado = true; st.claveTocada = false;
+      st.clave = claveMayoritaria(); aplicarFiltro(); render();
+    });
     const mat = side.querySelector('#mat');
-    mat.addEventListener('input', () => { st.matricula = mat.value.toUpperCase(); st.matriculaTocada = true; });
-    mat.addEventListener('change', () => { aplicarFiltroMatricula(); render(); document.getElementById('mat').focus(); });
-    side.querySelectorAll('[data-plate]').forEach(b => b.addEventListener('click', () => { st.matricula = b.dataset.plate; st.matriculaTocada = true; aplicarFiltroMatricula(); render(); }));
+    mat.addEventListener('input', () => { st.clave = mat.value.toUpperCase(); st.claveTocada = true; });
+    mat.addEventListener('change', () => { aplicarFiltro(); render(); document.getElementById('mat').focus(); });
+    side.querySelectorAll('[data-clave]').forEach(b => b.addEventListener('click', () => { st.clave = b.dataset.clave; st.claveTocada = true; aplicarFiltro(); render(); }));
     side.querySelector('#fec').addEventListener('change', e => { st.fecha = e.target.value || hoyISO(); });
-    side.querySelector('#gen').addEventListener('click', () => { st.matricula = norm(document.getElementById('mat').value); aplicarFiltroMatricula(); render(); generar(); });
+    const crz = side.querySelector('#crz');
+    if (crz) crz.addEventListener('change', e => { st.cruzar = e.target.checked; });
+    side.querySelector('#gen').addEventListener('click', () => { confirmarClave(); esCern() ? imprimirCernaval() : generarEmbarque(); });
+    const pdf = side.querySelector('#pdf');
+    if (pdf) pdf.addEventListener('click', () => { confirmarClave(); guardarCernaval(); });
     const clr = side.querySelector('#clr');
-    if (clr) clr.addEventListener('click', () => { st.docs = []; st.errores = []; st.matricula = ''; st.matriculaTocada = false; st.fecha = hoyISO(); render(); });
+    if (clr) clr.addEventListener('click', () => {
+      st.docs = []; st.errores = []; st.clave = ''; st.claveTocada = false;
+      st.formatoTocado = false; st.formato = 'embarque'; st.fecha = hoyISO(); render();
+    });
   }
 
-  function generar() {
+  function confirmarClave() {
+    st.clave = norm(document.getElementById('mat').value);
+    aplicarFiltro(); render();
+  }
+
+  // ── Impreso ANEXO 3 (Cernaval) ────────────────────────────────────────
+  function nombreArchivo() {
+    return 'RMT_' + (st.clave || 'SIN_BUQUE').replace(/[^A-Z0-9]+/gi, '_') + '_' + st.fecha + '.pdf';
+  }
+  function construirCernaval() {
+    const ctor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (!ctor) { alert('No se pudo cargar jsPDF. Revisa la conexión y vuelve a intentarlo.'); return null; }
+    const filas = incluidos().map((d, i) => ({
+      orden: i + 1, tipo: d.tipo || '', mrn: d.mrn || '', cir: d.cir || '',
+      bultos: d.bultos, peso: simple(d.peso), csv: d.csv || '', obs: d.obs || ''
+    }));
+    return a3Construir(ctor, { IMG_AEAT, IMG_SELLO, buque: st.clave, cruzar: st.cruzar, filas });
+  }
+  function guardarCernaval() {
+    const doc = construirCernaval();
+    if (doc) doc.save(nombreArchivo());
+  }
+  function imprimirCernaval() {
+    const doc = construirCernaval();
+    if (!doc) return;
+    try {
+      doc.autoPrint();
+      const v = window.open(doc.output('bloburl'), '_blank');
+      if (!v) doc.save(nombreArchivo());   // ventana emergente bloqueada: se descarga
+    } catch (e) { doc.save(nombreArchivo()); }
+  }
+
+  // ── RMT de embarque (impresión HTML) ──────────────────────────────────
+  function generarEmbarque() {
     const inc = incluidos();
     if (!inc.length) return;
     const [y, m, d] = st.fecha.split('-');
@@ -469,7 +977,7 @@ function iniciarRMT() {
     document.getElementById('print-area').innerHTML =
       '<div class="rmt"><h1>R. M. T.</h1><div class="sub">Agrupación de documentos presentados para su despacho y posterior embarque</div>' +
       '<table class="cab"><colgroup><col style="width:16%"><col style="width:38%"><col style="width:19%"><col style="width:27%"></colgroup><tr><td>AGENCIA:</td><td class="b">' + esc(AGENCIA) + '</td><td>FECHA:</td><td class="b">' + fLarga + '</td></tr>' +
-      '<tr><td>DESTINO:</td><td></td><td>MATRICULA/BUQUE:</td><td class="b">' + esc(st.matricula) + '</td></tr>' +
+      '<tr><td>DESTINO:</td><td></td><td>MATRICULA/BUQUE:</td><td class="b">' + esc(st.clave) + '</td></tr>' +
       '<tr><td>MATRÍCULA/CONTR:</td><td></td><td>Nº DE ESCALA:</td><td></td></tr></table>' +
       '<div class="rel">Relación de documentos presentados en Aduana, para su registro y posterior embarque en el buque de referencia</div>' +
       '<table class="lin"><colgroup><col style="width:6%"><col style="width:6%"><col style="width:20%"><col style="width:7%"><col style="width:17%"><col style="width:7%"><col style="width:6%"><col style="width:8%"><col style="width:23%"></colgroup>' +
@@ -478,13 +986,12 @@ function iniciarRMT() {
       '<div class="pie"><table><tr><td>FECHA</td><td style="min-width:110pt">' + fPie + '</td></tr></table><div class="firma">ADUANAS<br>FIRMA Y SELLO</div></div>' +
       '<div class="transp">EL TRANSPORTISTA</div></div>';
     const t = document.title;
-    document.title = 'RMT_' + st.matricula + '_' + st.fecha;
+    document.title = 'RMT_' + st.clave + '_' + st.fecha;
     setTimeout(() => { window.print(); document.title = t; }, 50);
   }
 
   render();
 }
-
 </script>
 </body>
 </html>
