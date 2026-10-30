@@ -38,6 +38,23 @@
 (function(){
   'use strict';
 
+  // ── Icono de pestaña ───────────────────────────────────────────────────
+  // CW (Customs Way) para todos los módulos. Si el módulo ya pone el suyo
+  // (index.html, airport_cargo.html), se respeta y esto no hace nada.
+  (function(){
+    try {
+      if (document.querySelector('link[rel~="icon"]')) return;
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+              + '<rect width="32" height="32" rx="6" fill="#0369a1"/>'
+              + '<text x="16" y="25" font-family="Arial Black,Arial,sans-serif" font-size="17"'
+              + ' font-weight="900" fill="white" text-anchor="middle">CW</text></svg>';
+      var lnk = document.createElement('link');
+      lnk.rel = 'icon'; lnk.type = 'image/svg+xml';
+      lnk.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+      (document.head || document.documentElement).appendChild(lnk);
+    } catch (e) {}
+  })();
+
   // ── Configuración Supabase ─────────────────────────────────────────────
   const SUPABASE_URL  = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
   const SUPABASE_KEY  = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
