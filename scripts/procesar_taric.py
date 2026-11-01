@@ -94,22 +94,60 @@ def _items_bucket(prefijo=''):
         return []
 
 
-def descargar_correlaciones():
-    """Descarga los ficheros de tabla de correlación que haya en la carpeta de la
-    extracción (cualquier .xlsx cuyo nombre contenga 'correlation'). Son opcionales:
-    si no hay ninguno, el import sigue igual que siempre."""
-    nombres = [n for n in _items_bucket(EXTR + '/')
-               if 'correlation' in n.lower() and n.lower().endswith('.xlsx')]
-    rutas = []
-    for n in nombres:
-        ruta = descargar(n)
-        if ruta:
-            rutas.append(ruta)
-    if rutas:
-        log(f'correlaciones encontradas: {", ".join(nombres)}')
-    else:
-        log('sin tablas de correlación en el bucket (paso opcional, se omite)')
-    return rutas
+def ficheros_de_la_actualizacion():
+    """Qué ficheros procesar en esta tanda. Primero la lista registrada por el
+    portal (taric_actualizaciones.ficheros); si no está, lo que haya en la carpeta
+    del bucket. Así el usuario sube los que quiera, con el nombre que sea."""
+    try:
+        r = requests.get(f'{SB}/rest/v1/taric_actualizaciones?id=eq.{ACT}&select=ficheros',
+                         headers=H, timeout=30)
+        if r.ok and r.json():
+            fs = r.json()[0].get('ficheros') or []
+            fs = [n for n in fs if str(n).lower().endswith('.xlsx')]
+            if fs:
+                return fs
+    except Exception:
+        pass
+    return [n for n in _items_bucket(EXTR + '/') if str(n).lower().endswith('.xlsx')]
+
+
+def _norm(s):
+    return re.sub(r'\s+', ' ', str(s or '').strip().lower())
+
+
+def detectar_tipo(ruta):
+    """Identifica QUÉ es el fichero por su CONTENIDO (cabeceras / hojas), no por su
+    nombre. Devuelve 'nomenclatura' | 'medidas' | 'casilla44' | 'correlacion' | None.
+    None = fichero sin contenido relevante (footnotes, conditions, additional...) → se descarta.
+    Firmas únicas verificadas contra los ficheros oficiales de CIRCABC:
+      · Nomenclature_EN      → cabecera con 'goods code' + 'indent'
+      · TARIC_measures       → cabecera con 'red_ind'
+      · Box_44_codes_...     → cabecera con 'certificate code'
+      · Correlation tables   → hojas 'New codes' + 'Old codes'
+    """
+    try:
+        wb = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
+    except Exception as e:
+        log(f'  no se pudo abrir {os.path.basename(ruta)}: {e}')
+        return None
+    try:
+        nombres = [str(s).lower() for s in wb.sheetnames]
+        if any(n.startswith('new') for n in nombres) and any(n.startswith('old') for n in nombres):
+            return 'correlacion'
+        ws = wb[wb.sheetnames[0]]
+        cab = set()
+        for r in ws.iter_rows(values_only=True):
+            cab = {_norm(c) for c in r}
+            break
+        if 'certificate code' in cab:
+            return 'casilla44'
+        if 'red_ind' in cab:
+            return 'medidas'
+        if 'indent' in cab and 'goods code' in cab:
+            return 'nomenclatura'
+        return None
+    finally:
+        wb.close()
 
 
 def descargar(nombre):
@@ -316,26 +354,37 @@ def retirados_de_correlaciones(rutas):
     return muertos
 
 
-def cargar(nom_csv, med_csv, c44_csv, muertos=None):
-    """Todo en una transacción: o entra completo o no entra nada."""
+def cargar(nom_csv=None, med_csv=None, c44_csv=None, muertos=None):
+    """Carga PARCIAL y atómica: actualiza SOLO las tablas cuyos ficheros se han
+    aportado en esta tanda. Todo en una transacción (o entra completo o nada).
+      · nom_csv  → reconstruye taric_nomenclatura
+      · muertos  → cierra (declarable=0) los códigos retirados sobre la nomenclatura
+                   que quede en la tabla (la recién cargada, o la existente si no se
+                   subió nomenclatura: así valen las correlaciones por sí solas)
+      · med_csv  → reconstruye taric_medidas
+      · c44_csv  → reconstruye taric_casilla44
+    """
     sql = ['\\set ON_ERROR_STOP on', 'BEGIN;']
-    sql.append('DELETE FROM public.taric_nomenclatura;')
-    sql.append(f"\\copy public.taric_nomenclatura (codigo,sufijo,nc8,partida4,capitulo,declarable,nivel,indent,descripcion,inicio,fin) FROM '{nom_csv}' WITH (FORMAT csv)")
-    # Cierre de códigos NC retirados según las tablas de correlación: el loader
+    if nom_csv:
+        sql.append('DELETE FROM public.taric_nomenclatura;')
+        sql.append(f"\\copy public.taric_nomenclatura (codigo,sufijo,nc8,partida4,capitulo,declarable,nivel,indent,descripcion,inicio,fin) FROM '{nom_csv}' WITH (FORMAT csv)")
+    # Cierre de códigos NC retirados (tablas de correlación): el loader del portal
     # solo filtra por 'declarable', así que se pone declarable=0 (y fin, para el
-    # registro). Dentro de la misma transacción que la carga de la nomenclatura.
+    # registro). Se aplica sobre la nomenclatura recién cargada, o sobre la ya
+    # existente si esta tanda es SOLO correlaciones.
     if muertos:
         porfin = collections.defaultdict(list)
         for cod, fin in muertos.items():
-            porfin[fin].append(cod.replace("'", ""))   # saneado defensivo
+            porfin[fin].append(str(cod).replace("'", ""))   # saneado defensivo
         for fin, cods in porfin.items():
             lista = "','".join(cods)
             valfin = f"'{fin}'" if fin else "fin"
             sql.append(f"UPDATE public.taric_nomenclatura SET declarable=0, "
                        f"fin=COALESCE(NULLIF(fin,''),{valfin}) "
                        f"WHERE sufijo='80' AND codigo IN ('{lista}');")
-    sql.append('DELETE FROM public.taric_medidas;')
-    sql.append(f"\\copy public.taric_medidas (codigo,nc8,categoria,etiqueta,tipo_medida,desc_medida,origen,origen_code,base_legal,derecho,inicio,fin,certificados,erga_omnes,exigencia) FROM '{med_csv}' WITH (FORMAT csv)")
+    if med_csv:
+        sql.append('DELETE FROM public.taric_medidas;')
+        sql.append(f"\\copy public.taric_medidas (codigo,nc8,categoria,etiqueta,tipo_medida,desc_medida,origen,origen_code,base_legal,derecho,inicio,fin,certificados,erga_omnes,exigencia) FROM '{med_csv}' WITH (FORMAT csv)")
     if c44_csv:
         sql.append('DELETE FROM public.taric_casilla44;')
         sql.append(f"\\copy public.taric_casilla44 (codigo,descripcion,inicio,fin) FROM '{c44_csv}' WITH (FORMAT csv)")
@@ -365,44 +414,80 @@ def main():
 
     estado(mensaje='Descargando ficheros del bucket')
 
-    nom = descargar('Nomenclature_EN.xlsx') or descargar('Nomenclature_ES.xlsx')
-    med = descargar('TARIC_measures.xlsx')
-    c44 = descargar('Box_44_codes_of_the_SAD.xlsx')
-    correlaciones = descargar_correlaciones()
-    if not nom or not med:
+    # Descarga TODO lo que haya en la tanda e identifica cada fichero por su
+    # CONTENIDO (no por el nombre). Lo irrelevante se descarta.
+    nombres = ficheros_de_la_actualizacion()
+    if not nombres:
         log(f'contenido de taric-updates/{EXTR}/ : {listar_bucket(EXTR + "/")}')
-        log(f'carpetas en la raíz del bucket   : {listar_bucket("")}')
-        raise RuntimeError(
-            f'Faltan Nomenclature_*.xlsx o TARIC_measures.xlsx en taric-updates/{EXTR}/. '
-            f'Revisa en el log de arriba qué hay realmente en el bucket.')
+        raise RuntimeError(f'No hay ficheros .xlsx en taric-updates/{EXTR}/.')
 
-    estado(mensaje='Procesando nomenclatura')
-    nom_csv, n_nom = procesar_nomenclatura(nom)
+    tipos = {'nomenclatura': None, 'medidas': None, 'casilla44': None}
+    correlaciones = []
+    descartados = []
+    for n in nombres:
+        ruta = descargar(n)
+        if not ruta:
+            continue
+        t = detectar_tipo(ruta)
+        if t == 'correlacion':
+            correlaciones.append(ruta)
+            log(f'  → {n}: tabla de correlación')
+        elif t in tipos:
+            if tipos[t]:
+                log(f'  aviso: {n} es otra {t}; se usa la última')
+            tipos[t] = ruta
+            log(f'  → {n}: {t}')
+        else:
+            descartados.append(n)
+            log(f'  → {n}: sin contenido relevante, descartado')
+    if descartados:
+        log(f'descartados ({len(descartados)}): {", ".join(descartados)}')
 
-    estado(mensaje='Procesando medidas (puede tardar varios minutos)')
-    med_csv, n_med = procesar_medidas(med)
+    if not any(tipos.values()) and not correlaciones:
+        raise RuntimeError('Ningún fichero aportado contiene datos TARIC reconocibles '
+                           '(nomenclatura, medidas, casilla 44 o tabla de correlación).')
 
-    n_c44, c44_csv = 0, None
-    if c44:
-        c44_csv, n_c44 = procesar_casilla44(c44)
-
+    # Procesar solo lo aportado
+    nom_csv = med_csv = c44_csv = None
+    n_nom = n_med = n_c44 = 0
     muertos = {}
+
+    if tipos['nomenclatura']:
+        estado(mensaje='Procesando nomenclatura')
+        nom_csv, n_nom = procesar_nomenclatura(tipos['nomenclatura'])
+        if n_nom < 10000:
+            raise RuntimeError(f'Nomenclatura con muy pocas filas ({n_nom}); no se carga.')
+
+    if tipos['medidas']:
+        estado(mensaje='Procesando medidas (puede tardar varios minutos)')
+        med_csv, n_med = procesar_medidas(tipos['medidas'])
+        if n_med < 10000:
+            raise RuntimeError(f'Medidas con muy pocas filas ({n_med}); no se carga.')
+
+    if tipos['casilla44']:
+        estado(mensaje='Procesando casilla 44')
+        c44_csv, n_c44 = procesar_casilla44(tipos['casilla44'])
+
     if correlaciones:
         estado(mensaje='Aplicando tablas de correlación (códigos retirados)')
         muertos = retirados_de_correlaciones(correlaciones)
 
-    if n_nom < 10000 or n_med < 10000:
-        raise RuntimeError(f'Cifras sospechosamente bajas ({n_nom} / {n_med}). No se carga.')
-
     estado(mensaje='Cargando en la base de datos')
-    cargar(os.path.abspath(nom_csv), os.path.abspath(med_csv),
-           os.path.abspath(c44_csv) if c44_csv else None, muertos)
+    cargar(os.path.abspath(nom_csv) if nom_csv else None,
+           os.path.abspath(med_csv) if med_csv else None,
+           os.path.abspath(c44_csv) if c44_csv else None,
+           muertos)
 
-    extra = f' · {len(muertos)} códigos retirados cerrados' if muertos else ''
+    partes = []
+    if nom_csv: partes.append(f'nomenclatura {n_nom:,}')
+    if med_csv: partes.append(f'medidas {n_med:,}')
+    if c44_csv: partes.append(f'casilla44 {n_c44:,}')
+    if muertos: partes.append(f'{len(muertos)} retirados cerrados')
+    resumen = ' · '.join(partes) if partes else 'sin cambios'
     estado(estado='ok', filas_nom=n_nom, filas_med=n_med, filas_c44=n_c44,
-           mensaje=f'Catálogo {EXTR} cargado correctamente{extra}',
+           mensaje=f'Actualización {EXTR}: {resumen}',
            terminado_en=datetime.now(timezone.utc).isoformat())
-    log(f'LISTO{extra}')
+    log(f'LISTO · {resumen}')
 
 
 if __name__ == '__main__':
