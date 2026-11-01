@@ -2569,10 +2569,14 @@ async function pintarPanelCatalogo(){
           Descarga la extracción del mes en
           <a href="https://circabc.europa.eu/ui/group/0e5f18c2-4b2f-42e9-aed4-dfe50ae1263b"
              target="_blank" rel="noopener" style="color:var(--b600);font-weight:600">CIRCABC · DG TAXUD</a>
-          (acceso público, sin registro) y sube aquí:
-          <br>· <strong>Nomenclature_EN.xlsx</strong> — códigos y descripciones <em>(obligatorio)</em>
-          <br>· <strong>TARIC_measures.xlsx</strong> — medidas paraduaneras, ~68 MB <em>(obligatorio)</em>
-          <br>· <strong>Box_44_codes_of_the_SAD.xlsx</strong> — códigos de casilla 44 <em>(opcional)</em>
+          (acceso público, sin registro) y suelta aquí los ficheros que quieras actualizar.
+          <strong>El sistema identifica cada uno por su contenido</strong> (da igual el nombre) y
+          actualiza solo lo que aportes; lo que no reconozca lo descarta.
+          <br>· <strong>Nomenclatura</strong> — códigos y descripciones (Nomenclature_EN.xlsx)
+          <br>· <strong>Medidas</strong> — paraduaneras, ~68 MB (TARIC_measures.xlsx)
+          <br>· <strong>Casilla 44</strong> — códigos de documento (Box_44_codes_of_the_SAD.xlsx)
+          <br>· <strong>Tablas de correlación</strong> — cierran los códigos NC retirados (correlation table)
+          <br><span style="color:var(--g400)">Puedes subir todo junto para un refresco completo, o solo una parte (p. ej. solo las correlaciones).</span>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="month" id="taric-extraccion" class="fi" style="width:150px">
@@ -2612,26 +2616,32 @@ function quitarFicheroTaric(nombre){
   pintarListaTaric();
 }
 
+// Pista local del tipo por el nombre (orientativa). La identificación REAL la hace
+// el servidor por el contenido; aquí solo es una ayuda visual, no un requisito.
+function _pistaTipoTaric(nombre){
+  const n = nombre.toLowerCase();
+  if(/nomenclature|nomenclatura/.test(n)) return 'nomenclatura';
+  if(/measures|medidas/.test(n))          return 'medidas';
+  if(/box_?44|casilla/.test(n))           return 'casilla 44';
+  if(/correlation|correlaci/.test(n))     return 'correlación';
+  return '';
+}
+
 function pintarListaTaric(){
   const el = document.getElementById('taric-lista');
   if(!el) return;
-  const tieneNom = TARIC_FICHEROS.some(f => /^Nomenclature_/i.test(f.name));
-  const tieneMed = TARIC_FICHEROS.some(f => /^TARIC_measures/i.test(f.name));
-  const falta = [];
-  if(!tieneNom) falta.push('Nomenclature_EN.xlsx');
-  if(!tieneMed) falta.push('TARIC_measures.xlsx');
-
-  el.innerHTML = `
-    ${TARIC_FICHEROS.length ? TARIC_FICHEROS.map(f=>`
+  el.innerHTML = TARIC_FICHEROS.length ? TARIC_FICHEROS.map(f=>{
+    const pista = _pistaTipoTaric(f.name);
+    return `
       <div style="display:flex;align-items:center;gap:6px;padding:2px 0">
-        <span>${/^(Nomenclature_|TARIC_measures|Box_44)/i.test(f.name)?'✅':'◦'}</span>
-        <span style="flex:1;color:var(--g700)">${f.name}</span>
+        <span>📄</span>
+        <span style="flex:1;color:var(--g700)">${f.name}${pista?` <span style="color:var(--g400)">· ${pista}</span>`:''}</span>
         <span style="color:var(--g400)">${(f.size/1e6).toFixed(1)} MB</span>
         <button onclick="quitarFicheroTaric('${f.name.replace(/'/g,"\\'")}')"
           style="border:0;background:none;cursor:pointer;color:var(--rd600)" title="Quitar">✕</button>
-      </div>`).join('') : '<span style="color:var(--g400)">Ningún fichero seleccionado.</span>'}
-    ${falta.length ? `<div style="margin-top:5px;color:var(--am600)">⚠️ Falta${falta.length>1?'n':''}: <strong>${falta.join('</strong> y <strong>')}</strong>. Puedes añadirlos en otra tanda.</div>` : ''}
-  `;
+      </div>`;
+  }).join('') + `<div style="margin-top:5px;color:var(--g400)">El servidor identificará cada fichero por su contenido y actualizará solo lo que corresponda.</div>`
+  : '<span style="color:var(--g400)">Ningún fichero seleccionado.</span>';
 }
 
 async function subirActualizacionTaric(){
@@ -2642,13 +2652,6 @@ async function subirActualizacionTaric(){
   if(!files.length){ est.innerHTML = '<span style="color:var(--rd600)">Selecciona los ficheros.</span>'; return; }
 
   const nombres = files.map(f=>f.name);
-  const faltan = [];
-  if(!nombres.some(n=>/^Nomenclature_/i.test(n)))  faltan.push('Nomenclature_EN.xlsx');
-  if(!nombres.some(n=>/^TARIC_measures/i.test(n))) faltan.push('TARIC_measures.xlsx');
-  if(faltan.length){
-    est.innerHTML = `<span style="color:var(--rd600)">Falta${faltan.length>1?'n':''} ${faltan.join(' y ')}. Vuelve a pulsar en el selector y añádelo${faltan.length>1?'s':''}: se acumulan con los ya elegidos.</span>`;
-    return;
-  }
 
   try{
     // 1) Subir al bucket, uno a uno para poder informar del progreso
