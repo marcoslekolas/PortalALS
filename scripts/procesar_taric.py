@@ -79,6 +79,39 @@ def listar_bucket(prefijo=''):
         return f'(error al listar: {e})'
 
 
+def _items_bucket(prefijo=''):
+    """Devuelve la lista de nombres de ficheros del bucket bajo un prefijo."""
+    try:
+        r = requests.post(f'{SB}/storage/v1/object/list/taric-updates',
+                          headers={**H, 'Content-Type': 'application/json'},
+                          json={'prefix': prefijo, 'limit': 1000,
+                                'sortBy': {'column': 'name', 'order': 'asc'}},
+                          timeout=60)
+        if r.status_code >= 300:
+            return []
+        return [i.get('name', '') for i in r.json() if i.get('name')]
+    except Exception:
+        return []
+
+
+def descargar_correlaciones():
+    """Descarga los ficheros de tabla de correlación que haya en la carpeta de la
+    extracción (cualquier .xlsx cuyo nombre contenga 'correlation'). Son opcionales:
+    si no hay ninguno, el import sigue igual que siempre."""
+    nombres = [n for n in _items_bucket(EXTR + '/')
+               if 'correlation' in n.lower() and n.lower().endswith('.xlsx')]
+    rutas = []
+    for n in nombres:
+        ruta = descargar(n)
+        if ruta:
+            rutas.append(ruta)
+    if rutas:
+        log(f'correlaciones encontradas: {", ".join(nombres)}')
+    else:
+        log('sin tablas de correlación en el bucket (paso opcional, se omite)')
+    return rutas
+
+
 def descargar(nombre):
     """Baja un fichero del bucket privado. Devuelve None si no está."""
     url = f'{SB}/storage/v1/object/taric-updates/{EXTR}/{nombre}'
@@ -233,11 +266,74 @@ def procesar_casilla44(ruta):
     return ruta_csv, len(filas)
 
 
-def cargar(nom_csv, med_csv, c44_csv):
+def retirados_de_correlaciones(rutas):
+    """Lee las tablas de correlación CN y devuelve {codigo10: fecha_fin_iso|None}
+    de los códigos RETIRADOS que deben cerrarse (declarable=0).
+
+    Regla de seguridad: solo se cierran los retirados que NO reaparecen como
+    'New codes' en ninguna tabla. Los 'circulares' (nuevo en una tabla y retirado
+    en otra, según el periodo) se DEJAN activos para no matar un código que vuelve
+    a ser válido; se registran en el log para revisión manual."""
+    nuevos = set()
+    retirados = {}   # codigo -> fecha_fin_iso|None
+    for ruta in rutas:
+        try:
+            wb = openpyxl.load_workbook(ruta, data_only=True, read_only=True)
+        except Exception as e:
+            log(f'  aviso: no se pudo abrir {os.path.basename(ruta)}: {e}')
+            continue
+        for name in wb.sheetnames:
+            low = name.lower()
+            it = wb[name].iter_rows(values_only=True)
+            next(it, None)   # cabecera
+            if low.startswith('new'):
+                for r in it:
+                    c = str(r[0] or '').split()[0] if r and r[0] else ''
+                    if c.isdigit() and len(c) == 10:
+                        nuevos.add(c)
+            elif low.startswith('old'):
+                for r in it:
+                    if not r or not r[0]:
+                        continue
+                    c = str(r[0]).split()[0]
+                    if not (c.isdigit() and len(c) == 10):
+                        continue
+                    fin = r[2] if len(r) > 2 else None
+                    fin = fin.date().isoformat() if hasattr(fin, 'date') else None
+                    # si el mismo código aparece varias veces, nos quedamos con una fecha
+                    if c not in retirados or (fin and not retirados[c]):
+                        retirados[c] = fin
+        wb.close()
+
+    muertos = {c: f for c, f in retirados.items() if c not in nuevos}
+    circulares = sorted(c for c in retirados if c in nuevos)
+    # Nota: 'muertos' son candidatos; el UPDATE solo afecta a los que existan como
+    # declarables en la nomenclatura recién cargada (el resto son no-ops).
+    log(f'correlaciones: {len(retirados)} retirados · {len(muertos)} candidatos a cerrar · '
+        f'{len(circulares)} circulares (se dejan activos)')
+    if circulares:
+        log(f'  circulares (revisar a mano): {", ".join(circulares)}')
+    return muertos
+
+
+def cargar(nom_csv, med_csv, c44_csv, muertos=None):
     """Todo en una transacción: o entra completo o no entra nada."""
     sql = ['\\set ON_ERROR_STOP on', 'BEGIN;']
     sql.append('DELETE FROM public.taric_nomenclatura;')
     sql.append(f"\\copy public.taric_nomenclatura (codigo,sufijo,nc8,partida4,capitulo,declarable,nivel,indent,descripcion,inicio,fin) FROM '{nom_csv}' WITH (FORMAT csv)")
+    # Cierre de códigos NC retirados según las tablas de correlación: el loader
+    # solo filtra por 'declarable', así que se pone declarable=0 (y fin, para el
+    # registro). Dentro de la misma transacción que la carga de la nomenclatura.
+    if muertos:
+        porfin = collections.defaultdict(list)
+        for cod, fin in muertos.items():
+            porfin[fin].append(cod.replace("'", ""))   # saneado defensivo
+        for fin, cods in porfin.items():
+            lista = "','".join(cods)
+            valfin = f"'{fin}'" if fin else "fin"
+            sql.append(f"UPDATE public.taric_nomenclatura SET declarable=0, "
+                       f"fin=COALESCE(NULLIF(fin,''),{valfin}) "
+                       f"WHERE sufijo='80' AND codigo IN ('{lista}');")
     sql.append('DELETE FROM public.taric_medidas;')
     sql.append(f"\\copy public.taric_medidas (codigo,nc8,categoria,etiqueta,tipo_medida,desc_medida,origen,origen_code,base_legal,derecho,inicio,fin,certificados,erga_omnes,exigencia) FROM '{med_csv}' WITH (FORMAT csv)")
     if c44_csv:
@@ -272,6 +368,7 @@ def main():
     nom = descargar('Nomenclature_EN.xlsx') or descargar('Nomenclature_ES.xlsx')
     med = descargar('TARIC_measures.xlsx')
     c44 = descargar('Box_44_codes_of_the_SAD.xlsx')
+    correlaciones = descargar_correlaciones()
     if not nom or not med:
         log(f'contenido de taric-updates/{EXTR}/ : {listar_bucket(EXTR + "/")}')
         log(f'carpetas en la raíz del bucket   : {listar_bucket("")}')
@@ -289,17 +386,23 @@ def main():
     if c44:
         c44_csv, n_c44 = procesar_casilla44(c44)
 
+    muertos = {}
+    if correlaciones:
+        estado(mensaje='Aplicando tablas de correlación (códigos retirados)')
+        muertos = retirados_de_correlaciones(correlaciones)
+
     if n_nom < 10000 or n_med < 10000:
         raise RuntimeError(f'Cifras sospechosamente bajas ({n_nom} / {n_med}). No se carga.')
 
     estado(mensaje='Cargando en la base de datos')
     cargar(os.path.abspath(nom_csv), os.path.abspath(med_csv),
-           os.path.abspath(c44_csv) if c44_csv else None)
+           os.path.abspath(c44_csv) if c44_csv else None, muertos)
 
+    extra = f' · {len(muertos)} códigos retirados cerrados' if muertos else ''
     estado(estado='ok', filas_nom=n_nom, filas_med=n_med, filas_c44=n_c44,
-           mensaje=f'Catálogo {EXTR} cargado correctamente',
+           mensaje=f'Catálogo {EXTR} cargado correctamente{extra}',
            terminado_en=datetime.now(timezone.utc).isoformat())
-    log('LISTO')
+    log(f'LISTO{extra}')
 
 
 if __name__ == '__main__':
