@@ -464,6 +464,10 @@ textarea.fi{resize:vertical;min-height:80px}
           <span class="ni">📄</span>
           <span class="nav-item-txt">Leer factura</span>
         </div>
+        <div class="nav-item" data-view="soivre" onclick="nav('soivre',this)">
+          <span class="ni">🍊</span>
+          <span class="nav-item-txt">SOIVRE · PUE</span>
+        </div>
 
         <div class="sb-sec">Consultas</div>
         <div class="nav-item" onclick="nav('historial',this)">
@@ -633,6 +637,32 @@ textarea.fi{resize:vertical;min-height:80px}
                 </table>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA: SOIVRE (PUE-CAL) -->
+      <div class="view" id="view-soivre">
+        <div class="ph">
+          <div>
+            <div class="pt">🍊 SOIVRE · Ventanilla Única (PUE)</div>
+            <div class="ps">Solicitudes de control CAL, ROHS/RAEE y COM con su factura, a través del servidor AEAT Monitor (certificado de la empresa). Se inician desde la clasificación TARIC (medidas SOVEX, SOVIM, ROHS, RAEE, COM).</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-s btn-sm" onclick="abrirDatosAdicionales('CAL3','')">+ Datos adicionales</button>
+            <button class="btn btn-s btn-sm" onclick="abrirEnvioDocumento('CAL','','FACTU')">📎 Enviar documento</button>
+          </div>
+        </div>
+        <div class="view-body">
+          <div class="card" style="padding:12px 14px;margin-bottom:12px" id="soivre-estado"></div>
+          <details class="card" style="padding:12px 14px;margin-bottom:12px">
+            <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--g700)">⚙️ Valores por defecto</summary>
+            <div style="height:10px"></div>
+            <div id="soivre-config"></div>
+          </details>
+          <div class="card" style="padding:12px 14px">
+            <div style="font-size:13px;font-weight:700;color:var(--g700);margin-bottom:8px">Envíos de esta sesión</div>
+            <div id="soivre-lista"></div>
           </div>
         </div>
       </div>
@@ -1222,6 +1252,7 @@ function nav(view, el){
   if(el) el.classList.add('active');
   if(view === 'historial'){ loadHistorial(); pintarPanelCatalogo(); }
   if(view === 'cav') loadCAVs();
+  if(view === 'soivre' && typeof loadSoivre === 'function') loadSoivre();
   if(window.innerWidth <= 768){
     document.getElementById('sidebar').classList.remove('open');
     document.getElementById('mob-ov').classList.remove('show');
@@ -1739,6 +1770,7 @@ function mostrarResultado(r, container){
     <div class="result-card">
       ${memoriaHtml}
       ${catalogoHtml}
+      ${typeof soivreBloqueResultado === 'function' ? soivreBloqueResultado(r) : ''}
       <!-- Header: code + desc + confidence -->
       <div class="result-header">
         <div class="code-chip">${r.codigo_taric.match(/.{2}/g).join(' ')}</div>
@@ -3040,6 +3072,7 @@ async function renderLineasFactura(data, filename){
             </div>
             ${l._c44.map(d=>`<span class="badge" style="font-size:9px;margin:1px;background:${d.negativa?'var(--g100)':'var(--am50)'};color:${d.negativa?'var(--g600)':'var(--am600)'}" title="${d.descripcion||''}${d.obligatorio?'':' (no obligatorio)'}">${d.codigo_doc}${d.obligatorio?'':'*'}</span>`).join('')}
           </div>` : ''}
+        ${typeof soivreBotonLinea === 'function' ? soivreBotonLinea(l) : ''}
       </td>
       <td>
         <div style="font-size:13px;font-weight:700;color:${confianzaColor}">${l.confianza||0}%</div>
@@ -5404,5 +5437,6 @@ function _buildAES(d, cfg){
 }
 
 </script>
+<script src="soivre-cal.js"></script>
 </body>
 </html>
