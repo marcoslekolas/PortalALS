@@ -1001,8 +1001,26 @@ async function vuaVerExpediente(id){
   let d = x.solicitud, xml = '';
   const cola = await sbT().from('soivre_cola').select('datos,xml_enviado').eq('servicio', 'VUA').eq('numero_solicitud', x.numero_solicitud).limit(1);
   if(!cola.error && cola.data && cola.data[0]){ d = d || cola.data[0].datos; xml = cola.data[0].xml_enviado || ''; }
-  if(!d) return soivreMostrarErrores([`La solicitud ${x.numero_solicitud} se envió antes de guardarse su contenido y ya no está en la cola. Consúltala en ESTACICE.`]);
-  vuaVerContenido(d, x.numero_solicitud, x, xml);
+  vuaVerContenido(d || vuaReconstruir(x), x.numero_solicitud, x, xml);
+}
+// Solicitudes enviadas antes de guardar su contenido (y ya fuera de la cola):
+// se rehace lo posible con la factura del expediente. No es lo enviado exactamente
+// (faltan matrícula, aduana, producto SOIVRE…): se avisa en pantalla.
+function vuaReconstruir(x){
+  const cab = (x.factura && x.factura.cab) || {};
+  const fl = (x.factura && x.factura.lineas) || [];
+  const des = cab.destinatario || {};
+  return {
+    _reconstruida: true, tipo: x.tipo, codCicePI: x.cice_pi,
+    agente: { nombre: x.exportador, nif: x.nif_exportador },
+    destinatario: des.nombre || '', destino: cab.pais_destino || des.pais || '',
+    lineas: (x.lineas_sol || []).map(ls => {
+      const l = fl.find(f => f._claveVT && f._claveVT === ls.clave) || {};
+      return { taric: l.codigo_taric || '', envases: l.bultos || '', nombreEnvase: l.unidad || '', descripcion: ls.descripcion || l.descripcion_original || '',
+               pesoNeto: l.peso_neto || l.peso_bruto || '', pesoBruto: l.peso_bruto || '', unidades: l.cantidad || '',
+               factura: cab.numero_factura || x.numero_factura || '', importe: l.importe || '', moneda: cab.moneda || '' };
+    })
+  };
 }
 function vuaVerContenido(d, numero, x, xml, sinCatalogo){
   // Con el catálogo se muestran los nombres de productos, centros y aduanas; sin él, solo los códigos
@@ -1017,13 +1035,13 @@ function vuaVerContenido(d, numero, x, xml, sinCatalogo){
   const cab = `<table style="font-size:12px;border-collapse:collapse;width:100%">
     ${fila('Nº solicitud', `<b style="font-family:var(--mono)">${sEsc(numero || '')}</b>${x ? ` · ${sEsc(x.estado)}${x.estado_soivre ? ' (' + sEsc(x.estado_soivre) + ')' : ''} · ${sEsc(x.entorno)}` : ''}`)}
     ${fila('Enviada', d.enviadaEn ? new Date(d.enviadaEn).toLocaleString('es-ES') : (x ? new Date(x.created_at).toLocaleString('es-ES') : ''))}
-    ${fila('Tipo', (esO ? 'Otros productos' : 'Frutas y hortalizas') + ' · ' + (d.exporImpor === 'R' ? 'Reexportación' : 'Exportación'))}
-    ${fila('Centro / PI', sEsc(d.codCicePI + ' ' + nom(cat.cices, d.codCicePI)))}
-    ${fila('Aduana de salida', sEsc(d.aduana + ' ' + nom(cat.aduanas, d.aduana)))}
-    ${fila('Origen → destino', sEsc(`${d.origen || 'ES'} ${nom(cat.paises, d.origen || 'ES')} → ${d.destino} ${nom(cat.paises, d.destino)}`))}
+    ${fila('Tipo', (esO ? 'Otros productos' : 'Frutas y hortalizas') + (d.exporImpor ? ' · ' + (d.exporImpor === 'R' ? 'Reexportación' : 'Exportación') : ''))}
+    ${fila('Centro / PI', d.codCicePI ? sEsc(d.codCicePI + ' ' + nom(cat.cices, d.codCicePI)) : '')}
+    ${fila('Aduana de salida', d.aduana ? sEsc(d.aduana + ' ' + nom(cat.aduanas, d.aduana)) : '')}
+    ${fila('Origen → destino', d.destino ? sEsc(`${d.origen || 'ES'} ${nom(cat.paises, d.origen || 'ES')} → ${d.destino} ${nom(cat.paises, d.destino)}`) : '')}
     ${fila('Transporte', sEsc([VUA_TRANSPORTES[d.transporte] || d.transporte, d.matricula, d.otrasMatriculas].filter(Boolean).join(' · ')))}
     ${fila('Ubicación', sEsc(d.ubicacion || ''))}
-    ${fila('Agente económico', `<b>${sEsc(ae.nombre || '')}</b> · ${sEsc(ae.nif || '')}<br><span style="color:var(--g500)">${dir(ae)}</span>`)}
+    ${fila('Agente económico', `<b>${sEsc(ae.nombre || '')}</b> · ${sEsc(ae.nif || '')}${dir(ae) ? `<br><span style="color:var(--g500)">${dir(ae)}</span>` : ''}`)}
     ${!esO && d.envasador && d.envasador.nif && d.envasador.nif !== ae.nif ? fila('Envasador', `${sEsc(d.envasador.nombre || '')} · ${sEsc(d.envasador.nif)}<br><span style="color:var(--g500)">${dir(d.envasador)}</span>`) : ''}
     ${esO ? fila('Destinatario', sEsc(d.destinatario || '')) : ''}
     ${esO ? fila('Fabricante / envasador', sEsc(d.fabricanteEnvasador || '')) : ''}
@@ -1033,12 +1051,14 @@ function vuaVerContenido(d, numero, x, xml, sinCatalogo){
   const th = esO ? ['Lín', 'Producto SOIVRE', 'TARIC', 'Envases', 'Envase', '> 5 kg', 'Marca', 'Neto kg', 'Unid.', 'Factura', 'Valor']
                  : ['Lín', 'Producto SOIVRE', 'TARIC', 'Envases', 'Envase', 'Cat.', 'Marca', 'Bruto kg', 'Neto kg', 'Factura', 'Valor'];
   const td = v => `<td style="padding:3px 6px">${v}</td>`;
-  const lineas = (d.lineas || []).map((l, i) => `<tr style="border-top:1px solid var(--g200)">${td(i + 1)}${td(`${sEsc(l.producto || '')} <span style="color:var(--g500)">${sEsc(nom(cat.productos, l.producto))}</span>`)}${td(`<span style="font-family:var(--mono)">${sEsc(l.taric || '')}</span>`)}${td(sEsc(l.envases || ''))}`
+  const lineas = (d.lineas || []).map((l, i) => `<tr style="border-top:1px solid var(--g200)">${td(i + 1)}${td(l.producto ? `${sEsc(l.producto)} <span style="color:var(--g500)">${sEsc(nom(cat.productos, l.producto))}</span>` : `<span style="color:var(--g500)">${sEsc(l.descripcion || '—')}</span>`)}${td(`<span style="font-family:var(--mono)">${sEsc(l.taric || '')}</span>`)}${td(sEsc(l.envases || ''))}`
     + (esO ? td(sEsc(l.nombreEnvase || '')) + td(l.envaseMas5kg === 'S' ? 'Sí' : 'No') + td(sEsc(l.marca || '')) + td(sEsc(l.pesoNeto || '')) + td(sEsc(l.unidades || ''))
            : td(sEsc(nom(cat.envases, l.codEnvase) || l.codEnvase || '')) + td(sEsc(VUA_CATEGORIAS[l.categoria] || l.categoria || '')) + td(sEsc(l.marca || '')) + td(sEsc(l.pesoBruto || '')) + td(sEsc(l.pesoNeto || '')))
     + td(sEsc(l.factura || '')) + td(l.importe ? sEsc(l.importe + ' ' + (l.moneda || '')) : '') + '</tr>').join('');
   window._vuaXmlVer = xml || '';
-  soivreModal(`📄 Solicitud ESTACICE ${sEsc(numero || '')}`, `${cab}
+  const aviso = d._reconstruida ? `<div style="background:var(--am50);color:var(--am600);border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:10px">
+    Esta solicitud se envió antes de que el portal guardara su contenido. Se muestra lo que se puede rehacer con la factura (sin matrícula, aduana ni producto SOIVRE). El contenido exacto está en ESTACICE.</div>` : '';
+  soivreModal(`📄 Solicitud ESTACICE ${sEsc(numero || '')}`, `${aviso}${cab}
     <div style="font-weight:600;font-size:13px;margin:14px 0 6px">Productos (${(d.lineas || []).length})</div>
     <div style="overflow-x:auto"><table style="font-size:11.5px;border-collapse:collapse;width:100%"><thead><tr>${th.map(h => `<th style="text-align:left;padding:3px 6px;color:var(--g500);font-weight:600">${h}</th>`).join('')}</tr></thead><tbody>${lineas}</tbody></table></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
