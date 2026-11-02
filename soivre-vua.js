@@ -18,6 +18,7 @@
 //   · la factura viaja dentro del XML como .zip de 2 MB como máximo.
 
 const VUA_MAX_LINEAS = 12;
+const VUA_MARCA_DEF = 'Rotuladas';   // casilla «Marca» por defecto en cada línea
 const VUA_MAX_ANEXO = 2 * 1024 * 1024;
 const VUA_TRANSPORTES = { '01':'Camión', '02':'Buque (carga bodega)', '03':'Avión', '04':'Ferrocarril',
                           '05':'Contenedor en buque', '06':'Camión en buque', '07':'Correo postal/mensajería' };
@@ -25,8 +26,7 @@ const VUA_CATEGORIAS = { '1':'Extra', '2':'I', '3':'II', '4':'No aplica' };
 const VUA_MONEDAS = { EUR:'EUR', USD:'DOL', DOL:'DOL', GBP:'GBP', JPY:'YEN', YEN:'YEN', CNY:'CNY' };
 const VUA_CFG_DEF = {
   cicePI: '5801', aduana: '', transporte: '01', ubicacion: '',
-  gibraltar: { cicePI: '5802', aduana: '1167' },
-  marcas: {}                       // marca habitual por NIF de exportador
+  gibraltar: { cicePI: '5802', aduana: '1167' }
 };
 // sols: solicitudes preparadas en esta pestaña · cat: tablas oficiales cargadas de Supabase
 const VUA = { sols: [], seq: 0, cat: null };
@@ -191,10 +191,10 @@ function vuaPrepararDesdeFactura(lineas){
       const envases = vuaNum(l.bultos), cantidad = vuaNum(l.cantidad);
       const desc = l.descripcion_es || l.descripcion_original || '';
       return {
-        taric: String(l.codigo_taric || '').replace(/\D/g, ''), origen: l._origenVua,
+        taric: String(l.codigo_taric || '').replace(/\D/g, ''), origen: l._origenVua, clave: l._claveVT || '',
         descripcion: l.descripcion_es || l.descripcion_original || '',
         envases: Number.isFinite(envases) ? String(Math.round(envases)) : (/caj|box|bult/i.test(l.unidad || '') ? vuaFmt(vuaNum(l.cantidad)) : ''),
-        unidad: l.unidad || '', codEnvase: vuaEnvaseDe(l.unidad), marca: cfg.marcas[agente.nif] || '',
+        unidad: l.unidad || '', codEnvase: vuaEnvaseDe(l.unidad), marca: VUA_MARCA_DEF,
         producto: vuaElegirProducto(l.codigo_taric, desc, g.tipo),
         // Otros productos: nombre del envase en texto, unidades físicas y envase > 5 kg (obligatorio en aceites)
         nombreEnvase: vuaNombreEnvase(l.unidad), envaseMas5kg: '',
@@ -207,7 +207,7 @@ function vuaPrepararDesdeFactura(lineas){
     if(g.tipo === 'F') lineasVua.forEach(vuaAjustarBruto);
     for(let i = 0; i < lineasVua.length; i += VUA_MAX_LINEAS){
       nuevas.push(vuaNuevaSolicitud({
-        tipo: g.tipo, origen: g.origen, destino, agente, archivo: g.archivo, factura: g.cab.numero_factura || '',
+        tipo: g.tipo, origen: g.origen, destino, agente, archivo: g.archivo, factura: g.cab.numero_factura || '', cabFactura: g.cab,
         fabricanteEnvasador: agente.nombre,
         destinatario: g.cab.destinatario && g.cab.destinatario.nombre || '',
         lineas: lineasVua.slice(i, i + VUA_MAX_LINEAS),
@@ -432,7 +432,7 @@ function vuaAnadirLinea(){
   const tb = document.getElementById('vua-lineas');
   if(tb.children.length >= VUA_MAX_LINEAS) return showToast(`Máximo ${VUA_MAX_LINEAS} líneas por solicitud`);
   const prev = tb.lastElementChild;
-  const base = { taric: '', descripcion: '', envases: '', codEnvase: '04', marca: prev ? prev.querySelector('.vl-marca').value : '',
+  const base = { taric: '', descripcion: '', envases: '', codEnvase: '04', marca: VUA_MARCA_DEF,
                  producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', nombreEnvase: '', envaseMas5kg: '', unidades: '',
                  factura: prev ? prev.querySelector('.vl-factura').value : '' };
   tb.insertAdjacentHTML('beforeend', vuaFilaLinea(base, tb.children.length, tb.dataset.tipo, document.getElementById('vua-origen')?.value));
@@ -567,9 +567,8 @@ async function vuaEnviar(k, soloXml){
     if(!s.lineas.length){ soivreCerrarModal(); return abrirSolicitudVua(separadas[0].k); }
   }
   const d = vuaDatos(s);
-  // Recordar centro/aduana habituales y la marca del exportador
+  // Recordar centro/aduana habituales
   const cfg = vuaCfg();
-  if(s.agente.nif && s.lineas[0] && s.lineas[0].marca) cfg.marcas[s.agente.nif] = s.lineas[0].marca;
   if(s.destino !== 'GI'){ cfg.cicePI = s.cicePI || cfg.cicePI; cfg.aduana = s.aduana || cfg.aduana; }
   cfg.transporte = s.transporte; cfg.ubicacion = s.ubicacion || cfg.ubicacion; cfg.ultimoAgente = s.agente;
   vuaGuardarCfg(cfg);
@@ -607,6 +606,7 @@ async function vuaEnviar(k, soloXml){
   s.env = { estado: r.ok ? 'aceptada' : r.pendiente ? 'en cola' : (r.estado === 'rechazada' ? 'rechazada' : 'error'),
             numero: r.numeroSolicitud || null, descripcion: r.descripcion || r.error || '', errores: r.errores || [],
             xmlEnviado: r.xmlEnviado, xmlRespuesta: r.xmlRespuesta, adjunto: r.adjuntoEstado, fecha: new Date(), entorno: e.entorno };
+  if(r.ok && r.numeroSolicitud) vuaGuardarExpediente(s, r.numeroSolicitud, e.entorno);
   vuaResultado(s);
   if(typeof soivrePanelFacturaRefrescar === 'function') soivrePanelFacturaRefrescar();
   if(document.getElementById('view-soivre')?.classList.contains('active')) vuaPintarSesion();
@@ -681,7 +681,7 @@ function vuaNuevaDesdeResultado(codigo, descripcion, tipo = 'F'){
   const ult = vuaCfg().ultimoAgente;
   const s = vuaNuevaSolicitud({
     tipo, origen, agente: ult || vuaAgenteDe({}), fabricanteEnvasador: ult ? ult.nombre : '',
-    lineas: [{ taric: String(codigo || '').replace(/\D/g, ''), descripcion: descripcion || '', envases: '', codEnvase: '04', marca: '',
+    lineas: [{ taric: String(codigo || '').replace(/\D/g, ''), descripcion: descripcion || '', envases: '', codEnvase: '04', marca: VUA_MARCA_DEF,
                producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', nombreEnvase: '', envaseMas5kg: '', unidades: '', factura: '' }]
   });
   abrirSolicitudVua(s.k);
@@ -697,6 +697,8 @@ function vuaConsultarPorNumero(){
 
 // Lista de esta pestaña en la vista SOIVRE (sin histórico: el oficial está en ESTACICE)
 function vuaPintarSesion(){
+  vuaPintarExpedientes();
+  vtPintarEntidades();
   const el = document.getElementById('vua-sesion');
   if(!el) return;
   const enviadas = VUA.sols.filter(s => s.env);
@@ -710,4 +712,228 @@ function vuaPintarSesion(){
       <td>${s.env.numero ? `<button class="btn btn-s btn-sm" onclick="vuaConsultar('${s.k}')">Estado</button>` : `<button class="btn btn-s btn-sm" onclick="abrirSolicitudVua('${s.k}')">Revisar</button>`}</td>
     </tr>`).join('')}</tbody></table>`
     : '<div style="font-size:12px;color:var(--g400)">Sin envíos a ESTACICE en esta sesión.</div>';
+}
+
+// ═══ Certificados → CSV de VisualTrans ═══
+// Al registrarse una solicitud que viene de una factura leída se guarda su
+// expediente (vua_expedientes): la factura y qué línea de factura va en cada
+// línea de la solicitud. El servidor consulta ESTACICE cada cierto tiempo y,
+// cuando SOIVRE emite los certificados, guarda el N003 de cada línea. Al
+// generar el CSV de VisualTrans se añaden a la casilla 44 de cada partida.
+function vuaFacturaParaGuardar(numeroFactura){
+  const todas = (window._facturaLineas || []).filter(l => !numeroFactura || (l._numFactura || '') === numeroFactura || !l._numFactura);
+  // Sin referencias circulares ni campos de pantalla; la cabecera va aparte
+  return todas.map(l => { const c = Object.assign({}, l); delete c._cab; delete c._n003; delete c._n003s; return c; });
+}
+async function vuaGuardarExpediente(s, numero, entorno){
+  if(!s.lineas.some(l => l.clave)) return;           // solicitud manual: no hay factura que enlazar
+  const fila = {
+    usuario: (window.PortalGuard && PortalGuard.CU && PortalGuard.CU.nombre) || null,
+    entorno: entorno || 'pruebas', numero_solicitud: String(numero), cice_pi: s.cicePI, tipo: s.tipo,
+    numero_factura: s.factura || null, exportador: s.agente.nombre, nif_exportador: s.agente.nif,
+    factura: { cab: s.cabFactura || (typeof FACTURA_CABECERA !== 'undefined' ? FACTURA_CABECERA : {}) || {}, lineas: vuaFacturaParaGuardar(s.factura) },
+    lineas_sol: s.lineas.map((l, i) => ({ linea: i + 1, clave: l.clave || null, descripcion: l.descripcion || '' }))
+  };
+  const { error } = await sbT().from('vua_expedientes').insert(fila);
+  if(error) showToast('Solicitud registrada, pero no se pudo guardar su seguimiento para VisualTrans: ' + error.message);
+}
+
+// ── Entidades de VisualTrans: nombre exacto por NIF ──────────
+// «ESB-93.462.885» → «B93462885»: sin signos y sin prefijo de país (un NIF
+// español nunca empieza por dos letras).
+function vtNormNif(n){
+  const t = String(n || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+  return /^[A-Z]{2}[0-9A-Z]{6,}$/.test(t) ? t.slice(2) : t;
+}
+// Para buscar sin NIF: sin asterisco, acentos, signos, forma jurídica ni
+// espacios («BON FOOD LTD» = «BONFOOD LTD»)
+function vtNormNombre(n){
+  return vuaNormal(n).replace(/^[\s*]+/, '').replace(/[^A-Z0-9 ]+/g, ' ')
+    .replace(/\b(S ?L ?U?|S ?A ?U?|S ?L ?L|S ?C ?P|S ?COOP|C ?B|LTD|LIMITED|SARL|SAS|GMBH|BV|SRL|SPA|INC|LLC|CO)\b/g, ' ')
+    .replace(/\s+/g, '');
+}
+// Entidades.txt exportado de VisualTrans: ; y comillas, Windows-1252
+function vtParsearEntidades(texto){
+  const filas = [];
+  let campo = '', fila = [], dentro = false;
+  for(let i = 0; i < texto.length; i++){
+    const ch = texto[i];
+    if(dentro){
+      if(ch === '"'){ if(texto[i + 1] === '"'){ campo += '"'; i++; } else dentro = false; }
+      else campo += ch;
+    } else if(ch === '"') dentro = true;
+    else if(ch === ';'){ fila.push(campo); campo = ''; }
+    else if(ch === '\n' || ch === '\r'){
+      if(ch === '\r' && texto[i + 1] === '\n') i++;
+      fila.push(campo); filas.push(fila); fila = []; campo = '';
+    } else campo += ch;
+  }
+  if(campo || fila.length){ fila.push(campo); filas.push(fila); }
+  const cab = (filas.shift() || []).map(h => vuaNormal(h).trim());
+  const col = re => cab.findIndex(h => re.test(h));
+  const ix = { nombre: col(/^NOMBRE FISCAL/), dir: col(/^DIRECCION/), pais: col(/CODIGO ISO/), prov: col(/^PROVINCIA/),
+               loc: col(/^LOCALIDAD -> NOMBRE/), cp: col(/CODIGO POSTAL/), nif: col(/NIF/), cod: col(/^CODIGO$/) };
+  if(ix.nombre < 0 || ix.nif < 0 || ix.cod < 0) throw new Error('No parece el fichero Entidades.txt de VisualTrans (faltan columnas Nombre fiscal, NIF o Código)');
+  return filas.filter(f => f.length > ix.cod && (f[ix.cod] || '').trim() && (f[ix.nombre] || '').length)
+    .map(f => ({
+      codigo: f[ix.cod].trim(), nombre: f[ix.nombre],                 // el nombre NO se recorta: VisualTrans lo compara tal cual
+      nif: (f[ix.nif] || '').trim() || null, nif_norm: vtNormNif(f[ix.nif]) || null, nombre_norm: vtNormNombre(f[ix.nombre]) || null,
+      direccion: (f[ix.dir] || '').trim() || null, cp: (f[ix.cp] || '').trim() || null, localidad: (f[ix.loc] || '').trim() || null,
+      provincia: (f[ix.prov] || '').trim() || null, pais_iso: (f[ix.pais] || '').trim() || null, importado_en: new Date().toISOString()
+    }));
+}
+async function vtImportarEntidades(input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  const el = document.getElementById('vt-entidades-estado');
+  const pinta = t => { if(el) el.innerHTML = t; };
+  try{
+    const texto = new TextDecoder('windows-1252').decode(await f.arrayBuffer());
+    const filas = vtParsearEntidades(texto);
+    for(let i = 0; i < filas.length; i += 500){
+      pinta(`Importando ${Math.min(i + 500, filas.length)} / ${filas.length}…`);
+      // upsert por código: no toca «preferida» de las ya existentes
+      const { error } = await sbT().from('vt_entidades').upsert(filas.slice(i, i + 500), { onConflict: 'codigo' });
+      if(error) throw error;
+    }
+    VT.cache.clear();
+    showToast(`${filas.length} entidades de VisualTrans importadas`);
+  }catch(e){ showToast('No se pudo importar: ' + e.message); }
+  input.value = '';
+  vtPintarEntidades();
+}
+async function vtPintarEntidades(){
+  const el = document.getElementById('vt-entidades');
+  if(!el) return;
+  const { count, error } = await sbT().from('vt_entidades').select('codigo', { count: 'exact', head: true });
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px;font-size:12px;color:var(--g600)">
+        ${error ? sEsc('Tabla vt_entidades no disponible (¿instalar_soivre.sql?)') : `<strong>${count || 0}</strong> entidades de VisualTrans cargadas.`}
+        El CSV escribe exportador y destinatario con el nombre exacto de VisualTrans, buscándolos por NIF.
+        <div id="vt-entidades-estado" style="font-size:11px;color:var(--g500);margin-top:2px"></div>
+      </div>
+      <label class="btn btn-s btn-sm" style="cursor:pointer">📥 Importar Entidades.txt<input type="file" accept=".txt,.csv" style="display:none" onchange="vtImportarEntidades(this)"></label>
+    </div>`;
+}
+
+const VT = { cache: new Map(), expedientes: [] };
+async function vtBuscarEntidades(nif, nombre){
+  const k = vtNormNif(nif) || ('N:' + vtNormNombre(nombre));
+  if(VT.cache.has(k)) return VT.cache.get(k);
+  let res = [];
+  if(vtNormNif(nif)){
+    const r = await sbT().from('vt_entidades').select('codigo,nombre,nif,preferida').eq('nif_norm', vtNormNif(nif));
+    if(r.error) throw r.error;
+    res = r.data || [];
+  }
+  if(!res.length && vtNormNombre(nombre)){
+    const r = await sbT().from('vt_entidades').select('codigo,nombre,nif,preferida').eq('nombre_norm', vtNormNombre(nombre));
+    if(!r.error) res = r.data || [];
+  }
+  VT.cache.set(k, res);
+  return res;
+}
+// Varias entidades con el mismo NIF (p. ej. «* AMSPEC IBERIA, S.L.» y «AMSPEC
+// IBERIA S.L.»): la marcada como preferida o, si no hay, se pregunta una vez.
+function vtElegir(rol, parte, candidatas){
+  return new Promise(resolve => {
+    window._vtElegido = c => { soivreCerrarModal(); resolve(c); };
+    const norm = vtNormNombre(parte.nombre);
+    soivreModal(`VisualTrans · ¿qué ${rol}?`, `
+      <div style="font-size:12px;color:var(--g600);margin-bottom:10px">En VisualTrans hay ${candidatas.length} entidades con el NIF <strong>${sEsc(parte.nif)}</strong>. La factura dice <strong>${sEsc(parte.nombre)}</strong>. Elige la que debe ir en el CSV (se recordará).</div>
+      ${candidatas.map((c, i) => `<button class="btn btn-s" style="display:block;width:100%;text-align:left;margin-bottom:6px;white-space:pre" onclick="window._vtElegido(${i})">${sEsc(c.nombre)}  <span style="color:var(--g400);font-size:11px">· cód. ${sEsc(c.codigo)}${vtNormNombre(c.nombre) === norm ? ' · coincide con la factura' : ''}</span></button>`).join('')}
+      <button class="btn btn-s btn-sm" onclick="window._vtElegido(-1)">Usar el nombre de la factura</button>`, 560);
+  }).then(async i => {
+    if(i < 0) return null;
+    const c = candidatas[i];
+    await sbT().from('vt_entidades').update({ preferida: false }).eq('nif_norm', vtNormNif(parte.nif));
+    await sbT().from('vt_entidades').update({ preferida: true }).eq('codigo', c.codigo);
+    candidatas.forEach(x => { x.preferida = x.codigo === c.codigo; });
+    return c;
+  });
+}
+async function vtResolverParte(rol, parte, avisos){
+  if(!parte || (!parte.nif && !parte.nombre)) return;
+  let cand = [];
+  try{ cand = await vtBuscarEntidades(parte.nif, parte.nombre); }
+  catch(_){ return; }                                  // sin tabla: el CSV sale como antes
+  const elegida = cand.length === 1 ? cand[0] : (cand.find(c => c.preferida) || (cand.length > 1 ? await vtElegir(rol, parte, cand) : null));
+  if(elegida){ parte.nombre_vt = elegida.nombre; if(elegida.nif) parte.nif_vt = elegida.nif; }
+  else{ delete parte.nombre_vt; delete parte.nif_vt; if(!cand.length) avisos.push(`${rol} «${parte.nombre || parte.nif}» no está en las entidades de VisualTrans: va con el nombre de la factura`); }
+}
+
+// Llamada por exportarVisualTrans (taric.html) antes de construir el CSV
+async function vtPrepararExportacion(detalle, cab, esImport){
+  const avisos = [];
+  const cabs = [...new Set([cab, ...detalle.map(l => l._cab).filter(Boolean)])];
+  for(const c of cabs){
+    await vtResolverParte('Exportador', c.exportador, avisos);
+    await vtResolverParte(esImport ? 'Importador' : 'Destinatario', c.destinatario, avisos);
+  }
+  VT.expedientes = [];
+  if(!esImport){
+    const facturas = [...new Set(detalle.map(l => (l._claveVT || '').split('|')[0]).filter(Boolean))];
+    let exps = [];
+    if(facturas.length){
+      const r = await sbT().from('vua_expedientes').select('id,numero_factura,numero_solicitud,estado,n003,lineas_sol').in('numero_factura', facturas);
+      if(!r.error) exps = r.data || [];
+    }
+    const n003 = {}, esperando = new Set();
+    exps.forEach(x => {
+      Object.assign(n003, x.n003 || {});
+      if(x.estado !== 'certificado') (x.lineas_sol || []).forEach(ls => ls.clave && esperando.add(ls.clave));
+    });
+    let sin = 0;
+    detalle.forEach(l => {
+      l._n003 = n003[l._claveVT] || null;
+      if(!l._n003 && esperando.has(l._claveVT)) sin++;
+    });
+    VT.expedientes = exps.filter(x => x.estado === 'certificado').map(x => x.id);
+    if(sin && !confirm(`${sin} línea(s) con solicitud SOIVRE aún no tienen certificado (la casilla 44 N003 saldría vacía).\n\n¿Generar el CSV igualmente?`)) return false;
+    const con = detalle.filter(l => l._n003).length;
+    if(con) avisos.push(`${con} línea(s) con N003 del certificado SOIVRE`);
+  }
+  if(avisos.length) showToast(avisos.join(' · '));
+  return true;
+}
+// Tras descargar el CSV: los expedientes usados quedan como exportados (se borran a los 30 días)
+async function vtTrasExportar(){
+  if(!VT.expedientes.length) return;
+  await sbT().from('vua_expedientes').update({ exportado_en: new Date().toISOString() }).in('id', VT.expedientes);
+  VT.expedientes = [];
+  if(document.getElementById('view-soivre')?.classList.contains('active')) vuaPintarExpedientes();
+}
+
+// ── Vista SOIVRE: expedientes a la espera de certificado ─────
+async function vuaPintarExpedientes(){
+  const el = document.getElementById('vua-expedientes');
+  if(!el) return;
+  const { data, error } = await sbT().from('vua_expedientes')
+    .select('id,created_at,entorno,numero_solicitud,cice_pi,numero_factura,exportador,estado,estado_soivre,certificados,consultado_en,exportado_en')
+    .order('created_at', { ascending: false }).limit(60);
+  if(error){ el.innerHTML = `<div style="font-size:12px;color:var(--g400)">${sEsc('Tabla vua_expedientes no disponible (¿instalar_soivre.sql?)')}</div>`; return; }
+  if(!data.length){ el.innerHTML = '<div style="font-size:12px;color:var(--g400)">Sin solicitudes en seguimiento.</div>'; return; }
+  const estilo = { pendiente: 'background:var(--am50);color:var(--am600)', certificado: SOIVRE_ESTADO_ESTILO.aceptada, caducado: 'background:var(--g100);color:var(--g600)' };
+  el.innerHTML = `<table class="tbl" style="width:100%;font-size:12px">
+    <thead><tr><th>Fecha</th><th>Factura</th><th>Exportador</th><th>Nº solicitud</th><th>Estado</th><th>Certificados</th><th></th></tr></thead>
+    <tbody>${data.map(x => `<tr>
+      <td>${new Date(x.created_at).toLocaleDateString('es-ES')}${x.entorno === 'pruebas' ? ' <span style="color:var(--am600);font-size:10px">pruebas</span>' : ''}</td>
+      <td>${sEsc(x.numero_factura || '—')}</td><td>${sEsc(x.exportador || '')}</td>
+      <td style="font-family:var(--mono)">${sEsc(x.numero_solicitud)}</td>
+      <td><span class="badge" style="${estilo[x.estado] || ''}">${sEsc(x.estado)}</span><div style="font-size:10px;color:var(--g400)">${sEsc(x.estado_soivre || '')}${x.consultado_en ? ' · ' + new Date(x.consultado_en).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ''}</div></td>
+      <td style="font-family:var(--mono);font-size:11px">${(x.certificados || []).map(c => sEsc(c.numero)).join('<br>') || '—'}${x.exportado_en ? '<div style="font-size:10px;color:var(--gr600)">✔ en CSV</div>' : ''}</td>
+      <td style="white-space:nowrap">
+        ${x.numero_factura ? `<button class="btn ${x.estado === 'certificado' && !x.exportado_en ? 'btn-p' : 'btn-s'} btn-sm" onclick="vtCsvDesdeExpediente('${x.id}')">CSV VisualTrans</button>` : ''}
+        <button class="btn btn-s btn-sm" onclick="vuaConsultar(null, '${sEsc(String(x.numero_solicitud).split(',')[0])}', '${sEsc(x.cice_pi)}')">Estado</button>
+      </td></tr>`).join('')}</tbody></table>`;
+}
+// Regenera el CSV de una factura ya leída (sin volver a pasarla por la IA)
+async function vtCsvDesdeExpediente(id){
+  const { data, error } = await sbT().from('vua_expedientes').select('factura').eq('id', id).single();
+  if(error || !data) return showToast('No se pudo recuperar la factura: ' + (error ? error.message : 'sin datos'));
+  const cab = data.factura.cab || {};
+  window._facturaLineas = (data.factura.lineas || []).map(l => Object.assign(l, { _cab: cab }));
+  FACTURA_CABECERA = cab;
+  abrirModalVT();
 }

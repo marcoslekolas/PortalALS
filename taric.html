@@ -666,6 +666,15 @@ textarea.fi{resize:vertical;min-height:80px}
             <div style="font-size:13px;font-weight:700;color:var(--g700);margin-bottom:8px">ESTACICE VUA · envíos de esta sesión</div>
             <div id="vua-sesion"></div>
           </div>
+          <div class="card" style="padding:12px 14px;margin-bottom:12px">
+            <div style="font-size:13px;font-weight:700;color:var(--g700);margin-bottom:2px">ESTACICE · seguimiento de certificados (N003 para VisualTrans)</div>
+            <div style="font-size:11px;color:var(--g500);margin-bottom:8px">El servidor consulta ESTACICE cada 20 minutos. Cuando SOIVRE emite los certificados, «CSV VisualTrans» genera el fichero con la casilla 44 N003 de cada línea, sin volver a leer la factura.</div>
+            <div id="vua-expedientes"></div>
+          </div>
+          <div class="card" style="padding:12px 14px;margin-bottom:12px">
+            <div style="font-size:13px;font-weight:700;color:var(--g700);margin-bottom:8px">VisualTrans · entidades</div>
+            <div id="vt-entidades"></div>
+          </div>
           <div class="card" style="padding:12px 14px">
             <div style="font-size:13px;font-weight:700;color:var(--g700);margin-bottom:8px">PUE AEAT · envíos de esta sesión</div>
             <div id="soivre-lista"></div>
@@ -3309,9 +3318,9 @@ function construirFilasExport(cab, lineas, cfg){
   C[0]='AES'; C[1]='E';
   C[2]=cfg.casilla1a||'EX'; C[3]=cfg.casilla1b||'A'; C[4]=cfg.casilla1c||'';
   C[5]=aduana;
-  C[6]=exp.nombre||''; C[7]=exp.nif||exp.eori||''; C[8]=exp.direccion||'';
+  C[6]=exp.nombre_vt||exp.nombre||''; C[7]=exp.nif_vt||exp.nif||exp.eori||''; C[8]=exp.direccion||'';
   C[11]=_vtPaisISO(exp.pais)||'ES';
-  C[12]=des.nombre||''; C[13]=des.nif||des.eori||''; C[14]=des.direccion||'';
+  C[12]=des.nombre_vt||des.nombre||''; C[13]=des.nif_vt||des.nif||des.eori||''; C[14]=des.direccion||'';
   C[17]=_vtPaisISO(des.pais)||'GI';
   C[18]=_vtPaisISO(cab.pais_origen)||'ES';           // C.15 país expedición
   C[19]=_vtPaisISO(des.pais||cab.pais_destino)||'GI';// C.17a país destino
@@ -3352,6 +3361,8 @@ function construirFilasExport(cab, lineas, cfg){
     const _adic=cfg.adicionales||[]; if(_adic[0])P[65]=_adic[0]; if(_adic[1])P[66]=_adic[1]; if(_adic[2])P[67]=_adic[2];
     const docs=[['N380',cab.numero_factura||'',cab.fecha||''],[docTr,cfg.docTransporteRef||'','']];
     c44.forEach(d=>{ if(d.codigo_doc) docs.push([d.codigo_doc,'',cab.fecha||'']); });
+    // SOIVRE: N003 · nº certificado + línea en el certificado (2 dígitos) · fecha del certificado
+    (l._n003s || (l._n003 ? [l._n003] : [])).forEach(n=>docs.push(['N003', n.num, n.fecha]));
     (cfg.docsEscenario||[]).forEach(d=>{ if(d.codigo) docs.push([d.codigo, d.valor||'', cab.fecha||'']); });
     docs.slice(0,15).forEach((d,k)=>{ const b=17+k*3; P[b]=d[0]||''; P[b+1]=d[1]||''; P[b+2]=d[2]||''; });
     filas.push(P);
@@ -3372,9 +3383,9 @@ function construirFilasImport(cab, lineas, cfg){
   C[0]='H1';
   C[2]=cfg.casilla1a||'IM'; C[3]=cfg.casilla1b||'A'; C[4]=cfg.casilla1c||'';
   C[5]=aduana;
-  C[6]=exp.nombre||''; C[7]=exp.nif||exp.eori||''; C[8]=exp.direccion||'';
+  C[6]=exp.nombre_vt||exp.nombre||''; C[7]=exp.nif_vt||exp.nif||exp.eori||''; C[8]=exp.direccion||'';
   C[11]=_vtPaisISO(exp.pais)||'';
-  C[12]=imp.nombre||''; C[13]=imp.nif||imp.eori||''; C[14]=imp.direccion||'';
+  C[12]=imp.nombre_vt||imp.nombre||''; C[13]=imp.nif_vt||imp.nif||imp.eori||''; C[14]=imp.direccion||'';
   C[17]=_vtPaisISO(imp.pais)||'ES';
   C[18]=_vtPaisISO(cab.pais_origen)||_vtPaisISO(exp.pais)||''; // C.15
   C[19]='ES';                                                  // C.17a destino
@@ -3427,8 +3438,10 @@ async function exportarVisualTrans(){
   const cab = FACTURA_CABECERA || {};
   const cfg = window._cfgDUA || {};
   // Resumen (agrupado por partida) o detalle (línea a línea)
-  const lineas = (cfg.origen === 'detalle') ? detalle : agruparLineasParaDUA(detalle, cab);
   const esImport = /^(40|61|H1|IM)/i.test(cfg.regimen||'') || cfg.tipo==='import';
+  // Nombres exactos de VisualTrans por NIF y, en exportación, N003 de los certificados SOIVRE ya emitidos
+  if(typeof vtPrepararExportacion === 'function' && !(await vtPrepararExportacion(detalle, cab, esImport))) return;
+  const lineas = (cfg.origen === 'detalle') ? detalle : agruparLineasParaDUA(detalle, cab);
 
   const filas = esImport ? construirFilasImport(cab, lineas, cfg)
                          : construirFilasExport(cab, lineas, cfg);
@@ -3454,6 +3467,7 @@ async function exportarVisualTrans(){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
   showToast('CSV VisualTrans generado ('+lineas.length+' partidas): '+a.download);
+  if(typeof vtTrasExportar === 'function') vtTrasExportar();
 }
 
 
@@ -3655,8 +3669,9 @@ function agruparLineasParaDUA(lineas, cabGlobal){
   const grupos = {};
   lineas.forEach(l => {
     const k = (l.codigo_taric||'').substring(0,4) || '----';
-    if(!grupos[k]) grupos[k] = { bultos:0, bruto:0, cantidad:0, importe:0, frec:{}, descs:[], c44:new Map(), _cab:l._cab||null, unidad:l.unidad||'' };
+    if(!grupos[k]) grupos[k] = { bultos:0, bruto:0, cantidad:0, importe:0, frec:{}, descs:[], c44:new Map(), n003:[], _cab:l._cab||null, unidad:l.unidad||'' };
     const g = grupos[k];
+    (l._n003s || (l._n003 ? [l._n003] : [])).forEach(n => g.n003.push(n));
     (l._c44 || (typeof casilla44De==='function'?casilla44De(l):[]) || []).forEach(d => { if(d.codigo_doc && !g.c44.has(d.codigo_doc)) g.c44.set(d.codigo_doc, d); });
     g.bultos += num(l.bultos)||0;
     const pReal = num(l.peso_bruto);
@@ -3690,6 +3705,7 @@ function agruparLineasParaDUA(lineas, cabGlobal){
       _casilla31: g.descs.join(' + '),
       descripcion_original: g.descs.join(' + '),
       _c44: [...g.c44.values()],
+      _n003s: g.n003,
       _cab: g._cab,
     };
   });

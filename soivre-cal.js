@@ -214,6 +214,13 @@ const SOIVRE_FLUJO_TXT = { '01':'Importación', '02':'Exportación', '03':'Reexp
 
 function soivrePanelFactura(lineas){
   if(!SOIVRE.lista) return soivreCargarLista().then(() => soivrePanelFactura(lineas));
+  // Clave estable de cada línea («nº factura|posición»): enlaza la línea de la
+  // solicitud ESTACICE con la del CSV de VisualTrans para poner su N003
+  const cont = {};
+  (lineas || []).forEach(l => {
+    const nf = l._numFactura || (typeof FACTURA_CABECERA !== 'undefined' && FACTURA_CABECERA && FACTURA_CABECERA.numero_factura) || 'factura';
+    if(!l._claveVT){ cont[nf] = (cont[nf] || 0) + 1; l._claveVT = `${nf}|${cont[nf]}`; }
+  });
   SOIVRE.grupos = [];
   SOIVRE.vuaLineas = [];
   const porClave = new Map();
