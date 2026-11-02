@@ -227,20 +227,46 @@ def procesar_nomenclatura(ruta):
     wb = openpyxl.load_workbook(ruta, read_only=True)
     ws = wb[wb.sheetnames[0]]
     it = ws.iter_rows(values_only=True); next(it)
-    filas = []
+    # Primero se recogen las filas en orden, con su nivel jerárquico (r[4] = "Hier.
+    # Pos."), para poder decidir cuáles son HOJA. Un código no es declarable solo por
+    # tener sufijo 80: si la fila SIGUIENTE baja un nivel (nivel mayor), es una
+    # CABECERA con subdivisiones (p. ej. 0702000000 "Tomatoes" o 0702001000 "Whole
+    # tomatoes") y NO debe ofrecerse como código despachable. Solo las hojas reales
+    # (0702001007 cherry, 0702001099 los demás…) son declarables.
+    crudas = []
     for r in it:
         m = re.match(r'^(\d{10})\s+(\d{2})$', str(r[0] or '').strip())
         if not m:
             continue
         cod, suf = m.group(1), m.group(2)
+        nivel = r[4]
+        crudas.append((cod, suf, nivel, (r[5] or '').strip(),
+                       (r[6] or '').strip(), r[1], r[2]))
+
+    def _niv(x):
+        try: return int(str(x).strip())
+        except Exception: return None
+
+    filas = []
+    n_hoja = n_cabecera = 0
+    for i, (cod, suf, nivel, indent, desc, ini, fin) in enumerate(crudas):
+        declarable = 0
+        if suf == '80':
+            cur = _niv(nivel)
+            nxt = _niv(crudas[i + 1][2]) if i + 1 < len(crudas) else None
+            # Hoja si no hay nivel, o el siguiente no profundiza más.
+            if cur is None or nxt is None or nxt <= cur:
+                declarable = 1; n_hoja += 1
+            else:
+                n_cabecera += 1   # cabecera con subdivisiones → no despachable
         filas.append([cod, suf, cod[:8], cod[:4], cod[:2],
-                      1 if suf == '80' else 0, r[4], (r[5] or '').strip(),
-                      (r[6] or '').strip(), r[1], r[2]])
+                      declarable, nivel, indent, desc, ini, fin])
     wb.close()
     ruta_csv = f'{WORK}/nom.csv'
     with open(ruta_csv, 'w', newline='', encoding='utf-8') as f:
         csv.writer(f).writerows(filas)
-    log(f'nomenclatura: {len(filas):,} filas')
+    log(f'nomenclatura: {len(filas):,} filas · {n_hoja:,} hojas declarables · '
+        f'{n_cabecera:,} cabeceras no despachables')
     return ruta_csv, len(filas)
 
 
