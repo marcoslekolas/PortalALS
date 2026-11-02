@@ -96,6 +96,7 @@ function soivreBloqueResultado(r){
   if(!a) return '';
   const s = SOIVRE_SERVICIOS[a.servicio];
   const k = soivreRegistrarCtx({ codigo_taric: r.codigo_taric, descripcion: r.descripcion_nc || '', ...a });
+  const vua = a.servicio === 'CAL1' && a.flujo !== '01' && typeof vuaNuevaDesdeResultado === 'function';
   const titulo = a.seguro
     ? `Medida ${sEsc(a.medidas.filter(m => /SOVEX|SOVIM|ROHS|RAEE|\bCOM\b/.test(m)).join(' + '))} · control SOIVRE ${s.nombre.toLowerCase()}`
     : 'Posible control SOIVRE de calidad (catálogo TARIC no disponible: verificar medida SOVEX)';
@@ -104,9 +105,13 @@ function soivreBloqueResultado(r){
       <span style="font-size:18px">${s.icono}</span>
       <div style="flex:1;min-width:200px">
         <div style="font-size:12px;font-weight:700;color:var(--gr700,#15803d)">${titulo}</div>
-        <div style="font-size:11px;color:var(--g600);margin-top:2px">Solicitud ${a.servicio} por la Ventanilla Única (PUE). Requiere la declaración ya presentada (MRN + partida) y la factura comercial.</div>
+        <div style="font-size:11px;color:var(--g600);margin-top:2px">${vua
+          ? 'Exportación/reexportación: solicitud en ESTACICE VUA (sin MRN, hasta 12 líneas). El país de origen se toma de «Preferencias arancelarias»; si no hay ninguno, España.'
+          : `Solicitud ${a.servicio} por la Ventanilla Única (PUE). Requiere la declaración ya presentada (MRN + partida) y la factura comercial.`}</div>
       </div>
-      <button class="btn btn-p btn-sm" onclick="abrirSolicitudSoivre('${k}')">Solicitar control SOIVRE</button>
+      ${vua ? `<button class="btn btn-p btn-sm" onclick="vuaNuevaDesdeResultado('${sEsc(r.codigo_taric)}', ${sEsc(JSON.stringify(r.descripcion_nc || ''))})">Solicitud ESTACICE</button>
+               <button class="btn btn-s btn-sm" onclick="abrirSolicitudSoivre('${k}')" title="Por el PUE de la AEAT (con MRN)">Por PUE</button>`
+             : `<button class="btn btn-p btn-sm" onclick="abrirSolicitudSoivre('${k}')">Solicitar control SOIVRE</button>`}
     </div>`;
 }
 
@@ -151,6 +156,7 @@ const SOIVRE_FLUJO_TXT = { '01':'Importación', '02':'Exportación', '03':'Reexp
 
 function soivrePanelFactura(lineas){
   SOIVRE.grupos = [];
+  SOIVRE.vuaLineas = [];
   const porClave = new Map();
   const posicion = new Map();   // clave de grupo -> nº de líneas de la factura con ese origen vistas
   (lineas || []).forEach(l => {
@@ -159,6 +165,8 @@ function soivrePanelFactura(lineas){
     // La partida sugerida cuenta TODAS las líneas del mismo origen, sujetas o no
     const pos = (posicion.get(origen) || 0) + 1; posicion.set(origen, pos);
     if(!a) return;
+    // Frutas y hortalizas a la exportación/reexportación → ESTACICE VUA (soivre-vua.js)
+    if(a.servicio === 'CAL1' && a.flujo !== '01' && typeof vuaPrepararDesdeFactura === 'function'){ SOIVRE.vuaLineas.push(l); return; }
     const esCal = a.servicio === 'CAL1';
     const flujo = esCal ? soivreFlujoPorOrigen(origen, a.flujo) : null;
     const clave = esCal ? `CAL|${flujo}|${origen}` : 'IMP';
@@ -179,16 +187,21 @@ function soivrePanelFactura(lineas){
   });
   const info = document.getElementById('factura-info');
   document.getElementById('soivre-panel-factura')?.remove();
-  if(!info || !SOIVRE.grupos.length) return;
+  SOIVRE.vuaSols = [];
+  if(!info || (!SOIVRE.grupos.length && !SOIVRE.vuaLineas.length)) return;
   info.insertAdjacentHTML('afterbegin', '<div id="soivre-panel-factura"></div>');
-  soivrePanelFacturaRefrescar();
+  if(!SOIVRE.vuaLineas.length) return soivrePanelFacturaRefrescar();
+  // Las tablas oficiales afinan producto SOIVRE y envase; sin ellas se prepara igual
+  const preparar = () => { SOIVRE.vuaSols = vuaPrepararDesdeFactura(SOIVRE.vuaLineas); soivrePanelFacturaRefrescar(); };
+  vuaCatalogo().then(preparar, preparar);
 }
 const soivreDescTaric = c => (typeof TARIC_DB !== 'undefined' && TARIC_DB.desc && TARIC_DB.desc.get(c)) || '';
 
 function soivrePanelFacturaRefrescar(){
   const cont = document.getElementById('soivre-panel-factura');
-  if(!cont || !SOIVRE.grupos.length) return;
-  const total = SOIVRE.grupos.reduce((n, g) => n + g.lineas.length, 0);
+  const vuaSols = SOIVRE.vuaSols || [];
+  if(!cont || (!SOIVRE.grupos.length && !vuaSols.length)) return;
+  const total = SOIVRE.grupos.reduce((n, g) => n + g.lineas.length, 0) + vuaSols.reduce((n, v) => n + v.lineas.length, 0);
   const grupoHtml = g => {
     const titulo = g.esCal
       ? `${SOIVRE_FLUJO_TXT[g.flujo]} · origen ${sEsc(g.origen || '—')}`
@@ -229,10 +242,12 @@ function soivrePanelFacturaRefrescar(){
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:18px">🛂</span>
         <div style="flex:1">
-          <div style="font-size:13px;font-weight:700;color:var(--gr700,#15803d)">Control SOIVRE: ${total} línea${total > 1 ? 's' : ''} de esta factura ${total > 1 ? 'necesitan' : 'necesita'} solicitud (una por línea)</div>
-          <div style="font-size:11px;color:var(--g600)">Agrupadas por país de origen: España = exportación, otro país = reexportación. Indica el MRN de la declaración de cada grupo (en exportación vale la predeclaración B1) y prepara cada línea. La factura leída se adjunta sola.</div>
+          <div style="font-size:13px;font-weight:700;color:var(--gr700,#15803d)">Control SOIVRE: ${total} línea${total > 1 ? 's' : ''} de esta factura con medida SOIVRE</div>
+          <div style="font-size:11px;color:var(--g600)">Revisa cada solicitud y envíala. La factura leída se adjunta sola.</div>
         </div>
       </div>
+      ${typeof vuaPanelHtml === 'function' ? vuaPanelHtml(vuaSols) : ''}
+      ${SOIVRE.grupos.length ? `<div style="font-size:11px;color:var(--g500);margin-top:10px">Por el PUE de la AEAT (una solicitud por línea, con el MRN de la declaración):</div>` : ''}
       ${SOIVRE.grupos.map(grupoHtml).join('')}
     </div>`;
 }
@@ -303,7 +318,8 @@ async function soivreLlamar(servicio, datos, idMensaje, soloXml, contexto, fiche
     fault: r.estado === 'error', codigo: r.codigo_respuesta, descripcion: r.descripcion_respuesta,
     numeroSolicitud: r.numero_solicitud, xmlEnviado: r.xml_enviado, xmlRespuesta: r.xml_respuesta,
     estado: r.estado,
-    adjuntoEstado: r.adjunto_estado, adjuntoCsv: r.adjunto_csv, adjuntoDescripcion: r.adjunto_descripcion
+    adjuntoEstado: r.adjunto_estado, adjuntoCsv: r.adjunto_csv, adjuntoDescripcion: r.adjunto_descripcion,
+    resultado: r.resultado || null
   };
 }
 
@@ -824,6 +840,7 @@ const SOIVRE_ESTADO_ESTILO = {
 };
 
 function loadSoivre(){
+  if(typeof vuaPintarSesion === 'function') setTimeout(vuaPintarSesion, 0);
   soivreComprobarServidor();
   const cfg = soivreCfg();
   const cf = document.getElementById('soivre-config');
@@ -832,7 +849,12 @@ function loadSoivre(){
     sCampo('Cód. puesto inspección', sInput('svc-pi', cfg.codPI, 'maxlength="2"')),
     sCampo('Email de avisos', sInput('svc-email', cfg.email, 'maxlength="40"')),
     sCampo('Nº RII RAEE habitual', sInput('svc-raee', cfg.codigoRaee, 'maxlength="6"'))
-  ) + `<div style="display:flex;justify-content:flex-end"><button class="btn btn-p btn-sm" onclick="soivreGuardarConfigVista()">Guardar</button></div>`;
+  ) + (typeof vuaCfg === 'function' ? `<div style="font-size:12px;font-weight:700;color:var(--g600);margin:4px 0 6px">ESTACICE VUA</div>` + sGrid(170,
+    sCampo('Centro y punto habitual (4 dígitos)', sInput('svc-vua-cice', vuaCfg().cicePI, 'maxlength="4" placeholder="5801 Algeciras"')),
+    sCampo('Aduana habitual', sInput('svc-vua-aduana', vuaCfg().aduana, 'maxlength="4" placeholder="4 dígitos"')),
+    sCampo('Gibraltar · centro y punto', sInput('svc-vua-gi-cice', vuaCfg().gibraltar.cicePI, 'maxlength="4"')),
+    sCampo('Gibraltar · aduana', sInput('svc-vua-gi-aduana', vuaCfg().gibraltar.aduana, 'maxlength="4"'))
+  ) : '') + `<div style="display:flex;justify-content:flex-end"><button class="btn btn-p btn-sm" onclick="soivreGuardarConfigVista()">Guardar</button></div>`;
   soivrePintarSesion();
 }
 
@@ -873,6 +895,12 @@ function soivreGuardarConfigVista(){
   cfg.codPI = sVal('svc-pi');
   cfg.email = sVal('svc-email');
   cfg.codigoRaee = sVal('svc-raee');
+  if(typeof vuaCfg === 'function'){
+    const v = vuaCfg();
+    v.cicePI = sVal('svc-vua-cice') || v.cicePI; v.aduana = sVal('svc-vua-aduana');
+    v.gibraltar = { cicePI: sVal('svc-vua-gi-cice') || '5802', aduana: sVal('svc-vua-gi-aduana') || '1167' };
+    cfg.vua = v;
+  }
   soivreGuardarCfg(cfg);
   showToast('Valores SOIVRE guardados');
   soivreComprobarServidor();
