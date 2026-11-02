@@ -38,11 +38,21 @@ function vuaCfg(){
 function vuaGuardarCfg(v){ const c = soivreCfg(); c.vua = v; soivreGuardarCfg(c); }
 
 // ── tablas oficiales (estacice_productos / estacice_codigos) ─
+// Supabase devuelve como máximo 1000 filas por consulta: se pide por páginas
+async function vuaTodas(consulta){
+  const filas = [];
+  for(let desde = 0; ; desde += 1000){
+    const { data, error } = await consulta().range(desde, desde + 999);
+    if(error) return { error };
+    filas.push(...(data || []));
+    if(!data || data.length < 1000) return { data: filas };
+  }
+}
 async function vuaCatalogo(){
   if(VUA.cat) return VUA.cat;
   const [p, c] = await Promise.all([
-    sbT().from('estacice_productos').select('codigo,nombre,tipo,imex').in('tipo', ['F', 'O']).order('codigo'),
-    sbT().from('estacice_codigos').select('tabla,codigo,nombre,grupo').order('nombre')
+    vuaTodas(() => sbT().from('estacice_productos').select('codigo,nombre,tipo,imex').in('tipo', ['F', 'O']).neq('imex', 'I').order('codigo')),
+    vuaTodas(() => sbT().from('estacice_codigos').select('tabla,codigo,nombre,grupo').order('nombre').order('codigo'))
   ]);
   if(p.error || c.error) throw new Error((p.error || c.error).message);
   const tabla = t => (c.data || []).filter(x => x.tabla === t);
@@ -57,38 +67,61 @@ async function vuaCatalogo(){
 // exige que coincidan las dos primeras cifras; p. ej. «072050 Perejil» va con
 // el TARIC 0709). Se ordenan por parecido con la descripción de la factura.
 // Nombres de factura que no coinciden con el nombre oficial de la tabla
-const VUA_SINONIMOS = [[/CHAMPI\w*/g, 'SETAS OTRAS ESPECIES'], [/BROCOLI\w*/g, 'BROCULI'], [/MEZCLUM/g, 'ENSALADAS'],
+const VUA_SINONIMOS = [
+  // TARIC 1509 90: definición legal de la categoría «Aceite de oliva» (mezcla), no un aceite refinado ni virgen
+  [/(CONTIENE|COMPUESTO DE|COMPOSED OF)? *EXCLUSIVAMENTE ACEITES? DE OLIVA REFINADOS? Y (ACEITES? DE OLIVA )?VIRGEN\w*/g, ' '],
+  [/CHAMPI\w*/g, 'SETAS OTRAS ESPECIES'], [/BROCOLI\w*/g, 'BROCULI'], [/MEZCLUM/g, 'ENSALADAS'],
                        [/HIERBABUENA/g, 'MENTA HIERBABUENA']];
 function vuaNormal(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+const VUA_VACIAS = new Set(['QUE', 'CON', 'SIN', 'LOS', 'LAS', 'DEL', 'PARA', 'POR', 'UNA', 'UNO', 'THE', 'AND', 'WITH']);
 function vuaPalabras(t){
   let n = vuaNormal(t);
   VUA_SINONIMOS.forEach(([re, sust]) => { n = n.replace(re, sust); });
-  return n.split(/[^A-Z]+/).filter(w => w.length > 2);
+  return n.split(/[^A-Z]+/).filter(w => w.length > 2 && !VUA_VACIAS.has(w));
 }
-// La 1ª palabra de la factura (el producto: «Calabaza», «Tomate»…) pesa más que
-// el resto (variedad, calibre…). Se compara por prefijo de hasta 7 letras con
-// cada palabra del nombre oficial: «CALABAZ» ≠ «CALABACINES».
+// El código SOIVRE no siempre sigue al TARIC: SOIVRE filtra por la partida
+// (6 o 4 dígitos) y después decide por la descripción. Por eso:
+//  · la descripción manda: la 1ª palabra de la factura (el producto: «Calabaza»,
+//    «Aceite»…) pesa más que el resto (variedad, calibre…), comparando por
+//    prefijo de hasta 7 letras con cada palabra del nombre oficial
+//    («CALABAZ» ≠ «CALABACINES»);
+//  · a igualdad de descripción, desempata la coincidencia con el TARIC
+//    (6 dígitos > 4 dígitos).
 function vuaPuntos(p, desc, taric){
   const nombre = vuaPalabras(p.nombre);
   const esta = w => nombre.some(x => x.startsWith(w.slice(0, 7)));
   let pt = 0;
   vuaPalabras(desc).forEach((w, i) => { if(esta(w)) pt += i === 0 ? 3 : 1; });
+  // Palabras del nombre oficial que la factura no menciona: mejor el más ajustado
+  // («Aceite de oliva virgen extra» antes que «… virgen lampante»)
+  if(pt){
+    const enDesc = vuaPalabras(desc);
+    pt -= 0.1 * nombre.filter(x => !enDesc.some(w => x.startsWith(w.slice(0, 7)) || w.startsWith(x.slice(0, 7)))).length;
+  }
   // A igualdad, el genérico («Cebollas otras») antes que una variedad que la factura no nombra («Cebollas Lanzarote»)
   if(pt && /LAS DEMAS|LOS DEMAS|OTRAS|OTROS/.test(vuaNormal(p.nombre))) pt += 0.2;
-  if(pt && p.codigo.slice(0, 4) === String(taric || '').replace(/\D/g, '').slice(0, 4)) pt += 0.5;
+  const t = String(taric || '').replace(/\D/g, '');
+  if(pt && t.length >= 6 && p.codigo.slice(0, 6) === t.slice(0, 6)) pt += 0.3;
+  if(pt && p.codigo.slice(0, 4) === t.slice(0, 4)) pt += 0.5;
   return pt;
 }
+// Productos del mismo tipo y capítulo; si el capítulo no tiene ninguno, todos los
+// del tipo (el código SOIVRE puede no compartir capítulo con el TARIC). Sin
+// descripción, primero los de la misma partida de 4 dígitos.
 function vuaProductosPara(taric, tipo = 'F', desc = ''){
   const t = String(taric || '').replace(/\D/g, '');
-  const prods = (VUA.cat && VUA.cat.productos || []).filter(p => p.imex !== 'I' && p.tipo === tipo && p.codigo.startsWith(t.slice(0, 2)));
-  if(!desc) return prods;
-  return prods.map(p => [vuaPuntos(p, desc, t), p]).sort((a, b) => b[0] - a[0] || a[1].codigo.localeCompare(b[1].codigo)).map(x => x[1]);
+  const delTipo = (VUA.cat && VUA.cat.productos || []).filter(p => p.imex !== 'I' && p.tipo === tipo);
+  const cap = delTipo.filter(p => p.codigo.startsWith(t.slice(0, 2)));
+  const prods = cap.length ? cap : delTipo;
+  const partida = p => p.codigo.startsWith(t.slice(0, 4)) ? 0 : 1;
+  if(!desc) return [...prods].sort((a, b) => partida(a) - partida(b) || a.codigo.localeCompare(b.codigo));
+  return prods.map(p => [vuaPuntos(p, desc, t), p]).sort((a, b) => b[0] - a[0] || partida(a[1]) - partida(b[1]) || a[1].codigo.localeCompare(b[1].codigo)).map(x => x[1]);
 }
 // Solo se preselecciona si coincide el producto (1ª palabra); si no, queda
 // «— producto SOIVRE —» para que el usuario lo elija o quite la línea.
 function vuaElegirProducto(taric, descripcion, tipo = 'F'){
   const mejor = vuaProductosPara(taric, tipo, descripcion)[0];
-  return mejor && vuaPuntos(mejor, descripcion, taric) >= 3 ? mejor.codigo : '';
+  return mejor && vuaPuntos(mejor, descripcion, taric) >= 2.5 ? mejor.codigo : '';
 }
 
 // Origen por línea indicado en las observaciones de la factura:
@@ -162,6 +195,21 @@ function vuaAjustarBruto(l){
   return true;
 }
 
+// Peso neto de una línea de factura, en este orden:
+//  1º el neto de la línea; 2º la cantidad si está en kg;
+//  3º el único peso de la línea (la lectura lo deja en peso_bruto; en estas
+//     facturas suele ser el neto, y el bruto ya se ajusta solo si no lo supera);
+//  4º el peso estimado por la lectura (reparto del total de la factura).
+// netoDe dice de dónde sale para avisar en la línea cuando no es el neto declarado.
+function vuaNetoDe(l){
+  const n = vuaNum(l.peso_neto);
+  if(n > 0) return { neto: n, netoDe: '' };
+  if(/^(kg|kgs|kilo)/i.test(String(l.unidad || '').trim()) && vuaNum(l.cantidad) > 0) return { neto: vuaNum(l.cantidad), netoDe: '' };
+  if(vuaNum(l.peso_bruto) > 0) return { neto: vuaNum(l.peso_bruto), netoDe: 'peso de la línea de factura' };
+  if(vuaNum(l.peso_estimado) > 0) return { neto: vuaNum(l.peso_estimado), netoDe: 'estimado por la lectura' + (l.peso_estimado_base ? ': ' + l.peso_estimado_base : '') };
+  return { neto: NaN, netoDe: '' };
+}
+
 // lineas: las de la factura con medida SOVEX. Devuelve las solicitudes creadas.
 function vuaPrepararDesdeFactura(lineas){
   const cfg = vuaCfg();
@@ -185,9 +233,8 @@ function vuaPrepararDesdeFactura(lineas){
     const destino = destinoTxt ? (typeof _vtPaisISO === 'function' ? _vtPaisISO(destinoTxt) : destinoTxt) : '';
     const moneda = VUA_MONEDAS[String(g.cab.moneda || '').toUpperCase()] || '';
     const lineasVua = g.lineas.map(l => {
-      // Neto: el de la factura; si no viene aparte, la cantidad cuando está en kg
       const bruto = vuaNum(l.peso_bruto);
-      const neto = Number.isFinite(vuaNum(l.peso_neto)) ? vuaNum(l.peso_neto) : (/^kg|kilo/i.test(String(l.unidad || '').trim()) ? vuaNum(l.cantidad) : NaN);
+      const { neto, netoDe } = vuaNetoDe(l);
       const envases = vuaNum(l.bultos), cantidad = vuaNum(l.cantidad);
       const desc = l.descripcion_es || l.descripcion_original || '';
       return {
@@ -197,9 +244,9 @@ function vuaPrepararDesdeFactura(lineas){
         unidad: l.unidad || '', codEnvase: vuaEnvaseDe(l.unidad), marca: VUA_MARCA_DEF,
         producto: vuaElegirProducto(l.codigo_taric, desc, g.tipo),
         // Otros productos: nombre del envase en texto, unidades físicas y envase > 5 kg (obligatorio en aceites)
-        nombreEnvase: vuaNombreEnvase(l.unidad), envaseMas5kg: '',
+        nombreEnvase: vuaNombreEnvase(l.unidad), envaseMas5kg: 'N',
         unidades: Number.isFinite(cantidad) && !/kg|kilo|litro|^l$/i.test(l.unidad || '') ? String(Math.round(cantidad)) : '',
-        categoria: '2', pesoBruto: vuaFmt(bruto), pesoNeto: vuaFmt(neto),
+        categoria: '2', pesoBruto: vuaFmt(bruto), pesoNeto: vuaFmt(neto), netoDe,
         importe: Number.isFinite(vuaNum(l.importe)) && moneda ? vuaFmt(vuaNum(l.importe)) : '', moneda,
         factura: String(g.cab.numero_factura || '').slice(0, 30)
       };
@@ -283,7 +330,7 @@ function vuaFilaLinea(l, i, tipo = 'F', origenSol = 'ES'){
     + '<td style="padding:4px 2px"><button class="btn btn-s btn-sm" style="padding:2px 6px" title="Quitar línea" onclick="vuaQuitarLinea(this)">✕</button></td>';
   const especificas = tipo === 'O'
     ? celda(100, `<input class="fi vl-nomenv" ${c} value="${sEsc(l.nombreEnvase || '')}" maxlength="20" placeholder="Botellas">`)
-      + celda(70, `<select class="fi vl-mas5" ${c}><option value="">—</option><option value="N" ${l.envaseMas5kg === 'N' ? 'selected' : ''}>No</option><option value="S" ${l.envaseMas5kg === 'S' ? 'selected' : ''}>Sí</option></select>`)
+      + celda(70, `<select class="fi vl-mas5" ${c}><option value="N">No</option><option value="S" ${l.envaseMas5kg === 'S' ? 'selected' : ''}>Sí</option></select>`)
       + celda(120, `<input class="fi vl-marca" ${c} value="${sEsc(l.marca)}" maxlength="40">`)
       + celda(80, `<input class="fi vl-neto" ${c} value="${sEsc(l.pesoNeto)}" inputmode="decimal">`)
       + celda(80, `<input class="fi vl-unidades" ${c} value="${sEsc(l.unidades || '')}" inputmode="numeric">`)
@@ -303,6 +350,7 @@ function vuaFilaLinea(l, i, tipo = 'F', origenSol = 'ES'){
         <span style="font-size:10px;color:var(--g400);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${sEsc(l.descripcion || '')}">${sEsc(l.descripcion || '')}</span>
       </div>
       ${l.producto ? '' : `<div style="font-size:10px;color:var(--am600)">⚠ Elige el producto SOIVRE o quita la línea si no lleva control</div>`}
+      ${l.netoDe && l.pesoNeto ? `<div style="font-size:10px;color:var(--am600)" title="${sEsc(l.netoDe)}">ℹ Peso neto ${sEsc(l.pesoNeto)} kg tomado del ${sEsc(l.netoDe.split(':')[0])}: revísalo</div>` : ''}
     </td>
     ${celda(70, `<input class="fi vl-envases" ${c} value="${sEsc(l.envases)}" inputmode="numeric">`)}
     ${especificas}${comunesFin}
@@ -433,7 +481,7 @@ function vuaAnadirLinea(){
   if(tb.children.length >= VUA_MAX_LINEAS) return showToast(`Máximo ${VUA_MAX_LINEAS} líneas por solicitud`);
   const prev = tb.lastElementChild;
   const base = { taric: '', descripcion: '', envases: '', codEnvase: '04', marca: VUA_MARCA_DEF,
-                 producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', nombreEnvase: '', envaseMas5kg: '', unidades: '',
+                 producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', nombreEnvase: '', envaseMas5kg: 'N', unidades: '',
                  factura: prev ? prev.querySelector('.vl-factura').value : '' };
   tb.insertAdjacentHTML('beforeend', vuaFilaLinea(base, tb.children.length, tb.dataset.tipo, document.getElementById('vua-origen')?.value));
   vuaContarLineas();
@@ -466,6 +514,7 @@ function vuaLeerFormulario(k){
       taric: q('.vl-taric').replace(/\D/g, ''), producto: q('.vl-producto'), envases: q('.vl-envases'), origen: q('.vl-origen'),
       marca: q('.vl-marca'), pesoNeto: q('.vl-neto').replace(',', '.'), factura: q('.vl-factura'), _envRevisado: true
     });
+    if(l.pesoNeto !== prev.pesoNeto) l.netoDe = '';   // tocado a mano: ya no es una deducción
     if(esO) Object.assign(l, { nombreEnvase: q('.vl-nomenv'), envaseMas5kg: q('.vl-mas5'), unidades: q('.vl-unidades') });
     else Object.assign(l, { codEnvase: q('.vl-codenv'), categoria: q('.vl-cat'), pesoBruto: q('.vl-bruto').replace(',', '.') });
     return l;
@@ -682,7 +731,7 @@ function vuaNuevaDesdeResultado(codigo, descripcion, tipo = 'F'){
   const s = vuaNuevaSolicitud({
     tipo, origen, agente: ult || vuaAgenteDe({}), fabricanteEnvasador: ult ? ult.nombre : '',
     lineas: [{ taric: String(codigo || '').replace(/\D/g, ''), descripcion: descripcion || '', envases: '', codEnvase: '04', marca: VUA_MARCA_DEF,
-               producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', nombreEnvase: '', envaseMas5kg: '', unidades: '', factura: '' }]
+               producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', nombreEnvase: '', envaseMas5kg: 'N', unidades: '', factura: '' }]
   });
   abrirSolicitudVua(s.k);
 }
