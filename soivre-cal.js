@@ -21,7 +21,8 @@ const SOIVRE_CFG_DEF = {
   codigoRaee: '', codigoPya: ''   // nº de registro RII del importador habitual
 };
 // sesion: envíos de esta pestaña (solo memoria) para ver XML, reintentar o aportar más datos
-const SOIVRE = { estado:null, productos:new Map(), envases:null, ctx:new Map(), seq:0, sesion:[] };
+// grupos: líneas SOIVRE de la última factura leída por origen · mrnGrupo: MRN tecleado para cada grupo
+const SOIVRE = { estado:null, productos:new Map(), envases:null, ctx:new Map(), seq:0, sesion:[], grupos:[], mrnGrupo:{} };
 const SOIVRE_BUCKET = 'soivre-adjuntos';
 const SOIVRE_MAX_FICHERO = 10 * 1024 * 1024;
 
@@ -115,12 +116,126 @@ function soivreBotonLinea(l){
   if(!a) return '';
   const k = soivreRegistrarCtx({
     codigo_taric: l.codigo_taric, descripcion: l.descripcion_es || l.descripcion_original || '',
-    cantidad: l.cantidad, unidad: l.unidad, factura: l._numFactura || '', ...a
+    cantidad: l.cantidad, unidad: l.unidad, factura: l._numFactura || '', archivo: soivreArchivoDe(l), ...a,
+    origen: soivreOrigenDe(l), flujo: a.servicio === 'CAL1' ? soivreFlujoPorOrigen(soivreOrigenDe(l), a.flujo) : a.flujo
   });
   return `<div style="margin-top:5px"><button class="btn btn-s btn-sm" style="font-size:10px;padding:3px 8px" onclick="abrirSolicitudSoivre('${k}')" title="Solicitar control SOIVRE (${a.servicio})">${SOIVRE_SERVICIOS[a.servicio].icono} SOIVRE ${a.servicio}</button></div>`;
 }
 
 function soivreRegistrarCtx(o){ const k = 's' + (++SOIVRE.seq); SOIVRE.ctx.set(k, o); return k; }
+
+// Fichero original de la factura de la que sale la línea (FACTURAS es global de taric.html)
+function soivreArchivoDe(l){
+  if(typeof FACTURAS === 'undefined' || !l) return null;
+  const f = FACTURAS.find(x => x.fichero === l.fichero) || (FACTURAS.length === 1 ? FACTURAS[0] : null);
+  return (f && f.archivo) || null;
+}
+
+// ── Panel tras leer factura ──────────────────────────────────
+// Cada línea de la factura es una solicitud: aunque compartan código TARIC
+// son variedades distintas (una partida del DUE y un certificado 1236 cada una).
+// Las líneas CAL se agrupan por país de origen, porque cada origen va en su
+// propia declaración: España → exportación (02), otro país → reexportación (03).
+// No envía nada solo: el operador revisa cada formulario y pulsa Enviar.
+function soivreOrigenDe(l){
+  const p = (l && (l.pais_origen || (l._cab && l._cab.pais_origen))) ||
+            (typeof FACTURA_CABECERA !== 'undefined' && FACTURA_CABECERA && FACTURA_CABECERA.pais_origen) || '';
+  return typeof _vtPaisISO === 'function' ? _vtPaisISO(p) : String(p).trim().toUpperCase().slice(0, 2);
+}
+// SOVIM (01, importación) se respeta; SOVEX pasa a 02 o 03 según el origen
+function soivreFlujoPorOrigen(origen, flujo){
+  if(flujo === '01') return '01';
+  return !origen || origen === 'ES' ? '02' : '03';
+}
+const SOIVRE_FLUJO_TXT = { '01':'Importación', '02':'Exportación', '03':'Reexportación' };
+
+function soivrePanelFactura(lineas){
+  SOIVRE.grupos = [];
+  const porClave = new Map();
+  const posicion = new Map();   // clave de grupo -> nº de líneas de la factura con ese origen vistas
+  (lineas || []).forEach(l => {
+    const origen = soivreOrigenDe(l);
+    const a = soivreAplica(l.codigo_taric);
+    // La partida sugerida cuenta TODAS las líneas del mismo origen, sujetas o no
+    const pos = (posicion.get(origen) || 0) + 1; posicion.set(origen, pos);
+    if(!a) return;
+    const esCal = a.servicio === 'CAL1';
+    const flujo = esCal ? soivreFlujoPorOrigen(origen, a.flujo) : null;
+    const clave = esCal ? `CAL|${flujo}|${origen}` : 'IMP';
+    if(!porClave.has(clave)){
+      const g = { clave, esCal, flujo, origen, lineas: [] };
+      porClave.set(clave, g); SOIVRE.grupos.push(g);
+    }
+    const item = {
+      ...a, flujo: flujo || a.flujo, origen, l, partida: pos, archivo: soivreArchivoDe(l),
+      descripcion: l.descripcion_es || l.descripcion_original || soivreDescTaric(l.codigo_taric)
+    };
+    item.k = soivreRegistrarCtx({
+      codigo_taric: l.codigo_taric, descripcion: item.descripcion, cantidad: l.cantidad, unidad: l.unidad,
+      factura: l._numFactura || '', archivo: item.archivo, partida: pos, origen, grupo: clave, servicio: a.servicio,
+      seguro: a.seguro, medidas: a.medidas, flujo: item.flujo
+    });
+    porClave.get(clave).lineas.push(item);
+  });
+  const info = document.getElementById('factura-info');
+  document.getElementById('soivre-panel-factura')?.remove();
+  if(!info || !SOIVRE.grupos.length) return;
+  info.insertAdjacentHTML('afterbegin', '<div id="soivre-panel-factura"></div>');
+  soivrePanelFacturaRefrescar();
+}
+const soivreDescTaric = c => (typeof TARIC_DB !== 'undefined' && TARIC_DB.desc && TARIC_DB.desc.get(c)) || '';
+
+function soivrePanelFacturaRefrescar(){
+  const cont = document.getElementById('soivre-panel-factura');
+  if(!cont || !SOIVRE.grupos.length) return;
+  const total = SOIVRE.grupos.reduce((n, g) => n + g.lineas.length, 0);
+  const grupoHtml = g => {
+    const titulo = g.esCal
+      ? `${SOIVRE_FLUJO_TXT[g.flujo]} · origen ${sEsc(g.origen || '—')}`
+      : 'ROHS / RAEE / COM (importación)';
+    const filas = g.lineas.map(it => {
+      const s = SOIVRE_SERVICIOS[it.servicio];
+      const env = SOIVRE.sesion.find(x => x.ctxKey === it.k);
+      const estado = env
+        ? `<span class="badge" style="${SOIVRE_ESTADO_ESTILO[env.estado] || ''}">${sEsc(env.estado)}</span>${env.numeroSolicitud ? `<div style="font-family:var(--mono);font-size:10px;margin-top:2px">${sEsc(env.numeroSolicitud)}</div>` : ''}`
+        : '<span class="badge" style="background:var(--am50);color:var(--am600)">por solicitar</span>';
+      return `<tr style="border-top:1px solid var(--g100)">
+        <td style="padding:6px 4px;text-align:center">${it.partida}</td>
+        <td style="padding:6px 4px;white-space:nowrap">${s.icono} ${it.servicio}</td>
+        <td style="padding:6px 4px;font-family:var(--mono);white-space:nowrap">${sEsc(it.l.codigo_taric)}</td>
+        <td style="padding:6px 4px;max-width:260px">${sEsc(it.descripcion)}<div style="font-size:10px;color:var(--g400)">${sEsc(it.l._numFactura || '—')}${it.archivo ? ' · 📎' : ''}</div></td>
+        <td style="padding:6px 4px;white-space:nowrap">${sEsc(it.l.cantidad || '—')} ${sEsc(it.l.unidad || '')}</td>
+        <td style="padding:6px 4px">${estado}</td>
+        <td style="padding:6px 4px;text-align:right">${env && env.estado === 'aceptada' ? '' : `<button class="btn ${env ? 'btn-s' : 'btn-p'} btn-sm" onclick="abrirSolicitudSoivre('${it.k}')">${env ? 'Revisar' : 'Preparar'}</button>`}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <div style="background:var(--w);border:1px solid var(--g200);border-radius:8px;padding:8px 10px;margin-top:8px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+          <div style="flex:1;min-width:200px;font-size:12px;font-weight:700">${titulo} <span style="font-weight:400;color:var(--g500)">· ${g.lineas.length} solicitud${g.lineas.length > 1 ? 'es' : ''}</span></div>
+          <div style="min-width:210px"><input class="fi" style="width:100%;font-family:var(--mono);font-size:12px" maxlength="18" placeholder="MRN de su declaración (18)"
+            value="${sEsc(SOIVRE.mrnGrupo[g.clave] || '')}" oninput="this.value=this.value.toUpperCase();SOIVRE.mrnGrupo['${g.clave}']=this.value.trim()"></div>
+        </div>
+        <div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">
+          <thead><tr style="font-size:10px;color:var(--g500);text-transform:uppercase;text-align:left">
+            <th style="padding:4px;text-align:center" title="Posición de la línea entre las de este origen; compruébala con la declaración">Partida</th><th style="padding:4px">Servicio</th><th style="padding:4px">TARIC</th><th style="padding:4px">Mercancía</th><th style="padding:4px">Cantidad</th><th style="padding:4px">Estado</th><th></th>
+          </tr></thead>
+          <tbody>${filas}</tbody>
+        </table></div>
+      </div>`;
+  };
+  cont.innerHTML = `
+    <div class="card" style="padding:12px 16px;margin-bottom:12px;border:1px solid #86efac;background:var(--gr50,#f0fdf4)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:18px">🛂</span>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;color:var(--gr700,#15803d)">Control SOIVRE: ${total} línea${total > 1 ? 's' : ''} de esta factura ${total > 1 ? 'necesitan' : 'necesita'} solicitud (una por línea)</div>
+          <div style="font-size:11px;color:var(--g600)">Agrupadas por país de origen: España = exportación, otro país = reexportación. Indica el MRN de la declaración de cada grupo (en exportación vale la predeclaración B1) y prepara cada línea. La factura leída se adjunta sola.</div>
+        </div>
+      </div>
+      ${SOIVRE.grupos.map(grupoHtml).join('')}
+    </div>`;
+}
 
 // ── servidor AEAT Monitor ────────────────────────────────────
 const SOIVRE_LATIDO_MAX = 90;   // segundos sin latido para darlo por caído
@@ -271,10 +386,11 @@ const SOIVRE_CERT_OPC = { '01':'Declaración normal', '02':'No procede', '03':'C
 const SOIVRE_TDECL = { '01':'Expediente nuevo', '02':'Relacionado', '03':'Mercancía en demora', '04':'No conformidades', '05':'Revisión conformidad', '06':'Consolidación', '07':'Reactivación', '99':'Otros' };
 
 // Selector de fichero (factura .zip; si no es .zip, el servidor lo comprime)
-function soivreCampoFichero(id, etiqueta, obligatorio){
+function soivreCampoFichero(id, etiqueta, obligatorio, previo){
   return `
     <div style="background:var(--b50);border:1px dashed var(--b500);border-radius:8px;padding:10px 12px;margin-bottom:10px">
       ${sLbl(etiqueta + (obligatorio ? ' *' : ''))}
+      ${previo ? `<div style="font-size:12px;margin-bottom:6px">📎 <strong>${sEsc(previo.name)}</strong> <span style="color:var(--g500)">(factura leída, ${(previo.size/1048576).toFixed(1)} MB). Se adjunta sola; elige otro fichero solo si quieres sustituirla.</span></div>` : ''}
       <input type="file" id="${id}" accept=".zip,.7z,.pdf,.jpg,.jpeg,.tif,.tiff,.doc,.docx,.xls,.xlsx" style="font-size:12px;width:100%">
       <div style="font-size:11px;color:var(--g500);margin-top:4px">Se envía a la AEAT en <strong>.zip</strong> (PUE-7). Si eliges un PDF u otro formato, el servidor lo comprime. Máx. 10 MB.</div>
     </div>`;
@@ -293,8 +409,8 @@ function soivreCamposComunes(ctx, cfg, unidadHtml){
     ${sGrid(160,
       sCampo('Documento', sSelect('sv-tipodoc', { DUA:'DUA/DUE', DVD:'DVD' }, 'DUA')),
       sCampo('Operación', sSelect('sv-op', { ALT:'Alta', MOD:'Modificación' }, 'ALT')),
-      sCampo('MRN de la declaración (18)', sInput('sv-mrn', '', 'placeholder="26ES00110010000001" maxlength="23" oninput="this.value=this.value.toUpperCase()" style="width:100%;font-family:var(--mono)"')),
-      sCampo('Nº partida', sInput('sv-partida', '1', 'type="number" min="1" max="99999"'))
+      sCampo(ctx.servicio === 'CAL1' && ctx.flujo !== '01' ? 'MRN de la declaración o predeclaración B1' : 'MRN de la declaración (18)', sInput('sv-mrn', (ctx.grupo && SOIVRE.mrnGrupo[ctx.grupo]) || '', 'placeholder="26ES00110010000001" maxlength="23" oninput="this.value=this.value.toUpperCase()" style="width:100%;font-family:var(--mono)"')),
+      sCampo('Nº partida', sInput('sv-partida', ctx.partida || '1', 'type="number" min="1" max="99999"'))
     )}
     ${sGrid(160,
       sCampo('Unidad', unidadHtml),
@@ -306,8 +422,8 @@ function soivreCamposComunes(ctx, cfg, unidadHtml){
       sCampo('Cód. puesto insp.', sInput('sv-pi', cfg.codPI, 'maxlength="2" placeholder="2 dígitos"')),
       sCampo('Email de avisos', sInput('sv-email', cfg.email || (window.PortalGuard && PortalGuard.CU && PortalGuard.CU.email) || '', 'maxlength="40"'))
     )}
-    <details style="margin-bottom:10px">
-      <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--g600)">Expediente precedente (solo si procede)</summary>
+    <details style="margin-bottom:10px" ${ctx.flujo === '03' ? 'open' : ''}>
+      <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--g600)">Expediente precedente ${ctx.flujo === '03' ? '(reexportación: declaración de entrada, si procede)' : '(solo si procede)'}</summary>
       <div style="height:8px"></div>
       ${sGrid(200,
         sCampo('MRN-partida precedente', sInput('sv-mrnprec', '', 'maxlength="23"')),
@@ -367,7 +483,7 @@ async function abrirSolicitudSoivre(k){
       ${ctx.medidas && ctx.medidas.length ? `<div style="margin-top:3px;font-size:11px;color:var(--g500)">Medidas TARIC: ${sEsc(ctx.medidas.join(', '))}</div>` : ''}
     </div>
     ${cuerpo}
-    ${soivreCampoFichero('sv-factura', 'Factura comercial', true)}
+    ${soivreCampoFichero('sv-factura', 'Factura comercial', true, ctx.archivo)}
     ${soivreBotonera(k)}`;
 }
 
@@ -384,9 +500,14 @@ async function soivreFormCAL1(ctx, cfg){
       }).join('')}</select>`
     : sInput('sv-unidad', ctx.unidad || '');
   const env = cfg.envasador || {};
+  // Origen: el de la línea de factura; en búsqueda libre, el país elegido en preferencias o España
+  const origen = ctx.origen || document.getElementById('spg-pais')?.value || (typeof ORIGEN_POR_DEFECTO !== 'undefined' ? ORIGEN_POR_DEFECTO : 'ES');
+  ctx.flujo = soivreFlujoPorOrigen(origen, ctx.flujo);
   return `${aviso}
     ${sGrid(160,
-      sCampo('Flujo', sSelect('sv-flujo', { '02':'Exportación', '03':'Reexportación', '01':'Importación' }, ctx.flujo || '02')),
+      sCampo('País de origen', sInput('sv-origen', origen, `maxlength="2" style="width:100%;font-family:var(--mono)" title="España → exportación · otro país → reexportación"
+        oninput="this.value=this.value.toUpperCase();const f=document.getElementById('sv-flujo');if(f&&f.value!=='01'&&this.value.length===2)f.value=soivreFlujoPorOrigen(this.value,'')"`)),
+      sCampo('Flujo', sSelect('sv-flujo', { '02':'Exportación', '03':'Reexportación', '01':'Importación' }, ctx.flujo)),
       sCampo('Grupo producto', sSelect('sv-grupo', { '01':'F&H frescas', '02':'F&H uso industrial', '03':'Otros' }, grupoDef)),
       sCampo('Categoría', sSelect('sv-cat', { '01':'Extra', '02':'I', '03':'II', '04':'N/A' }, '02')),
       sCampo('Envase > 5 kg', sSelect('sv-env5', { Si:'Sí', No:'No' }, 'Si'))
@@ -477,7 +598,8 @@ async function soivreEnviarSolicitud(k, soloXml){
   const servicio = ctx.servicio || 'CAL1';
   const datos = soivreDatosSolicitud(servicio);
   if(ctx.factura) datos.factura = ctx.factura;   // solo para precargar los datos adicionales; no viaja en el XML
-  const fichero = sFichero('sv-factura');
+  const fichero = sFichero('sv-factura') || ctx.archivo || null;
+  if(ctx.grupo && datos.mrn) SOIVRE.mrnGrupo[ctx.grupo] = datos.mrn.slice(0, 18);
   // Recordar valores habituales en este navegador
   const cfg = soivreCfg();
   cfg.codCice = datos.codCice; cfg.codPI = datos.codPI; cfg.email = datos.email;
@@ -501,7 +623,7 @@ async function soivreEnviarSolicitud(k, soloXml){
      !confirm(`Vas a enviar una solicitud ${servicio} REAL a la AEAT (producción) firmada con ${e.titular}, con la factura ${fichero.name}. ¿Continuar?`)) return;
 
   await soivreEnviar(servicio, datos, {
-    codigo_taric: ctx.codigo_taric, descripcion: ctx.descripcion,
+    codigo_taric: ctx.codigo_taric, descripcion: ctx.descripcion, ctxKey: k,
     mrn_partida: (datos.mrn.length === 23 ? datos.mrn : datos.mrn + String(parseInt(datos.partida,10)||0).padStart(5,'0'))
   }, null, fichero);
 }
@@ -538,6 +660,7 @@ async function soivreEnviar(tipo, datos, extra, previo, fichero){
   });
   if(!previo) SOIVRE.sesion.unshift(env);
   soivreResultado(env);
+  soivrePanelFacturaRefrescar();
   if(document.getElementById('view-soivre')?.classList.contains('active')) soivrePintarSesion();
 }
 

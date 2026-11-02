@@ -2256,7 +2256,7 @@ async function handleFiles(fileList){
         cabecera.pais_origen = ORIGEN_POR_DEFECTO;
         cabecera.origen_asumido = true;
       }
-      FACTURAS.push({ fichero:file.name, cabecera, lineas, truncado:!!data._truncado,
+      FACTURAS.push({ fichero:file.name, archivo:file, cabecera, lineas, truncado:!!data._truncado,
                       incompleta:data._incompleta||null, tokens:data._tokens||null });
       const problema = data._revisar || data._incompleta || data._pesoRepartido || (data._truncado
         ? 'Lectura truncada: se agotaron los tokens. Revisa que no falten líneas al final.' : null);
@@ -2547,6 +2547,7 @@ async function renderLoteFacturas(){
       ${fallidas.map(f=>`❌ ${f.fichero}: ${f.error}`).join('<br>')}
     </div>`:''}
   `;
+  if(typeof soivrePanelFactura === 'function') soivrePanelFactura(todas);
 }
 
 // Copia texto y confirma en el propio botón
@@ -3171,6 +3172,7 @@ async function clasificarTextoFactura(){
       return;
     }
     await renderLineasFactura(resultado, 'Texto pegado');
+    if(typeof soivrePanelFactura === 'function') soivrePanelFactura(window._facturaLineas);
     document.getElementById('btn-exp-fact').style.display='';var _bvt2=document.getElementById('btn-exp-vt');if(_bvt2)_bvt2.style.display='';
   } catch(e){
     document.getElementById('factura-info').innerHTML = `<div style="padding:12px;color:var(--rd600)">❌ ${e.message}</div>`;
