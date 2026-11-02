@@ -214,12 +214,18 @@ const SOIVRE_FLUJO_TXT = { '01':'Importación', '02':'Exportación', '03':'Reexp
 
 function soivrePanelFactura(lineas){
   if(!SOIVRE.lista) return soivreCargarLista().then(() => soivrePanelFactura(lineas));
-  // Clave estable de cada línea («nº factura|posición»): enlaza la línea de la
-  // solicitud ESTACICE con la del CSV de VisualTrans para poner su N003
+  // Clave estable de cada línea («NIF exportador|nº factura|posición»): enlaza
+  // la línea de la solicitud ESTACICE con la del CSV de VisualTrans para poner
+  // su N003. El NIF evita cruces entre proveedores con el mismo nº de factura.
+  const cabGlobal = (typeof FACTURA_CABECERA !== 'undefined' && FACTURA_CABECERA) || {};
+  const normNif = n => typeof vtNormNif === 'function' ? vtNormNif(n) : String(n || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
   const cont = {};
   (lineas || []).forEach(l => {
-    const nf = l._numFactura || (typeof FACTURA_CABECERA !== 'undefined' && FACTURA_CABECERA && FACTURA_CABECERA.numero_factura) || 'factura';
-    if(!l._claveVT){ cont[nf] = (cont[nf] || 0) + 1; l._claveVT = `${nf}|${cont[nf]}`; }
+    const cab = l._cab || cabGlobal;
+    const nf = l._numFactura || cab.numero_factura || 'factura';
+    const nif = normNif(cab.exportador && (cab.exportador.nif || cab.exportador.eori)) || 'SIN-NIF';
+    const base = `${nif}|${nf}`;
+    if(!l._claveVT){ cont[base] = (cont[base] || 0) + 1; l._claveVT = `${base}|${cont[base]}`; }
   });
   SOIVRE.grupos = [];
   SOIVRE.vuaLineas = [];

@@ -720,8 +720,9 @@ function vuaPintarSesion(){
 // línea de la solicitud. El servidor consulta ESTACICE cada cierto tiempo y,
 // cuando SOIVRE emite los certificados, guarda el N003 de cada línea. Al
 // generar el CSV de VisualTrans se añaden a la casilla 44 de cada partida.
-function vuaFacturaParaGuardar(numeroFactura){
-  const todas = (window._facturaLineas || []).filter(l => !numeroFactura || (l._numFactura || '') === numeroFactura || !l._numFactura);
+// Solo las líneas de ESA factura: mismo NIF de exportador y nº de factura (prefijo de la clave)
+function vuaFacturaParaGuardar(prefijo){
+  const todas = (window._facturaLineas || []).filter(l => (l._claveVT || '').startsWith(prefijo));
   // Sin referencias circulares ni campos de pantalla; la cabecera va aparte
   return todas.map(l => { const c = Object.assign({}, l); delete c._cab; delete c._n003; delete c._n003s; return c; });
 }
@@ -731,7 +732,8 @@ async function vuaGuardarExpediente(s, numero, entorno){
     usuario: (window.PortalGuard && PortalGuard.CU && PortalGuard.CU.nombre) || null,
     entorno: entorno || 'pruebas', numero_solicitud: String(numero), cice_pi: s.cicePI, tipo: s.tipo,
     numero_factura: s.factura || null, exportador: s.agente.nombre, nif_exportador: s.agente.nif,
-    factura: { cab: s.cabFactura || (typeof FACTURA_CABECERA !== 'undefined' ? FACTURA_CABECERA : {}) || {}, lineas: vuaFacturaParaGuardar(s.factura) },
+    factura: { cab: s.cabFactura || (typeof FACTURA_CABECERA !== 'undefined' ? FACTURA_CABECERA : {}) || {},
+               lineas: vuaFacturaParaGuardar(s.lineas.find(l => l.clave).clave.split('|').slice(0, 2).join('|') + '|') },
     lineas_sol: s.lineas.map((l, i) => ({ linea: i + 1, clave: l.clave || null, descripcion: l.descripcion || '' }))
   };
   const { error } = await sbT().from('vua_expedientes').insert(fila);
@@ -805,16 +807,21 @@ async function vtImportarEntidades(input){
 async function vtPintarEntidades(){
   const el = document.getElementById('vt-entidades');
   if(!el) return;
-  const { count, error } = await sbT().from('vt_entidades').select('codigo', { count: 'exact', head: true });
-  el.innerHTML = `
+  // El botón se pinta ya; el recuento llega después (o el aviso si falta la tabla)
+  let count = '…', error = null;
+  const pinta = () => { el.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:220px;font-size:12px;color:var(--g600)">
-        ${error ? sEsc('Tabla vt_entidades no disponible (¿instalar_soivre.sql?)') : `<strong>${count || 0}</strong> entidades de VisualTrans cargadas.`}
+        ${error ? sEsc('Tabla vt_entidades no disponible: ejecuta de nuevo instalar_soivre.sql en Supabase.') : `<strong>${count ?? 0}</strong> entidades de VisualTrans cargadas.`}
         El CSV escribe exportador y destinatario con el nombre exacto de VisualTrans, buscándolos por NIF.
         <div id="vt-entidades-estado" style="font-size:11px;color:var(--g500);margin-top:2px"></div>
       </div>
-      <label class="btn btn-s btn-sm" style="cursor:pointer">📥 Importar Entidades.txt<input type="file" accept=".txt,.csv" style="display:none" onchange="vtImportarEntidades(this)"></label>
-    </div>`;
+      <label class="btn btn-p btn-sm" style="cursor:pointer">📥 Importar Entidades.txt<input type="file" accept=".txt,.csv" style="display:none" onchange="vtImportarEntidades(this)"></label>
+    </div>`; };
+  pinta();
+  try{ const r = await sbT().from('vt_entidades').select('codigo', { count: 'exact', head: true }); count = r.count; error = r.error; }
+  catch(e){ error = e; }
+  pinta();
 }
 
 const VT = { cache: new Map(), expedientes: [] };
@@ -873,12 +880,15 @@ async function vtPrepararExportacion(detalle, cab, esImport){
   }
   VT.expedientes = [];
   if(!esImport){
-    const facturas = [...new Set(detalle.map(l => (l._claveVT || '').split('|')[0]).filter(Boolean))];
+    const claves = new Set(detalle.map(l => l._claveVT).filter(Boolean));
+    const facturas = [...new Set(detalle.map(l => l._numFactura || (l._cab && l._cab.numero_factura) || cab.numero_factura).filter(Boolean))];
     let exps = [];
     if(facturas.length){
       const r = await sbT().from('vua_expedientes').select('id,numero_factura,numero_solicitud,estado,n003,lineas_sol').in('numero_factura', facturas);
       if(!r.error) exps = r.data || [];
     }
+    // Mismo nº de factura de otro proveedor: sus claves llevan otro NIF y no se tocan
+    exps = exps.filter(x => (x.lineas_sol || []).some(ls => claves.has(ls.clave)));
     const n003 = {}, esperando = new Set();
     exps.forEach(x => {
       Object.assign(n003, x.n003 || {});
