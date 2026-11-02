@@ -53,27 +53,58 @@ async function vuaCatalogo(){
   return VUA.cat;
 }
 
-// Productos SOIVRE posibles para un TARIC: misma partida (4 dígitos) o, si no
-// hay, mismo capítulo. Se preselecciona el que más palabras comparte con la
-// descripción de la factura.
-function vuaProductosPara(taric, tipo = 'F'){
-  const t = String(taric || '').replace(/\D/g, '');
-  const prods = (VUA.cat && VUA.cat.productos || []).filter(p => p.imex !== 'I' && p.tipo === tipo);
-  const p4 = prods.filter(p => p.codigo.startsWith(t.slice(0, 4)));
-  return p4.length ? p4 : prods.filter(p => p.codigo.startsWith(t.slice(0, 2)));
-}
+// Productos SOIVRE posibles para un TARIC: los del mismo capítulo (el XSD solo
+// exige que coincidan las dos primeras cifras; p. ej. «072050 Perejil» va con
+// el TARIC 0709). Se ordenan por parecido con la descripción de la factura.
+// Nombres de factura que no coinciden con el nombre oficial de la tabla
+const VUA_SINONIMOS = [[/CHAMPI\w*/g, 'SETAS OTRAS ESPECIES'], [/BROCOLI\w*/g, 'BROCULI'], [/MEZCLUM/g, 'ENSALADAS'],
+                       [/HIERBABUENA/g, 'MENTA HIERBABUENA']];
 function vuaNormal(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
-function vuaElegirProducto(taric, descripcion, tipo = 'F'){
-  const opciones = vuaProductosPara(taric, tipo);
-  const palabras = vuaNormal(descripcion).split(/[^A-Z]+/).filter(w => w.length > 3);
-  let mejor = null, puntos = 0;
-  opciones.forEach(p => {
-    const n = vuaNormal(p.nombre);
-    const pt = palabras.filter(w => n.includes(w.slice(0, 5))).length - (/LAS DEMAS|LOS DEMAS/.test(n) ? 0.5 : 0);
-    if(pt > puntos){ puntos = pt; mejor = p.codigo; }
-  });
-  return mejor || (opciones.length === 1 ? opciones[0].codigo : '');
+function vuaPalabras(t){
+  let n = vuaNormal(t);
+  VUA_SINONIMOS.forEach(([re, sust]) => { n = n.replace(re, sust); });
+  return n.split(/[^A-Z]+/).filter(w => w.length > 2);
 }
+// La 1ª palabra de la factura (el producto: «Calabaza», «Tomate»…) pesa más que
+// el resto (variedad, calibre…). Se compara por prefijo de hasta 7 letras con
+// cada palabra del nombre oficial: «CALABAZ» ≠ «CALABACINES».
+function vuaPuntos(p, desc, taric){
+  const nombre = vuaPalabras(p.nombre);
+  const esta = w => nombre.some(x => x.startsWith(w.slice(0, 7)));
+  let pt = 0;
+  vuaPalabras(desc).forEach((w, i) => { if(esta(w)) pt += i === 0 ? 3 : 1; });
+  // A igualdad, el genérico («Cebollas otras») antes que una variedad que la factura no nombra («Cebollas Lanzarote»)
+  if(pt && /LAS DEMAS|LOS DEMAS|OTRAS|OTROS/.test(vuaNormal(p.nombre))) pt += 0.2;
+  if(pt && p.codigo.slice(0, 4) === String(taric || '').replace(/\D/g, '').slice(0, 4)) pt += 0.5;
+  return pt;
+}
+function vuaProductosPara(taric, tipo = 'F', desc = ''){
+  const t = String(taric || '').replace(/\D/g, '');
+  const prods = (VUA.cat && VUA.cat.productos || []).filter(p => p.imex !== 'I' && p.tipo === tipo && p.codigo.startsWith(t.slice(0, 2)));
+  if(!desc) return prods;
+  return prods.map(p => [vuaPuntos(p, desc, t), p]).sort((a, b) => b[0] - a[0] || a[1].codigo.localeCompare(b[1].codigo)).map(x => x[1]);
+}
+// Solo se preselecciona si coincide el producto (1ª palabra); si no, queda
+// «— producto SOIVRE —» para que el usuario lo elija o quite la línea.
+function vuaElegirProducto(taric, descripcion, tipo = 'F'){
+  const mejor = vuaProductosPara(taric, tipo, descripcion)[0];
+  return mejor && vuaPuntos(mejor, descripcion, taric) >= 3 ? mejor.codigo : '';
+}
+
+// Origen por línea indicado en las observaciones de la factura:
+// «NARANJA: SUDAFRICA / BANANA: COSTA RICA» → { NARANJA: 'ZA', BANANA: 'CR' }
+function vuaOrigenesDeNotas(cab){
+  const textos = [cab.observaciones, cab.notas, cab.observaciones_factura, ...(Array.isArray(cab.observaciones_importantes) ? cab.observaciones_importantes : [])]
+    .filter(Boolean).join('\n');
+  const paises = (VUA.cat && VUA.cat.paises) || [];
+  const m = {};
+  for(const [, prod, pais] of vuaNormal(textos).matchAll(/([A-Z]{3,})\s*:\s*([A-Z][A-Z ]{2,}?)(?=\s*(?:\n|,|;|\/|$|[A-Z]{3,}\s*:))/g)){
+    const p = paises.find(x => vuaNormal(x.nombre) === pais.trim()) || paises.find(x => vuaNormal(x.nombre).startsWith(pais.trim()));
+    if(p) m[prod] = p.codigo;
+  }
+  return m;
+}
+
 function vuaNombreEnvase(unidad){
   const u = String(unidad || '').trim();
   if(!u || /^(kg|kgs|kilos?|l|litros?|u|ud|uds|unidades?|pcs?|piezas?)$/i.test(u)) return 'Cajas';
@@ -120,13 +151,28 @@ function vuaNum(v){
 }
 const vuaFmt = n => Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '';
 
+// ESTACICE exige peso bruto > neto. El neto manda (es el de la factura): si el
+// bruto falta o no lo supera (líneas «S/P» de la factura), solo se toca el
+// bruto, al mínimo admitido: neto + 0,01 kg. La línea queda marcada.
+function vuaAjustarBruto(l){
+  const neto = vuaNum(l.pesoNeto), bruto = vuaNum(l.pesoBruto);
+  if(!(neto > 0) || bruto > neto) return false;
+  l.pesoBruto = vuaFmt(neto + 0.01);
+  l.brutoAjustado = true;
+  return true;
+}
+
 // lineas: las de la factura con medida SOVEX. Devuelve las solicitudes creadas.
 function vuaPrepararDesdeFactura(lineas){
   const cfg = vuaCfg();
   const grupos = new Map();
   (lineas || []).forEach(l => {
     const cab = l._cab || (typeof FACTURA_CABECERA !== 'undefined' && FACTURA_CABECERA) || {};
-    const origen = soivreOrigenDe(l) || 'ES';
+    const notas = cab._origenesNotas || (cab._origenesNotas = vuaOrigenesDeNotas(cab));
+    const primera = vuaPalabras(l.descripcion_es || l.descripcion_original || '')[0] || '';
+    const deNota = Object.keys(notas).find(k => k.slice(0, 5) === primera.slice(0, 5));
+    const origen = (l.pais_origen && soivreOrigenDe(l)) || (deNota && notas[deNota]) || soivreOrigenDe(l) || 'ES';
+    l._origenVua = origen;
     const tipo = (soivreAplica(l.codigo_taric) || {}).tipoVua || 'F';
     const clave = `${l.fichero || cab.numero_factura || ''}|${origen}|${tipo}`;
     if(!grupos.has(clave)) grupos.set(clave, { cab, origen, tipo, archivo: soivreArchivoDe(l), lineas: [] });
@@ -139,11 +185,13 @@ function vuaPrepararDesdeFactura(lineas){
     const destino = destinoTxt ? (typeof _vtPaisISO === 'function' ? _vtPaisISO(destinoTxt) : destinoTxt) : '';
     const moneda = VUA_MONEDAS[String(g.cab.moneda || '').toUpperCase()] || '';
     const lineasVua = g.lineas.map(l => {
-      const bruto = vuaNum(l.peso_bruto), neto = vuaNum(l.peso_neto);
+      // Neto: el de la factura; si no viene aparte, la cantidad cuando está en kg
+      const bruto = vuaNum(l.peso_bruto);
+      const neto = Number.isFinite(vuaNum(l.peso_neto)) ? vuaNum(l.peso_neto) : (/^kg|kilo/i.test(String(l.unidad || '').trim()) ? vuaNum(l.cantidad) : NaN);
       const envases = vuaNum(l.bultos), cantidad = vuaNum(l.cantidad);
       const desc = l.descripcion_es || l.descripcion_original || '';
       return {
-        taric: String(l.codigo_taric || '').replace(/\D/g, ''),
+        taric: String(l.codigo_taric || '').replace(/\D/g, ''), origen: l._origenVua,
         descripcion: l.descripcion_es || l.descripcion_original || '',
         envases: Number.isFinite(envases) ? String(Math.round(envases)) : (/caj|box|bult/i.test(l.unidad || '') ? vuaFmt(vuaNum(l.cantidad)) : ''),
         unidad: l.unidad || '', codEnvase: vuaEnvaseDe(l.unidad), marca: cfg.marcas[agente.nif] || '',
@@ -156,6 +204,7 @@ function vuaPrepararDesdeFactura(lineas){
         factura: String(g.cab.numero_factura || '').slice(0, 30)
       };
     });
+    if(g.tipo === 'F') lineasVua.forEach(vuaAjustarBruto);
     for(let i = 0; i < lineasVua.length; i += VUA_MAX_LINEAS){
       nuevas.push(vuaNuevaSolicitud({
         tipo: g.tipo, origen: g.origen, destino, agente, archivo: g.archivo, factura: g.cab.numero_factura || '',
@@ -225,8 +274,9 @@ const VUA_COLUMNAS = {
   F: ['Lín', 'TARIC · producto SOIVRE', 'Nº env.', 'Envase', 'Marca', 'Cat.', 'P. bruto', 'P. neto', 'Nº factura', ''],
   O: ['Lín', 'TARIC · producto SOIVRE', 'Nº env.', 'Nombre envase', '> 5 kg', 'Marca', 'P. neto', 'Unidades', 'Nº factura', '']
 };
-function vuaFilaLinea(l, i, tipo = 'F'){
-  const prods = vuaProductosPara(l.taric, tipo);
+function vuaFilaLinea(l, i, tipo = 'F', origenSol = 'ES'){
+  const prods = vuaProductosPara(l.taric, tipo, l.descripcion);
+  const origen = l.origen || origenSol || 'ES';
   const c = 'style="width:100%;font-size:11px;padding:4px 5px"';
   const celda = (w, html) => `<td style="padding:4px 2px;width:${w}px">${html}</td>`;
   const comunesFin = celda(110, `<input class="fi vl-factura" ${c} value="${sEsc(l.factura)}" maxlength="30">`)
@@ -240,14 +290,19 @@ function vuaFilaLinea(l, i, tipo = 'F'){
     : celda(110, `<select class="fi vl-codenv" ${c}>${vuaOpc(VUA.cat.envases, l.codEnvase)}</select>`)
       + celda(100, `<input class="fi vl-marca" ${c} value="${sEsc(l.marca)}" maxlength="20">`)
       + celda(70, `<select class="fi vl-cat" ${c}>${Object.entries(VUA_CATEGORIAS).map(([k, v]) => `<option value="${k}" ${k === l.categoria ? 'selected' : ''}>${v}</option>`).join('')}</select>`)
-      + celda(80, `<input class="fi vl-bruto" ${c} value="${sEsc(l.pesoBruto)}" inputmode="decimal">`)
+      + celda(80, `<input class="fi vl-bruto" ${c} value="${sEsc(l.pesoBruto)}" inputmode="decimal">${l.brutoAjustado ? '<div style="font-size:9px;color:var(--am600)" title="La factura no trae un bruto mayor que el neto: se ha puesto neto + 0,01 kg">ajustado</div>' : ''}`)
       + celda(80, `<input class="fi vl-neto" ${c} value="${sEsc(l.pesoNeto)}" inputmode="decimal">`);
   return `<tr data-i="${i}" style="border-top:1px solid var(--g100);vertical-align:top">
     <td style="padding:4px 2px;text-align:center;font-weight:700">${i + 1}</td>
     <td style="padding:4px 2px;min-width:150px">
       <input class="fi vl-taric" value="${sEsc(l.taric)}" maxlength="10" onchange="vuaRefrescarProductos(this)" style="width:100%;font-size:11px;padding:4px 5px;font-family:var(--mono)">
       <select class="fi vl-producto" ${c}>${vuaOpc(prods, l.producto, prods.length ? '— producto SOIVRE —' : 'Sin productos para este TARIC')}</select>
-      <div style="font-size:10px;color:var(--g400);margin-top:2px;max-width:220px">${sEsc(l.descripcion || '')}</div>
+      <div style="display:flex;align-items:center;gap:4px;margin-top:2px">
+        <span style="font-size:10px;color:var(--g400)">Origen</span>
+        <select class="fi vl-origen" style="width:auto;font-size:10px;padding:1px 3px" title="Si es distinto del de la solicitud, la línea pasa a otra solicitud al enviar">${vuaOpc(VUA.cat.paises.map(p => ({ codigo: p.codigo, nombre: p.codigo })), origen)}</select>
+        <span style="font-size:10px;color:var(--g400);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${sEsc(l.descripcion || '')}">${sEsc(l.descripcion || '')}</span>
+      </div>
+      ${l.producto ? '' : `<div style="font-size:10px;color:var(--am600)">⚠ Elige el producto SOIVRE o quita la línea si no lleva control</div>`}
     </td>
     ${celda(70, `<input class="fi vl-envases" ${c} value="${sEsc(l.envases)}" inputmode="numeric">`)}
     ${especificas}${comunesFin}
@@ -334,7 +389,7 @@ async function abrirSolicitudVua(k){
     </div>
     <div style="overflow-x:auto;margin-bottom:10px"><table style="width:100%;border-collapse:collapse;font-size:11px">
       <thead><tr style="font-size:10px;color:var(--g500);text-transform:uppercase;text-align:left">${VUA_COLUMNAS[s.tipo].map(t => `<th>${t}</th>`).join('')}</tr></thead>
-      <tbody id="vua-lineas" data-tipo="${s.tipo}">${s.lineas.map((l, i) => vuaFilaLinea(l, i, s.tipo)).join('')}</tbody>
+      <tbody id="vua-lineas" data-tipo="${s.tipo}" data-origen="${sEsc(s.origen || 'ES')}">${s.lineas.map((l, i) => vuaFilaLinea(l, i, s.tipo, s.origen)).join('')}</tbody>
     </table></div>
     <div style="background:var(--b50);border:1px dashed var(--b500);border-radius:8px;padding:10px 12px;margin-bottom:10px">
       ${sLbl('Factura comercial (anexo)')}
@@ -365,7 +420,7 @@ function vuaDestinoCambiado(destino){
 }
 function vuaRefrescarProductos(input){
   const tr = input.closest('tr');
-  const prods = vuaProductosPara(input.value, document.getElementById('vua-lineas').dataset.tipo);
+  const prods = vuaProductosPara(input.value, document.getElementById('vua-lineas').dataset.tipo, tr.querySelector('span[title]')?.title || '');
   tr.querySelector('.vl-producto').innerHTML = vuaOpc(prods, '', prods.length ? '— producto SOIVRE —' : 'Sin productos para este TARIC');
 }
 function vuaContarLineas(){
@@ -380,7 +435,7 @@ function vuaAnadirLinea(){
   const base = { taric: '', descripcion: '', envases: '', codEnvase: '04', marca: prev ? prev.querySelector('.vl-marca').value : '',
                  producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', nombreEnvase: '', envaseMas5kg: '', unidades: '',
                  factura: prev ? prev.querySelector('.vl-factura').value : '' };
-  tb.insertAdjacentHTML('beforeend', vuaFilaLinea(base, tb.children.length, tb.dataset.tipo));
+  tb.insertAdjacentHTML('beforeend', vuaFilaLinea(base, tb.children.length, tb.dataset.tipo, document.getElementById('vua-origen')?.value));
   vuaContarLineas();
 }
 function vuaQuitarLinea(btn){ btn.closest('tr').remove(); vuaContarLineas(); }
@@ -408,7 +463,7 @@ function vuaLeerFormulario(k){
     const q = c => (tr.querySelector(c)?.value || '').trim();
     const prev = s.lineas[+tr.dataset.i] || {};
     const l = Object.assign({}, prev, {
-      taric: q('.vl-taric').replace(/\D/g, ''), producto: q('.vl-producto'), envases: q('.vl-envases'),
+      taric: q('.vl-taric').replace(/\D/g, ''), producto: q('.vl-producto'), envases: q('.vl-envases'), origen: q('.vl-origen'),
       marca: q('.vl-marca'), pesoNeto: q('.vl-neto').replace(',', '.'), factura: q('.vl-factura'), _envRevisado: true
     });
     if(esO) Object.assign(l, { nombreEnvase: q('.vl-nomenv'), envaseMas5kg: q('.vl-mas5'), unidades: q('.vl-unidades') });
@@ -485,8 +540,32 @@ function vuaIdMensaje(){
   return `V${String(d.getFullYear()).slice(2)}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}${Math.random().toString(36).slice(2, 8).toUpperCase().padEnd(6, '0')}`;
 }
 
+// Las líneas con otro país de origen no pueden ir en esta solicitud: pasan a
+// otra (España → exportación; otro país → reexportación) con la misma cabecera.
+function vuaSepararPorOrigen(s){
+  const propio = s.origen || 'ES';
+  const otras = s.lineas.filter(l => (l.origen || propio) !== propio);
+  if(!otras.length) return [];
+  s.lineas = s.lineas.filter(l => (l.origen || propio) === propio);
+  const porOrigen = new Map();
+  otras.forEach(l => { if(!porOrigen.has(l.origen)) porOrigen.set(l.origen, []); porOrigen.get(l.origen).push(l); });
+  const nuevas = [];
+  porOrigen.forEach((lineas, origen) => {
+    const { k: _k, env: _e, info: _i, idMensaje: _id, flujo: _f, ...cabecera } = s;
+    nuevas.push(vuaNuevaSolicitud(Object.assign({}, cabecera, { origen, lineas, parte: '' })));
+  });
+  if(SOIVRE.vuaSols) SOIVRE.vuaSols.push(...nuevas);
+  return nuevas;
+}
+
 async function vuaEnviar(k, soloXml){
   const s = vuaLeerFormulario(k);
+  const separadas = vuaSepararPorOrigen(s);
+  if(separadas.length){
+    if(typeof soivrePanelFacturaRefrescar === 'function') soivrePanelFacturaRefrescar();
+    showToast(`${separadas.reduce((n, x) => n + x.lineas.length, 0)} línea(s) de otro origen pasan a ${separadas.length} solicitud(es) aparte (${separadas.map(x => x.origen).join(', ')})`);
+    if(!s.lineas.length){ soivreCerrarModal(); return abrirSolicitudVua(separadas[0].k); }
+  }
   const d = vuaDatos(s);
   // Recordar centro/aduana habituales y la marca del exportador
   const cfg = vuaCfg();
@@ -495,6 +574,11 @@ async function vuaEnviar(k, soloXml){
   cfg.transporte = s.transporte; cfg.ubicacion = s.ubicacion || cfg.ubicacion; cfg.ultimoAgente = s.agente;
   vuaGuardarCfg(cfg);
 
+  // Bruto ≤ neto tras editar: se corrige el bruto, nunca el neto
+  if(s.tipo === 'F'){
+    const n = s.lineas.filter(vuaAjustarBruto).length;
+    if(n){ d.lineas = vuaDatos(s).lineas; showToast(`Peso bruto ajustado a neto + 0,01 kg en ${n} línea(s)`); }
+  }
   const errores = vuaComprobar(s, d);
   if(errores.length && !soloXml) return soivreMostrarErrores(errores);
   const e = await soivreComprobarServidor();
