@@ -1,15 +1,18 @@
 'use strict';
 // ═══ SOIVRE · ESTACICE VUA (Ministerio de Comercio) ═══
-// Frutas y hortalizas a la exportación y reexportación por el servicio web
-// SOIVRE/Operador. Se carga después de soivre-cal.js y usa sus utilidades
+// Control de calidad a la exportación y reexportación por el servicio web
+// SOIVRE/Operador: frutas y hortalizas (tipo F) y otros productos (tipo O:
+// aceite de oliva, aceitunas, hierbas aromáticas…). Se carga después de soivre-cal.js y usa sus utilidades
 // (sEsc, sCampo, soivreModal, soivreLlamar, soivreComprobarServidor…).
 //
 // Reglas (especificación WSESTACICE v3.1 y operativa de ALS):
 //   · sin MRN; de 1 a 12 líneas por solicitud, una por línea de factura;
 //   · una solicitud por factura y país de origen: España → exportación (E),
 //     otro país → reexportación (R); más de 12 líneas → varias solicitudes;
+//   · F y O no se mezclan en una misma solicitud;
 //   · el agente económico es el exportador de la factura (no el titular del
-//     certificado); el destinatario no tiene campo: va en la factura adjunta;
+//     certificado). En F el destinatario no tiene campo (va en la factura
+//     adjunta); en O es obligatorio (DestinatarioRemitente);
 //   · destino Gibraltar → Centro COMEX La Línea/Gibraltar (5802) y aduana
 //     La Línea Concepción (1167);
 //   · la factura viaja dentro del XML como .zip de 2 MB como máximo.
@@ -38,7 +41,7 @@ function vuaGuardarCfg(v){ const c = soivreCfg(); c.vua = v; soivreGuardarCfg(c)
 async function vuaCatalogo(){
   if(VUA.cat) return VUA.cat;
   const [p, c] = await Promise.all([
-    sbT().from('estacice_productos').select('codigo,nombre,imex').eq('tipo', 'F').order('codigo'),
+    sbT().from('estacice_productos').select('codigo,nombre,tipo,imex').in('tipo', ['F', 'O']).order('codigo'),
     sbT().from('estacice_codigos').select('tabla,codigo,nombre,grupo').order('nombre')
   ]);
   if(p.error || c.error) throw new Error((p.error || c.error).message);
@@ -53,15 +56,15 @@ async function vuaCatalogo(){
 // Productos SOIVRE posibles para un TARIC: misma partida (4 dígitos) o, si no
 // hay, mismo capítulo. Se preselecciona el que más palabras comparte con la
 // descripción de la factura.
-function vuaProductosPara(taric){
+function vuaProductosPara(taric, tipo = 'F'){
   const t = String(taric || '').replace(/\D/g, '');
-  const prods = (VUA.cat && VUA.cat.productos || []).filter(p => p.imex !== 'I');
+  const prods = (VUA.cat && VUA.cat.productos || []).filter(p => p.imex !== 'I' && p.tipo === tipo);
   const p4 = prods.filter(p => p.codigo.startsWith(t.slice(0, 4)));
   return p4.length ? p4 : prods.filter(p => p.codigo.startsWith(t.slice(0, 2)));
 }
 function vuaNormal(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
-function vuaElegirProducto(taric, descripcion){
-  const opciones = vuaProductosPara(taric);
+function vuaElegirProducto(taric, descripcion, tipo = 'F'){
+  const opciones = vuaProductosPara(taric, tipo);
   const palabras = vuaNormal(descripcion).split(/[^A-Z]+/).filter(w => w.length > 3);
   let mejor = null, puntos = 0;
   opciones.forEach(p => {
@@ -70,6 +73,11 @@ function vuaElegirProducto(taric, descripcion){
     if(pt > puntos){ puntos = pt; mejor = p.codigo; }
   });
   return mejor || (opciones.length === 1 ? opciones[0].codigo : '');
+}
+function vuaNombreEnvase(unidad){
+  const u = String(unidad || '').trim();
+  if(!u || /^(kg|kgs|kilos?|l|litros?|u|ud|uds|unidades?|pcs?|piezas?)$/i.test(u)) return 'Cajas';
+  return (u.charAt(0).toUpperCase() + u.slice(1).toLowerCase()).slice(0, 20);
 }
 function vuaEnvaseDe(unidad){
   const u = vuaNormal(unidad).replace(/S$/, '');
@@ -119,8 +127,9 @@ function vuaPrepararDesdeFactura(lineas){
   (lineas || []).forEach(l => {
     const cab = l._cab || (typeof FACTURA_CABECERA !== 'undefined' && FACTURA_CABECERA) || {};
     const origen = soivreOrigenDe(l) || 'ES';
-    const clave = `${l.fichero || cab.numero_factura || ''}|${origen}`;
-    if(!grupos.has(clave)) grupos.set(clave, { cab, origen, archivo: soivreArchivoDe(l), lineas: [] });
+    const tipo = (soivreAplica(l.codigo_taric) || {}).tipoVua || 'F';
+    const clave = `${l.fichero || cab.numero_factura || ''}|${origen}|${tipo}`;
+    if(!grupos.has(clave)) grupos.set(clave, { cab, origen, tipo, archivo: soivreArchivoDe(l), lineas: [] });
     grupos.get(clave).lineas.push(l);
   });
   const nuevas = [];
@@ -131,13 +140,17 @@ function vuaPrepararDesdeFactura(lineas){
     const moneda = VUA_MONEDAS[String(g.cab.moneda || '').toUpperCase()] || '';
     const lineasVua = g.lineas.map(l => {
       const bruto = vuaNum(l.peso_bruto), neto = vuaNum(l.peso_neto);
-      const envases = vuaNum(l.bultos);
+      const envases = vuaNum(l.bultos), cantidad = vuaNum(l.cantidad);
+      const desc = l.descripcion_es || l.descripcion_original || '';
       return {
         taric: String(l.codigo_taric || '').replace(/\D/g, ''),
         descripcion: l.descripcion_es || l.descripcion_original || '',
         envases: Number.isFinite(envases) ? String(Math.round(envases)) : (/caj|box|bult/i.test(l.unidad || '') ? vuaFmt(vuaNum(l.cantidad)) : ''),
         unidad: l.unidad || '', codEnvase: vuaEnvaseDe(l.unidad), marca: cfg.marcas[agente.nif] || '',
-        producto: vuaElegirProducto(l.codigo_taric, l.descripcion_es || l.descripcion_original),
+        producto: vuaElegirProducto(l.codigo_taric, desc, g.tipo),
+        // Otros productos: nombre del envase en texto, unidades físicas y envase > 5 kg (obligatorio en aceites)
+        nombreEnvase: vuaNombreEnvase(l.unidad), envaseMas5kg: '',
+        unidades: Number.isFinite(cantidad) && !/kg|kilo|litro|^l$/i.test(l.unidad || '') ? String(Math.round(cantidad)) : '',
         categoria: '2', pesoBruto: vuaFmt(bruto), pesoNeto: vuaFmt(neto),
         importe: Number.isFinite(vuaNum(l.importe)) && moneda ? vuaFmt(vuaNum(l.importe)) : '', moneda,
         factura: String(g.cab.numero_factura || '').slice(0, 30)
@@ -145,7 +158,8 @@ function vuaPrepararDesdeFactura(lineas){
     });
     for(let i = 0; i < lineasVua.length; i += VUA_MAX_LINEAS){
       nuevas.push(vuaNuevaSolicitud({
-        origen: g.origen, destino, agente, archivo: g.archivo, factura: g.cab.numero_factura || '',
+        tipo: g.tipo, origen: g.origen, destino, agente, archivo: g.archivo, factura: g.cab.numero_factura || '',
+        fabricanteEnvasador: agente.nombre,
         destinatario: g.cab.destinatario && g.cab.destinatario.nombre || '',
         lineas: lineasVua.slice(i, i + VUA_MAX_LINEAS),
         parte: lineasVua.length > VUA_MAX_LINEAS ? `${i / VUA_MAX_LINEAS + 1}/${Math.ceil(lineasVua.length / VUA_MAX_LINEAS)}` : ''
@@ -159,7 +173,7 @@ function vuaNuevaSolicitud(o){
   const cfg = vuaCfg();
   const gib = o.destino === 'GI';
   const s = Object.assign({
-    k: 'v' + (++VUA.seq), origen: 'ES', destino: '', agente: vuaAgenteDe({}), lineas: [], archivo: null,
+    k: 'v' + (++VUA.seq), tipo: 'F', origen: 'ES', destinatario: '', fabricanteEnvasador: '', destino: '', agente: vuaAgenteDe({}), lineas: [], archivo: null,
     envasadorIgual: true, envasador: {}, transporte: cfg.transporte, matricula: '', otrasMatriculas: '',
     ubicacion: cfg.ubicacion, observaciones: '', env: null, info: null
   }, o);
@@ -179,7 +193,7 @@ function vuaPanelHtml(sols){
       ? `<span class="badge" style="${SOIVRE_ESTADO_ESTILO[s.env.estado] || ''}">${sEsc(s.env.estado)}</span>${s.env.numero ? `<div style="font-family:var(--mono);font-size:10px;margin-top:2px">Nº ${sEsc(s.env.numero)}</div>` : ''}`
       : '<span class="badge" style="background:var(--am50);color:var(--am600)">por enviar</span>';
     return `<tr style="border-top:1px solid var(--g100)">
-      <td style="padding:6px 4px;white-space:nowrap">${s.flujo === 'E' ? 'Exportación' : 'Reexportación'}${s.parte ? ` <span style="color:var(--g400)">(${s.parte})</span>` : ''}</td>
+      <td style="padding:6px 4px;white-space:nowrap">${s.tipo === 'O' ? '🫒' : '🍊'} ${s.flujo === 'E' ? 'Exportación' : 'Reexportación'}${s.parte ? ` <span style="color:var(--g400)">(${s.parte})</span>` : ''}<div style="font-size:10px;color:var(--g400)">${s.tipo === 'O' ? 'Otros productos' : 'Frutas y hortalizas'}</div></td>
       <td style="padding:6px 4px">${sEsc(s.agente.nombre || '—')}<div style="font-size:10px;color:var(--g400);font-family:var(--mono)">${sEsc(s.agente.nif || 'sin NIF')} · ${sEsc(s.factura || '—')}${s.archivo ? ' · 📎' : ''}</div></td>
       <td style="padding:6px 4px;white-space:nowrap">${sEsc(s.origen || 'ES')} → ${sEsc(s.destino || '¿?')}</td>
       <td style="padding:6px 4px;text-align:center">${s.lineas.length}</td>
@@ -191,8 +205,8 @@ function vuaPanelHtml(sols){
   }).join('');
   return `
     <div style="background:var(--w);border:1px solid var(--g200);border-radius:8px;padding:8px 10px;margin-top:8px">
-      <div style="font-size:12px;font-weight:700;margin-bottom:2px">🍊 ESTACICE VUA · frutas y hortalizas <span style="font-weight:400;color:var(--g500)">· ${sols.length} solicitud${sols.length > 1 ? 'es' : ''} de hasta ${VUA_MAX_LINEAS} líneas</span></div>
-      <div style="font-size:11px;color:var(--g500);margin-bottom:4px">Una por factura y país de origen (España = exportación, otro = reexportación). El agente económico es el exportador de cada factura. Sin MRN.</div>
+      <div style="font-size:12px;font-weight:700;margin-bottom:2px">🍊 ESTACICE VUA · control de calidad a la exportación <span style="font-weight:400;color:var(--g500)">· ${sols.length} solicitud${sols.length > 1 ? 'es' : ''} de hasta ${VUA_MAX_LINEAS} líneas</span></div>
+      <div style="font-size:11px;color:var(--g500);margin-bottom:4px">Una por factura, país de origen (España = exportación, otro = reexportación) y tipo (frutas y hortalizas / otros productos). El agente económico es el exportador de cada factura. Sin MRN.</div>
       <div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">
         <thead><tr style="font-size:10px;color:var(--g500);text-transform:uppercase;text-align:left">
           <th style="padding:4px">Tipo</th><th style="padding:4px">Agente económico</th><th style="padding:4px">Origen → destino</th><th style="padding:4px;text-align:center">Líneas</th><th style="padding:4px">Estado</th><th></th>
@@ -206,53 +220,92 @@ const vuaOpc = (lista, sel, vacio) => (vacio ? `<option value="">${vacio}</optio
   lista.map(x => `<option value="${sEsc(x.codigo)}" ${x.codigo === sel ? 'selected' : ''}>${sEsc(x.codigo)} · ${sEsc(x.nombre)}</option>`).join('');
 const vuaIn = (id, v, extra = '') => `<input id="${id}" class="fi" style="width:100%" value="${sEsc(v ?? '')}" ${extra}>`;
 
-function vuaFilaLinea(l, i){
-  const prods = vuaProductosPara(l.taric);
+// Columnas de producto según el tipo: F (frutas y hortalizas) u O (otros productos)
+const VUA_COLUMNAS = {
+  F: ['Lín', 'TARIC · producto SOIVRE', 'Nº env.', 'Envase', 'Marca', 'Cat.', 'P. bruto', 'P. neto', 'Nº factura', ''],
+  O: ['Lín', 'TARIC · producto SOIVRE', 'Nº env.', 'Nombre envase', '> 5 kg', 'Marca', 'P. neto', 'Unidades', 'Nº factura', '']
+};
+function vuaFilaLinea(l, i, tipo = 'F'){
+  const prods = vuaProductosPara(l.taric, tipo);
   const c = 'style="width:100%;font-size:11px;padding:4px 5px"';
+  const celda = (w, html) => `<td style="padding:4px 2px;width:${w}px">${html}</td>`;
+  const comunesFin = celda(110, `<input class="fi vl-factura" ${c} value="${sEsc(l.factura)}" maxlength="30">`)
+    + '<td style="padding:4px 2px"><button class="btn btn-s btn-sm" style="padding:2px 6px" title="Quitar línea" onclick="vuaQuitarLinea(this)">✕</button></td>';
+  const especificas = tipo === 'O'
+    ? celda(100, `<input class="fi vl-nomenv" ${c} value="${sEsc(l.nombreEnvase || '')}" maxlength="20" placeholder="Botellas">`)
+      + celda(70, `<select class="fi vl-mas5" ${c}><option value="">—</option><option value="N" ${l.envaseMas5kg === 'N' ? 'selected' : ''}>No</option><option value="S" ${l.envaseMas5kg === 'S' ? 'selected' : ''}>Sí</option></select>`)
+      + celda(120, `<input class="fi vl-marca" ${c} value="${sEsc(l.marca)}" maxlength="40">`)
+      + celda(80, `<input class="fi vl-neto" ${c} value="${sEsc(l.pesoNeto)}" inputmode="decimal">`)
+      + celda(80, `<input class="fi vl-unidades" ${c} value="${sEsc(l.unidades || '')}" inputmode="numeric">`)
+    : celda(110, `<select class="fi vl-codenv" ${c}>${vuaOpc(VUA.cat.envases, l.codEnvase)}</select>`)
+      + celda(100, `<input class="fi vl-marca" ${c} value="${sEsc(l.marca)}" maxlength="20">`)
+      + celda(70, `<select class="fi vl-cat" ${c}>${Object.entries(VUA_CATEGORIAS).map(([k, v]) => `<option value="${k}" ${k === l.categoria ? 'selected' : ''}>${v}</option>`).join('')}</select>`)
+      + celda(80, `<input class="fi vl-bruto" ${c} value="${sEsc(l.pesoBruto)}" inputmode="decimal">`)
+      + celda(80, `<input class="fi vl-neto" ${c} value="${sEsc(l.pesoNeto)}" inputmode="decimal">`);
   return `<tr data-i="${i}" style="border-top:1px solid var(--g100);vertical-align:top">
     <td style="padding:4px 2px;text-align:center;font-weight:700">${i + 1}</td>
     <td style="padding:4px 2px;min-width:150px">
-      <input class="fi vl-taric" ${c} value="${sEsc(l.taric)}" maxlength="10" onchange="vuaRefrescarProductos(this)" style="width:100%;font-size:11px;padding:4px 5px;font-family:var(--mono)">
+      <input class="fi vl-taric" value="${sEsc(l.taric)}" maxlength="10" onchange="vuaRefrescarProductos(this)" style="width:100%;font-size:11px;padding:4px 5px;font-family:var(--mono)">
       <select class="fi vl-producto" ${c}>${vuaOpc(prods, l.producto, prods.length ? '— producto SOIVRE —' : 'Sin productos para este TARIC')}</select>
       <div style="font-size:10px;color:var(--g400);margin-top:2px;max-width:220px">${sEsc(l.descripcion || '')}</div>
     </td>
-    <td style="padding:4px 2px;width:70px"><input class="fi vl-envases" ${c} value="${sEsc(l.envases)}" inputmode="numeric"></td>
-    <td style="padding:4px 2px;width:110px"><select class="fi vl-codenv" ${c}>${vuaOpc(VUA.cat.envases, l.codEnvase)}</select></td>
-    <td style="padding:4px 2px;width:100px"><input class="fi vl-marca" ${c} value="${sEsc(l.marca)}" maxlength="20"></td>
-    <td style="padding:4px 2px;width:70px"><select class="fi vl-cat" ${c}>${Object.entries(VUA_CATEGORIAS).map(([k, v]) => `<option value="${k}" ${k === l.categoria ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
-    <td style="padding:4px 2px;width:80px"><input class="fi vl-bruto" ${c} value="${sEsc(l.pesoBruto)}" inputmode="decimal"></td>
-    <td style="padding:4px 2px;width:80px"><input class="fi vl-neto" ${c} value="${sEsc(l.pesoNeto)}" inputmode="decimal"></td>
-    <td style="padding:4px 2px;width:110px"><input class="fi vl-factura" ${c} value="${sEsc(l.factura)}" maxlength="30"></td>
-    <td style="padding:4px 2px"><button class="btn btn-s btn-sm" style="padding:2px 6px" title="Quitar línea" onclick="vuaQuitarLinea(this)">✕</button></td>
+    ${celda(70, `<input class="fi vl-envases" ${c} value="${sEsc(l.envases)}" inputmode="numeric">`)}
+    ${especificas}${comunesFin}
   </tr>`;
 }
 
 async function abrirSolicitudVua(k){
   const s = vuaSol(k);
   if(!s) return;
-  soivreModal('🍊 Solicitud ESTACICE VUA · frutas y hortalizas', '<div class="loading-wrap"><div class="spinner"></div><span>Cargando tablas oficiales…</span></div>', 1020);
+  const esO = s.tipo === 'O';
+  soivreModal(`${esO ? '🫒' : '🍊'} Solicitud ESTACICE VUA · ${esO ? 'otros productos (calidad comercial)' : 'frutas y hortalizas'}`,
+              '<div class="loading-wrap"><div class="spinner"></div><span>Cargando tablas oficiales…</span></div>', 1020);
   soivreComprobarServidor().then(() => { const el = document.getElementById('vua-entorno'); if(el) el.innerHTML = soivreChipEntorno(SOIVRE.estado); });
   try{ await vuaCatalogo(); }
   catch(e){ document.getElementById('soivre-modal-body').innerHTML = sAviso(`No se pudieron leer las tablas ESTACICE de Supabase (${sEsc(e.message)}). ¿Se ha ejecutado instalar_soivre.sql?`); return; }
   // Recalcular productos si la solicitud se preparó antes de tener el catálogo
   s.lineas.forEach(l => {
-    if(!l.producto) l.producto = vuaElegirProducto(l.taric, l.descripcion);
+    if(!l.producto) l.producto = vuaElegirProducto(l.taric, l.descripcion, s.tipo);
     if(l.unidad && !l._envRevisado){ l.codEnvase = vuaEnvaseDe(l.unidad); l._envRevisado = true; }
   });
   const cat = VUA.cat, a = s.agente, en = s.envasador || {};
   const paisOpc = sel => vuaOpc(cat.paises, sel);
   const provOpc = sel => vuaOpc(cat.provincias, sel, '—');
+  const envasadorF = `
+    <details style="margin-bottom:10px" ${s.envasadorIgual ? '' : 'open'}>
+      <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--g600)">Envasador <label style="font-weight:400;margin-left:8px" onclick="event.stopPropagation()"><input type="checkbox" id="vua-env-igual" ${s.envasadorIgual ? 'checked' : ''}> el mismo que el agente económico</label></summary>
+      <div style="height:8px"></div>
+      ${sGrid(150,
+        sCampo('NIF', vuaIn('vua-env-nif', en.nif, 'maxlength="15"')),
+        `<div style="grid-column:span 2">${sCampo('Nombre', vuaIn('vua-env-nombre', en.nombre, 'maxlength="66"'))}</div>`,
+        sCampo('Dirección', vuaIn('vua-env-direccion', en.direccion, 'maxlength="45"')),
+        sCampo('CP', vuaIn('vua-env-cp', en.cp, 'maxlength="5"')),
+        sCampo('Localidad', vuaIn('vua-env-localidad', en.localidad, 'maxlength="45"')),
+        sCampo('Provincia', `<select id="vua-env-prov" class="fi" style="width:100%">${provOpc(en.provincia)}</select>`),
+        sCampo('País', `<select id="vua-env-pais" class="fi" style="width:100%">${vuaOpc(cat.paises, en.pais || '', '—')}</select>`)
+      )}
+    </details>`;
+  const partesO = sGrid(220,
+    sCampo('Destinatario * (según factura)', vuaIn('vua-destinatario', s.destinatario, 'maxlength="66"')),
+    sCampo('Fabricante / envasador', vuaIn('vua-fabenv', s.fabricanteEnvasador, 'maxlength="66"')));
   document.getElementById('soivre-modal-body').innerHTML = `
-    <div id="vua-entorno" style="margin-bottom:10px">${soivreChipEntorno(SOIVRE.estado)}</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div id="vua-entorno">${soivreChipEntorno(SOIVRE.estado)}</div>
+      <label style="font-size:12px;margin-left:auto">Tipo de solicitud
+        <select id="vua-tiposol" class="fi" style="width:auto;margin-left:6px" onchange="vuaCambiarTipo('${k}', this.value)">
+          <option value="F" ${!esO ? 'selected' : ''}>Frutas y hortalizas frescas</option>
+          <option value="O" ${esO ? 'selected' : ''}>Otros productos (aceite, aceitunas…)</option>
+        </select></label>
+    </div>
     ${sGrid(170,
       sCampo('Centro y punto de inspección', `<select id="vua-cice" class="fi" style="width:100%">${vuaOpc(cat.cices.filter(c => c.grupo === 'Algeciras' || c.codigo === s.cicePI), s.cicePI)}<option value="" disabled>──────────</option>${vuaOpc(cat.cices.filter(c => c.grupo !== 'Algeciras' && c.codigo !== s.cicePI), '')}</select>`),
-      sCampo('Tipo', `<select id="vua-flujo" class="fi" style="width:100%"><option value="E" ${s.flujo === 'E' ? 'selected' : ''}>Exportación</option><option value="R" ${s.flujo === 'R' ? 'selected' : ''}>Reexportación</option></select>`),
+      sCampo('Flujo', `<select id="vua-flujo" class="fi" style="width:100%"><option value="E" ${s.flujo === 'E' ? 'selected' : ''}>Exportación</option><option value="R" ${s.flujo === 'R' ? 'selected' : ''}>Reexportación</option></select>`),
       sCampo('País de origen', `<select id="vua-origen" class="fi" style="width:100%" onchange="document.getElementById('vua-flujo').value=this.value==='ES'?'E':'R'">${paisOpc(s.origen || 'ES')}</select>`),
       sCampo('País de destino', `<select id="vua-destino" class="fi" style="width:100%" onchange="vuaDestinoCambiado(this.value)">${vuaOpc(cat.paises, s.destino, '— elegir —')}</select>`)
     )}
     ${sGrid(170,
       sCampo('Aduana de salida', `<select id="vua-aduana" class="fi" style="width:100%">${vuaOpc(cat.aduanas, s.aduana, '— elegir —')}</select>`),
-      sCampo('Transporte', `<select id="vua-transporte" class="fi" style="width:100%">${Object.entries(VUA_TRANSPORTES).map(([k, v]) => `<option value="${k}" ${k === s.transporte ? 'selected' : ''}>${v}</option>`).join('')}</select>`),
+      sCampo('Transporte', `<select id="vua-transporte" class="fi" style="width:100%">${Object.entries(VUA_TRANSPORTES).map(([kk, v]) => `<option value="${kk}" ${kk === s.transporte ? 'selected' : ''}>${v}</option>`).join('')}</select>`),
       sCampo('Matrícula *', vuaIn('vua-matricula', s.matricula, 'maxlength="15" oninput="this.value=this.value.toUpperCase()"')),
       sCampo('Otras matrículas', vuaIn('vua-otras', s.otrasMatriculas, 'maxlength="85"'))
     )}
@@ -266,36 +319,22 @@ async function abrirSolicitudVua(k){
         `<div style="grid-column:span 2">${sCampo('Nombre fiscal *', vuaIn('vua-ae-nombre', a.nombre, 'maxlength="66"'))}</div>`
       )}
       ${sGrid(150,
-        `<div style="grid-column:span 2">${sCampo('Dirección *', vuaIn('vua-ae-direccion', a.direccion, 'maxlength="45"'))}</div>`,
+        `<div style="grid-column:span 2">${sCampo(esO ? 'Dirección' : 'Dirección *', vuaIn('vua-ae-direccion', a.direccion, 'maxlength="45"'))}</div>`,
         sCampo('CP', vuaIn('vua-ae-cp', a.cp, 'maxlength="5" oninput="const p=document.getElementById(\'vua-ae-prov\');if(this.value.length===5&&p)p.value=this.value.slice(0,2)"')),
         sCampo('Localidad *', vuaIn('vua-ae-localidad', a.localidad, 'maxlength="45"')),
         sCampo('Provincia', `<select id="vua-ae-prov" class="fi" style="width:100%">${provOpc(a.provincia)}</select>`),
         sCampo('País', `<select id="vua-ae-pais" class="fi" style="width:100%">${paisOpc(a.pais || 'ES')}</select>`)
       )}
-      ${s.destinatario ? `<div style="font-size:11px;color:var(--g500)">Destinatario según factura: <strong>${sEsc(s.destinatario)}</strong>. La solicitud de frutas no tiene campo para el destinatario; consta en la factura adjunta.</div>` : ''}
+      ${!esO && s.destinatario ? `<div style="font-size:11px;color:var(--g500)">Destinatario según factura: <strong>${sEsc(s.destinatario)}</strong>. La solicitud de frutas no tiene campo para el destinatario; consta en la factura adjunta.</div>` : ''}
     </fieldset>
-    <details style="margin-bottom:10px" ${s.envasadorIgual ? '' : 'open'}>
-      <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--g600)">Envasador <label style="font-weight:400;margin-left:8px" onclick="event.stopPropagation()"><input type="checkbox" id="vua-env-igual" ${s.envasadorIgual ? 'checked' : ''}> el mismo que el agente económico</label></summary>
-      <div style="height:8px"></div>
-      ${sGrid(150,
-        sCampo('NIF', vuaIn('vua-env-nif', en.nif, 'maxlength="15"')),
-        `<div style="grid-column:span 2">${sCampo('Nombre', vuaIn('vua-env-nombre', en.nombre, 'maxlength="66"'))}</div>`,
-        sCampo('Dirección', vuaIn('vua-env-direccion', en.direccion, 'maxlength="45"')),
-        sCampo('CP', vuaIn('vua-env-cp', en.cp, 'maxlength="5"')),
-        sCampo('Localidad', vuaIn('vua-env-localidad', en.localidad, 'maxlength="45"')),
-        sCampo('Provincia', `<select id="vua-env-prov" class="fi" style="width:100%">${provOpc(en.provincia)}</select>`),
-        sCampo('País', `<select id="vua-env-pais" class="fi" style="width:100%">${vuaOpc(cat.paises, en.pais || '', '—')}</select>`)
-      )}
-    </details>
+    ${esO ? partesO : envasadorF}
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
       <div style="font-size:12px;font-weight:700;color:var(--g600)">Productos <span id="vua-nlineas" style="font-weight:400;color:var(--g400)">(${s.lineas.length}/${VUA_MAX_LINEAS})</span></div>
-      <button class="btn btn-s btn-sm" style="margin-left:auto" onclick="vuaAnadirLinea()">+ Línea</button>
+      <button class="btn btn-s btn-sm" style="margin-left:auto" onclick="vuaAnadirLinea('${k}')">+ Línea</button>
     </div>
     <div style="overflow-x:auto;margin-bottom:10px"><table style="width:100%;border-collapse:collapse;font-size:11px">
-      <thead><tr style="font-size:10px;color:var(--g500);text-transform:uppercase;text-align:left">
-        <th>Lín</th><th>TARIC · producto SOIVRE</th><th>Nº env.</th><th>Envase</th><th>Marca</th><th>Cat.</th><th>P. bruto</th><th>P. neto</th><th>Nº factura</th><th></th>
-      </tr></thead>
-      <tbody id="vua-lineas">${s.lineas.map(vuaFilaLinea).join('')}</tbody>
+      <thead><tr style="font-size:10px;color:var(--g500);text-transform:uppercase;text-align:left">${VUA_COLUMNAS[s.tipo].map(t => `<th>${t}</th>`).join('')}</tr></thead>
+      <tbody id="vua-lineas" data-tipo="${s.tipo}">${s.lineas.map((l, i) => vuaFilaLinea(l, i, s.tipo)).join('')}</tbody>
     </table></div>
     <div style="background:var(--b50);border:1px dashed var(--b500);border-radius:8px;padding:10px 12px;margin-bottom:10px">
       ${sLbl('Factura comercial (anexo)')}
@@ -311,6 +350,14 @@ async function abrirSolicitudVua(k){
     </div>`;
 }
 
+// Cambiar entre F y O conserva cabecera y lo común de cada línea
+function vuaCambiarTipo(k, tipo){
+  const s = vuaLeerFormulario(k);
+  s.tipo = tipo;
+  s.lineas.forEach(l => { l.producto = vuaElegirProducto(l.taric, l.descripcion, tipo); });
+  if(tipo === 'O' && !s.fabricanteEnvasador) s.fabricanteEnvasador = s.agente.nombre;
+  abrirSolicitudVua(k);
+}
 function vuaDestinoCambiado(destino){
   const cfg = vuaCfg();
   const set = (id, v) => { const el = document.getElementById(id); if(el && v && el.querySelector(`option[value="${v}"]`)) el.value = v; };
@@ -318,7 +365,7 @@ function vuaDestinoCambiado(destino){
 }
 function vuaRefrescarProductos(input){
   const tr = input.closest('tr');
-  const prods = vuaProductosPara(input.value);
+  const prods = vuaProductosPara(input.value, document.getElementById('vua-lineas').dataset.tipo);
   tr.querySelector('.vl-producto').innerHTML = vuaOpc(prods, '', prods.length ? '— producto SOIVRE —' : 'Sin productos para este TARIC');
 }
 function vuaContarLineas(){
@@ -331,8 +378,9 @@ function vuaAnadirLinea(){
   if(tb.children.length >= VUA_MAX_LINEAS) return showToast(`Máximo ${VUA_MAX_LINEAS} líneas por solicitud`);
   const prev = tb.lastElementChild;
   const base = { taric: '', descripcion: '', envases: '', codEnvase: '04', marca: prev ? prev.querySelector('.vl-marca').value : '',
-                 producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', factura: prev ? prev.querySelector('.vl-factura').value : '' };
-  tb.insertAdjacentHTML('beforeend', vuaFilaLinea(base, tb.children.length));
+                 producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', nombreEnvase: '', envaseMas5kg: '', unidades: '',
+                 factura: prev ? prev.querySelector('.vl-factura').value : '' };
+  tb.insertAdjacentHTML('beforeend', vuaFilaLinea(base, tb.children.length, tb.dataset.tipo));
   vuaContarLineas();
 }
 function vuaQuitarLinea(btn){ btn.closest('tr').remove(); vuaContarLineas(); }
@@ -342,23 +390,30 @@ function vuaLeerFormulario(k){
   const s = vuaSol(k);
   const v = id => (document.getElementById(id)?.value || '').trim();
   if(!s || !document.getElementById('vua-flujo')) return s;
+  const esO = s.tipo === 'O';
   Object.assign(s, {
     cicePI: v('vua-cice'), flujo: v('vua-flujo'), origen: v('vua-origen'), destino: v('vua-destino'),
     aduana: v('vua-aduana'), transporte: v('vua-transporte'), matricula: v('vua-matricula'),
     otrasMatriculas: v('vua-otras'), ubicacion: v('vua-ubicacion'), observaciones: v('vua-observaciones'),
-    envasadorIgual: document.getElementById('vua-env-igual').checked,
     agente: { paisNif: v('vua-ae-paisnif'), nif: v('vua-ae-nif').toUpperCase(), nombre: v('vua-ae-nombre'), direccion: v('vua-ae-direccion'),
-              cp: v('vua-ae-cp'), localidad: v('vua-ae-localidad'), provincia: v('vua-ae-prov'), pais: v('vua-ae-pais') },
+              cp: v('vua-ae-cp'), localidad: v('vua-ae-localidad'), provincia: v('vua-ae-prov'), pais: v('vua-ae-pais') }
+  });
+  if(esO) Object.assign(s, { destinatario: v('vua-destinatario'), fabricanteEnvasador: v('vua-fabenv') });
+  else Object.assign(s, {
+    envasadorIgual: document.getElementById('vua-env-igual').checked,
     envasador: { nif: v('vua-env-nif').toUpperCase(), nombre: v('vua-env-nombre'), direccion: v('vua-env-direccion'), cp: v('vua-env-cp'),
-                 localidad: v('vua-env-localidad'), provincia: v('vua-env-prov'), pais: v('vua-env-pais') },
-    lineas: [...document.querySelectorAll('#vua-lineas tr')].map((tr, i) => {
-      const q = c => (tr.querySelector(c)?.value || '').trim();
-      const prev = s.lineas[+tr.dataset.i] || {};
-      return { taric: q('.vl-taric').replace(/\D/g, ''), descripcion: prev.descripcion || '', producto: q('.vl-producto'),
-               envases: q('.vl-envases'), codEnvase: q('.vl-codenv'), marca: q('.vl-marca'), categoria: q('.vl-cat'),
-               pesoBruto: q('.vl-bruto').replace(',', '.'), pesoNeto: q('.vl-neto').replace(',', '.'), factura: q('.vl-factura'),
-               importe: prev.importe || '', moneda: prev.moneda || '', unidad: prev.unidad || '', _envRevisado: true };
-    })
+                 localidad: v('vua-env-localidad'), provincia: v('vua-env-prov'), pais: v('vua-env-pais') }
+  });
+  s.lineas = [...document.querySelectorAll('#vua-lineas tr')].map(tr => {
+    const q = c => (tr.querySelector(c)?.value || '').trim();
+    const prev = s.lineas[+tr.dataset.i] || {};
+    const l = Object.assign({}, prev, {
+      taric: q('.vl-taric').replace(/\D/g, ''), producto: q('.vl-producto'), envases: q('.vl-envases'),
+      marca: q('.vl-marca'), pesoNeto: q('.vl-neto').replace(',', '.'), factura: q('.vl-factura'), _envRevisado: true
+    });
+    if(esO) Object.assign(l, { nombreEnvase: q('.vl-nomenv'), envaseMas5kg: q('.vl-mas5'), unidades: q('.vl-unidades') });
+    else Object.assign(l, { codEnvase: q('.vl-codenv'), categoria: q('.vl-cat'), pesoBruto: q('.vl-bruto').replace(',', '.') });
+    return l;
   });
   const f = document.getElementById('vua-factura')?.files?.[0];
   if(f) s.archivo = f;
@@ -367,22 +422,31 @@ function vuaLeerFormulario(k){
 
 function vuaDatos(s){
   const ae = s.agente;
-  return {
-    codCicePI: s.cicePI, exporImpor: s.flujo, ubicacion: s.ubicacion,
-    agente: ae, envasador: s.envasadorIgual ? { nif: ae.nif, nombre: ae.nombre, direccion: ae.direccion, cp: ae.cp,
-                                                 localidad: ae.localidad, provincia: ae.provincia, pais: ae.pais } : s.envasador,
+  const comun = {
+    tipo: s.tipo, codCicePI: s.cicePI, exporImpor: s.flujo, ubicacion: s.ubicacion, agente: ae,
     // En exportación el origen va vacío o ES: se envía ES
     origen: s.flujo === 'E' ? 'ES' : s.origen, destino: s.destino, transporte: s.transporte,
-    matricula: s.matricula, otrasMatriculas: s.otrasMatriculas, aduana: s.aduana, observaciones: s.observaciones,
+    matricula: s.matricula, otrasMatriculas: s.otrasMatriculas, aduana: s.aduana, observaciones: s.observaciones
+  };
+  if(s.tipo === 'O') return Object.assign(comun, {
+    destinatario: s.destinatario, fabricanteEnvasador: s.fabricanteEnvasador,
+    lineas: s.lineas.map(l => ({ envases: l.envases, nombreEnvase: l.nombreEnvase, envaseMas5kg: l.envaseMas5kg, marca: l.marca,
+                                 producto: l.producto, taric: l.taric, pesoNeto: l.pesoNeto, unidades: l.unidades,
+                                 factura: l.factura, importe: l.importe, moneda: l.moneda }))
+  });
+  return Object.assign(comun, {
+    envasador: s.envasadorIgual ? { nif: ae.nif, nombre: ae.nombre, direccion: ae.direccion, cp: ae.cp,
+                                    localidad: ae.localidad, provincia: ae.provincia, pais: ae.pais } : s.envasador,
     lineas: s.lineas.map(l => ({ envases: l.envases, codEnvase: l.codEnvase, marca: l.marca, producto: l.producto, taric: l.taric,
                                  categoria: l.categoria, pesoBruto: l.pesoBruto, pesoNeto: l.pesoNeto, factura: l.factura,
                                  importe: l.importe, moneda: l.moneda }))
-  };
+  });
 }
 
 // Comprobación previa en el navegador (el servidor vuelve a validar contra el XSD)
 function vuaComprobar(s, d){
   const e = [];
+  const esO = d.tipo === 'O';
   if(!/^\d{4}$/.test(d.codCicePI)) e.push('Elige el centro y punto de inspección');
   if(!d.destino || d.destino === 'ES') e.push('País de destino: obligatorio y distinto de España');
   if(d.exporImpor === 'R' && (!s.origen || s.origen === 'ES')) e.push('Reexportación: el país de origen no puede ser España');
@@ -391,17 +455,23 @@ function vuaComprobar(s, d){
   if((d.matricula || '').length < 3) e.push('Matrícula: obligatoria');
   if(!d.agente.nif || d.agente.nif.length < 7) e.push('Agente económico: NIF obligatorio');
   if(!d.agente.nombre || d.agente.nombre.length < 3) e.push('Agente económico: nombre fiscal obligatorio');
-  if(!d.agente.direccion || !d.agente.localidad) e.push('Agente económico: dirección y localidad obligatorias');
-  if(d.agente.pais === 'ES' && (!/^\d{5}$/.test(d.agente.cp) || !d.agente.provincia)) e.push('Agente económico español: CP y provincia obligatorios');
+  if(!d.agente.localidad || (!esO && !d.agente.direccion)) e.push(esO ? 'Agente económico: localidad obligatoria' : 'Agente económico: dirección y localidad obligatorias');
+  if(d.agente.pais === 'ES' && !d.agente.provincia) e.push('Agente económico español: provincia obligatoria');
+  if(!esO && d.agente.pais === 'ES' && !/^\d{5}$/.test(d.agente.cp)) e.push('Agente económico español: CP obligatorio');
+  if(esO && (d.destinatario || '').length < 3) e.push('Destinatario: obligatorio');
   if(!d.lineas.length || d.lineas.length > VUA_MAX_LINEAS) e.push(`Entre 1 y ${VUA_MAX_LINEAS} líneas`);
   d.lineas.forEach((l, i) => {
     const p = `Línea ${i + 1}`;
     if(!l.producto) e.push(`${p}: elige el producto SOIVRE`);
     if(!/^\d+$/.test(l.envases)) e.push(`${p}: nº de envases`);
     if((l.marca || '').length < 2) e.push(`${p}: marca (mín. 2 caracteres)`);
-    const b = parseFloat(l.pesoBruto), n = parseFloat(l.pesoNeto);
+    const n = parseFloat(l.pesoNeto);
     if(!(n > 0)) e.push(`${p}: peso neto`);
-    if(!(b > n)) e.push(`${p}: el peso bruto debe ser mayor que el neto`);
+    if(esO){
+      if((l.nombreEnvase || '').length < 2) e.push(`${p}: nombre del envase`);
+      if(!l.envaseMas5kg && String(l.producto).startsWith('15')) e.push(`${p}: indica si el envase pesa más de 5 kg (obligatorio en aceites)`);
+      if(l.unidades && !/^\d+$/.test(l.unidades)) e.push(`${p}: unidades, número entero`);
+    } else if(!(parseFloat(l.pesoBruto) > n)) e.push(`${p}: el peso bruto debe ser mayor que el neto`);
     if((l.factura || '').length < 3) e.push(`${p}: nº de factura`);
   });
   if(s.archivo && /\.zip$/i.test(s.archivo.name) && s.archivo.size > VUA_MAX_ANEXO) e.push('La factura .zip supera 2 MB');
@@ -461,7 +531,7 @@ async function vuaEnviar(k, soloXml){
 function vuaResultado(s){
   const env = s.env;
   const ok = env.estado === 'aceptada';
-  soivreModal(`🍊 ESTACICE · ${ok ? 'solicitud registrada' : 'no registrada'}`, `
+  soivreModal(`${s.tipo === 'O' ? '🫒' : '🍊'} ESTACICE · ${ok ? 'solicitud registrada' : 'no registrada'}`, `
     <div style="text-align:center;padding:6px 0 12px">
       <div style="font-size:30px">${ok ? '✅' : env.estado === 'en cola' ? '⏳' : '❌'}</div>
       <div style="font-size:15px;font-weight:700;margin-top:4px">${ok ? 'Registrada en ESTACICE' : sEsc(env.descripcion || 'No registrada')}</div>
@@ -470,7 +540,7 @@ function vuaResultado(s){
     <table style="width:100%;font-size:12px;margin-bottom:10px">
       <tr><td style="color:var(--g500);padding:4px 0;width:150px">Nº solicitud SOIVRE</td><td style="font-family:var(--mono);font-weight:700">${sEsc(env.numero || '—')}</td></tr>
       <tr><td style="color:var(--g500);padding:4px 0">Agente económico</td><td>${sEsc(s.agente.nombre)} · ${sEsc(s.agente.nif)}</td></tr>
-      <tr><td style="color:var(--g500);padding:4px 0">Líneas</td><td>${s.lineas.length} · ${s.flujo === 'E' ? 'exportación' : 'reexportación'} ${sEsc(s.origen || 'ES')} → ${sEsc(s.destino)}</td></tr>
+      <tr><td style="color:var(--g500);padding:4px 0">Líneas</td><td>${s.lineas.length} · ${s.tipo === 'O' ? 'otros productos' : 'frutas y hortalizas'} · ${s.flujo === 'E' ? 'exportación' : 'reexportación'} ${sEsc(s.origen || 'ES')} → ${sEsc(s.destino)}</td></tr>
       <tr><td style="color:var(--g500);padding:4px 0">Factura</td><td>${s.archivo ? sEsc(s.archivo.name) + ' · ' + sEsc(env.adjunto || '—') : 'sin anexo'}</td></tr>
       ${ok ? '' : `<tr><td style="color:var(--g500);padding:4px 0;vertical-align:top">Respuesta</td><td>${sEsc(env.descripcion || '')}</td></tr>`}
     </table>
@@ -522,13 +592,13 @@ async function vuaConsultar(k, numero, cicePI){
 }
 
 // ── entradas desde la búsqueda libre y la vista SOIVRE ───────
-function vuaNuevaDesdeResultado(codigo, descripcion){
+function vuaNuevaDesdeResultado(codigo, descripcion, tipo = 'F'){
   const origen = document.getElementById('spg-pais')?.value || 'ES';
   const ult = vuaCfg().ultimoAgente;
   const s = vuaNuevaSolicitud({
-    origen, agente: ult || vuaAgenteDe({}),
+    tipo, origen, agente: ult || vuaAgenteDe({}), fabricanteEnvasador: ult ? ult.nombre : '',
     lineas: [{ taric: String(codigo || '').replace(/\D/g, ''), descripcion: descripcion || '', envases: '', codEnvase: '04', marca: '',
-               producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', factura: '' }]
+               producto: '', categoria: '2', pesoBruto: '', pesoNeto: '', nombreEnvase: '', envaseMas5kg: '', unidades: '', factura: '' }]
   });
   abrirSolicitudVua(s.k);
 }

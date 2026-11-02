@@ -72,9 +72,15 @@ const sVal = id => (document.getElementById(id)?.value || '').trim();
 const sMulti = id => [...(document.getElementById(id)?.selectedOptions || [])].map(o => o.value);
 const sFichero = id => (document.getElementById(id)?.files || [])[0] || null;
 
-// ── ¿Qué servicio PUE aplica? ────────────────────────────────
-// 1º las medidas del catálogo TARIC de Supabase (fuente de verdad);
-// 2º si el catálogo no responde, aviso orientativo para frutas y hortalizas.
+// ── ¿Qué control SOIVRE aplica? ──────────────────────────────
+// 1º las medidas del catálogo TARIC de Supabase: COM, ROHS/RAEE (importación).
+//    Ese catálogo es el TARIC de la UE y NO trae las medidas nacionales de
+//    calidad a la exportación (SOVEX), por eso:
+// 2º la lista oficial de productos SOIVRE de ESTACICE (estacice_productos):
+//    si la partida de 4 dígitos del código figura en ella con flujo de
+//    exportación, hay control de calidad: F frutas y hortalizas, O otros
+//    productos (aceite de oliva, aceitunas, hierbas aromáticas…).
+// 3º sin catálogos, aviso orientativo para los capítulos 07 y 08.
 function soivreAplica(codigo){
   const c = String(codigo || '').replace(/\D/g, '');
   if(c.length < 8) return null;
@@ -84,19 +90,51 @@ function soivreAplica(codigo){
     // COM1 lleva también los certificados ROHS y RAEE: tiene prioridad sobre ROHS1
     if(hay(/\bCOM\b/))              return { servicio:'COM1',  seguro:true, medidas:cats };
     if(hay(/\bROHS\b|\bRAEE\b/))    return { servicio:'ROHS1', seguro:true, medidas:cats };
-    if(hay(/SOVEX/))                return { servicio:'CAL1',  seguro:true, medidas:cats, flujo:'02' };
+    if(hay(/SOVEX/))                return { servicio:'CAL1',  seguro:true, medidas:cats, flujo:'02', tipoVua:'F' };
     if(hay(/SOVIM/))                return { servicio:'CAL1',  seguro:true, medidas:cats, flujo:'01' };
-    return null;
   }
-  return /^0[78]/.test(c) ? { servicio:'CAL1', seguro:false, medidas:[], flujo:'02' } : null;
+  const oficial = SOIVRE.lista && SOIVRE.lista.get(c.slice(0, 4));
+  if(oficial){
+    const tipo = oficial.F ? 'F' : 'O';
+    return { servicio: tipo === 'F' ? 'CAL1' : 'VUAO', seguro:true, flujo:'02', tipoVua: tipo, fuente:'lista',
+             medidas:['Lista oficial de productos SOIVRE'], productos: oficial[tipo] };
+  }
+  if(typeof TARIC_DB !== 'undefined' && TARIC_DB.ok) return null;
+  return /^0[78]/.test(c) ? { servicio:'CAL1', seguro:false, medidas:[], flujo:'02', tipoVua:'F' } : null;
+}
+
+// Lista oficial de productos SOIVRE a la exportación, por partida de 4 dígitos
+function soivreCargarLista(){
+  if(SOIVRE.lista) return Promise.resolve(SOIVRE.lista);
+  if(SOIVRE._cargaLista) return SOIVRE._cargaLista;
+  SOIVRE._cargaLista = sbT().from('estacice_productos').select('codigo,nombre,tipo,imex').in('tipo', ['F', 'O']).neq('imex', 'I')
+    .then(({ data, error }) => {
+      if(error) throw error;
+      const m = new Map();
+      (data || []).forEach(p => {
+        const k = p.codigo.slice(0, 4);
+        if(!m.has(k)) m.set(k, {});
+        (m.get(k)[p.tipo] = m.get(k)[p.tipo] || []).push(p);
+      });
+      return (SOIVRE.lista = m);
+    })
+    .catch(e => { console.warn('Lista oficial SOIVRE no disponible (¿instalar_soivre.sql?):', e.message); return (SOIVRE.lista = new Map()); });
+  return SOIVRE._cargaLista;
 }
 
 function soivreBloqueResultado(r){
+  if(!SOIVRE.lista){
+    const id = 'soivre-bloque-' + (++SOIVRE.seq);
+    soivreCargarLista().then(() => { const el = document.getElementById(id); if(el) el.outerHTML = soivreBloqueResultado(r) || ''; });
+    return `<div id="${id}"></div>`;
+  }
   const a = soivreAplica(r && r.codigo_taric);
   if(!a) return '';
+  if(a.tipoVua === 'O') return soivreBloqueVua(r, a);
   const s = SOIVRE_SERVICIOS[a.servicio];
+  if(a.fuente === 'lista') return soivreBloqueVua(r, a);
   const k = soivreRegistrarCtx({ codigo_taric: r.codigo_taric, descripcion: r.descripcion_nc || '', ...a });
-  const vua = a.servicio === 'CAL1' && a.flujo !== '01' && typeof vuaNuevaDesdeResultado === 'function';
+  const vua = a.tipoVua && a.flujo !== '01' && typeof vuaNuevaDesdeResultado === 'function';
   const titulo = a.seguro
     ? `Medida ${sEsc(a.medidas.filter(m => /SOVEX|SOVIM|ROHS|RAEE|\bCOM\b/.test(m)).join(' + '))} · control SOIVRE ${s.nombre.toLowerCase()}`
     : 'Posible control SOIVRE de calidad (catálogo TARIC no disponible: verificar medida SOVEX)';
@@ -109,9 +147,28 @@ function soivreBloqueResultado(r){
           ? 'Exportación/reexportación: solicitud en ESTACICE VUA (sin MRN, hasta 12 líneas). El país de origen se toma de «Preferencias arancelarias»; si no hay ninguno, España.'
           : `Solicitud ${a.servicio} por la Ventanilla Única (PUE). Requiere la declaración ya presentada (MRN + partida) y la factura comercial.`}</div>
       </div>
-      ${vua ? `<button class="btn btn-p btn-sm" onclick="vuaNuevaDesdeResultado('${sEsc(r.codigo_taric)}', ${sEsc(JSON.stringify(r.descripcion_nc || ''))})">Solicitud ESTACICE</button>
+      ${vua ? `<button class="btn btn-p btn-sm" onclick="vuaNuevaDesdeResultado('${sEsc(r.codigo_taric)}', ${sEsc(JSON.stringify(r.descripcion_nc || ''))}, 'F')">Solicitud ESTACICE</button>
                <button class="btn btn-s btn-sm" onclick="abrirSolicitudSoivre('${k}')" title="Por el PUE de la AEAT (con MRN)">Por PUE</button>`
              : `<button class="btn btn-p btn-sm" onclick="abrirSolicitudSoivre('${k}')">Solicitar control SOIVRE</button>`}
+    </div>`;
+}
+
+// Producto de la lista oficial (frutas y hortalizas u otros productos) → ESTACICE VUA
+function soivreBloqueVua(r, a){
+  const tipoTxt = a.tipoVua === 'O' ? 'calidad comercial (otros productos)' : 'calidad de frutas y hortalizas';
+  // Ejemplos de la partida: primero los que comparten palabras con la descripción («Limones…» antes que «Naranjas…»)
+  const norm = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const palabras = norm(r.descripcion_nc).split(/[^A-Z]+/).filter(w => w.length > 3).map(w => w.slice(0, 5));
+  const puntos = p => palabras.filter(w => norm(p.nombre).includes(w)).length;
+  const ejemplos = [...(a.productos || [])].sort((x, y) => puntos(y) - puntos(x)).slice(0, 3).map(p => p.nombre).join(' · ');
+  return `
+    <div style="background:var(--gr50,#f0fdf4);border:1px solid #86efac;border-radius:8px;padding:10px 12px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:18px">${a.tipoVua === 'O' ? '🫒' : '🍊'}</span>
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:12px;font-weight:700;color:var(--gr700,#15803d)">Control SOIVRE a la exportación · ${tipoTxt}</div>
+        <div style="font-size:11px;color:var(--g600);margin-top:2px">La partida ${sEsc(String(r.codigo_taric || '').slice(0, 4))} figura en la lista oficial de productos SOIVRE (ESTACICE)${ejemplos ? ': ' + sEsc(ejemplos) + '…' : ''}. Solicitud en ESTACICE VUA, sin MRN. El país de origen se toma de «Preferencias arancelarias»; si no hay ninguno, España.</div>
+      </div>
+      <button class="btn btn-p btn-sm" onclick="vuaNuevaDesdeResultado('${sEsc(r.codigo_taric)}', ${sEsc(JSON.stringify(r.descripcion_nc || ''))}, '${a.tipoVua}')">Solicitud ESTACICE</button>
     </div>`;
 }
 
@@ -119,6 +176,7 @@ function soivreBloqueResultado(r){
 function soivreBotonLinea(l){
   const a = soivreAplica(l && l.codigo_taric);
   if(!a) return '';
+  if(a.tipoVua && a.flujo !== '01') return `<div style="margin-top:5px"><span class="badge" style="font-size:9px;background:var(--gr50,#f0fdf4);color:var(--gr700,#15803d)" title="Solicitud ESTACICE: recuadro «Control SOIVRE» de arriba">${a.tipoVua === 'O' ? '🫒' : '🍊'} SOIVRE · ESTACICE</span></div>`;
   const k = soivreRegistrarCtx({
     codigo_taric: l.codigo_taric, descripcion: l.descripcion_es || l.descripcion_original || '',
     cantidad: l.cantidad, unidad: l.unidad, factura: l._numFactura || '', archivo: soivreArchivoDe(l), ...a,
@@ -155,6 +213,7 @@ function soivreFlujoPorOrigen(origen, flujo){
 const SOIVRE_FLUJO_TXT = { '01':'Importación', '02':'Exportación', '03':'Reexportación' };
 
 function soivrePanelFactura(lineas){
+  if(!SOIVRE.lista) return soivreCargarLista().then(() => soivrePanelFactura(lineas));
   SOIVRE.grupos = [];
   SOIVRE.vuaLineas = [];
   const porClave = new Map();
@@ -166,7 +225,8 @@ function soivrePanelFactura(lineas){
     const pos = (posicion.get(origen) || 0) + 1; posicion.set(origen, pos);
     if(!a) return;
     // Frutas y hortalizas a la exportación/reexportación → ESTACICE VUA (soivre-vua.js)
-    if(a.servicio === 'CAL1' && a.flujo !== '01' && typeof vuaPrepararDesdeFactura === 'function'){ SOIVRE.vuaLineas.push(l); return; }
+    if(a.tipoVua && a.flujo !== '01' && typeof vuaPrepararDesdeFactura === 'function'){ SOIVRE.vuaLineas.push(l); return; }
+    if(a.servicio === 'VUAO') return;   // otros productos: solo por ESTACICE
     const esCal = a.servicio === 'CAL1';
     const flujo = esCal ? soivreFlujoPorOrigen(origen, a.flujo) : null;
     const clave = esCal ? `CAL|${flujo}|${origen}` : 'IMP';
