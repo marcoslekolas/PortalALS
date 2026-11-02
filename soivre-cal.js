@@ -17,7 +17,6 @@ const SOIVRE_CFG_KEY = 'cw_soivre_cfg';
 const SOIVRE_CFG_DEF = {
   codCice: '', codPI: '',
   email: '',
-  unidadComo: 'texto',        // CAL: 'texto' (como el ejemplo oficial) | 'codigo'
   envasador: { nif:'', nombre:'', localidad:'', provincia:'', pais:'ES' },
   codigoRaee: '', codigoPya: ''   // nº de registro RII del importador habitual
 };
@@ -379,7 +378,7 @@ async function soivreFormCAL1(ctx, cfg){
   const grupoDef = productos.length && productos.every(p => /industrial/i.test(p.descripcion)) ? '02' : '01';
   const unidad = envases.length
     ? `<select id="sv-unidad" class="fi" style="width:100%">${envases.map(e => {
-        const v = cfg.unidadComo === 'codigo' ? e.codigo : e.descripcion;
+        const v = e.descripcion;   // la AEAT espera la unidad en texto (CAJAS), no el código
         const sel = ctx.unidad && new RegExp('^' + e.descripcion.slice(0,3), 'i').test(ctx.unidad) ? 'selected' : '';
         return `<option value="${sEsc(v)}" ${sel}>${sEsc(e.descripcion)} (${sEsc(e.codigo)})</option>`;
       }).join('')}</select>`
@@ -709,8 +708,7 @@ function loadSoivre(){
     sCampo('Cód. CICE por defecto', sInput('svc-cice', cfg.codCice, 'maxlength="2"')),
     sCampo('Cód. puesto inspección', sInput('svc-pi', cfg.codPI, 'maxlength="2"')),
     sCampo('Email de avisos', sInput('svc-email', cfg.email, 'maxlength="40"')),
-    sCampo('Nº RII RAEE habitual', sInput('svc-raee', cfg.codigoRaee, 'maxlength="6"')),
-    sCampo('Unidad de medida (CAL)', `<select id="svc-unidad" class="fi" style="width:100%"><option value="texto" ${cfg.unidadComo==='texto'?'selected':''}>Enviar descripción (CAJAS)</option><option value="codigo" ${cfg.unidadComo==='codigo'?'selected':''}>Enviar código (4)</option></select>`)
+    sCampo('Nº RII RAEE habitual', sInput('svc-raee', cfg.codigoRaee, 'maxlength="6"'))
   ) + `<div style="display:flex;justify-content:flex-end"><button class="btn btn-p btn-sm" onclick="soivreGuardarConfigVista()">Guardar</button></div>`;
   soivrePintarSesion();
 }
@@ -752,8 +750,6 @@ function soivreGuardarConfigVista(){
   cfg.codPI = sVal('svc-pi');
   cfg.email = sVal('svc-email');
   cfg.codigoRaee = sVal('svc-raee');
-  cfg.unidadComo = sVal('svc-unidad') || 'texto';
-  SOIVRE.envases = null;
   soivreGuardarCfg(cfg);
   showToast('Valores SOIVRE guardados');
   soivreComprobarServidor();
