@@ -769,11 +769,16 @@ function vuaPintarSesion(){
 // línea de la solicitud. El servidor consulta ESTACICE cada cierto tiempo y,
 // cuando SOIVRE emite los certificados, guarda el N003 de cada línea. Al
 // generar el CSV de VisualTrans se añaden a la casilla 44 de cada partida.
-// Solo las líneas de ESA factura: mismo NIF de exportador y nº de factura (prefijo de la clave)
-function vuaFacturaParaGuardar(prefijo){
-  const todas = (window._facturaLineas || []).filter(l => (l._claveVT || '').startsWith(prefijo));
-  // Sin referencias circulares ni campos de pantalla; la cabecera va aparte
-  return todas.map(l => { const c = Object.assign({}, l); delete c._cab; delete c._n003; delete c._n003s; return c; });
+// Todas las líneas de la lectura, no solo las que van a SOIVRE: el CSV de
+// VisualTrans es el DUA completo. Si la lectura tenía varias facturas (un DUA
+// con varias), van todas, con la cabecera de cada una aparte (cabs).
+function vuaFacturaParaGuardar(){
+  const todas = window._facturaLineas || [];
+  const cabs = {};
+  todas.forEach(l => { if(l._cab && l._numFactura && !cabs[l._numFactura]) cabs[l._numFactura] = l._cab; });
+  // Sin referencias circulares ni campos de pantalla; las cabeceras van aparte
+  const lineas = todas.map(l => { const c = Object.assign({}, l); delete c._cab; delete c._n003; delete c._n003s; return c; });
+  return { lineas, cabs };
 }
 // d: los datos tal como se enviaron (vuaDatos), para poder consultar el contenido.
 // Las solicitudes manuales también se guardan (sin factura): se sigue su estado
@@ -784,8 +789,9 @@ async function vuaGuardarExpediente(s, numero, entorno, d){
     usuario: (window.PortalGuard && PortalGuard.CU && PortalGuard.CU.nombre) || null,
     entorno: entorno || 'pruebas', numero_solicitud: String(numero), cice_pi: s.cicePI, tipo: s.tipo,
     numero_factura: s.factura || null, exportador: s.agente.nombre, nif_exportador: s.agente.nif,
-    factura: conFactura ? { cab: s.cabFactura || (typeof FACTURA_CABECERA !== 'undefined' ? FACTURA_CABECERA : {}) || {},
-                            lineas: vuaFacturaParaGuardar(conFactura.clave.split('|').slice(0, 2).join('|') + '|') } : {},
+    factura: conFactura ? Object.assign({ cab: s.cabFactura || (typeof FACTURA_CABECERA !== 'undefined' ? FACTURA_CABECERA : {}) || {},
+                                          cabLote: (typeof FACTURA_CABECERA !== 'undefined' && FACTURA_CABECERA) || null },
+                                        vuaFacturaParaGuardar()) : {},
     lineas_sol: s.lineas.map((l, i) => ({ linea: i + 1, clave: l.clave || null, descripcion: l.descripcion || '' })),
     solicitud: Object.assign({}, d || vuaDatos(s), { idMensaje: s.idMensaje || null, enviadaEn: new Date().toISOString() })
   };
@@ -1071,8 +1077,10 @@ function vuaVerContenido(d, numero, x, xml, sinCatalogo){
 async function vtCsvDesdeExpediente(id){
   const { data, error } = await sbT().from('vua_expedientes').select('factura').eq('id', id).single();
   if(error || !data) return showToast('No se pudo recuperar la factura: ' + (error ? error.message : 'sin datos'));
-  const cab = data.factura.cab || {};
-  window._facturaLineas = (data.factura.lineas || []).map(l => Object.assign(l, { _cab: cab }));
-  FACTURA_CABECERA = cab;
+  // DUA completo: todas las líneas de la lectura (también las que no van a SOIVRE),
+  // cada una con la cabecera de su factura. Expedientes antiguos: solo «cab».
+  const cab = data.factura.cab || {}, cabs = data.factura.cabs || {};
+  window._facturaLineas = (data.factura.lineas || []).map(l => Object.assign(l, { _cab: cabs[l._numFactura] || cab }));
+  FACTURA_CABECERA = data.factura.cabLote || cab;
   abrirModalVT();
 }
