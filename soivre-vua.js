@@ -655,7 +655,7 @@ async function vuaEnviar(k, soloXml){
   s.env = { estado: r.ok ? 'aceptada' : r.pendiente ? 'en cola' : (r.estado === 'rechazada' ? 'rechazada' : 'error'),
             numero: r.numeroSolicitud || null, descripcion: r.descripcion || r.error || '', errores: r.errores || [],
             xmlEnviado: r.xmlEnviado, xmlRespuesta: r.xmlRespuesta, adjunto: r.adjuntoEstado, fecha: new Date(), entorno: e.entorno };
-  if(r.ok && r.numeroSolicitud) vuaGuardarExpediente(s, r.numeroSolicitud, e.entorno);
+  if(r.ok && r.numeroSolicitud) vuaGuardarExpediente(s, r.numeroSolicitud, e.entorno, d);
   vuaResultado(s);
   if(typeof soivrePanelFacturaRefrescar === 'function') soivrePanelFacturaRefrescar();
   if(document.getElementById('view-soivre')?.classList.contains('active')) vuaPintarSesion();
@@ -758,7 +758,7 @@ function vuaPintarSesion(){
       <td>${sEsc(s.env.entorno || '')}</td><td>${sEsc(s.agente.nombre)}</td><td>${s.flujo === 'E' ? 'Exportación' : 'Reexportación'}</td>
       <td>${s.lineas.length}</td><td><span class="badge" style="${SOIVRE_ESTADO_ESTILO[s.env.estado] || ''}">${sEsc(s.env.estado)}</span></td>
       <td style="font-family:var(--mono)">${sEsc(s.env.numero || '—')}</td>
-      <td>${s.env.numero ? `<button class="btn btn-s btn-sm" onclick="vuaConsultar('${s.k}')">Estado</button>` : `<button class="btn btn-s btn-sm" onclick="abrirSolicitudVua('${s.k}')">Revisar</button>`}</td>
+      <td style="white-space:nowrap">${s.env.numero ? `<button class="btn btn-s btn-sm" onclick="vuaVerContenido(vuaDatos(vuaSol('${s.k}')), '${sEsc(s.env.numero)}')">Ver</button> <button class="btn btn-s btn-sm" onclick="vuaConsultar('${s.k}')">Estado</button>` : `<button class="btn btn-s btn-sm" onclick="abrirSolicitudVua('${s.k}')">Revisar</button>`}</td>
     </tr>`).join('')}</tbody></table>`
     : '<div style="font-size:12px;color:var(--g400)">Sin envíos a ESTACICE en esta sesión.</div>';
 }
@@ -775,16 +775,21 @@ function vuaFacturaParaGuardar(prefijo){
   // Sin referencias circulares ni campos de pantalla; la cabecera va aparte
   return todas.map(l => { const c = Object.assign({}, l); delete c._cab; delete c._n003; delete c._n003s; return c; });
 }
-async function vuaGuardarExpediente(s, numero, entorno){
-  if(!s.lineas.some(l => l.clave)) return;           // solicitud manual: no hay factura que enlazar
+// d: los datos tal como se enviaron (vuaDatos), para poder consultar el contenido.
+// Las solicitudes manuales también se guardan (sin factura): se sigue su estado
+// y sus certificados, aunque no haya líneas de factura a las que llevar el N003.
+async function vuaGuardarExpediente(s, numero, entorno, d){
+  const conFactura = s.lineas.find(l => l.clave);
   const fila = {
     usuario: (window.PortalGuard && PortalGuard.CU && PortalGuard.CU.nombre) || null,
     entorno: entorno || 'pruebas', numero_solicitud: String(numero), cice_pi: s.cicePI, tipo: s.tipo,
     numero_factura: s.factura || null, exportador: s.agente.nombre, nif_exportador: s.agente.nif,
-    factura: { cab: s.cabFactura || (typeof FACTURA_CABECERA !== 'undefined' ? FACTURA_CABECERA : {}) || {},
-               lineas: vuaFacturaParaGuardar(s.lineas.find(l => l.clave).clave.split('|').slice(0, 2).join('|') + '|') },
-    lineas_sol: s.lineas.map((l, i) => ({ linea: i + 1, clave: l.clave || null, descripcion: l.descripcion || '' }))
+    factura: conFactura ? { cab: s.cabFactura || (typeof FACTURA_CABECERA !== 'undefined' ? FACTURA_CABECERA : {}) || {},
+                            lineas: vuaFacturaParaGuardar(conFactura.clave.split('|').slice(0, 2).join('|') + '|') } : {},
+    lineas_sol: s.lineas.map((l, i) => ({ linea: i + 1, clave: l.clave || null, descripcion: l.descripcion || '' })),
+    solicitud: Object.assign({}, d || vuaDatos(s), { idMensaje: s.idMensaje || null, enviadaEn: new Date().toISOString() })
   };
+  if(!fila.numero_factura) fila.numero_factura = [...new Set(s.lineas.map(l => l.factura).filter(Boolean))].join(', ') || null;
   const { error } = await sbT().from('vua_expedientes').insert(fila);
   if(error) showToast('Solicitud registrada, pero no se pudo guardar su seguimiento para VisualTrans: ' + error.message);
 }
@@ -969,7 +974,7 @@ async function vuaPintarExpedientes(){
   const el = document.getElementById('vua-expedientes');
   if(!el) return;
   const { data, error } = await sbT().from('vua_expedientes')
-    .select('id,created_at,entorno,numero_solicitud,cice_pi,numero_factura,exportador,estado,estado_soivre,certificados,consultado_en,exportado_en')
+    .select('id,created_at,entorno,numero_solicitud,cice_pi,numero_factura,exportador,estado,estado_soivre,certificados,consultado_en,exportado_en,lineas_sol')
     .order('created_at', { ascending: false }).limit(60);
   if(error){ el.innerHTML = `<div style="font-size:12px;color:var(--g400)">${sEsc('Tabla vua_expedientes no disponible (¿instalar_soivre.sql?)')}</div>`; return; }
   if(!data.length){ el.innerHTML = '<div style="font-size:12px;color:var(--g400)">Sin solicitudes en seguimiento.</div>'; return; }
@@ -983,10 +988,65 @@ async function vuaPintarExpedientes(){
       <td><span class="badge" style="${estilo[x.estado] || ''}">${sEsc(x.estado)}</span><div style="font-size:10px;color:var(--g400)">${sEsc(x.estado_soivre || '')}${x.consultado_en ? ' · ' + new Date(x.consultado_en).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ''}</div></td>
       <td style="font-family:var(--mono);font-size:11px">${(x.certificados || []).map(c => sEsc(c.numero)).join('<br>') || '—'}${x.exportado_en ? '<div style="font-size:10px;color:var(--gr600)">✔ en CSV</div>' : ''}</td>
       <td style="white-space:nowrap">
-        ${x.numero_factura ? `<button class="btn ${x.estado === 'certificado' && !x.exportado_en ? 'btn-p' : 'btn-s'} btn-sm" onclick="vtCsvDesdeExpediente('${x.id}')">CSV VisualTrans</button>` : ''}
+        <button class="btn btn-s btn-sm" onclick="vuaVerExpediente('${x.id}')">Ver</button>
+        ${(x.lineas_sol || []).some(l => l.clave) ? `<button class="btn ${x.estado === 'certificado' && !x.exportado_en ? 'btn-p' : 'btn-s'} btn-sm" onclick="vtCsvDesdeExpediente('${x.id}')">CSV VisualTrans</button>` : '<span style="font-size:10px;color:var(--g400)">manual</span>'}
         <button class="btn btn-s btn-sm" onclick="vuaConsultar(null, '${sEsc(String(x.numero_solicitud).split(',')[0])}', '${sEsc(x.cice_pi)}')">Estado</button>
       </td></tr>`).join('')}</tbody></table>`;
 }
+// Contenido de una solicitud enviada. Las guardadas antes de existir la columna
+// «solicitud» se recuperan de la cola (soivre_cola) mientras no se haya purgado.
+async function vuaVerExpediente(id){
+  const { data: x, error } = await sbT().from('vua_expedientes').select('*').eq('id', id).single();
+  if(error || !x) return showToast('No se pudo recuperar la solicitud: ' + (error ? error.message : 'sin datos'));
+  let d = x.solicitud, xml = '';
+  const cola = await sbT().from('soivre_cola').select('datos,xml_enviado').eq('servicio', 'VUA').eq('numero_solicitud', x.numero_solicitud).limit(1);
+  if(!cola.error && cola.data && cola.data[0]){ d = d || cola.data[0].datos; xml = cola.data[0].xml_enviado || ''; }
+  if(!d) return soivreMostrarErrores([`La solicitud ${x.numero_solicitud} se envió antes de guardarse su contenido y ya no está en la cola. Consúltala en ESTACICE.`]);
+  vuaVerContenido(d, x.numero_solicitud, x, xml);
+}
+function vuaVerContenido(d, numero, x, xml, sinCatalogo){
+  // Con el catálogo se muestran los nombres de productos, centros y aduanas; sin él, solo los códigos
+  if(!VUA.cat && !sinCatalogo) return vuaCatalogo().catch(() => {}).then(() => vuaVerContenido(d, numero, x, xml, true));
+  const cat = VUA.cat || {};
+  const nom = (lista, c) => { const f = (lista || []).find(p => p.codigo === String(c || '')); return f ? f.nombre : ''; };
+  const esO = d.tipo === 'O';
+  const ae = d.agente || {};
+  const fila = (k, v) => v ? `<tr><td style="color:var(--g500);white-space:nowrap;padding:3px 10px 3px 0;vertical-align:top">${k}</td><td style="padding:3px 0">${v}</td></tr>` : '';
+  const dir = o => sEsc([o.direccion, [o.cp, o.localidad].filter(Boolean).join(' '), o.provincia && nom(cat.provincias, o.provincia), o.pais].filter(Boolean).join(' · '));
+  const cert = x && (x.certificados || []).length ? x.certificados.map(c => `${sEsc(c.numero)}${c.resultado ? ' · ' + sEsc(c.resultado) : ''}${c.fecha ? ' · ' + sEsc(c.fecha) : ''}`).join('<br>') : '';
+  const cab = `<table style="font-size:12px;border-collapse:collapse;width:100%">
+    ${fila('Nº solicitud', `<b style="font-family:var(--mono)">${sEsc(numero || '')}</b>${x ? ` · ${sEsc(x.estado)}${x.estado_soivre ? ' (' + sEsc(x.estado_soivre) + ')' : ''} · ${sEsc(x.entorno)}` : ''}`)}
+    ${fila('Enviada', d.enviadaEn ? new Date(d.enviadaEn).toLocaleString('es-ES') : (x ? new Date(x.created_at).toLocaleString('es-ES') : ''))}
+    ${fila('Tipo', (esO ? 'Otros productos' : 'Frutas y hortalizas') + ' · ' + (d.exporImpor === 'R' ? 'Reexportación' : 'Exportación'))}
+    ${fila('Centro / PI', sEsc(d.codCicePI + ' ' + nom(cat.cices, d.codCicePI)))}
+    ${fila('Aduana de salida', sEsc(d.aduana + ' ' + nom(cat.aduanas, d.aduana)))}
+    ${fila('Origen → destino', sEsc(`${d.origen || 'ES'} ${nom(cat.paises, d.origen || 'ES')} → ${d.destino} ${nom(cat.paises, d.destino)}`))}
+    ${fila('Transporte', sEsc([VUA_TRANSPORTES[d.transporte] || d.transporte, d.matricula, d.otrasMatriculas].filter(Boolean).join(' · ')))}
+    ${fila('Ubicación', sEsc(d.ubicacion || ''))}
+    ${fila('Agente económico', `<b>${sEsc(ae.nombre || '')}</b> · ${sEsc(ae.nif || '')}<br><span style="color:var(--g500)">${dir(ae)}</span>`)}
+    ${!esO && d.envasador && d.envasador.nif && d.envasador.nif !== ae.nif ? fila('Envasador', `${sEsc(d.envasador.nombre || '')} · ${sEsc(d.envasador.nif)}<br><span style="color:var(--g500)">${dir(d.envasador)}</span>`) : ''}
+    ${esO ? fila('Destinatario', sEsc(d.destinatario || '')) : ''}
+    ${esO ? fila('Fabricante / envasador', sEsc(d.fabricanteEnvasador || '')) : ''}
+    ${fila('Observaciones', sEsc(d.observaciones || ''))}
+    ${fila('Certificados', cert)}
+  </table>`;
+  const th = esO ? ['Lín', 'Producto SOIVRE', 'TARIC', 'Envases', 'Envase', '> 5 kg', 'Marca', 'Neto kg', 'Unid.', 'Factura', 'Valor']
+                 : ['Lín', 'Producto SOIVRE', 'TARIC', 'Envases', 'Envase', 'Cat.', 'Marca', 'Bruto kg', 'Neto kg', 'Factura', 'Valor'];
+  const td = v => `<td style="padding:3px 6px">${v}</td>`;
+  const lineas = (d.lineas || []).map((l, i) => `<tr style="border-top:1px solid var(--g200)">${td(i + 1)}${td(`${sEsc(l.producto || '')} <span style="color:var(--g500)">${sEsc(nom(cat.productos, l.producto))}</span>`)}${td(`<span style="font-family:var(--mono)">${sEsc(l.taric || '')}</span>`)}${td(sEsc(l.envases || ''))}`
+    + (esO ? td(sEsc(l.nombreEnvase || '')) + td(l.envaseMas5kg === 'S' ? 'Sí' : 'No') + td(sEsc(l.marca || '')) + td(sEsc(l.pesoNeto || '')) + td(sEsc(l.unidades || ''))
+           : td(sEsc(nom(cat.envases, l.codEnvase) || l.codEnvase || '')) + td(sEsc(VUA_CATEGORIAS[l.categoria] || l.categoria || '')) + td(sEsc(l.marca || '')) + td(sEsc(l.pesoBruto || '')) + td(sEsc(l.pesoNeto || '')))
+    + td(sEsc(l.factura || '')) + td(l.importe ? sEsc(l.importe + ' ' + (l.moneda || '')) : '') + '</tr>').join('');
+  window._vuaXmlVer = xml || '';
+  soivreModal(`📄 Solicitud ESTACICE ${sEsc(numero || '')}`, `${cab}
+    <div style="font-weight:600;font-size:13px;margin:14px 0 6px">Productos (${(d.lineas || []).length})</div>
+    <div style="overflow-x:auto"><table style="font-size:11.5px;border-collapse:collapse;width:100%"><thead><tr>${th.map(h => `<th style="text-align:left;padding:3px 6px;color:var(--g500);font-weight:600">${h}</th>`).join('')}</tr></thead><tbody>${lineas}</tbody></table></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      ${xml ? `<button class="btn btn-s btn-sm" onclick="soivreVerXml('XML enviado a ESTACICE', window._vuaXmlVer)">Ver XML enviado</button>` : ''}
+      <button class="btn btn-s btn-sm" onclick="soivreCerrarModal()">Cerrar</button>
+    </div>`, 1020);
+}
+
 // Regenera el CSV de una factura ya leída (sin volver a pasarla por la IA)
 async function vtCsvDesdeExpediente(id){
   const { data, error } = await sbT().from('vua_expedientes').select('factura').eq('id', id).single();
