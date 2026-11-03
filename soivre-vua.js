@@ -267,6 +267,8 @@ function vuaPrepararDesdeFactura(lineas){
     for(let i = 0; i < lineasVua.length; i += VUA_MAX_LINEAS){
       nuevas.push(vuaNuevaSolicitud({
         tipo: g.tipo, origen: g.origen, destino, agente, archivo: g.archivo, factura: g.cab.numero_factura || '', cabFactura: g.cab,
+        // La lectura de la que sale: si se envía más tarde (guardada) el expediente lleva esta factura, no la que haya en pantalla
+        _lineasFuente: window._facturaLineas || [], _cabLote: (typeof FACTURA_CABECERA !== 'undefined' && FACTURA_CABECERA) || null,
         fabricanteEnvasador: agente.nombre,
         destinatario: g.cab.destinatario && g.cab.destinatario.nombre || '',
         lineas: lineasVua.slice(i, i + VUA_MAX_LINEAS),
@@ -463,7 +465,7 @@ async function abrirSolicitudVua(k){
     </div>
     <div id="sv-errores"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;border-top:1px solid var(--g100);padding-top:12px">
-      <button class="btn btn-s btn-sm" onclick="vuaLeerFormulario('${k}');soivreCerrarModal();if(typeof soivrePanelFacturaRefrescar==='function')soivrePanelFacturaRefrescar()">Guardar y cerrar</button>
+      <button class="btn btn-s btn-sm" onclick="vuaGuardarBorrador('${k}')" title="Se guarda en el portal: la encuentras en SOIVRE › Guardadas sin enviar">Guardar y cerrar</button>
       <button class="btn btn-s btn-sm" onclick="vuaEnviar('${k}', true)">👁 Ver XML</button>
       <button class="btn btn-p" id="sv-enviar" onclick="vuaEnviar('${k}', false)">Enviar a ESTACICE</button>
     </div>`;
@@ -674,6 +676,7 @@ async function vuaEnviar(k, soloXml){
             numero: r.numeroSolicitud || null, descripcion: r.descripcion || r.error || '', errores: r.errores || [],
             xmlEnviado: r.xmlEnviado, xmlRespuesta: r.xmlRespuesta, adjunto: r.adjuntoEstado, fecha: new Date(), entorno: e.entorno };
   if(r.ok && r.numeroSolicitud) vuaGuardarExpediente(s, r.numeroSolicitud, e.entorno, d);
+  if(r.ok && s.borradorId) vuaQuitarBorrador(s.borradorId);
   vuaResultado(s);
   if(typeof soivrePanelFacturaRefrescar === 'function') soivrePanelFacturaRefrescar();
   if(document.getElementById('view-soivre')?.classList.contains('active')) vuaPintarSesion();
@@ -765,6 +768,7 @@ function vuaConsultarPorNumero(){
 // Lista de esta pestaña en la vista SOIVRE (sin histórico: el oficial está en ESTACICE)
 function vuaPintarSesion(){
   vuaPintarExpedientes();
+  vuaPintarBorradores();
   vtPintarEntidades();
   const el = document.getElementById('vua-sesion');
   if(!el) return;
@@ -781,6 +785,87 @@ function vuaPintarSesion(){
     : '<div style="font-size:12px;color:var(--g400)">Sin envíos a ESTACICE en esta sesión.</div>';
 }
 
+// ── Guardadas sin enviar (vua_borradores) ────────────────────
+// «Guardar y cerrar» las deja en Supabase: sobreviven a recargar el portal y
+// las ve cualquier usuario. La factura anexa va a Storage (borradores/…) y la
+// lectura de factura se guarda con ellas, para que el expediente y el CSV de
+// VisualTrans salgan bien aunque se envíen otro día.
+function vuaParaBorrador(s){
+  const c = {};
+  Object.keys(s).forEach(k => { if(k !== 'k' && k !== 'archivo' && k !== 'env' && k[0] !== '_') c[k] = s[k]; });
+  return JSON.parse(JSON.stringify(c));
+}
+async function vuaGuardarBorrador(k){
+  const s = vuaLeerFormulario(k);
+  if(!s) return;
+  soivreCerrarModal();
+  if(typeof soivrePanelFacturaRefrescar === 'function') soivrePanelFacturaRefrescar();
+  const fila = {
+    usuario: (window.PortalGuard && PortalGuard.CU && PortalGuard.CU.nombre) || null,
+    tipo: s.tipo, agente: s.agente.nombre || null, lineas: s.lineas.length, updated_at: new Date().toISOString(),
+    numero_factura: s.factura || [...new Set(s.lineas.map(l => l.factura).filter(Boolean))].join(', ') || null,
+    solicitud: vuaParaBorrador(s), factura: s.lineas.some(l => l.clave) ? vuaFacturaDe(s) : null
+  };
+  try{
+    if(s.archivo && s.archivo !== s._archivoGuardado){
+      const adj = await soivreSubirFichero('borradores', s.archivo);
+      if(s._adjuntoRuta) sbT().storage.from(SOIVRE_BUCKET).remove([s._adjuntoRuta]);
+      Object.assign(fila, { adjunto: adj.ruta, adjunto_nombre: adj.nombre });
+      s._archivoGuardado = s.archivo; s._adjuntoRuta = adj.ruta;
+    }
+    const r = s.borradorId
+      ? await sbT().from('vua_borradores').update(fila).eq('id', s.borradorId).select('id').single()
+      : await sbT().from('vua_borradores').insert(fila).select('id').single();
+    if(r.error) throw r.error;
+    s.borradorId = r.data.id;
+    showToast('Solicitud guardada sin enviar: está en SOIVRE › Guardadas sin enviar');
+  }catch(e){ showToast('No se pudo guardar en el portal (' + e.message + '). Sigue abierta en esta pestaña hasta que la recargues.'); }
+  if(document.getElementById('view-soivre')?.classList.contains('active')) vuaPintarBorradores();
+}
+async function vuaAbrirBorrador(id){
+  let s = VUA.sols.find(x => x.borradorId === id);
+  if(!s){
+    const { data, error } = await sbT().from('vua_borradores').select('*').eq('id', id).single();
+    if(error || !data) return showToast('No se pudo abrir: ' + (error ? error.message : 'ya no existe'));
+    s = vuaNuevaSolicitud(Object.assign({}, data.solicitud, { borradorId: id, _factura: data.factura || null, env: null, archivo: null }));
+    if(data.adjunto){
+      const r = await sbT().storage.from(SOIVRE_BUCKET).download(data.adjunto);
+      if(r.data){ s.archivo = new File([r.data], data.adjunto_nombre || 'factura', { type: r.data.type }); s._archivoGuardado = s.archivo; s._adjuntoRuta = data.adjunto; }
+      else showToast('No se pudo recuperar la factura anexa: vuelve a adjuntarla');
+    }
+  }
+  abrirSolicitudVua(s.k);
+}
+async function vuaQuitarBorrador(id){
+  const { data } = await sbT().from('vua_borradores').select('adjunto').eq('id', id).single();
+  if(data && data.adjunto) await sbT().storage.from(SOIVRE_BUCKET).remove([data.adjunto]);
+  await sbT().from('vua_borradores').delete().eq('id', id);
+  VUA.sols.forEach(s => { if(s.borradorId === id){ delete s.borradorId; delete s._adjuntoRuta; } });
+  if(document.getElementById('view-soivre')?.classList.contains('active')) vuaPintarBorradores();
+}
+async function vuaBorrarBorrador(id){
+  if(!confirm('¿Borrar esta solicitud guardada? No se ha enviado a ESTACICE.')) return;
+  await vuaQuitarBorrador(id);
+}
+async function vuaPintarBorradores(){
+  const el = document.getElementById('vua-borradores');
+  if(!el) return;
+  const { data, error } = await sbT().from('vua_borradores')
+    .select('id,created_at,updated_at,usuario,tipo,agente,numero_factura,lineas,adjunto_nombre').order('updated_at', { ascending: false }).limit(100);
+  if(error){ el.innerHTML = `<div style="font-size:12px;color:var(--g400)">${sEsc('Tabla vua_borradores no disponible: ejecuta de nuevo instalar_soivre.sql en Supabase.')}</div>`; return; }
+  const f = t => new Date(t).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  el.innerHTML = data.length ? `<table class="tbl" style="width:100%;font-size:12px">
+    <thead><tr><th>Guardada</th><th>Usuario</th><th>Agente económico</th><th>Tipo</th><th>Factura</th><th>Líneas</th><th></th></tr></thead>
+    <tbody>${data.map(b => `<tr>
+      <td>${f(b.updated_at)}</td><td>${sEsc(b.usuario || '—')}</td><td>${sEsc(b.agente || '—')}</td>
+      <td>${b.tipo === 'O' ? 'Otros productos' : 'Frutas y hortalizas'}</td>
+      <td>${sEsc(b.numero_factura || '—')}${b.adjunto_nombre ? `<div style="font-size:10px;color:var(--g500)">📎 ${sEsc(b.adjunto_nombre)}</div>` : ''}</td>
+      <td>${b.lineas}</td>
+      <td style="white-space:nowrap"><button class="btn btn-p btn-sm" onclick="vuaAbrirBorrador('${b.id}')">Abrir</button> <button class="btn btn-s btn-sm" onclick="vuaBorrarBorrador('${b.id}')">Borrar</button></td>
+    </tr>`).join('')}</tbody></table>`
+    : '<div style="font-size:12px;color:var(--g400)">No hay solicitudes guardadas sin enviar.</div>';
+}
+
 // ═══ Certificados → CSV de VisualTrans ═══
 // Al registrarse una solicitud que viene de una factura leída se guarda su
 // expediente (vua_expedientes): la factura y qué línea de factura va en cada
@@ -790,13 +875,18 @@ function vuaPintarSesion(){
 // Todas las líneas de la lectura, no solo las que van a SOIVRE: el CSV de
 // VisualTrans es el DUA completo. Si la lectura tenía varias facturas (un DUA
 // con varias), van todas, con la cabecera de cada una aparte (cabs).
-function vuaFacturaParaGuardar(){
-  const todas = window._facturaLineas || [];
+function vuaFacturaParaGuardar(todas = window._facturaLineas || []){
   const cabs = {};
   todas.forEach(l => { if(l._cab && l._numFactura && !cabs[l._numFactura]) cabs[l._numFactura] = l._cab; });
   // Sin referencias circulares ni campos de pantalla; las cabeceras van aparte
   const lineas = todas.map(l => { const c = Object.assign({}, l); delete c._cab; delete c._n003; delete c._n003s; return c; });
   return { lineas, cabs };
+}
+// Factura del expediente: la guardada con la solicitud o la lectura de la que salió
+function vuaFacturaDe(s){
+  if(s._factura) return s._factura;
+  const lote = s._cabLote || (typeof FACTURA_CABECERA !== 'undefined' && FACTURA_CABECERA) || null;
+  return Object.assign({ cab: s.cabFactura || lote || {}, cabLote: lote }, vuaFacturaParaGuardar(s._lineasFuente || window._facturaLineas || []));
 }
 // d: los datos tal como se enviaron (vuaDatos), para poder consultar el contenido.
 // Las solicitudes manuales también se guardan (sin factura): se sigue su estado
@@ -807,9 +897,7 @@ async function vuaGuardarExpediente(s, numero, entorno, d){
     usuario: (window.PortalGuard && PortalGuard.CU && PortalGuard.CU.nombre) || null,
     entorno: entorno || 'pruebas', numero_solicitud: String(numero), cice_pi: s.cicePI, tipo: s.tipo,
     numero_factura: s.factura || null, exportador: s.agente.nombre, nif_exportador: s.agente.nif,
-    factura: conFactura ? Object.assign({ cab: s.cabFactura || (typeof FACTURA_CABECERA !== 'undefined' ? FACTURA_CABECERA : {}) || {},
-                                          cabLote: (typeof FACTURA_CABECERA !== 'undefined' && FACTURA_CABECERA) || null },
-                                        vuaFacturaParaGuardar()) : {},
+    factura: conFactura ? vuaFacturaDe(s) : {},
     lineas_sol: s.lineas.map((l, i) => ({ linea: i + 1, clave: l.clave || null, descripcion: l.descripcion || '' })),
     solicitud: Object.assign({}, d || vuaDatos(s), { idMensaje: s.idMensaje || null, enviadaEn: new Date().toISOString() })
   };
