@@ -890,12 +890,12 @@ async function vtBuscarEntidades(nif, nombre){
   if(VT.cache.has(k)) return VT.cache.get(k);
   let res = [];
   if(vtNormNif(nif)){
-    const r = await sbT().from('vt_entidades').select('codigo,nombre,nif,preferida').eq('nif_norm', vtNormNif(nif));
+    const r = await sbT().from('vt_entidades').select('codigo,nombre,nif,preferida,cliente').eq('nif_norm', vtNormNif(nif));
     if(r.error) throw r.error;
     res = r.data || [];
   }
   if(!res.length && vtNormNombre(nombre)){
-    const r = await sbT().from('vt_entidades').select('codigo,nombre,nif,preferida').eq('nombre_norm', vtNormNombre(nombre));
+    const r = await sbT().from('vt_entidades').select('codigo,nombre,nif,preferida,cliente').eq('nombre_norm', vtNormNombre(nombre));
     if(!r.error) res = r.data || [];
   }
   VT.cache.set(k, res);
@@ -928,6 +928,81 @@ async function vtResolverParte(rol, parte, avisos){
   const elegida = cand.length === 1 ? cand[0] : (cand.find(c => c.preferida) || (cand.length > 1 ? await vtElegir(rol, parte, cand) : null));
   if(elegida){ parte.nombre_vt = elegida.nombre; if(elegida.nif) parte.nif_vt = elegida.nif; }
   else{ delete parte.nombre_vt; delete parte.nif_vt; if(!cand.length) avisos.push(`${rol} «${parte.nombre || parte.nif}» no está en las entidades de VisualTrans: va con el nombre de la factura`); }
+}
+
+// ── Cliente del dossier («Entidad que paga», columna 37 de la cabecera) ──
+// Entidades.txt no dice qué entidades son clientes: el portal lo aprende. La
+// entidad elegida como cliente al generar un CSV queda marcada (cliente = true)
+// y la próxima vez se propone sola si es el exportador o el destinatario.
+// El destinatario de una exportación (o el exportador de una importación)
+// suele venir sin NIF en la factura: se busca por nombre («BON FOOD LTD» →
+// «BONFOOD LTD»).
+async function vtPintarCliente(cab, esImport){
+  const el = document.getElementById('vt-cliente');
+  if(!el) return;
+  window._vtCliente = null;
+  const partes = [['Exportador', cab.exportador], [esImport ? 'Importador' : 'Destinatario', cab.destinatario]];
+  if(esImport) partes.reverse();
+  const cand = [];
+  for(const [rol, p] of partes){
+    if(!p || (!p.nif && !p.nombre)) continue;
+    let ents = [];
+    try{ ents = await vtBuscarEntidades(p.nif, p.nombre); }catch(_){ el.innerHTML = ''; return; }   // sin tabla: no hay campo
+    const e = ents.find(x => x.cliente) || ents.find(x => x.preferida) || ents[0];
+    if(e && !cand.some(c => c.codigo === e.codigo)) cand.push(Object.assign({ rol }, e));
+  }
+  window._vtClienteCand = cand;
+  const propuesto = cand.find(c => c.cliente);
+  el.innerHTML = `
+    <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Cliente · entidad que paga</label>
+    <div style="position:relative">
+      <input id="vt-cliente-q" class="fi" style="width:100%" autocomplete="off" placeholder="Busca por nombre, NIF o código de VisualTrans"
+        oninput="vtBuscarCliente(this.value)">
+      <div id="vt-cliente-res" style="position:absolute;left:0;right:0;top:100%;z-index:2;background:var(--w);border:1px solid var(--g200);border-radius:var(--r);box-shadow:var(--shl);display:none;max-height:220px;overflow:auto"></div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+      ${cand.map((c, i) => `<button type="button" class="btn btn-s btn-sm" style="font-size:11px" onclick="vtElegirCliente(window._vtClienteCand[${i}])">${sEsc(c.rol)}: ${sEsc(c.nombre)}${c.cliente ? ' ★' : ''}</button>`).join('')}
+    </div>
+    <div id="vt-cliente-info" style="font-size:11px;color:var(--g500);margin-top:4px"></div>`;
+  if(propuesto) vtElegirCliente(propuesto, true);
+  else vtInfoCliente(cand.length ? 'Ninguna de las dos está marcada como cliente: elige una o búscala.' : 'Exportador y destinatario no están en las entidades de VisualTrans: busca el cliente.');
+}
+function vtInfoCliente(t){ const i = document.getElementById('vt-cliente-info'); if(i) i.innerHTML = t; }
+function vtElegirCliente(c, auto){
+  window._vtCliente = c || null;
+  const q = document.getElementById('vt-cliente-q'), r = document.getElementById('vt-cliente-res');
+  if(q) q.value = c ? c.nombre : '';
+  if(r) r.style.display = 'none';
+  if(!c) return vtInfoCliente('Sin cliente: la columna «Entidad que paga» irá vacía.');
+  vtInfoCliente(`${auto ? 'Propuesto (ya es cliente) · ' : ''}cód. ${sEsc(c.codigo)} · NIF ${c.nif ? sEsc(c.nif) : '<span style="color:var(--am600)">sin NIF en VisualTrans: la columna irá vacía</span>'}`);
+}
+let _vtClienteT = null;
+function vtBuscarCliente(texto){
+  clearTimeout(_vtClienteT);
+  window._vtCliente = null;
+  const t = String(texto || '').trim();
+  const r = document.getElementById('vt-cliente-res');
+  if(t.length < 2){ if(r) r.style.display = 'none'; vtInfoCliente(t ? '' : 'Sin cliente: la columna «Entidad que paga» irá vacía.'); return; }
+  _vtClienteT = setTimeout(async () => {
+    const nif = vtNormNif(t), nom = vtNormNombre(t);
+    const ors = [`nombre.ilike.*${t.replace(/[*,()]/g, ' ')}*`];
+    if(nom) ors.push(`nombre_norm.like.*${nom}*`);
+    if(/\d/.test(nif)) ors.push(`nif_norm.eq.${nif}`, `codigo.eq.${t.replace(/[^0-9A-Za-z]/g, '')}`);
+    const { data, error } = await sbT().from('vt_entidades').select('codigo,nombre,nif,cliente,pais_iso')
+      .or(ors.join(',')).order('cliente', { ascending: false }).order('nombre').limit(12);
+    if(error || !r) return;
+    window._vtClienteRes = data || [];
+    r.innerHTML = (data || []).map((c, i) => `<div style="padding:6px 10px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--g100)" onmousedown="vtElegirCliente(window._vtClienteRes[${i}])">
+        ${c.cliente ? '★ ' : ''}${sEsc(c.nombre)} <span style="color:var(--g400);font-size:11px">· ${sEsc(c.nif || 'sin NIF')} · ${sEsc(c.pais_iso || '')} · cód. ${sEsc(c.codigo)}</span></div>`).join('')
+      || '<div style="padding:6px 10px;font-size:12px;color:var(--g400)">Sin resultados</div>';
+    r.style.display = 'block';
+  }, 250);
+}
+// Tras generar el CSV: el cliente elegido queda marcado para proponerlo la próxima vez
+async function vtRecordarCliente(c){
+  if(!c || c.cliente) return;
+  const { error } = await sbT().from('vt_entidades').update({ cliente: true }).eq('codigo', c.codigo);
+  if(!error){ c.cliente = true; VT.cache.clear(); }
 }
 
 // Llamada por exportarVisualTrans (taric.html) antes de construir el CSV

@@ -3334,6 +3334,7 @@ function construirFilasExport(cab, lineas, cfg){
   const totNeto=_vtNum(cab.peso_neto_total)||totBruto;
   C[32]=totBultos||''; C[33]=totBruto||''; C[34]=totNeto||'';
   C[35]=cab.numero_factura||'';
+  C[36]=(cfg.cliente&&cfg.cliente.nif)||'';            // Entidad que paga = cliente del dossier
   C[37]=_vtNum(cab.total_factura)||'';
   C[39]=cfg.representante_nif||'';
   C[40]=cfg.refInterna||cab.numero_factura||'';
@@ -3380,7 +3381,7 @@ function construirFilasImport(cab, lineas, cfg){
   const aduana = (VT_ADUANAS[cfg.aduana] || {}).cod || cfg.aduana || 'ES001131';
 
   const C = new Array(87).fill('');
-  C[0]='H1';
+  C[0]='H'; C[1]='H';                                   // H = cabecera de H1 (guía VisualTrans; I = DVD)
   C[2]=cfg.casilla1a||'IM'; C[3]=cfg.casilla1b||'A'; C[4]=cfg.casilla1c||'';
   C[5]=aduana;
   C[6]=exp.nombre_vt||exp.nombre||''; C[7]=exp.nif_vt||exp.nif||exp.eori||''; C[8]=exp.direccion||'';
@@ -3398,6 +3399,7 @@ function construirFilasImport(cab, lineas, cfg){
   const totNeto=_vtNum(cab.peso_neto_total)||totBruto;
   C[32]=totBultos||''; C[33]=totBruto||''; C[34]=totNeto||'';
   C[35]=cab.numero_factura||'';
+  C[36]=(cfg.cliente&&cfg.cliente.nif)||'';            // Entidad que paga = cliente del dossier
   C[37]=_vtNum(cab.total_factura)||'';
   C[39]=cfg.representante_nif||'';
   C[40]=cfg.refInterna||cab.numero_factura||'';
@@ -3468,6 +3470,7 @@ async function exportarVisualTrans(){
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
   showToast('CSV VisualTrans generado ('+lineas.length+' partidas): '+a.download);
   if(typeof vtTrasExportar === 'function') vtTrasExportar();
+  if(cfg.cliente && typeof vtRecordarCliente === 'function') vtRecordarCliente(cfg.cliente);
 }
 
 
@@ -3550,6 +3553,7 @@ function abrirModalVT(){
           <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Observaciones (opcional)</label>
           <input id="vt-obs" class="fi">
         </div>
+        <div id="vt-cliente" style="grid-column:1/3"></div>
       </div>
       <div id="vt-asistente" style="margin-top:14px"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
@@ -3563,6 +3567,8 @@ function abrirModalVT(){
   // Deducir el escenario de Gibraltar a partir de la factura y autocompletar.
   const escInf = inferEscenarioVT(cab);
   if(escInf){ document.getElementById('vt-escenario').value = escInf; aplicarEscenarioVT(); }
+  // Cliente (entidad que paga): propuesto si exportador o destinatario ya es cliente; editable
+  if(typeof vtPintarCliente === 'function') vtPintarCliente(cab, document.getElementById('vt-tipo').value === 'import');
 }
 function _vtToggleReg(){
   const tipo=document.getElementById('vt-tipo').value;
@@ -3654,6 +3660,7 @@ function confirmarVT(){
     preferencia: esc ? (esc.preferencia||'') : '',
     adicionales: esc ? adicionalesVT(esc, regimen) : [],
     docsEscenario: docsEsc,
+    cliente: window._vtCliente || null,   // entidad que paga (columna 37)
   };
   document.getElementById('modal-vt').remove();
   exportarVisualTrans();
@@ -5462,7 +5469,7 @@ function _buildAES(d, cfg){
 
 </script>
 <!-- ?v= obliga al navegador a descargar la versión nueva al publicar (GitHub Pages cachea 10 min) -->
-<script src="soivre-cal.js?v=2026110209"></script>
-<script src="soivre-vua.js?v=2026110209"></script>
+<script src="soivre-cal.js?v=2026110210"></script>
+<script src="soivre-vua.js?v=2026110210"></script>
 </body>
 </html>
