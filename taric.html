@@ -2265,7 +2265,9 @@ async function handleFiles(fileList){
     estados[i].msg = 'Leyendo y clasificando...';
     pintarCola();
     try {
-      const data = await procesarUnaFactura(file);
+      const data = await procesarUnaFactura(file, (hechas, total) => {
+        estados[i].msg = `Leyendo página ${hechas}/${total}…`; pintarCola();
+      });
       const lineas = Array.isArray(data) ? data : (data.lineas || []);
       if(!lineas.length) throw new Error('No se encontraron líneas de mercancía');
       // La IA deja pais_origen vacío si no consta en el documento (así se le pide,
@@ -2306,29 +2308,38 @@ async function handleFiles(fileList){
 }
 
 // Prepara el fichero y lo manda a la Edge Function. No toca la UI global.
-async function procesarUnaFactura(file){
+async function procesarUnaFactura(file, onProgreso){
   const mediaType = getMediaType(file.type, file.name);
-  let base64 = null, tipo = 'image/jpeg', textoPlano = null;
-  try {
-    if(mediaType === 'application/pdf'){
-      tipo = 'application/pdf';
-      const omitirP1 = document.getElementById('fact-omitir-p1')?.checked;
-      if(omitirP1){
-        try { base64 = await pdfBase64SinPrimeraPagina(file); }
-        catch(e){ console.warn('No se pudo quitar la 1ª página; se envía completo:', e); base64 = await fileToBase64(file); }
-      } else {
-        base64 = await fileToBase64(file);
-      }
-    } else {
-      base64 = await comprimirImagenParaOCR(file);
-    }
-  } catch(e){
-    console.warn('Preparación falló, se envía en crudo:', e);
-    base64 = await fileToBase64(file);
-    tipo = mediaType || 'application/pdf';
-  }
   window._facturaFileName = file.name;
-  return await leerFacturaConIA(base64, tipo, textoPlano);
+
+  // ── PDF ──
+  if(mediaType === 'application/pdf'){
+    const omitirP1 = document.getElementById('fact-omitir-p1')?.checked;
+    const desde = omitirP1 ? 1 : 0;
+    let nPag = 1;
+    try { nPag = await pdfNumPaginas(file); } catch(_){}
+    // Facturas grandes (3+ páginas efectivas): leer PÁGINA A PÁGINA y fusionar.
+    // Cada página es una petición pequeña → se leen TODAS las líneas, sin lecturas
+    // a medias ni timeouts 504. Las de 1-2 páginas van por el flujo de siempre.
+    if((nPag - desde) >= 3){
+      try { return await leerFacturaPorPaginas(file, desde, onProgreso); }
+      catch(e){ console.warn('Lectura por páginas falló, se reintenta completa:', e); }
+    }
+    let base64;
+    if(omitirP1){
+      try { base64 = await pdfBase64SinPrimeraPagina(file); }
+      catch(e){ console.warn('No se pudo quitar la 1ª página; se envía completo:', e); base64 = await fileToBase64(file); }
+    } else {
+      base64 = await fileToBase64(file);
+    }
+    return await leerFacturaConIA(base64, 'application/pdf', null);
+  }
+
+  // ── Imagen ──
+  let base64;
+  try { base64 = await comprimirImagenParaOCR(file); }
+  catch(e){ console.warn('Preparación de imagen falló, se envía en crudo:', e); base64 = await fileToBase64(file); }
+  return await leerFacturaConIA(base64, mediaType || 'image/jpeg', null);
 }
 
 async function leerFacturaConIA(base64, mediaType, textoPlano){
@@ -4316,6 +4327,62 @@ async function pdfBase64SinPrimeraPagina(file){
   let bin=''; const CH=0x8000;
   for(let i=0;i<bytes.length;i+=CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+CH));
   return btoa(bin);
+}
+
+// Nº de páginas de un PDF (1 si no se puede leer).
+async function pdfNumPaginas(file){
+  try {
+    const PDFLib = await cargarPdfLib();
+    const src = await PDFLib.PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption:true });
+    return src.getPageCount();
+  } catch(_){ return 1; }
+}
+
+// Un base64 por cada página del PDF, desde 'desde' (0-based).
+async function pdfPaginasBase64(file, desde){
+  const PDFLib = await cargarPdfLib();
+  const src = await PDFLib.PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption:true });
+  const n = src.getPageCount();
+  const out = [];
+  for(let i=(desde||0); i<n; i++){
+    const doc = await PDFLib.PDFDocument.create();
+    const [pg] = await doc.copyPages(src, [i]);
+    doc.addPage(pg);
+    const bytes = await doc.save();
+    let bin=''; const CH=0x8000;
+    for(let j=0;j<bytes.length;j+=CH) bin += String.fromCharCode.apply(null, bytes.subarray(j, j+CH));
+    out.push(btoa(bin));
+  }
+  return out;
+}
+
+// Lee una factura PDF grande PÁGINA A PÁGINA y fusiona el resultado. Cada página
+// es una petición pequeña (rápida y fiable) → se leen TODAS las líneas sin
+// timeouts ni lecturas incompletas. La IDENTIDAD (nº factura, exportador…) se toma
+// de la primera página que la traiga; los TOTALES (peso bruto/neto, total factura…)
+// de la última que los traiga, porque van al pie de la factura. Las páginas sin
+// líneas de mercancía (portadas de reparto, condiciones) se omiten solas.
+async function leerFacturaPorPaginas(file, desde, onProgreso){
+  const paginas = await pdfPaginasBase64(file, desde);
+  if(!paginas.length) throw new Error('El PDF no tiene páginas legibles');
+  const IDENT = ['numero_factura','fecha','exportador','destinatario','pais_origen','pais_destino','incoterm','moneda'];
+  const TOT   = ['total_factura','base_imponible','peso_bruto_total','peso_neto_total','bultos_totales','partidas_declaradas'];
+  const cab = {}; const lineas = []; let trunc = false, conLineas = 0;
+  for(let p=0;p<paginas.length;p++){
+    if(onProgreso) onProgreso(p+1, paginas.length);
+    let data;
+    try { data = await leerFacturaConIA(paginas[p], 'application/pdf', null); }
+    catch(e){ console.warn('Página '+(p+1)+' omitida (sin líneas o error):', e && e.message); continue; }
+    const c = data.cabecera || {};
+    IDENT.forEach(k => { if((cab[k]==null || cab[k]==='') && c[k]!=null && c[k]!=='') cab[k] = c[k]; });
+    TOT.forEach(k   => { if(c[k]!=null && String(c[k]).trim()!=='') cab[k] = c[k]; });
+    if(Array.isArray(data.lineas) && data.lineas.length){ lineas.push(...data.lineas); conLineas++; }
+    if(data._truncado) trunc = true;
+  }
+  if(!lineas.length) throw new Error('No se encontraron líneas de mercancía en ninguna página');
+  FACTURA_CABECERA = cab;
+  console.log(`Lectura por páginas: ${paginas.length} páginas · ${conLineas} con líneas · ${lineas.length} líneas totales`);
+  return { cabecera: cab, lineas, _truncado: trunc };
 }
 
 function getMediaType(type, name){
