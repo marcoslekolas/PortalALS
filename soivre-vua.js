@@ -24,6 +24,17 @@ const VUA_TRANSPORTES = { '01':'Camión', '02':'Buque (carga bodega)', '03':'Avi
                           '05':'Contenedor en buque', '06':'Camión en buque', '07':'Correo postal/mensajería' };
 const VUA_CATEGORIAS = { '1':'Extra', '2':'I', '3':'II', '4':'No aplica' };
 const VUA_MONEDAS = { EUR:'EUR', USD:'DOL', DOL:'DOL', GBP:'GBP', JPY:'YEN', YEN:'YEN', CNY:'CNY' };
+// Moneda de la factura → código ESTACICE: también «€», «EUROS», «US$», «£»…
+function vuaMonedaDe(m){
+  const t = vuaNormal(m).replace(/[^A-Z€$£¥]/g, '');
+  if(VUA_MONEDAS[t]) return VUA_MONEDAS[t];
+  if(/^(€|EURO)/.test(t)) return 'EUR';
+  if(/\$|DOLAR|DOLLAR/.test(t)) return 'DOL';
+  if(/£|LIBRA|POUND|GBP/.test(t)) return 'GBP';
+  if(/¥|YEN/.test(t)) return 'YEN';
+  if(/YUAN|RMB|CNY/.test(t)) return 'CNY';
+  return '';
+}
 const VUA_CFG_DEF = {
   cicePI: '5801', aduana: '', transporte: '01', ubicacion: '',
   gibraltar: { cicePI: '5802', aduana: '1167' }
@@ -231,7 +242,8 @@ function vuaPrepararDesdeFactura(lineas){
     const agente = vuaAgenteDe(g.cab.exportador);
     const destinoTxt = g.cab.pais_destino || (g.cab.destinatario && g.cab.destinatario.pais) || '';
     const destino = destinoTxt ? (typeof _vtPaisISO === 'function' ? _vtPaisISO(destinoTxt) : destinoTxt) : '';
-    const moneda = VUA_MONEDAS[String(g.cab.moneda || '').toUpperCase()] || '';
+    // Sin moneda reconocible en la factura: EUR (se ve y se cambia en el formulario)
+    const moneda = vuaMonedaDe(g.cab.moneda) || 'EUR';
     const lineasVua = g.lineas.map(l => {
       const bruto = vuaNum(l.peso_bruto);
       const { neto, netoDe } = vuaNetoDe(l);
@@ -247,7 +259,7 @@ function vuaPrepararDesdeFactura(lineas){
         nombreEnvase: vuaNombreEnvase(l.unidad), envaseMas5kg: 'N',
         unidades: Number.isFinite(cantidad) && !/kg|kilo|litro|^l$/i.test(l.unidad || '') ? String(Math.round(cantidad)) : '',
         categoria: '2', pesoBruto: vuaFmt(bruto), pesoNeto: vuaFmt(neto), netoDe,
-        importe: Number.isFinite(vuaNum(l.importe)) && moneda ? vuaFmt(vuaNum(l.importe)) : '', moneda,
+        importe: vuaNum(l.importe) > 0 ? vuaFmt(vuaNum(l.importe)) : '', moneda,
         factura: String(g.cab.numero_factura || '').slice(0, 30)
       };
     });
@@ -318,15 +330,19 @@ const vuaIn = (id, v, extra = '') => `<input id="${id}" class="fi" style="width:
 
 // Columnas de producto según el tipo: F (frutas y hortalizas) u O (otros productos)
 const VUA_COLUMNAS = {
-  F: ['Lín', 'TARIC · producto SOIVRE', 'Nº env.', 'Envase', 'Marca', 'Cat.', 'P. bruto', 'P. neto', 'Nº factura', ''],
-  O: ['Lín', 'TARIC · producto SOIVRE', 'Nº env.', 'Nombre envase', '> 5 kg', 'Marca', 'P. neto', 'Unidades', 'Nº factura', '']
+  F: ['Lín', 'TARIC · producto SOIVRE', 'Nº env.', 'Envase', 'Marca', 'Cat.', 'P. bruto', 'P. neto', 'Valor', 'Moneda', 'Nº factura', ''],
+  O: ['Lín', 'TARIC · producto SOIVRE', 'Nº env.', 'Nombre envase', '> 5 kg', 'Marca', 'P. neto', 'Unidades', 'Valor', 'Moneda', 'Nº factura', '']
 };
 function vuaFilaLinea(l, i, tipo = 'F', origenSol = 'ES'){
   const prods = vuaProductosPara(l.taric, tipo, l.descripcion);
   const origen = l.origen || origenSol || 'ES';
   const c = 'style="width:100%;font-size:11px;padding:4px 5px"';
   const celda = (w, html) => `<td style="padding:4px 2px;width:${w}px">${html}</td>`;
-  const comunesFin = celda(110, `<input class="fi vl-factura" ${c} value="${sEsc(l.factura)}" maxlength="30">`)
+  // Valor de la línea (importe de factura) y su moneda: opcionales en ESTACICE
+  const monedas = [...new Set(Object.values(VUA_MONEDAS))];
+  const comunesFin = celda(90, `<input class="fi vl-importe" ${c} value="${sEsc(l.importe || '')}" inputmode="decimal">`)
+    + celda(66, `<select class="fi vl-moneda" ${c}>${monedas.map(m => `<option ${m === (l.moneda || 'EUR') ? 'selected' : ''}>${m}</option>`).join('')}</select>`)
+    + celda(110, `<input class="fi vl-factura" ${c} value="${sEsc(l.factura)}" maxlength="30">`)
     + '<td style="padding:4px 2px"><button class="btn btn-s btn-sm" style="padding:2px 6px" title="Quitar línea" onclick="vuaQuitarLinea(this)">✕</button></td>';
   const especificas = tipo === 'O'
     ? celda(100, `<input class="fi vl-nomenv" ${c} value="${sEsc(l.nombreEnvase || '')}" maxlength="20" placeholder="Botellas">`)
@@ -512,7 +528,8 @@ function vuaLeerFormulario(k){
     const prev = s.lineas[+tr.dataset.i] || {};
     const l = Object.assign({}, prev, {
       taric: q('.vl-taric').replace(/\D/g, ''), producto: q('.vl-producto'), envases: q('.vl-envases'), origen: q('.vl-origen'),
-      marca: q('.vl-marca'), pesoNeto: q('.vl-neto').replace(',', '.'), factura: q('.vl-factura'), _envRevisado: true
+      marca: q('.vl-marca'), pesoNeto: q('.vl-neto').replace(',', '.'), factura: q('.vl-factura'), _envRevisado: true,
+      importe: q('.vl-importe').replace(',', '.'), moneda: q('.vl-moneda')
     });
     if(l.pesoNeto !== prev.pesoNeto) l.netoDe = '';   // tocado a mano: ya no es una deducción
     if(esO) Object.assign(l, { nombreEnvase: q('.vl-nomenv'), envaseMas5kg: q('.vl-mas5'), unidades: q('.vl-unidades') });
@@ -576,6 +593,7 @@ function vuaComprobar(s, d){
       if(!l.envaseMas5kg && String(l.producto).startsWith('15')) e.push(`${p}: indica si el envase pesa más de 5 kg (obligatorio en aceites)`);
       if(l.unidades && !/^\d+$/.test(l.unidades)) e.push(`${p}: unidades, número entero`);
     } else if(!(parseFloat(l.pesoBruto) > n)) e.push(`${p}: el peso bruto debe ser mayor que el neto`);
+    if(l.importe && !(parseFloat(l.importe) >= 0.01 && /^\d+(\.\d{1,2})?$/.test(l.importe))) e.push(`${p}: valor, importe con 2 decimales como máximo`);
     if((l.factura || '').length < 3) e.push(`${p}: nº de factura`);
   });
   if(s.archivo && /\.zip$/i.test(s.archivo.name) && s.archivo.size > VUA_MAX_ANEXO) e.push('La factura .zip supera 2 MB');
