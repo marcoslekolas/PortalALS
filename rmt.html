@@ -145,7 +145,12 @@ function lastCells(row, n) { const c = row.cells.map(c => c.s.trim()); return c.
 
 function detectType(pages) {
   const all = pages[0].map(r => r.text).join('\n');
-  if (/DOCUMENTO DE LEVANTE EN ADUANA DE EXPORTACI/i.test(all)) return 'DUE';
+  // Documentos de exportación de la AEAT: justificante de levante y autorización
+  // de salida. "MRN de exportación" solo aparece en ellos, así que vale de marca
+  // común para las dos variantes y para las que vengan.
+  if (/MRN de exportaci/i.test(all) ||
+      /DOCUMENTO DE LEVANTE EN ADUANA DE EXPORTACI/i.test(all) ||
+      /AUTORIZACI[ÓO]N DE SALIDA DE EXPORTACI/i.test(all)) return 'DUE';
   if (/TRANSIT ACCOMPANYING DOCUMENT|Type \[11 01\]/.test(all)) return 'TAD';
   if (/TIPO DE DECLARACI|Importador|Exportador|Fecha de Levante/i.test(all)) return 'DUA';
   return null;
@@ -171,7 +176,7 @@ function parseDUE(pages) {
   out.csv = (txt.match(RE_CSV) || [])[1] || '';
 
   out.aduanaSalida = (txt.match(/Aduana de Salida:\s*\|\s*([A-Z]{2}\d{6})/i) || [])[1] || '';
-  out.ubicacion = (txt.match(/Ubicaci[^|]*en Aduana de Exportaci[^|]*\|\s*(\S+)/i) || [])[1] || '';
+  out.ubicacion = (txt.match(/Ubicaci[^|\n]*mercanc[^|\n]*\|\s*(\S+)/i) || [])[1] || '';
 
   // Buque: el "Identificador" que sigue a "Tipo de identificación: 11 Nombre del buque marítimo"
   const mb = txt.match(/Tipo de identificaci[^\n]*\n(?:[^\n]*\n)??\s*Identificador:\s*\|\s*([^|\n]+)/i);
@@ -186,8 +191,11 @@ function parseDUE(pages) {
   out.cir = out.levante ? 'Verde' : '';
   if (!out.levante) w.push('No aparece fecha de levante: revisa el CIR');
 
-  const md = txt.match(/Descripci[^|]*de la mercanc[^|]*\|\s*([\s\S]*?)\n(?:Posici[oó]n|Masa|Embalajes|Tipo:)/i);
-  out.descripcion = md ? md[1].replace(/\s*\|\s*/g, ' ').replace(/\s+/g, ' ').trim() : '';
+  const md = txt.match(/Descripci[^|]*de la mercanc[^|]*\|\s*([\s\S]*?)\n(?:P[áa]gina\s*\d|Posici[oó]n|Masa|Embalajes|Tipo:|AUTORIZACI|DOCUMENTO DE LEVANTE)/i);
+  out.descripcion = md ? md[1]
+    .replace(/P[áa]gina\s*\d+/gi, '')
+    .replace(/(AUTORIZACI[ÓO]N DE SALIDA|DOCUMENTO DE LEVANTE)[^|\n]*/gi, '')
+    .replace(/\s*\|\s*/g, ' ').replace(/\s+/g, ' ').trim() : '';
   if (!out.descripcion) w.push('No se encontró la descripción de la partida 1');
 
   out.matricula = '';
