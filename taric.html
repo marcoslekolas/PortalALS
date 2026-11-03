@@ -2268,23 +2268,36 @@ async function handleFiles(fileList){
       const data = await procesarUnaFactura(file, (hechas, total) => {
         estados[i].msg = `Leyendo página ${hechas}/${total}…`; pintarCola();
       });
-      const lineas = Array.isArray(data) ? data : (data.lineas || []);
-      if(!lineas.length) throw new Error('No se encontraron líneas de mercancía');
-      // La IA deja pais_origen vacío si no consta en el documento (así se le pide,
-      // para que no lo deduzca). Aquí se completa con el valor por defecto.
-      const cabecera = data.cabecera || {};
-      if(!cabecera.pais_origen && ORIGEN_POR_DEFECTO){
-        cabecera.pais_origen = ORIGEN_POR_DEFECTO;
-        cabecera.origen_asumido = true;
+      // Un PDF puede traer varias facturas (lectura por páginas): una tarjeta por factura.
+      const lista = (data && Array.isArray(data._multi)) ? data._multi : [data];
+      let totalLineas = 0; const problemas = []; const numeros = [];
+      for(const d of lista){
+        const lineas = Array.isArray(d) ? d : (d.lineas || []);
+        if(!lineas.length) continue;
+        // La IA deja pais_origen vacío si no consta en el documento (así se le pide,
+        // para que no lo deduzca). Aquí se completa con el valor por defecto.
+        const cabecera = d.cabecera || {};
+        if(!cabecera.pais_origen && ORIGEN_POR_DEFECTO){
+          cabecera.pais_origen = ORIGEN_POR_DEFECTO;
+          cabecera.origen_asumido = true;
+        }
+        const nombre = lista.length > 1 ? `${file.name} · ${cabecera.numero_factura || ('factura ' + (numeros.length+1))}` : file.name;
+        FACTURAS.push({ fichero:nombre, archivo:file, cabecera, lineas, truncado:!!d._truncado,
+                        incompleta:d._incompleta||null, tokens:d._tokens||null });
+        totalLineas += lineas.length;
+        if(cabecera.numero_factura) numeros.push(cabecera.numero_factura);
+        const pr = d._incompleta || d._pesoRepartido || (d._truncado
+          ? 'Lectura truncada: se agotaron los tokens. Revisa que no falten líneas al final.' : null)
+          || d._revisar || null;
+        if(pr) problemas.push((lista.length > 1 && cabecera.numero_factura ? cabecera.numero_factura + ': ' : '') + pr);
       }
-      FACTURAS.push({ fichero:file.name, archivo:file, cabecera, lineas, truncado:!!data._truncado,
-                      incompleta:data._incompleta||null, tokens:data._tokens||null });
-      const problema = data._revisar || data._incompleta || data._pesoRepartido || (data._truncado
-        ? 'Lectura truncada: se agotaron los tokens. Revisa que no falten líneas al final.' : null);
+      if(!totalLineas) throw new Error('No se encontraron líneas de mercancía');
+      const problema = problemas.join(' · ') || null;
       estados[i].estado = problema ? 'parcial' : 'ok';
-      estados[i].lineas = lineas.length;
-      estados[i].msg = problema ? '⚠️ ' + problema
-        : ((data.cabecera && data.cabecera.numero_factura) ? 'Factura ' + data.cabecera.numero_factura : '');
+      estados[i].lineas = totalLineas;
+      const ident = lista.length > 1 ? `${lista.length} facturas: ${numeros.join(', ')}`
+                  : (numeros[0] ? 'Factura ' + numeros[0] : '');
+      estados[i].msg = problema ? '⚠️ ' + (ident ? ident + ' · ' : '') + problema : ident;
     } catch(e){
       console.error('Factura ' + file.name, e);
       FACTURAS.push({ fichero:file.name, cabecera:{}, lineas:[], error:e.message });
@@ -2342,7 +2355,7 @@ async function procesarUnaFactura(file, onProgreso){
   return await leerFacturaConIA(base64, mediaType || 'image/jpeg', null);
 }
 
-async function leerFacturaConIA(base64, mediaType, textoPlano){
+async function leerFacturaConIA(base64, mediaType, textoPlano, esPagina){
   // Una sola petición con la factura completa. La Edge Function extrae y
   // clasifica todo en una llamada (sin lotes, que causaban duplicados).
   const r = await fetch(FACTURA_ENDPOINT, {
@@ -2352,7 +2365,8 @@ async function leerFacturaConIA(base64, mediaType, textoPlano){
       base64: base64 || null,
       mimeType: mediaType || 'application/pdf',
       fileName: (window._facturaFileName || ''),
-      texto: textoPlano || null
+      texto: textoPlano || null,
+      pagina: esPagina === true
     })
   });
   if(!r.ok){
@@ -4356,33 +4370,118 @@ async function pdfPaginasBase64(file, desde){
   return out;
 }
 
-// Lee una factura PDF grande PÁGINA A PÁGINA y fusiona el resultado. Cada página
-// es una petición pequeña (rápida y fiable) → se leen TODAS las líneas sin
-// timeouts ni lecturas incompletas. La IDENTIDAD (nº factura, exportador…) se toma
-// de la primera página que la traiga; los TOTALES (peso bruto/neto, total factura…)
-// de la última que los traiga, porque van al pie de la factura. Las páginas sin
-// líneas de mercancía (portadas de reparto, condiciones) se omiten solas.
+// Lee un PDF grande PÁGINA A PÁGINA. Cada página es una petición pequeña (rápida
+// y fiable). Además:
+//  · Un PDF puede contener VARIAS facturas (p. ej. QUESUR: dos facturas en un
+//    mismo PDF). Se separan por NÚMERO DE FACTURA: cuando una página trae un nº
+//    distinto al de la factura en curso, empieza una factura nueva.
+//  · Las líneas de arrastre ("Suma anterior", "Suma y sigue"…) se descartan.
+//  · Una página que falla se reintenta una vez; si vuelve a fallar se avisa.
+//  · Una página solo con el pie (totales, pesos) aporta sus totales aunque no
+//    tenga líneas.
+//  · Los kilos mal escalados por el separador ("21,000 Kg" leído como 21000) se
+//    corrigen línea a línea cruzando cantidad × precio con el importe.
+// Devuelve un objeto factura, o { _multi:[factura, factura…] } si hay varias.
+const RX_ARRASTRE = /^\s*(suma\s+(anterior|y\s+sigue)|sumas?\s+anterior(es)?|a\s+transportar|transporte|total\s+p[aá]gina|subtotal\s+p[aá]gina|carried\s+forward|brought\s+forward)\b/i;
+
+function _normNumFactura(v){ return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+
+function _vacioCab(v){
+  if(v == null) return true;
+  if(typeof v === 'object') return !String(v.nombre||'').trim() && !String(v.nif||'').trim();
+  return String(v).trim() === '';
+}
+
+// Corrige la cantidad de una línea cuando el separador decimal se leyó mal.
+// Prueba v, v/1000, v/100, v/10 y v×1000 y se queda con la que cuadra
+// cantidad × precio ≈ importe. Solo toca la línea si la lectura original NO cuadra.
+function corregirEscalaLinea(l){
+  const precio = parseNum(l.precio_unitario), importe = parseNum(l.importe), v = parseNum(l.cantidad);
+  if(!(precio > 0) || !(importe > 0) || !(v > 0)) return false;
+  const err = c => Math.abs(c * precio - importe) / importe;
+  if(err(v) < 0.03) return false;
+  let mejor = null;
+  for(const f of [1000, 100, 10, 0.001]){
+    const c = v / f;
+    if(err(c) < 0.03 && (!mejor || err(c) < err(mejor.c))) mejor = { c, f };
+  }
+  if(!mejor) return false;
+  const fmt = n => String(Math.round(n * 1000) / 1000).replace('.', ',');
+  console.log(`Línea "${(l.descripcion_original||'').slice(0,40)}": cantidad ${l.cantidad} → ${fmt(mejor.c)} (cuadra con precio×importe)`);
+  l.cantidad = fmt(mejor.c);
+  const pb = parseNum(l.peso_bruto);
+  if(pb > 0 && Math.abs(pb / mejor.f - mejor.c) / mejor.c < 0.2) l.peso_bruto = fmt(pb / mejor.f);
+  return true;
+}
+
 async function leerFacturaPorPaginas(file, desde, onProgreso){
   const paginas = await pdfPaginasBase64(file, desde);
   if(!paginas.length) throw new Error('El PDF no tiene páginas legibles');
-  const IDENT = ['numero_factura','fecha','exportador','destinatario','pais_origen','pais_destino','incoterm','moneda'];
-  const TOT   = ['total_factura','base_imponible','peso_bruto_total','peso_neto_total','bultos_totales','partidas_declaradas'];
-  const cab = {}; const lineas = []; let trunc = false, conLineas = 0;
+  const IDENT = ['numero_factura','fecha','exportador','destinatario','pais_origen','pais_destino','incoterm','moneda','lugar_carga'];
+  const TOT   = ['total_factura','base_imponible','peso_bruto_total','peso_neto_total','bultos_totales','partidas_declaradas','taric_declarados'];
+  const facturas = [];
+  let cur = null;
+  const nueva = () => { cur = { cabecera:{}, lineas:[], _truncado:false, _fallidas:[], _paginas:[] }; facturas.push(cur); };
+  const fallidas = [];
+
   for(let p=0;p<paginas.length;p++){
     if(onProgreso) onProgreso(p+1, paginas.length);
-    let data;
-    try { data = await leerFacturaConIA(paginas[p], 'application/pdf', null); }
-    catch(e){ console.warn('Página '+(p+1)+' omitida (sin líneas o error):', e && e.message); continue; }
+    let data = null;
+    for(let intento=1; intento<=2 && !data; intento++){
+      try { data = await leerFacturaConIA(paginas[p], 'application/pdf', null, true); }
+      catch(e){
+        if(esErrorSaldo(e && e.message)) throw e;   // sin saldo: no tiene sentido seguir
+        console.warn(`Página ${p+1+desde} intento ${intento} falló:`, e && e.message);
+      }
+    }
+    if(!data){ fallidas.push(p+1+desde); if(cur) cur._fallidas.push(p+1+desde); continue; }
+
     const c = data.cabecera || {};
-    IDENT.forEach(k => { if((cab[k]==null || cab[k]==='') && c[k]!=null && c[k]!=='') cab[k] = c[k]; });
-    TOT.forEach(k   => { if(c[k]!=null && String(c[k]).trim()!=='') cab[k] = c[k]; });
-    if(Array.isArray(data.lineas) && data.lineas.length){ lineas.push(...data.lineas); conLineas++; }
-    if(data._truncado) trunc = true;
+    const num = _normNumFactura(c.numero_factura);
+    // ¿Empieza otra factura? Sí si la página trae un nº distinto al de la factura en curso.
+    if(!cur || (num && cur._num && num !== cur._num)) nueva();
+    if(num && !cur._num) cur._num = num;
+    cur._paginas.push(p+1+desde);
+
+    IDENT.forEach(k => { if(_vacioCab(cur.cabecera[k]) && !_vacioCab(c[k])) cur.cabecera[k] = c[k]; });
+    TOT.forEach(k   => { if(c[k]!=null && String(c[k]).trim()!=='') cur.cabecera[k] = c[k]; });
+
+    const ls = (Array.isArray(data.lineas) ? data.lineas : []).filter(l => {
+      const d = String(l.descripcion_original || l.descripcion_es || '').trim();
+      if(!d && !l.nc8 && !l.codigo_taric) return false;
+      if(RX_ARRASTRE.test(d) || RX_ARRASTRE.test(String(l.descripcion_es||''))) {
+        console.log(`Página ${p+1+desde}: descartada línea de arrastre "${d}"`);
+        return false;
+      }
+      return true;
+    });
+    cur.lineas.push(...ls);
+    if(data._truncado) cur._truncado = true;
   }
-  if(!lineas.length) throw new Error('No se encontraron líneas de mercancía en ninguna página');
-  FACTURA_CABECERA = cab;
-  console.log(`Lectura por páginas: ${paginas.length} páginas · ${conLineas} con líneas · ${lineas.length} líneas totales`);
-  return { cabecera: cab, lineas, _truncado: trunc };
+
+  // Facturas sin líneas (p. ej. una portada suelta): sus totales se funden con la anterior/siguiente
+  const validas = facturas.filter(f => f.lineas.length);
+  if(!validas.length) throw new Error('No se encontraron líneas de mercancía en ninguna página' + (fallidas.length ? ` (fallaron las páginas ${fallidas.join(', ')})` : ''));
+
+  validas.forEach(f => {
+    let corregidas = 0;
+    f.lineas.forEach(l => { if(corregirEscalaLinea(l)) corregidas++; });
+    if(!f.cabecera.numero_factura && f._num) f.cabecera.numero_factura = f._num;
+    const avisos = [];
+    if(f._fallidas.length) avisos.push(`No se pudo leer la página ${f._fallidas.join(', ')}: revisa que no falten líneas.`);
+    if(avisos.length) f._revisar = avisos.join(' ');
+    if(corregidas) console.log(`Factura ${f.cabecera.numero_factura}: ${corregidas} cantidades reescaladas`);
+    delete f._num; delete f._fallidas;
+  });
+  // Página(s) fallida(s) antes de detectar la primera factura
+  if(fallidas.length && !validas.some(f => f._revisar && /No se pudo leer/.test(f._revisar))){
+    validas[0]._revisar = ((validas[0]._revisar||'') + ` No se pudo leer la página ${fallidas.join(', ')}.`).trim();
+  }
+
+  console.log(`Lectura por páginas: ${paginas.length} páginas · ${validas.length} factura(s) · ` +
+              validas.map(f => `${f.cabecera.numero_factura||'?'}=${f.lineas.length} líneas`).join(', '));
+  FACTURA_CABECERA = validas[validas.length-1].cabecera;
+  return validas.length === 1 ? validas[0] : { _multi: validas };
 }
 
 function getMediaType(type, name){
