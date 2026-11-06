@@ -897,12 +897,15 @@ function iniciarRMT() {
     return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || '';
   }
   function aplicarFiltro() {
+    // La casilla manda: si el usuario la ha tocado, el filtro no la vuelve a mover.
     const k = norm(st.clave);
     st.docs.forEach(d => {
+      if (d.manual) return;
       const dk = claveDe(d);
       d.incluido = encajaFormato(d) && (!k || !dk || norm(dk) === k);
     });
   }
+  function soltarManuales() { st.docs.forEach(d => { delete d.manual; }); }
   function recalcular() { detectarFormato(); if (!st.claveTocada) st.clave = claveMayoritaria(); aplicarFiltro(); }
   function incluidos() { return st.docs.filter(d => d.incluido); }
 
@@ -972,7 +975,7 @@ function iniciarRMT() {
   function bindDocs(el) {
     el.querySelectorAll('[data-k]').forEach(inp => inp.addEventListener('change', () => {
       const d = st.docs[+inp.dataset.i], k = inp.dataset.k;
-      if (k === 'incluido') d.incluido = inp.checked;
+      if (k === 'incluido') { d.incluido = inp.checked; d.manual = true; }
       else if (k === 'bultos' || k === 'peso') d[k] = inp.value === '' ? null : parseFloat(inp.value);
       else if (k === 'tipoBulto') d[k] = inp.value.toUpperCase();
       else d[k] = inp.value;
@@ -988,7 +991,7 @@ function iniciarRMT() {
     const side = document.getElementById('side');
     const inc = incluidos();
     const claves = [...new Set(st.docs.filter(encajaFormato).map(claveDe).filter(Boolean))];
-    const ajenos = st.docs.filter(d => !encajaFormato(d)).length;
+    const ajenos = st.docs.filter(d => !encajaFormato(d) && !d.incluido).length;
     const sinCir = inc.filter(d => !d.cir).length;
     const bultos = inc.reduce((s, d) => s + (d.bultos || 0), 0);
     const peso = inc.reduce((s, d) => s + (d.peso || 0), 0);
@@ -1029,7 +1032,7 @@ function iniciarRMT() {
 
     side.querySelector('#fmt').addEventListener('change', e => {
       st.formato = e.target.value; st.formatoTocado = true; st.claveTocada = false;
-      st.clave = claveMayoritaria(); aplicarFiltro(); render();
+      soltarManuales(); st.clave = claveMayoritaria(); aplicarFiltro(); render();
     });
     const mat = side.querySelector('#mat');
     mat.addEventListener('input', () => { st.clave = mat.value.toUpperCase(); st.claveTocada = true; });
