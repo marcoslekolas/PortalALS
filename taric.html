@@ -2809,6 +2809,30 @@ const TARIC_DB = {
   dua: null              // catálogo cw_medidas_dua
 };
 
+// ── Vigencia por fecha ──
+// Solo se ofrecen códigos vigentes HOY (hora de Madrid): un código nuevo no aparece
+// antes de su fecha de inicio y uno retirado desaparece al día siguiente de su fin.
+// Así una actualización TARIC puede cargarse por adelantado y el cambio de códigos
+// (p. ej. el de cada 1 de enero) se produce solo, a su hora.
+function hoyMadridISO(){
+  return new Intl.DateTimeFormat('en-CA', { timeZone:'Europe/Madrid', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+}
+function fechaISOTaric(v){
+  const t = String(v == null ? '' : v).trim();
+  if(!t) return '';
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = t.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return '';
+}
+function codigoVigente(r, hoy){
+  const ini = fechaISOTaric(r.inicio), fin = fechaISOTaric(r.fin);
+  if(ini && ini > hoy) return false;
+  if(fin && fin < hoy) return false;
+  return true;
+}
+
 // Carga en bloque lo necesario para un lote de líneas. Una sola ida y vuelta
 // por tabla, en vez de una consulta por línea.
 async function cargarCatalogoTaric(lineas){
@@ -2823,10 +2847,10 @@ async function cargarCatalogoTaric(lineas){
   try{
     const [nom, nomP, dua] = await Promise.all([
       sbT().from('taric_nomenclatura')
-           .select('codigo,nc8,descripcion')
+           .select('codigo,nc8,descripcion,inicio,fin')
            .in('nc8', nc8s).eq('declarable', 1),
       sbT().from('taric_nomenclatura')
-           .select('codigo,nc8,partida4,descripcion')
+           .select('codigo,nc8,partida4,descripcion,inicio,fin')
            .in('partida4', partidas4).eq('declarable', 1),
       TARIC_DB.dua ? Promise.resolve({data:TARIC_DB.dua}) :
         sbT().from('cw_medidas_dua')
@@ -2835,6 +2859,10 @@ async function cargarCatalogoTaric(lineas){
     ]);
     if(nom.error) throw nom.error;
     if(dua.error) throw dua.error;
+    // Descartar lo que aún no ha entrado en vigor o ya ha vencido
+    const hoyT = hoyMadridISO();
+    if(nom.data)  nom.data  = nom.data.filter(r => codigoVigente(r, hoyT));
+    if(nomP.data) nomP.data = nomP.data.filter(r => codigoVigente(r, hoyT));
 
     TARIC_DB.nom.clear(); TARIC_DB.desc.clear();
     if(!TARIC_DB.porPartida) TARIC_DB.porPartida = new Map();
