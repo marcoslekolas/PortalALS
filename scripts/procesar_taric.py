@@ -8,6 +8,7 @@ el catálogo antiguo sigue intacto.
 """
 import os, re, sys, csv, json, subprocess, collections
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import requests
 import openpyxl
 
@@ -223,6 +224,34 @@ def categoria_de(codigo, base):
     return None
 
 
+def _fecha_iso(v):
+    """Normaliza una fecha (datetime, 'YYYY-MM-DD…', 'DD-MM-YYYY', 'DD/MM/YYYY') a
+    'YYYY-MM-DD'. Vacío/None → None. Así inicio/fin se comparan bien como texto."""
+    if v is None:
+        return None
+    if hasattr(v, 'date'):
+        return v.date().isoformat()
+    t = str(v).strip()
+    if not t:
+        return None
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})', t)
+    if m:
+        return f'{m.group(1)}-{m.group(2)}-{m.group(3)}'
+    m = re.match(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', t)
+    if m:
+        return f'{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}'
+    return None
+
+
+def _se_solapan(ini_a, fin_a, ini_b, fin_b):
+    """¿Coinciden en algún día las vigencias [ini_a, fin_a] y [ini_b, fin_b]?"""
+    if fin_a and ini_b and ini_b > fin_a:
+        return False
+    if fin_b and ini_a and ini_a > fin_b:
+        return False
+    return True
+
+
 def procesar_nomenclatura(ruta):
     wb = openpyxl.load_workbook(ruta, read_only=True)
     ws = wb[wb.sheetnames[0]]
@@ -241,7 +270,7 @@ def procesar_nomenclatura(ruta):
         cod, suf = m.group(1), m.group(2)
         nivel = r[4]
         crudas.append((cod, suf, nivel, (r[5] or '').strip(),
-                       (r[6] or '').strip(), r[1], r[2]))
+                       (r[6] or '').strip(), _fecha_iso(r[1]), _fecha_iso(r[2])))
 
     def _niv(x):
         try: return int(str(x).strip())
@@ -253,9 +282,23 @@ def procesar_nomenclatura(ruta):
         declarable = 0
         if suf == '80':
             cur = _niv(nivel)
-            nxt = _niv(crudas[i + 1][2]) if i + 1 < len(crudas) else None
-            # Hoja si no hay nivel, o el siguiente no profundiza más.
-            if cur is None or nxt is None or nxt <= cur:
+            # Es CABECERA si tiene algún hijo (fila siguiente de nivel más profundo)
+            # cuya vigencia coincida con la suya. Un hijo que nace cuando el padre ya
+            # ha muerto (p. ej. 0201300000 vigente hasta 31/12/2026 y sus nuevos
+            # 0201301000/0201309000 desde 01/01/2027) NO lo convierte en cabecera:
+            # el padre sigue siendo despachable hasta su fecha de fin.
+            tiene_hijo = False
+            if cur is not None:
+                j = i + 1
+                while j < len(crudas):
+                    nj = _niv(crudas[j][2])
+                    if nj is None or nj <= cur:
+                        break
+                    if _se_solapan(ini, fin, crudas[j][5], crudas[j][6]):
+                        tiene_hijo = True
+                        break
+                    j += 1
+            if not tiene_hijo:
                 declarable = 1; n_hoja += 1
             else:
                 n_cabecera += 1   # cabecera con subdivisiones → no despachable
@@ -267,6 +310,12 @@ def procesar_nomenclatura(ruta):
         csv.writer(f).writerows(filas)
     log(f'nomenclatura: {len(filas):,} filas · {n_hoja:,} hojas declarables · '
         f'{n_cabecera:,} cabeceras no despachables')
+    hoy = datetime.now(ZoneInfo('Europe/Madrid')).date().isoformat()
+    futuros = sum(1 for f in filas if f[5] == 1 and f[9] and f[9] > hoy)
+    vencidos = sum(1 for f in filas if f[5] == 1 and f[10] and f[10] < hoy)
+    if futuros or vencidos:
+        log(f'vigencia por fecha: {futuros:,} códigos aún no vigentes (se activarán solos) · '
+            f'{vencidos:,} ya vencidos (el portal no los ofrece)')
     return ruta_csv, len(filas)
 
 
@@ -399,15 +448,25 @@ def cargar(nom_csv=None, med_csv=None, c44_csv=None, muertos=None):
     # registro). Se aplica sobre la nomenclatura recién cargada, o sobre la ya
     # existente si esta tanda es SOLO correlaciones.
     if muertos:
+        # Vigencia por FECHA: un código con fin futuro (p. ej. 31/12/2026) NO se
+        # retira hoy; solo se le anota la fecha de fin y el portal deja de ofrecerlo
+        # automáticamente al día siguiente. Solo se marca declarable=0 lo que ya ha
+        # vencido o no trae fecha.
+        hoy = datetime.now(ZoneInfo('Europe/Madrid')).date().isoformat()
         porfin = collections.defaultdict(list)
         for cod, fin in muertos.items():
             porfin[fin].append(str(cod).replace("'", ""))   # saneado defensivo
         for fin, cods in porfin.items():
             lista = "','".join(cods)
             valfin = f"'{fin}'" if fin else "fin"
-            sql.append(f"UPDATE public.taric_nomenclatura SET declarable=0, "
-                       f"fin=COALESCE(NULLIF(fin,''),{valfin}) "
-                       f"WHERE sufijo='80' AND codigo IN ('{lista}');")
+            if fin and fin >= hoy:
+                sql.append(f"UPDATE public.taric_nomenclatura SET "
+                           f"fin=COALESCE(NULLIF(fin,''),{valfin}) "
+                           f"WHERE sufijo='80' AND codigo IN ('{lista}');")
+            else:
+                sql.append(f"UPDATE public.taric_nomenclatura SET declarable=0, "
+                           f"fin=COALESCE(NULLIF(fin,''),{valfin}) "
+                           f"WHERE sufijo='80' AND codigo IN ('{lista}');")
     if med_csv:
         sql.append('DELETE FROM public.taric_medidas;')
         sql.append(f"\\copy public.taric_medidas (codigo,nc8,categoria,etiqueta,tipo_medida,desc_medida,origen,origen_code,base_legal,derecho,inicio,fin,certificados,erga_omnes,exigencia) FROM '{med_csv}' WITH (FORMAT csv)")
