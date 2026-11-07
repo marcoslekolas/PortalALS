@@ -387,6 +387,71 @@ function gibPrepararLote(g4, datos, comun){
   return lote;
 }
 
+// Reparte las líneas de una factura entre las partidas de la G4:
+// 1) mismo código de 6 dígitos, si solo hay una partida con él;
+// 2) lo que quede, a la partida a la que le falte justo ese peso, empezando por las
+//    líneas que más dígitos comparten con ella (6, luego 4, luego capítulo).
+// lineas: [{ hs, kg, cantidad }]. Devuelve, por línea, la partida y cómo se ha asignado.
+function gibCruzarFactura(partidas, lineas){
+  const cg = v => Math.round((+v || 0) * 100);           // kg en centésimas, sin errores de coma flotante
+  const dig = v => String(v ?? '').replace(/\D/g, '');
+  const comunes = (a, b) => { let i = 0; while(i < a.length && i < b.length && a[i] === b[i]) i++; return i; };
+  const asig = lineas.map(() => ({ partida: null, via: '' }));
+  lineas.forEach((l, i) => {
+    const h = dig(l.hs).slice(0, 6);
+    if(h.length < 6) return;
+    const cand = partidas.filter(p => dig(p.taric).slice(0, 6) === h);
+    if(cand.length === 1) asig[i] = { partida: cand[0].partida, via: 'codigo' };
+  });
+  const asignado = p => lineas.reduce((a, l, i) => asig[i].partida === p.partida ? a + cg(l.kg) : a, 0);
+  // Subconjunto de líneas que suma exactamente «falta» (y, si puede ser, también los bultos)
+  const buscar = (idx, falta, bultos) => {
+    if(idx.length > 22) return null;
+    let mejor = null;
+    const ir = (k, resto, elegidas) => {
+      if(mejor && mejor.bultos) return;
+      if(resto === 0 && elegidas.length){
+        const b = elegidas.reduce((a, i) => a + (+lineas[i].cantidad || 0), 0) === bultos;
+        if(!mejor || b) mejor = { elegidas: elegidas.slice(), bultos: b };
+        return;
+      }
+      if(k >= idx.length || resto < 0) return;
+      const i = idx[k], kg = cg(lineas[i].kg);
+      if(kg > 0 && kg <= resto){ elegidas.push(i); ir(k + 1, resto - kg, elegidas); elegidas.pop(); }
+      ir(k + 1, resto, elegidas);
+    };
+    ir(0, falta, []);
+    return mejor && mejor.elegidas;
+  };
+  [6, 4, 2].forEach(nivel => {
+    partidas.forEach(p => {
+      const falta = cg(p.peso) - asignado(p);
+      if(falta <= 0) return;
+      const t = dig(p.taric);
+      const idx = lineas.map((l, i) => i).filter(i => !asig[i].partida && cg(lineas[i].kg) > 0 && comunes(dig(lineas[i].hs), t) >= nivel);
+      if(!idx.length) return;
+      const ya = lineas.reduce((a, l, i) => asig[i].partida === p.partida ? a + (+l.cantidad || 0) : a, 0);
+      const total = idx.reduce((a, i) => a + cg(lineas[i].kg), 0);
+      const elegidas = total === falta ? idx : buscar(idx, falta, (p.bultos || 0) - ya);
+      (elegidas || []).forEach(i => { asig[i] = { partida: p.partida, via: 'peso' }; });
+    });
+  });
+  return asig;
+}
+// Peso, bultos e importe de la factura que caen en cada partida, y si cuadran con la G4
+function gibResumenCruce(partidas, lineas){
+  const r2 = v => Math.round(v * 100) / 100;
+  return partidas.map(p => {
+    const ls = lineas.filter(l => l.partida === p.partida);
+    const kg = r2(ls.reduce((a, l) => a + (+l.kg || 0), 0)), bultos = ls.reduce((a, l) => a + (+l.cantidad || 0), 0);
+    return { partida: p.partida, taric: p.taric, lineas: ls.length, kg, bultos, importe: r2(ls.reduce((a, l) => a + (+l.importe || 0), 0)),
+             kgG4: p.peso, bultosG4: p.bultos, cuadraKg: Math.abs(kg - p.peso) < 0.005, cuadraBultos: bultos === p.bultos };
+  });
+}
+
+// Fecha del día (hora de Madrid) en el formato de VisualTrans
+const gibHoy = () => new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date());
+
 function gibDocs(P, docs){ docs.slice(0, 15).forEach((d, k) => { const b = 17 + k * 3; P[b] = d[0] || ''; P[b + 1] = d[1] ?? ''; P[b + 2] = d[2] || ''; }); }
 const gibParte = (C, ini, e) => { if(!e) return; C[ini] = e.nombre || ''; C[ini + 1] = e.nif || ''; C[ini + 2] = e.direccion || ''; C[ini + 3] = e.cp || ''; C[ini + 4] = e.poblacion || ''; C[ini + 5] = e.pais || ''; };
 function gibCabeceraComun(C, lote, c){
@@ -444,7 +509,7 @@ function gibFilasT1GI(lote, mrnH1, cuotas = {}){
     if(c.imo) docs.push(['5012', c.imo, c.fechaDeclaracion]);
     docs.push([reg.docTransito, 'NO MRN', '']);
     if(c.regimen === '40.00') docs.push(['1247', gibNumES(cuotas[l.partida]) || 0, '']);
-    docs.push(['7020', l.valor, ''], ['7022', 0, ''], ['7024', 0, '']);
+    docs.push(['7020', l.valor, gibHoy()], ['7022', 0, ''], ['7024', 0, '']);
     gibDocs(P, docs);
     filas.push(P);
   });
@@ -504,7 +569,7 @@ function gibFilasT2GI(lote, mrnEx){
     const P = new Array(77).fill('');
     P[0] = l.bultos; P[1] = l.peso; P[2] = l.neto; P[3] = l.descripcion; P[6] = l.taric; P[7] = l.valor; P[9] = l.origen;
     P[11] = mrnEx; P[68] = c.claseBultos || ''; P[76] = 'T2GI';
-    gibDocs(P, [['N380', c.factura?.numero, c.factura?.fecha], ['7020', l.valor, ''], ['7022', 0, ''], ['7024', 0, '']]);
+    gibDocs(P, [['N380', c.factura?.numero, c.factura?.fecha], ['7020', l.valor, gibHoy()], ['7022', 0, ''], ['7024', 0, '']]);
     filas.push(P);
   });
   return filas;

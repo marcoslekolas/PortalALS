@@ -348,17 +348,23 @@ function duaCargarXLSX(){
     document.head.appendChild(s);
   });
 }
+// Un solo botón: el PDF es la factura (se lee con IA), el resto, el Excel del cliente
 async function duaSubirValores(input){
-  const f = input.files && input.files[0];
-  if(!f) return;
+  const fs = [...(input.files || [])];
+  input.value = '';
+  if(!fs.length) return;
+  const pdfs = fs.filter(f => /\.pdf$/i.test(f.name)), otros = fs.filter(f => !/\.pdf$/i.test(f.name));
+  if(pdfs.length && otros.length) return showToast('Sube las facturas en PDF o el Excel, no los dos a la vez');
+  if(pdfs.length) return duaLeerFacturaPdf(pdfs);
   try{
     await duaCargarXLSX();
-    const wb = XLSX.read(await f.arrayBuffer());
+    // Un CSV se lee como texto: «99,5» son 99,5 y no 995
+    const f = otros[0], csv = /\.(csv|txt)$/i.test(f.name);
+    const wb = csv ? XLSX.read(await f.text(), { type: 'string', raw: true }) : XLSX.read(await f.arrayBuffer());
     const n = duaAplicarValores(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true }));
     showToast(`${n} partida(s) con valor`);
     duaGuardarLuego(); duaPintar();
   }catch(e){ showToast('No se pudo leer el Excel: ' + e.message); }
-  input.value = '';
 }
 function duaAplicarValores(filas){
   const norm = c => vtNormal(c ?? '');
@@ -382,11 +388,13 @@ const DUA_ANON = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';   // pública
 const DUA_PROXY = 'https://bccqfqaehbmmqbisfbyv.supabase.co/functions/v1/openrouter-proxy';
 const DUA_MODELO = 'mistralai/mistral-small-2603';
 const DUA_PROMPT_T1 = `Esta es una página de una declaración de tránsito T1 (TRANSIT LIST OF ITEMS). Por cada partida que aparezca devuelve su número (Decl goods it. Nr.), su descripción completa de la mercancía (Description of goods) y su código de mercancía (Commodity code). Copia la descripción literal, sin traducir. Si la página no tiene partidas devuelve una lista vacía. Responde solo con JSON: {"partidas":[{"n":1,"descripcion":"...","taric":"31021090"}]}`;
-async function duaLlamarIA(imagen){
+// imagen: página en JPEG; o, si la página trae texto, ese texto (más exacto con los números)
+async function duaLlamarIA(imagen, prompt = DUA_PROMPT_T1, texto = ''){
   const { data } = await sbT().auth.getSession();
   const tok = data?.session?.access_token;
+  const content = texto ? [{ type: 'text', text: prompt + '\n\n' + texto }] : [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imagen } }];
   const r = await fetch(DUA_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: DUA_ANON, Authorization: 'Bearer ' + (tok || '') },
-    body: JSON.stringify({ model: DUA_MODELO, temperature: 0.1, max_tokens: 4096, messages: [{ role: 'user', content: [{ type: 'text', text: DUA_PROMPT_T1 }, { type: 'image_url', image_url: { url: imagen } }] }] }) });
+    body: JSON.stringify({ model: DUA_MODELO, temperature: 0.1, max_tokens: 8192, messages: [{ role: 'user', content }] }) });
   const j = await r.json();
   if(!r.ok) throw new Error(j?.error?.message || j?.error || ('HTTP ' + r.status));
   return j.choices?.[0]?.message?.content || '';
@@ -444,6 +452,179 @@ async function duaLeerT1(){
   }catch(e){ pinta('No se pudo leer el T1 (' + e.message + '): se usará la descripción genérica.'); }
 }
 
+// ── Valores desde la factura en PDF: se lee con IA y se reparte entre las partidas ──
+const DUA_PROMPT_FACTURA = `Esto es una página de una factura comercial o de un packing list. Extrae TODAS las líneas de mercancía, en el orden en que aparecen, con:
+- hs: código arancelario de la línea (HS code / commodity code), solo dígitos; vacío si no consta
+- descripcion: descripción literal, sin traducir
+- kg: peso en kg de la línea
+- cantidad: cantidad o número de bultos de la línea
+- precio: precio unitario
+- importe: importe total de la línea, tal como figura (aunque no sea cantidad × precio)
+- origen: país de origen en código ISO de 2 letras; vacío si no consta
+Extrae también, si aparecen en esta página: número de factura, fecha (dd/mm/aaaa), país del emisor de la factura (vendedor o shipper, código ISO de 2 letras), moneda (código ISO de 3 letras) e importe total de la factura.
+No inventes ni calcules nada: deja vacío lo que no conste. No incluyas líneas de totales, portes ni descuentos. Escribe los números con punto decimal y sin separador de miles (2500.00).
+Responde solo con JSON: {"factura":{"numero":"","fecha":"","pais_emisor":"","moneda":"","total":null},"lineas":[{"hs":"600537","descripcion":"Dust screen","kg":13,"cantidad":1,"precio":65,"importe":65,"origen":""}]}`;
+// Número tal como lo devuelva la IA: 2500 · "2.500,00" · "2,500.00" · "€ 65,00"
+function duaNumFactura(v){
+  if(typeof v === 'number') return v;
+  let s = String(v ?? '').replace(/[^\d.,-]/g, '');
+  if(!s) return NaN;
+  const c = s.lastIndexOf(','), p = s.lastIndexOf('.');
+  if(c >= 0 && p >= 0) s = c > p ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  else if(c >= 0) s = /^-?\d{1,3}(,\d{3})+$/.test(s) ? s.replace(/,/g, '') : s.replace(',', '.');
+  else if(/^-?\d{1,3}(\.\d{3}){2,}$/.test(s)) s = s.replace(/\./g, '');
+  return parseFloat(s);
+}
+function duaLeerRespuestaFactura(texto){
+  const m = String(texto || '').match(/\{[\s\S]*\}/);
+  if(!m) return { factura: {}, lineas: [] };
+  try{ const j = JSON.parse(m[0]); return { factura: j.factura || {}, lineas: Array.isArray(j.lineas) ? j.lineas : [] }; }
+  catch(_){ return { factura: {}, lineas: [] }; }
+}
+// Texto de la página por renglones (si el PDF lo trae: no es un escaneo)
+async function duaTextoPagina(page){
+  const items = (await page.getTextContent()).items.filter(it => String(it.str || '').trim());
+  const filas = [];
+  items.forEach(it => {
+    const y = it.transform[5], x = it.transform[4];
+    let f = filas.find(r => Math.abs(r.y - y) < 3);
+    if(!f){ f = { y, partes: [] }; filas.push(f); }
+    f.partes.push({ x, t: it.str });
+  });
+  return filas.sort((a, b) => b.y - a.y).map(f => f.partes.sort((a, b) => a.x - b.x).map(p => p.t.trim()).join('  ')).join('\n');
+}
+function duaEstadoValores(t){ const el = document.getElementById('dua-t1-estado'); if(el) el.textContent = t; }
+async function duaLeerFacturaPdf(files){
+  const d = DUA.x.datos, r2 = v => Math.round(v * 100) / 100;
+  try{
+    await duaCargarPdf();
+    const facturas = [], lineas = [];
+    for(const f of files){
+      const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
+      const fac = { nombre: f.name, numero: '', fecha: '', pais_emisor: '', moneda: '', total: null };
+      for(let i = 1; i <= pdf.numPages; i++){
+        duaEstadoValores(`Leyendo ${f.name}: página ${i} de ${pdf.numPages}…`);
+        const page = await pdf.getPage(i);
+        const texto = await duaTextoPagina(page);
+        let resp;
+        // Un escaneo no trae texto; una página con solo el total, poco pero sí
+        if(texto.replace(/\s/g, '').length >= 20) resp = await duaLlamarIA('', DUA_PROMPT_FACTURA, texto);
+        else {
+          const vp = page.getViewport({ scale: 2 }), cv = document.createElement('canvas');
+          cv.width = vp.width; cv.height = vp.height;
+          await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+          resp = await duaLlamarIA(cv.toDataURL('image/jpeg', 0.85), DUA_PROMPT_FACTURA);
+        }
+        const j = duaLeerRespuestaFactura(resp);
+        ['numero', 'fecha', 'pais_emisor', 'moneda'].forEach(k => { if(!fac[k] && j.factura[k]) fac[k] = String(j.factura[k]).trim(); });
+        const tot = duaNumFactura(j.factura.total);
+        if(tot > 0) fac.total = tot;      // el total suele ir en la última página
+        j.lineas.forEach(l => {
+          const kg = duaNumFactura(l.kg), cantidad = duaNumFactura(l.cantidad), precio = duaNumFactura(l.precio);
+          let importe = duaNumFactura(l.importe), calculado = false;
+          if(!(importe > 0) && cantidad > 0 && precio > 0){ importe = r2(cantidad * precio); calculado = true; }
+          const origen = String(l.origen || '').trim().toUpperCase();
+          if(!(importe > 0) && !(kg > 0)) return;
+          lineas.push({ fac: facturas.length, hs: String(l.hs || '').replace(/\D/g, ''), descripcion: String(l.descripcion || '').replace(/\s+/g, ' ').trim(),
+                        kg: kg > 0 ? kg : 0, cantidad: cantidad > 0 ? cantidad : 0, precio: precio > 0 ? precio : 0, importe: importe > 0 ? importe : 0,
+                        calculado, origen: /^[A-Z]{2}$/.test(origen) ? origen : '' });
+        });
+      }
+      facturas.push(fac);
+    }
+    if(!lineas.length) throw new Error('no se han encontrado líneas de mercancía');
+    gibCruzarFactura(d.lineas, lineas).forEach((a, i) => Object.assign(lineas[i], a));
+    d.facturaG4 = { facturas, lineas, leida: new Date().toISOString() };
+    const c = d.comun, f0 = facturas.find(f => f.numero) || {};
+    if(!c.factura?.numero && f0.numero) c.factura = { numero: duaNumeroN380(f0.numero, f0.pais_emisor), fecha: duaFechaFactura(f0.fecha) };
+    else if(c.factura?.numero && !c.factura.fecha && f0.fecha) c.factura.fecha = duaFechaFactura(f0.fecha);
+    if(facturas.every(f => f.total > 0)) c.totalFactura = r2(facturas.reduce((a, f) => a + f.total, 0));
+    if(/^[A-Z]{3}$/.test(String(f0.moneda || facturas[0].moneda).toUpperCase())) c.moneda = String(f0.moneda || facturas[0].moneda).toUpperCase();
+    duaFacturaAplicar();
+    await duaGuardar();
+    duaPintar();
+    const sin = lineas.filter(l => !l.partida).length;
+    showToast(`${lineas.length} líneas leídas${sin ? ` · ${sin} sin partida: revísalas` : ''}`);
+  }catch(e){ duaEstadoValores('No se pudo leer la factura: ' + e.message); }
+}
+// N380: nº de factura con el país del emisor delante, como en el resto de DUA («725045 - 08», NL → «NL725045-08»)
+function duaNumeroN380(numero, pais){
+  const n = String(numero || '').trim().replace(/\s*([-/])\s*/g, '$1');
+  const p = String(pais || '').trim().toUpperCase();
+  return !n || /^[A-Z]{2}/.test(n) || !/^[A-Z]{2}$/.test(p) ? n : p + n;
+}
+// 9-10-2026, 09.10.2026 → 09/10/2026
+function duaFechaFactura(t){
+  const m = String(t || '').match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  return m ? `${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}/${m[3].length === 2 ? '20' + m[3] : m[3]}` : String(t || '');
+}
+// Valor de cada partida = suma de los importes de sus líneas; origen, si todas dicen el mismo
+function duaFacturaAplicar(){
+  const d = DUA.x.datos, fg = d.facturaG4;
+  if(!fg) return;
+  gibResumenCruce(d.lineas, fg.lineas).forEach((s, k) => {
+    const l = d.lineas[k];
+    if(s.lineas){
+      l.valor = s.importe; l.valorFactura = true;
+      const ors = [...new Set(fg.lineas.filter(x => x.partida === l.partida).map(x => x.origen))];
+      if(ors.length === 1 && ors[0] && (!l.origen || l.origenFactura)){ l.origen = ors[0]; l.origenFactura = true; }
+    } else if(l.valorFactura){ l.valor = ''; l.valorFactura = false; }
+  });
+}
+function duaAsignarLinea(i, v){
+  const l = DUA.x.datos.facturaG4.lineas[i];
+  l.partida = v ? parseInt(v, 10) : null; l.via = v ? 'manual' : '';
+  duaFacturaAplicar(); duaGuardarLuego();
+  const el = document.getElementById('dua-cuadre');
+  if(el) el.innerHTML = duaCuadreHtml();
+  duaPintarTabla();
+}
+function duaQuitarFactura(){
+  const d = DUA.x.datos;
+  if(!confirm('¿Quitar la factura leída? Los valores que puso se borran.')) return;
+  d.lineas.forEach(l => { if(l.valorFactura){ l.valor = ''; l.valorFactura = false; } if(l.origenFactura){ l.origen = ''; l.origenFactura = false; } });
+  delete d.facturaG4;
+  duaGuardarLuego(); duaPintar();
+}
+// Cuadre de la factura con la G4: lo que no se ha podido asignar por código, para revisar
+function duaCuadreHtml(){
+  const d = DUA.x.datos, fg = d.facturaG4;
+  if(!fg?.lineas?.length) return '';
+  const r2 = v => Math.round(v * 100) / 100, n = v => Number(v || 0).toLocaleString('es-ES', { maximumFractionDigits: 2 });
+  const res = gibResumenCruce(d.lineas, fg.lineas);
+  const suma = (arr, k) => r2(arr.reduce((a, x) => a + (+x[k] || 0), 0));
+  const kgF = suma(fg.lineas, 'kg'), bF = suma(fg.lineas, 'cantidad'), impF = suma(fg.lineas, 'importe');
+  const kgG = suma(d.lineas, 'peso'), bG = suma(d.lineas, 'bultos');
+  const totLeido = fg.facturas.every(f => f.total > 0) ? r2(fg.facturas.reduce((a, f) => a + f.total, 0)) : null;
+  const precioRaro = l => l.precio > 0 && l.cantidad > 0 && Math.abs(l.precio * l.cantidad - l.importe) > 0.01;
+  const porCodigo = res.filter(s => s.lineas && s.cuadraKg && fg.lineas.every(l => l.partida !== s.partida || l.via === 'codigo')).length;
+  const sin = fg.lineas.filter(l => !l.partida), prop = fg.lineas.filter(l => l.via === 'peso');
+  const mal = res.filter(s => !s.lineas || !s.cuadraKg || !s.cuadraBultos);
+  const ok = (b, t) => `<span style="color:${b ? 'var(--gr600)' : 'var(--rd600)'};font-weight:600">${t}</span>`;
+  const ce = 'font-size:11px;padding:3px 4px';
+  const opciones = sel => `<option value="">— sin partida —</option>` + d.lineas.map(p => `<option value="${p.partida}" ${p.partida === sel ? 'selected' : ''}>${p.partida} · ${sEsc(p.taric)}</option>`).join('');
+  const fila = (l, i) => {
+    const nota = [l.via === 'peso' ? 'propuesta por peso' : l.via === 'manual' ? 'asignada a mano' : !l.partida ? 'sin partida' : '',
+                  precioRaro(l) ? `importe ≠ ${n(l.cantidad)} × ${n(l.precio)}` : '', l.calculado ? 'importe calculado' : ''].filter(Boolean).join(' · ');
+    return `<tr><td>${i + 1}</td><td style="font-family:var(--mono)">${sEsc(l.hs || '—')}</td><td>${sEsc(l.descripcion)}</td><td>${n(l.kg)}</td><td>${n(l.cantidad)}</td><td>${n(l.importe)}</td>
+      <td><select class="fi" style="${ce};width:130px" onchange="duaAsignarLinea(${i},this.value)">${opciones(l.partida)}</select></td><td style="color:var(--am600)">${sEsc(nota)}</td></tr>`;
+  };
+  const tabla = filas => `<div style="overflow-x:auto;max-height:340px;overflow-y:auto"><table class="tbl" style="width:100%;font-size:11px"><thead><tr><th>Lín.</th><th>Código</th><th>Descripción</th><th>Kg</th><th>Cant.</th><th>Importe</th><th>Partida</th><th></th></tr></thead><tbody>${filas.join('')}</tbody></table></div>`;
+  const revisar = fg.lineas.map((l, i) => [l, i]).filter(([l]) => l.via !== 'codigo' || precioRaro(l) || l.calculado);
+  let h = `<div style="border:1px solid var(--g200);border-radius:8px;padding:10px 12px;margin:8px 0;font-size:12px">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><strong>Factura${fg.facturas.length > 1 ? 's' : ''} ${sEsc(fg.facturas.map(f => f.numero || f.nombre).join(', '))}</strong>
+      <button class="btn btn-s btn-sm" style="padding:1px 8px;font-size:10px" onclick="duaQuitarFactura()">Quitar factura</button></div>
+    <div style="margin:6px 0">${fg.lineas.length} líneas · peso ${ok(Math.abs(kgF - kgG) < 0.005, `${n(kgF)} kg`)} (G4 ${n(kgG)}) · bultos ${ok(bF === bG, n(bF))} (G4 ${n(bG)}) · importe ${totLeido == null ? n(impF) : ok(Math.abs(impF - totLeido) < 0.005, n(impF))}${totLeido == null ? ' (sin total leído)' : ` (total factura ${n(totLeido)})`}</div>
+    <div style="color:var(--g600)">${porCodigo} de ${d.lineas.length} partidas cuadran por código · ${prop.length} línea(s) propuestas por peso · ${sin.length ? ok(false, `${sin.length} sin partida`) : '0 sin partida'}. Las ha leído la IA: revisa las marcadas.</div>`;
+  if(fg.facturas.length > 1) h += `<div style="color:var(--b700);margin-top:4px">El N380 lleva la factura ${sEsc(d.comun.factura?.numero || '')}: añade las demás en VisualTrans.</div>`;
+  if(mal.length) h += `<div style="margin-top:8px;font-weight:600">Partidas que no cuadran</div><table class="tbl" style="width:100%;font-size:11px;margin-top:4px"><thead><tr><th>Partida</th><th>TARIC</th><th>G4 kg</th><th>Factura kg</th><th>G4 bultos</th><th>Factura cant.</th></tr></thead><tbody>
+    ${mal.map(s => `<tr><td>${s.partida}</td><td style="font-family:var(--mono)">${sEsc(s.taric)}</td><td>${n(s.kgG4)}</td><td>${ok(s.cuadraKg, n(s.kg))}</td><td>${n(s.bultosG4)}</td><td>${ok(s.cuadraBultos, n(s.bultos))}</td></tr>`).join('')}</tbody></table>
+    <div style="color:var(--g500);margin-top:2px">Si solo difieren los bultos puede ser normal: la cantidad de la factura no siempre son bultos.</div>`;
+  if(revisar.length) h += `<div style="margin-top:8px;font-weight:600">Líneas a revisar</div>` + tabla(revisar.map(([l, i]) => fila(l, i)));
+  h += `<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--b600)">Ver las ${fg.lineas.length} líneas</summary>${tabla(fg.lineas.map(fila))}</details></div>`;
+  return h;
+}
+
 // ── Edición ──────────────────────────────────────────────────
 function duaRuta(o, ruta){ return ruta.split('.').reduce((a, k) => (a == null ? a : a[k]), o); }
 function duaSet(ruta, v){
@@ -457,6 +638,8 @@ function duaLinea(i, campo, v){
   l[campo] = String(v).trim();
   if(campo === 'taric10') l.taric10Manual = true;
   if(campo === 'descripcion') l.descripcionManual = true;
+  if(campo === 'valor') l.valorFactura = false;
+  if(campo === 'origen') l.origenFactura = false;
   duaGuardarLuego(); duaPintarAvisos();
 }
 // Lo que suele llevar cada operación desde G4; una vez puesto se puede cambiar
@@ -510,12 +693,19 @@ function duaMrn(campo, v){
 }
 function duaAvisos(){
   const x = DUA.x, av = [];
+  // Casilla 44 N380 (factura comercial y su fecha): va en todas las partidas de cualquier DUA
+  const fac = x.datos.comun?.factura || {}, cab = x.datos.cab || {};
+  const nFac = fac.numero || (x.origen !== 'g4' ? _vtFactura(cab) : ''), fFac = fac.fecha || (x.origen !== 'g4' ? cab.fecha : '');
+  if(!nFac || !fFac) av.push(`Casilla 44 N380: falta ${!nFac && !fFac ? 'el nº y la fecha' : !nFac ? 'el nº' : 'la fecha'} de la factura comercial`);
+  else if(!/^[A-Z]{2}/.test(String(nFac).trim().toUpperCase())) av.push(`Casilla 44 N380: el nº de factura ${nFac} debe llevar delante el código ISO del país emisor (ej. NL${nFac})`);
   if(!x.datos.lineas?.length) return { lote: null, av };
   const lote = duaLoteDe(x);
   // El T1 no lleva valor ni origen; ni el T1 ni los pertrechos usan el TARIC a 10 dígitos
   const op = x.origen === 'g4' ? x.datos.comun?.opG4 : '';
   const fuera = op === 't1' ? /TARIC|valor|origen|suman/ : op === 'pertrechos' ? /TARIC/ : null;
   av.push(...lote.avisos.filter(a => !fuera || !fuera.test(a)), ...(x.datos.avisosT1 || []));
+  const sinPartida = (x.datos.facturaG4?.lineas || []).filter(l => !l.partida);
+  if(sinPartida.length && op !== 't1' && op !== 'pertrechos') av.push(`${sinPartida.length} línea(s) de la factura sin partida (${Math.round(sinPartida.reduce((a, l) => a + l.importe, 0) * 100) / 100}): su importe no está en ningún valor`);
   const awb = x.datos.comun?.awbCargo;
   if(awb && parseInt(awb.bultos, 10) > 0 && parseInt(awb.bultos, 10) !== lote.bultos) av.push(`Cargo aéreo dice ${awb.bultos} bultos y la G4 ${lote.bultos}`);
   if(x.origen === 'g4' && !x.mrn_h1 && x.datos.lineas.some(l => l.estado === 'Saldado')) av.unshift('La G4 figura como saldada: comprueba que no esté ya datada');
@@ -555,6 +745,7 @@ function duaGenerarReexp(){ const x = DUA.x, { lote, av } = duaAvisos(); if(duaC
 async function duaGenerarDesdeFactura(){
   const x = DUA.x, d = x.datos, c = d.cfg, esImport = duaEsImport(x), detalle = duaDetalle(x), cab = d.cab || {};
   const esc = GUIA_ESC_VT[c.operacion];
+  if(!duaConfirmar(duaAvisos().av.filter(a => a.startsWith('Casilla 44 N380')))) return;
   if(!(await vtPrepararExportacion(detalle, cab, esImport))) return;
   const docsEscenario = esc ? (esc.c44 || []).map(k => ({ codigo: k.codigo, valor: k.pedir ? (c.c44?.[k.codigo] || '') : '' })) : [];
   const t = d.comun.transporte || {};
@@ -631,8 +822,9 @@ function duaSeccionG4(){
     + duaIn('IMO buque (5012)', 'datos.comun.imo') + duaIn('Descripción genérica', 'datos.comun.descripcion') + duaIn('Valor único en H1 (vacío = el de cada partida)', 'datos.comun.valorH1')
     + duaIn('Casilla 30 · aduana', 'datos.comun.localizacion.aduana') + duaIn('Casilla 30 · recinto', 'datos.comun.localizacion.codigo'))
     + duaEntidadHtml('Importador / destinatario', 'datos.comun.importador');
-  h += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0"><label class="btn btn-s btn-sm" style="cursor:pointer">📥 Valores desde Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="duaSubirValores(this)"></label>
-    ${d.t1 ? `<button class="btn btn-s btn-sm" onclick="duaLeerT1()">🔎 Leer descripciones del T1</button>` : ''}<span id="dua-t1-estado" style="font-size:11px;color:var(--g500)">Excel: columnas partida, valor y, si lo trae, origen.</span></div>
+  h += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0"><label class="btn btn-s btn-sm" style="cursor:pointer">📥 Valores desde factura PDF o Excel<input type="file" accept=".pdf,.xlsx,.xls,.csv" multiple style="display:none" onchange="duaSubirValores(this)"></label>
+    ${d.t1 ? `<button class="btn btn-s btn-sm" onclick="duaLeerT1()">🔎 Leer descripciones del T1</button>` : ''}<span id="dua-t1-estado" style="font-size:11px;color:var(--g500)">PDF: la factura, o todas las de la G4 a la vez. Excel: columnas partida, valor y, si lo trae, origen.</span></div>
+    <div id="dua-cuadre">${duaCuadreHtml()}</div>
     <div id="dua-tabla">${duaTablaG4()}</div>`;
   if(x.regimen === '71.00') h += duaTeclear([`Casilla 49: ${d.comun.ubicacionGibraltar.aduana}${d.comun.ubicacionGibraltar.codigo}`]);
   h += `<div id="dua-avisos"></div>` + duaBoton('Generar CSV del H1', 'duaGenerarH1()', d.generado?.H1 ? duaMrnHtml('MRN del H1 (al presentarlo en VisualTrans)', 'mrn_h1') : '');
