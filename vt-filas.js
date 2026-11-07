@@ -359,7 +359,8 @@ function gibLeerG4(texto){
   if(Object.values(ix).some(i => i < 0)) throw new Error('No parece la consulta de una G4 (faltan columnas)');
   const partidas = filas.filter(f => (f[ix.mrn] || '').trim()).map(f => ({
     mrn: f[ix.mrn].trim(), partida: parseInt(f[ix.partida], 10), conocimiento: f[ix.con].trim(), situacion: f[ix.sit].trim(),
-    estado: f[ix.estado].trim(), bultos: gibDeclarado(f[ix.bultos]), peso: gibDeclarado(f[ix.peso]), taric: f[ix.taric].trim()
+    estado: f[ix.estado].trim(), bultos: gibDeclarado(f[ix.bultos]), peso: gibDeclarado(f[ix.peso]), taric: f[ix.taric].trim(),
+    bultosDisp: gibNumES(String(f[ix.bultos] ?? '').split('/')[0]), pesoDisp: gibNumES(String(f[ix.peso] ?? '').split('/')[0])
   }));
   if(!partidas.length) throw new Error('La G4 no trae partidas');
   return { mrn: partidas[0].mrn, partidas };

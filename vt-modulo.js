@@ -51,7 +51,7 @@ function duaEtapa(x){
 const duaEtapaTexto = e => e === 'inicio' ? 'T1 y G4' : e === 'fin' ? 'Terminado' : DUA_NOMBRE[e];
 
 // El MRN del T1 son los 18 primeros caracteres del conocimiento de la G4
-const duaMrnT1 = g4 => { const c = g4?.partidas?.[0]?.conocimiento || ''; return c.length >= 18 ? c.slice(0, 18) : ''; };
+const duaMrnT1 = g4 => { const c = String(g4?.partidas?.[0]?.conocimiento || '').slice(0, 18); return duaMrnValido(c) ? c : ''; };
 
 // Dígitos 9 y 10: criterio del despacho, la terminación más alta del catálogo
 function duaTaricMayor(codigos){
@@ -274,17 +274,69 @@ async function duaSubirG4(input){
   const b = await f.arrayBuffer();
   let t = new TextDecoder('utf-8').decode(b);
   if(t.includes('�')) t = new TextDecoder('windows-1252').decode(b);
-  try{
-    const g4 = gibLeerG4(t), d = DUA.x.datos;
-    const prev = new Map(d.lineas.map(l => [l.partida, l]));
-    d.g4Mrn = g4.mrn; d.t1Mrn = duaMrnT1(g4);
-    d.lineas = g4.partidas.map(p => Object.assign({ valor: '', origen: '', taric10: '', taricOpciones: 0, suplTipo: '', suplCant: '', neto: '', descripcion: '' }, prev.get(p.partida) || {}, p));
-    try{ await duaCompletarTaric(d.lineas); }
-    catch(e){ showToast('No se pudo consultar el catálogo TARIC: ' + e.message); }
-    await duaGuardar();
-    duaPintar(); duaPintarLista();
-  }catch(e){ showToast(e.message); }
+  try{ await duaCargarG4(gibLeerG4(t)); }
+  catch(e){ showToast(e.message); }
   input.value = '';
+}
+// Mismo destino para la consulta a la AEAT y para el CSV. Si una partida está datada
+// en parte se usa lo que queda; si está saldada, lo declarado (avisa duaAvisos).
+async function duaCargarG4(g4){
+  const d = DUA.x.datos;
+  const prev = new Map(d.lineas.map(l => [l.partida, l]));
+  d.g4Mrn = g4.mrn; d.t1Mrn = duaMrnT1(g4);
+  d.lineas = g4.partidas.map(p => {
+    const parcial = p.bultosDisp > 0 && p.bultosDisp < p.bultos;
+    return Object.assign({ valor: '', origen: '', taric10: '', taricOpciones: 0, suplTipo: '', suplCant: '', neto: '', descripcion: '' }, prev.get(p.partida) || {}, p,
+      parcial ? { bultos: p.bultosDisp, peso: p.pesoDisp, bultosDec: p.bultos, parcial: true } : { parcial: false });
+  });
+  try{ await duaCompletarTaric(d.lineas); }
+  catch(e){ showToast('No se pudo consultar el catálogo TARIC: ' + e.message); }
+  await duaGuardar();
+  duaPintar(); duaPintarLista();
+}
+// De lo que se pegue (MRN, enlace de la AEAT o nº de conocimiento) saca qué consultar
+function duaLeerReferenciaG4(texto){
+  const t = String(texto || '').trim().toUpperCase();
+  const mrn = t.match(/\d{2}ESG4[A-Z0-9]{12}/);
+  if(mrn) return { mrn: mrn[0] };
+  if(/^HTTPS?:/.test(t)) return { error: 'Ese enlace no lleva el MRN de la G4: pega el MRN' };
+  const conoc = t.replace(/[^A-Z0-9]/g, '');
+  return conoc ? { conocimiento: conoc } : { error: 'Indica el MRN de la G4 o el número de conocimiento' };
+}
+const DUA_G4_ESPERA = 90000;
+// Consulta en la AEAT a través del servidor (mismo circuito que SOIVRE): solo lee
+async function duaConsultarG4(texto){
+  const est = document.getElementById('dua-g4-estado');
+  const pinta = (t, color = 'var(--g500)') => { if(est){ est.textContent = t; est.style.color = color; } };
+  const ref = duaLeerReferenciaG4(texto);
+  if(ref.error) return pinta(ref.error, 'var(--rd600)');
+  if(ref.conocimiento) ref.recinto = DUA.x.datos.comun.aduana;
+  const alta = await sbT().from('soivre_servidor').select('visto_en').order('visto_en', { ascending: false }).limit(1);
+  const visto = alta.data?.[0]?.visto_en;
+  if(!visto || Date.now() - new Date(visto).getTime() > 180000) return pinta('El servidor no da señal: sube la consulta en CSV.', 'var(--rd600)');
+  pinta('Consultando en la AEAT…');
+  const { data: fila, error } = await sbT().from('soivre_cola').insert({
+    servicio: 'G4CONS', entorno: 'produccion', id_mensaje: `G4${Date.now()}${Math.floor(Math.random() * 1000)}`, datos: ref, contexto: {},
+    usuario: (window.PortalGuard && PortalGuard.CU && PortalGuard.CU.nombre) || null
+  }).select('id').single();
+  if(error) return pinta('No se pudo pedir la consulta (¿instalar_soivre.sql actualizado?): ' + error.message, 'var(--rd600)');
+  const limite = Date.now() + DUA_G4_ESPERA;
+  let r = null;
+  while(Date.now() < limite){
+    await new Promise(res => setTimeout(res, 1500));
+    const { data } = await sbT().from('soivre_cola').select('estado,descripcion_respuesta,errores,resultado').eq('id', fila.id).maybeSingle();
+    if(data && !['pendiente', 'procesando'].includes(data.estado)){ r = data; break; }
+  }
+  if(!r) return pinta('El servidor no ha respondido a tiempo: inténtalo de nuevo o sube el CSV.', 'var(--rd600)');
+  sbT().from('soivre_cola').delete().eq('id', fila.id).then(() => {});
+  const partidas = r.resultado?.partidas || [];
+  if(r.estado !== 'aceptada' || !partidas.length){
+    const motivo = (r.errores || []).join(' · ') || r.descripcion_respuesta || 'La AEAT no ha devuelto partidas';
+    return pinta(motivo + ' Puedes subir la consulta en CSV.', 'var(--rd600)');
+  }
+  if(DUA_ADUANAS_G4[r.resultado.recinto]) duaAplicarAduana(r.resultado.recinto);
+  await duaCargarG4({ mrn: r.resultado.mrn, partidas });
+  if(r.resultado.simulacion) showToast('SIMULACIÓN: partidas ficticias. Activa [g4] consulta = real en el servidor');
 }
 // Excel del cliente: una columna de partida y otra de valor; origen, opcional
 function duaCargarXLSX(){
@@ -467,6 +519,7 @@ function duaAvisos(){
   const awb = x.datos.comun?.awbCargo;
   if(awb && parseInt(awb.bultos, 10) > 0 && parseInt(awb.bultos, 10) !== lote.bultos) av.push(`Cargo aéreo dice ${awb.bultos} bultos y la G4 ${lote.bultos}`);
   if(x.origen === 'g4' && !x.mrn_h1 && x.datos.lineas.some(l => l.estado === 'Saldado')) av.unshift('La G4 figura como saldada: comprueba que no esté ya datada');
+  x.datos.lineas.filter(l => l.parcial).forEach(l => av.unshift(`Partida ${l.partida} datada en parte: se usa el saldo, ${l.bultos} de ${l.bultosDec} bultos`));
   return { lote, av };
 }
 function duaPintarAvisos(){
@@ -563,7 +616,8 @@ function duaSeccionG4(){
   const x = DUA.x, d = x.datos, hay = d.lineas.length > 0;
   let h = duaTit('T1 de origen y G4') + duaRejilla(`<div><label style="font-size:10px;font-weight:700;color:var(--g500);text-transform:uppercase">T1 de origen (PDF)</label>
       ${d.t1 ? `<div style="font-size:12px">📎 <a href="#" onclick="duaVerT1();return false">${sEsc(d.t1.nombre)}</a></div>` : ''}<input type="file" accept=".pdf" style="font-size:12px;width:100%" onchange="duaSubirT1(this)"></div>
-    <div><label style="font-size:10px;font-weight:700;color:var(--g500);text-transform:uppercase">Consulta de la G4 (CSV)</label><input type="file" accept=".csv,.txt" style="font-size:12px;width:100%" onchange="duaSubirG4(this)"></div>`);
+    <div><label style="font-size:10px;font-weight:700;color:var(--g500);text-transform:uppercase">O sube la consulta de la G4 (CSV)</label><input type="file" accept=".csv,.txt" style="font-size:12px;width:100%" onchange="duaSubirG4(this)"></div>`);
+  h = `<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:10px"><div style="flex:1;min-width:260px"><label style="font-size:10px;font-weight:700;color:var(--g500);text-transform:uppercase">MRN de la G4, enlace o nº de conocimiento</label><input id="dua-g4-ref" class="fi" style="width:100%;font-family:var(--mono)" value="${sEsc(d.g4Mrn || '')}" placeholder="26ESG4A004041386U9" onkeydown="if(event.key==='Enter')duaConsultarG4(this.value)"></div><button class="btn btn-p" onclick="duaConsultarG4(document.getElementById('dua-g4-ref').value)">Consultar en la AEAT</button></div><div id="dua-g4-estado" style="font-size:11px;margin:-4px 0 10px"></div>` + h;
   h += duaRejilla(duaSel('Operación', d.comun.opG4 || 'h1_gi', Object.entries(DUA_OPS_G4), 'duaOperacionG4(this.value)')
     + duaSel('Aduana de la mercancía', d.comun.aduana, Object.entries(DUA_ADUANAS_G4).map(([k, v]) => [k, `${k} · ${v.nombre}`]), 'duaAduanaG4(this.value)'));
   if(!hay) return h;
