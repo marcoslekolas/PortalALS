@@ -3551,7 +3551,6 @@ async function exportarVisualTrans(){
 //     según el régimen del H1: 40→1240 · 71→1244 (+5GD) · 53→1245 · 51→1246.
 // ═══════════════════════════════════════════════════════════════════════════
 const VT_DOSSIERS_KEY = 'vt_dossiers_transito';
-const VT_TRANSITO_PREFS = 'vt_transito_prefs';
 // Valores por defecto del tránsito (editables en el formulario)
 const VT_TRANSITO_DEF = { grn:'23ES0001120000047', tipoGarantia:'1', aduanaDestino:'GI000001' };
 // Titular del tránsito y expedidor (casilla 13 02 / holder), como en los T1GI de ALS
@@ -3627,7 +3626,7 @@ function _vtMRNvalido(m){ return /^\d{2}[A-Z]{2}[A-Z0-9]{13}\d$/.test(String(m||
 
 async function abrirModalTransitoVT(){
   const lista = await vtListarDossiers();
-  const prefs = _vtLS(VT_TRANSITO_PREFS, {});
+  const prefs = {};   // sin memoria por navegador: siempre los valores fijos de la agencia
   const esch = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   document.getElementById('modal-transito')?.remove();
   const d = document.createElement('div');
@@ -3798,9 +3797,6 @@ function generarTransitoVT(){
     sbT().from(VT_TMP_TABLA).update({ mrn, transito:tipo, expira_en:_vtExpira(VT_TMP_DIAS_HECHO) }).eq('id', dsr.id)
       .then(({error}) => { if(error) console.warn('No se pudo anotar el MRN:', error.message); });
   }
-  const prefs = _vtLS(VT_TRANSITO_PREFS, {});
-  if(grn) prefs.grn = grn; if(tipoGarantia) prefs.tipoGarantia = tipoGarantia; if(aduanaDestino) prefs.aduanaDestino = aduanaDestino;
-  _vtLSset(VT_TRANSITO_PREFS, prefs);
   document.getElementById('modal-transito')?.remove();
   showToast(`✅ ${tipo} generado (${(dsr.lineas||[]).length} partidas): ${a.download}`);
 }
@@ -3988,9 +3984,10 @@ function abrirModalVT(){
   // Cliente (entidad que paga): propuesto si exportador o destinatario ya es cliente; editable
   if(typeof vtPintarCliente === 'function') vtPintarCliente(cab, document.getElementById('vt-tipo').value === 'import');
 }
-// Garantía (tipo GRN) por defecto del H1: la de ALS, o la última usada
+// Garantía (tipo GRN) del H1: fija de la agencia, igual para todos los usuarios.
+// Se puede cambiar en el formulario para una operación concreta, sin recordarse.
 const VT_GRN_H1_DEF = '25ESAGL1120000930';
-function _vtGrnH1Def(){ try { return localStorage.getItem('vt_grn_h1') || VT_GRN_H1_DEF; } catch(_){ return VT_GRN_H1_DEF; } }
+function _vtGrnH1Def(){ return VT_GRN_H1_DEF; }
 function _vtToggleReg(){
   const tipo=document.getElementById('vt-tipo').value;
   const gw=document.getElementById('vt-grn-wrap'); if(gw) gw.style.display = tipo==='import' ? '' : 'none';
@@ -4085,7 +4082,6 @@ function confirmarVT(){
     cliente: window._vtCliente || null,   // entidad que paga (columna 37)
     garantiaH1: (document.getElementById('vt-grn')?.value || '').trim(),
   };
-  if(window._cfgDUA.tipo === 'import' && window._cfgDUA.garantiaH1){ try { localStorage.setItem('vt_grn_h1', window._cfgDUA.garantiaH1); } catch(_){} }
   document.getElementById('modal-vt').remove();
   exportarVisualTrans();
 }
