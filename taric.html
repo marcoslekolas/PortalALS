@@ -564,6 +564,7 @@ textarea.fi{resize:vertical;min-height:80px}
           <div style="display:flex;gap:8px">
             <button class="btn btn-g btn-sm" onclick="exportarFactura()" id="btn-exp-fact" style="display:none">⬇️ Excel</button>
             <button class="btn btn-p btn-sm" onclick="abrirModalVT()" id="btn-exp-vt" style="display:none">🚢 VisualTrans (DUA)</button>
+            <button class="btn btn-s btn-sm" onclick="abrirModalTransitoVT()" id="btn-transito-vt" title="Generar el T2GI (tras una exportación) o el T1GI (tras un H1 de terceros) a partir del MRN">🔄 Tránsito T1GI/T2GI</button>
             <button class="btn btn-s btn-sm" onclick="limpiarFactura()">Limpiar</button>
           </div>
         </div>
@@ -646,12 +647,11 @@ textarea.fi{resize:vertical;min-height:80px}
         <div class="ph">
           <div>
             <div class="pt">🍊 SOIVRE · ESTACICE y PUE</div>
-            <div class="ps">Frutas y hortalizas a la exportación por ESTACICE VUA; ROHS/RAEE y COM por el PUE de la AEAT. Se envían a través del servidor AEAT Monitor (certificado de la empresa) y se inician desde la clasificación TARIC, la lectura de facturas o a mano con «+ Solicitud PUE».</div>
+            <div class="ps">Frutas y hortalizas a la exportación por ESTACICE VUA; ROHS/RAEE y COM por el PUE de la AEAT. Se envían a través del servidor AEAT Monitor (certificado de la empresa) y se inician desde la clasificación TARIC o la lectura de facturas.</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-p btn-sm" onclick="vuaNuevaManual()">+ Solicitud ESTACICE</button>
             <button class="btn btn-s btn-sm" onclick="vuaConsultarPorNumero()">🔎 Estado ESTACICE</button>
-            <button class="btn btn-p btn-sm" onclick="soivreNuevaManual()">+ Solicitud PUE</button>
             <button class="btn btn-s btn-sm" onclick="abrirDatosAdicionales('CAL3','')">+ Datos adicionales PUE</button>
             <button class="btn btn-s btn-sm" onclick="abrirEnvioDocumento('CAL','','FACTU')">📎 Documento PUE</button>
           </div>
@@ -3462,6 +3462,7 @@ function construirFilasImport(cab, lineas, cfg){
   C[37]=_vtNum(cab.total_factura)||'';
   C[39]=cfg.representante_nif||'';
   C[40]=cfg.refInterna||cab.numero_factura||'';
+  C[46]=cfg.garantiaH1||'';                            // Garantía (tipo GRN) — col 47 "Garantía VX"
 
   const filas=[C];
   if(cab.numero_factura) filas.push(['DOCS','N380',cab.numero_factura]);
@@ -3528,8 +3529,362 @@ async function exportarVisualTrans(){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
   showToast('CSV VisualTrans generado ('+lineas.length+' partidas): '+a.download);
+  // Se guarda el dossier para poder generar después su tránsito (T2GI/T1GI) con el MRN
+  vtGuardarDossierParaTransito(cab, lineas, cfg, esImport);
   if(typeof vtTrasExportar === 'function') vtTrasExportar();
   if(cfg.cliente && typeof vtRecordarCliente === 'function') vtRecordarCliente(cfg.cliente);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TRÁNSITO T1GI / T2GI A PARTIR DEL MRN DEL DUA PRECEDENTE
+// Flujo: EX (o H1) → fichero VisualTrans → MRN → [este paso] → fichero del
+// tránsito. VisualTrans usa para el tránsito la MISMA estructura que para el EX
+// (dossier de exportación), con tipo de documento 'T' en vez de 'E' y la
+// casilla 1c = T1GI / T2GI. Se reutilizan las partidas, bultos y pesos del DUA
+// precedente tal cual salieron, así la partida n del tránsito es la partida n
+// del DUA y la vinculación MRN+partida cuadra.
+//   · T2GI (tras exportación UE→GI): documento precedente N830 + MRN del EX
+//     (sin partida) y, por partida, 7020 valor mercancía · 7022 transporte
+//     hasta la DCP · 7024 transporte desde la DCP.
+//   · T1GI (tras H1 terceros→GI): MRN del H1 + nº de partida con el código
+//     según el régimen del H1: 40→1240 · 71→1244 (+5GD) · 53→1245 · 51→1246.
+// ═══════════════════════════════════════════════════════════════════════════
+const VT_DOSSIERS_KEY = 'vt_dossiers_transito';
+const VT_TRANSITO_PREFS = 'vt_transito_prefs';
+// Valores por defecto del tránsito (editables en el formulario)
+const VT_TRANSITO_DEF = { grn:'23ES0001120000047', tipoGarantia:'1', aduanaDestino:'GI000001' };
+// Titular del tránsito y expedidor (casilla 13 02 / holder), como en los T1GI de ALS
+const VT_TITULAR_TRANSITO = { nombre:'ALGECIRAS LOGISTIC SOLUTIONS SL', nif:'B72058449', direccion:'AVDA DE LA BAHIA 14', cp:'11204', poblacion:'ALGECIRAS', pais:'ES' };
+function _vtLS(k, def){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch(_){ return def; } }
+function _vtLSset(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(_){} }
+
+// Los DUAs pendientes de tránsito se guardan en Supabase (tabla temporal
+// vt_dossiers_tmp), no en el navegador: sobreviven a cierres de ventana, caché y
+// cambio de equipo, y los ve todo el equipo. Son TEMPORALES: caducan solos
+// (15 días; 3 días una vez generado el tránsito) y se purgan en cada guardado,
+// así la tabla nunca crece. Si la tabla aún no existe, se usa el navegador como
+// respaldo y se avisa.
+const VT_TMP_TABLA = 'vt_dossiers_tmp';
+const VT_TMP_DIAS = 15, VT_TMP_DIAS_HECHO = 3;
+function _vtExpira(dias){ return new Date(Date.now() + dias*86400000).toISOString(); }
+
+async function vtGuardarDossierParaTransito(cab, lineas, cfg, esImport){
+  const fila = {
+    tipo: esImport ? 'import' : 'export',
+    factura: cab.numero_factura || '',
+    cliente: (cfg.cliente && (cfg.cliente.nombre || cfg.cliente.nif)) || ((cab.destinatario||{}).nombre) || '',
+    escenario: cfg.escenario || '', regimen: cfg.regimen || '',
+    expira_en: _vtExpira(VT_TMP_DIAS),
+    datos: JSON.parse(JSON.stringify({ cab: cab || {}, lineas: lineas || [], cfg: cfg || {} })),
+  };
+  try {
+    const db = sbT();
+    // Purga de lo caducado y sustitución si se regenera el mismo DUA
+    await db.from(VT_TMP_TABLA).delete().lt('expira_en', new Date().toISOString());
+    if(fila.factura) await db.from(VT_TMP_TABLA).delete().eq('factura', fila.factura).eq('tipo', fila.tipo).is('mrn', null);
+    const { error } = await db.from(VT_TMP_TABLA).insert(fila);
+    if(error) throw error;
+  } catch(e){
+    console.warn('vt_dossiers_tmp no disponible; respaldo en el navegador:', e && e.message);
+    showToast('⚠️ No se pudo guardar el DUA en el servidor para el tránsito (se guarda solo en este navegador)');
+    const lista = _vtLS(VT_DOSSIERS_KEY, []);
+    const loc = { id:'l'+Date.now(), fecha:new Date().toISOString(), mrn:'', ...fila, ...fila.datos };
+    _vtLSset(VT_DOSSIERS_KEY, [loc].concat(lista.filter(d => !(d.factura && d.factura===loc.factura && d.tipo===loc.tipo))).slice(0, 40));
+  }
+}
+
+// Lista de DUAs vigentes (no caducados), más recientes primero
+async function vtListarDossiers(){
+  let lista = [];
+  try {
+    const { data, error } = await sbT().from(VT_TMP_TABLA)
+      .select('id,creado_en,tipo,factura,cliente,escenario,regimen,mrn,transito,datos')
+      .gt('expira_en', new Date().toISOString())
+      .order('creado_en', { ascending:false }).limit(60);
+    if(error) throw error;
+    lista = (data||[]).map(r => ({ id:r.id, fecha:r.creado_en, tipo:r.tipo, factura:r.factura, cliente:r.cliente,
+      escenario:r.escenario, regimen:r.regimen, mrn:r.mrn||'', transito:r.transito||'',
+      cab:(r.datos||{}).cab||{}, lineas:(r.datos||{}).lineas||[], cfg:(r.datos||{}).cfg||{} }));
+  } catch(e){ console.warn('No se pudo leer vt_dossiers_tmp:', e && e.message); }
+  const locales = _vtLS(VT_DOSSIERS_KEY, []);   // respaldo, solo si hubo fallo al guardar
+  window._vtDossiers = lista.concat(locales);
+  return window._vtDossiers;
+}
+
+// Tránsito que corresponde al dossier precedente
+function _vtTipoTransitoDe(d){
+  if(d.escenario === 'export_ue_gi') return 'T2GI';
+  if(d.escenario === 'terceros_gi') return 'T1GI';
+  return d.tipo === 'export' ? 'T2GI' : 'T1GI';
+}
+// Código de vinculación del T1GI según el régimen del H1 precedente
+function _vtVinculoT1(regimen){
+  const r = String(regimen||'').substring(0,2);
+  return { '40':{codigo:'1240'}, '71':{codigo:'1244', adicional:'5GD'}, '53':{codigo:'1245'}, '51':{codigo:'1246'} }[r] || {codigo:'1240'};
+}
+function _vtMRNvalido(m){ return /^\d{2}[A-Z]{2}[A-Z0-9]{13}\d$/.test(String(m||'').toUpperCase()); }
+
+async function abrirModalTransitoVT(){
+  const lista = await vtListarDossiers();
+  const prefs = _vtLS(VT_TRANSITO_PREFS, {});
+  const esch = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  document.getElementById('modal-transito')?.remove();
+  const d = document.createElement('div');
+  d.id = 'modal-transito';
+  d.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  const opciones = lista.map(x => {
+    const f = new Date(x.fecha);
+    const fecha = isNaN(f) ? '' : f.toLocaleDateString('es-ES') + ' ' + f.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    const tipo = x.tipo === 'import' ? 'H1' : 'EX';
+    return `<option value="${esch(x.id)}">${esch(tipo)} ${esch(x.regimen)} · Fra ${esch(x.factura||'—')} · ${esch(x.cliente||'')} · ${esch(fecha)}${x.mrn?' · MRN '+esch(x.mrn):''}</option>`;
+  }).join('');
+  d.innerHTML = `
+    <div class="card" style="max-width:560px;width:100%;padding:20px 22px;max-height:90vh;overflow:auto" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:15px;font-weight:700">🔄 Generar tránsito T1GI / T2GI</div>
+        <button onclick="document.getElementById('modal-transito').remove()" style="border:0;background:none;font-size:20px;cursor:pointer;color:var(--g400)">×</button>
+      </div>
+      ${lista.length ? `
+      <div style="font-size:12px;color:var(--g500);margin-bottom:12px">Elige el DUA ya enviado a VisualTrans, pega su MRN y se genera el fichero del tránsito con las mismas partidas.</div>
+      <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">DUA precedente</label>
+      <select id="tr-dossier" class="fi" style="width:100%;margin-bottom:10px" onchange="_vtTransitoPintar()">${opciones}</select>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1/3">
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">MRN del DUA precedente</label>
+          <input id="tr-mrn" class="fi" style="width:100%;font-family:var(--mono);text-transform:uppercase" maxlength="18" placeholder="18 caracteres, p. ej. 26ES00116710000017" oninput="_vtTransitoValidar()">
+          <div id="tr-mrn-msg" style="font-size:10px;margin-top:3px;color:var(--g400)"></div>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Tipo de tránsito (C.1c)</label>
+          <select id="tr-tipo" class="fi" style="width:100%" onchange="_vtTransitoPintar(true)">
+            <option value="T2GI">T2GI — comunitario</option>
+            <option value="T1GI">T1GI — no comunitario</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Casilla 1a / 1b</label>
+          <div style="display:flex;gap:6px">
+            <input id="tr-1a" class="fi" style="width:60%" placeholder="1a">
+            <input id="tr-1b" class="fi" style="width:40%" value="A" placeholder="1b">
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Garantía: código · GRN</label>
+          <div style="display:flex;gap:6px">
+            <input id="tr-grn-tipo" class="fi" style="width:44px;text-align:center" value="${esch(prefs.tipoGarantia||VT_TRANSITO_DEF.tipoGarantia)}">
+            <input id="tr-grn" class="fi" style="flex:1;font-family:var(--mono)" value="${esch(prefs.grn||VT_TRANSITO_DEF.grn)}" placeholder="GRN">
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Importe garantía (€)</label>
+          <input id="tr-grn-imp" class="fi" style="width:100%" placeholder="Opcional">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Aduana de destino</label>
+          <input id="tr-adu-dest" class="fi" style="width:100%;font-family:var(--mono)" value="${esch(prefs.aduanaDestino||VT_TRANSITO_DEF.aduanaDestino)}">
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <label style="font-size:11px;display:flex;gap:6px;align-items:flex-start;line-height:1.35;cursor:pointer">
+            <input type="checkbox" id="tr-titular" checked style="margin-top:2px">
+            <span>Expedidor = titular del tránsito<br><span style="color:var(--g500)">${esch(VT_TITULAR_TRANSITO.nombre)}</span></span>
+          </label>
+        </div>
+        <div id="tr-t2-campos" style="grid-column:1/3;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">7022 · Tte. hasta DCP (€)</label>
+            <input id="tr-7022" class="fi" style="width:100%" value="0">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">7024 · Tte. desde DCP (€)</label>
+            <input id="tr-7024" class="fi" style="width:100%" value="0">
+          </div>
+        </div>
+      </div>
+      <div id="tr-resumen" style="margin-top:12px"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button class="btn btn-s btn-sm" onclick="document.getElementById('modal-transito').remove()">Cancelar</button>
+        <button class="btn btn-p" onclick="generarTransitoVT()">🔄 Generar fichero del tránsito</button>
+      </div>` : `
+      <div style="font-size:12px;color:var(--g600);line-height:1.6">No hay DUAs pendientes (se conservan ${VT_TMP_DIAS} días). Genera primero el fichero VisualTrans de la exportación (o del H1) con <strong>🚢 VisualTrans (DUA)</strong>; cuando tengas su MRN, vuelve aquí para generar el tránsito.</div>`}
+    </div>`;
+  d.onclick = () => d.remove();
+  document.body.appendChild(d);
+  if(lista.length) _vtTransitoPintar();
+}
+
+function _vtTransitoSel(){
+  const id = document.getElementById('tr-dossier')?.value;
+  return (window._vtDossiers || []).find(x => String(x.id) === String(id)) || null;
+}
+
+function _vtTransitoValidar(){
+  const el = document.getElementById('tr-mrn'), msg = document.getElementById('tr-mrn-msg');
+  if(!el || !msg) return false;
+  const v = el.value.trim().toUpperCase();
+  if(!v){ msg.textContent = ''; return false; }
+  const ok = _vtMRNvalido(v);
+  msg.textContent = ok ? '✓ Formato de MRN correcto' : `Formato no válido (${v.length}/18): 2 dígitos de año + país + 14 caracteres`;
+  msg.style.color = ok ? 'var(--gr600)' : 'var(--rd600)';
+  return ok;
+}
+
+// soloTipo=true: el usuario cambió el tipo a mano; no se recalcula desde el dossier
+function _vtTransitoPintar(soloTipo){
+  const dsr = _vtTransitoSel(); if(!dsr) return;
+  const tipoSel = document.getElementById('tr-tipo');
+  if(!soloTipo){
+    tipoSel.value = _vtTipoTransitoDe(dsr);
+    document.getElementById('tr-mrn').value = dsr.mrn || '';
+    document.getElementById('tr-1a').value = (dsr.cfg && dsr.cfg.casilla1a) || (dsr.tipo === 'import' ? 'IM' : 'EX');
+    _vtTransitoValidar();
+  }
+  const tipo = tipoSel.value;
+  const esch = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const nP = (dsr.lineas||[]).length;
+  const codPrev = dsr.tipo === 'export' ? 'N830' : 'NMRN';
+  const dondePrev = nP > 1 ? 'en el house (cabecera), con la masa bruta total; no en cada partida' : 'en la partida';
+  let vinc = `<strong>${codPrev}</strong> + MRN del ${dsr.tipo === 'export' ? 'EX' : 'H1'}, sin nº de partida, ${dondePrev}`;
+  if(dsr.tipo !== 'export'){ const v = _vtVinculoT1(dsr.regimen); vinc += `<br>Por partida: <strong>${v.codigo}</strong> "NO MRN"${v.adicional?` · adicional <strong>${v.adicional}</strong> en C.37`:''}`; }
+  const bultos = (dsr.lineas||[]).reduce((a,l)=>a+(_vtNum(l.bultos)||0),0);
+  const bruto  = _vtNum((dsr.cab||{}).peso_bruto_total) || (dsr.lineas||[]).reduce((a,l)=>a+(_vtNum(l.peso_bruto)||_vtNum(l.peso_estimado)||0),0);
+  const aduana = (VT_ADUANAS[(dsr.cfg||{}).aduana]||{}).nombre || (dsr.cfg||{}).aduana || '';
+  document.getElementById('tr-resumen').innerHTML = `
+    <div style="background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;font-size:11px;color:#166534;line-height:1.6">
+      <div style="font-weight:700;margin-bottom:4px">Se genera en el fichero</div>
+      Tipo documento <strong>T</strong> · C.1c <strong>${esch(tipo)}</strong> · C.37 partida <strong>${tipo.substring(0,2)}</strong> · destino <strong>GI</strong><br>
+      Aduana de partida: <strong>${esch(aduana)}</strong> (la misma DCP del DUA) · ${nP} partidas · ${bultos||'—'} bultos · ${bruto||'—'} kg brutos<br>
+      Documento precedente: ${vinc}<br>
+      Por partida: <strong>N380</strong> factura · <strong>7020</strong> valor mercancía · <strong>7022</strong> / <strong>7024</strong> transporte (se reparte por valor)<br>
+      Garantía: línea <strong>GARANT</strong> con el GRN
+      <div style="margin-top:6px;color:var(--g500)">Comprueba en VisualTrans al importar: aduana de destino y código de garantía (la plantilla no tiene columna para ellos), matrícula y precintos.</div>
+    </div>`;
+}
+
+function generarTransitoVT(){
+  const dsr = _vtTransitoSel(); if(!dsr){ showToast('Elige el DUA precedente'); return; }
+  const mrn = (document.getElementById('tr-mrn').value||'').trim().toUpperCase();
+  if(!_vtMRNvalido(mrn)){ _vtTransitoValidar(); showToast('❌ El MRN no tiene un formato válido (18 caracteres)'); return; }
+  const tipo = document.getElementById('tr-tipo').value;
+  const grn = (document.getElementById('tr-grn').value||'').trim();
+  const tipoGarantia = (document.getElementById('tr-grn-tipo').value||'').trim();
+  const aduanaDestino = (document.getElementById('tr-adu-dest').value||'').trim().toUpperCase();
+  const titular = !!document.getElementById('tr-titular')?.checked;
+  const grnImp = (document.getElementById('tr-grn-imp').value||'').trim();
+  const t7022 = parseNum(document.getElementById('tr-7022')?.value) || 0;
+  const t7024 = parseNum(document.getElementById('tr-7024')?.value) || 0;
+  const c1a = (document.getElementById('tr-1a').value||'').trim();
+  const c1b = (document.getElementById('tr-1b').value||'').trim();
+  if(!grn && !confirm('No has indicado el GRN de la garantía (casilla 53, obligatoria en el tránsito). ¿Generar el fichero igualmente?')) return;
+
+  const filas = construirFilasTransito(dsr, { tipo, mrn, grn, grnImp, t7022, t7024, c1a, c1b, tipoGarantia, aduanaDestino, titular });
+
+  const escCampo = v => { let s = (v==null?'':String(v)); if(s.includes(';')) s = s.replace(/;/g,','); if(s.includes('\n')) s = s.replace(/[\r\n]+/g,' '); return s; };
+  const csv = filas.map(f => f.map(escCampo).join(';')).join('\r\n');
+  const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'VisualTrans_' + tipo + '_' + (dsr.factura||'dua').replace(/[^\w\-]/g,'_') + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+
+  // Recordar MRN en el dossier y el GRN para la próxima vez
+  // Anotar MRN y tránsito generado; el registro pasa a caducar en pocos días
+  if(String(dsr.id).startsWith('l')){
+    const lista = _vtLS(VT_DOSSIERS_KEY, []);
+    const x = lista.find(z => z.id === dsr.id); if(x){ x.mrn = mrn; x.transito = tipo; _vtLSset(VT_DOSSIERS_KEY, lista); }
+  } else {
+    sbT().from(VT_TMP_TABLA).update({ mrn, transito:tipo, expira_en:_vtExpira(VT_TMP_DIAS_HECHO) }).eq('id', dsr.id)
+      .then(({error}) => { if(error) console.warn('No se pudo anotar el MRN:', error.message); });
+  }
+  const prefs = _vtLS(VT_TRANSITO_PREFS, {});
+  if(grn) prefs.grn = grn; if(tipoGarantia) prefs.tipoGarantia = tipoGarantia; if(aduanaDestino) prefs.aduanaDestino = aduanaDestino;
+  _vtLSset(VT_TRANSITO_PREFS, prefs);
+  document.getElementById('modal-transito')?.remove();
+  showToast(`✅ ${tipo} generado (${(dsr.lineas||[]).length} partidas): ${a.download}`);
+}
+
+// Filas del fichero del tránsito: estructura del dossier de exportación de
+// VisualTrans, con tipo documento 'T', casilla 1c T1GI/T2GI y la vinculación al
+// DUA precedente. Se parte del mismo generador del EX para no duplicar el mapeo.
+function construirFilasTransito(dsr, o){
+  const cab = dsr.cab || {};
+  const lineas = dsr.lineas || [];
+  const cfgBase = dsr.cfg || {};
+  const t = o.tipo === 'T1GI' ? 'T1' : 'T2';
+  const cfg = Object.assign({}, cfgBase, {
+    casilla1a: o.c1a || '', casilla1b: o.c1b || 'A', casilla1c: o.tipo,
+    regimen: '', preferencia: '', adicionales: [], docsEscenario: [],
+  });
+  // En un H1 de terceros el destinatario es el cliente de Gibraltar y el
+  // expedidor el proveedor: el mismo reparto que usa el generador del EX.
+  const filas = construirFilasExport(cab, lineas, cfg);
+  const C = filas[0];
+  C[0] = 'NCTS5'; C[1] = 'T';                 // tránsito (en el EX: AES / E)
+  C[19] = 'GI';                               // C.17 país destino
+  if(!C[17]) C[17] = 'GI';
+  // Expedidor = titular del tránsito (ALS), como en los T1GI/T2GI presentados
+  if(o.titular){
+    const T = VT_TITULAR_TRANSITO;
+    C[6]=T.nombre; C[7]=T.nif; C[8]=T.direccion; C[9]=T.cp; C[10]=T.poblacion; C[11]=T.pais;
+  }
+  // Documento precedente: N830 + MRN del EX (T2GI) · NMRN + MRN del H1 (T1GI), sin partida.
+  // Con VARIAS partidas no se pone en cada partida: va al house (documentos de
+  // cabecera del dossier), cuya masa bruta es la total de la cabecera.
+  // Fuera los documentos de transporte de cabecera sin número (en el EX salían vacíos)
+  for(let i = filas.length-1; i > 0; i--) if(filas[i][0]==='DOCS' && /^N7[0-4]0$/.test(filas[i][1]) && !filas[i][2]) filas.splice(i,1);
+  const codPrev = dsr.tipo === 'export' ? 'N830' : 'NMRN';
+  const prevEnHouse = lineas.length > 1;
+  if(prevEnHouse){
+    const iDocs = filas.findIndex((f, k) => k > 0 && f[0] !== 'DOCS');
+    filas.splice(iDocs < 0 ? filas.length : iDocs, 0, ['DOCS', codPrev, o.mrn]);
+  }
+
+  // Garantía (casilla 52/53): línea auxiliar GARANT tras los DOCS de cabecera
+  let iPart = filas.findIndex((f, k) => k > 0 && f[0] !== 'DOCS');
+  if(iPart < 0) iPart = filas.length;
+  if(o.grn) { filas.splice(iPart, 0, ['GARANT', o.grn, o.grnImp ? (parseNum(o.grnImp)||o.grnImp) : '']); iPart++; }
+
+  // Vinculación y casillas por partida
+  const vincT1 = _vtVinculoT1(dsr.regimen);
+  const totalValor = lineas.reduce((a,l)=>a+(_vtNum(l.importe)||0),0);
+  const reparto = (total) => {   // reparte un importe por valor; la última partida absorbe el redondeo
+    if(!(total > 0) || !(totalValor > 0)) return lineas.map(()=>0);
+    let acum = 0;
+    return lineas.map((l, k) => {
+      if(k === lineas.length-1) return Math.round((total - acum)*100)/100;
+      const v = Math.round(total * ((_vtNum(l.importe)||0)/totalValor) * 100)/100; acum += v; return v;
+    });
+  };
+  const r7022 = reparto(o.t7022), r7024 = reparto(o.t7024);
+  let k = 0;
+  for(let i = iPart; i < filas.length; i++){
+    const P = filas[i];
+    if(P[0] === 'DOCS' || P[0] === 'GARANT' || P[0] === 'V') continue;
+    P[13] = '';                 // régimen de exportación: no aplica al tránsito
+    P[63] = ''; P[65] = ''; P[66] = ''; P[67] = '';
+    P[76] = t;                  // tipo declaración de la partida (T1 / T2)
+    // Documentos actuales de la partida (N380, transporte, 44 de medidas…)
+    const docs = [];
+    for(let b = 17; b <= 59; b += 3) if(P[b] && !(/^N7[0-4]0$/.test(P[b]) && !P[b+1])) docs.push([P[b], P[b+1], P[b+2]]);   // sin documento de transporte vacío
+    const previos = [];
+    if(!prevEnHouse) previos.push([codPrev, o.mrn, '']);                  // una sola partida: precedente en la partida
+    // Orden como en el documento de acompañamiento: precedente, factura/transporte, 7020-7024, 124x
+    const docsFra = docs;   // N380, documento de transporte y medidas de la partida
+    const valores = [
+      ['7020', String(_vtNum(lineas[k] && lineas[k].importe) || 0), ''],
+      ['7022', String(r7022[k] || 0), ''],
+      ['7024', String(r7024[k] || 0), ''],
+    ];
+    const vinculo = (dsr.tipo !== 'export') ? [[vincT1.codigo, 'NO MRN', '']] : [];
+    if(dsr.tipo !== 'export' && vincT1.adicional) P[65] = vincT1.adicional;
+    const todos = previos.concat(docsFra, valores, vinculo).slice(0, 15);
+    for(let b = 17; b <= 61; b++) P[b] = '';
+    todos.forEach((d, j) => { const b = 17 + j*3; P[b] = d[0]||''; P[b+1] = d[1]||''; P[b+2] = d[2]||''; });
+    k++;
+  }
+  return filas;
 }
 
 
@@ -3612,6 +3967,10 @@ function abrirModalVT(){
           <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Observaciones (opcional)</label>
           <input id="vt-obs" class="fi">
         </div>
+        <div id="vt-grn-wrap" style="grid-column:1/3;display:none">
+          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Garantía GRN (H1)</label>
+          <input id="vt-grn" class="fi" style="width:100%;font-family:var(--mono)" value="${escHtml(_vtGrnH1Def())}">
+        </div>
         <div id="vt-cliente" style="grid-column:1/3"></div>
       </div>
       <div id="vt-asistente" style="margin-top:14px"></div>
@@ -3629,8 +3988,12 @@ function abrirModalVT(){
   // Cliente (entidad que paga): propuesto si exportador o destinatario ya es cliente; editable
   if(typeof vtPintarCliente === 'function') vtPintarCliente(cab, document.getElementById('vt-tipo').value === 'import');
 }
+// Garantía (tipo GRN) por defecto del H1: la de ALS, o la última usada
+const VT_GRN_H1_DEF = '25ESAGL1120000930';
+function _vtGrnH1Def(){ try { return localStorage.getItem('vt_grn_h1') || VT_GRN_H1_DEF; } catch(_){ return VT_GRN_H1_DEF; } }
 function _vtToggleReg(){
   const tipo=document.getElementById('vt-tipo').value;
+  const gw=document.getElementById('vt-grn-wrap'); if(gw) gw.style.display = tipo==='import' ? '' : 'none';
   const sel=document.getElementById('vt-regimen');
   const regs = tipo==='import' ? ['40.00','61.23'] : ['10.00','23.00','31.00','31.51'];
   sel.innerHTML = regs.map(r=>`<option value="${r}">${r}</option>`).join('');
@@ -3720,7 +4083,9 @@ function confirmarVT(){
     adicionales: esc ? adicionalesVT(esc, regimen) : [],
     docsEscenario: docsEsc,
     cliente: window._vtCliente || null,   // entidad que paga (columna 37)
+    garantiaH1: (document.getElementById('vt-grn')?.value || '').trim(),
   };
+  if(window._cfgDUA.tipo === 'import' && window._cfgDUA.garantiaH1){ try { localStorage.setItem('vt_grn_h1', window._cfgDUA.garantiaH1); } catch(_){} }
   document.getElementById('modal-vt').remove();
   exportarVisualTrans();
 }
@@ -5700,7 +6065,7 @@ function _buildAES(d, cfg){
 
 </script>
 <!-- ?v= obliga al navegador a descargar la versión nueva al publicar (GitHub Pages cachea 10 min) -->
-<script src="soivre-cal.js?v=2026111023"></script>
+<script src="soivre-cal.js?v=2026110212"></script>
 <script src="soivre-vua.js?v=2026110212"></script>
 </body>
 </html>
