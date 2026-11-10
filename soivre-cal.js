@@ -200,6 +200,56 @@ function soivreBotonLinea(l){
 
 function soivreRegistrarCtx(o){ const k = 's' + (++SOIVRE.seq); SOIVRE.ctx.set(k, o); return k; }
 
+// ── Solicitud PUE manual (desde la vista SOIVRE) ─────────────
+// Para cuando SOIVRE pide control aunque el catálogo TARIC no marque la medida,
+// o para abrir el formulario sin pasar por el clasificador.
+function soivreNuevaManual(){
+  soivreModal('+ Solicitud PUE manual', `
+    <div style="font-size:12px;color:var(--g600);margin-bottom:12px">Elige el servicio y el código; después se abre el formulario habitual (MRN + partida y factura comercial).</div>
+    ${sGrid(160,
+      sCampo('Servicio', sSelect('svm-servicio', { CAL1:'Calidad comercial', ROHS1:'ROHS / RAEE', COM1:'Productos industriales' }, 'CAL1')),
+      sCampo('Código TARIC', sInput('svm-taric', '', 'placeholder="8 o 10 dígitos" maxlength="12" style="width:100%;font-family:var(--mono)" oninput="soivreManualSugerir()"'))
+    )}
+    ${sCampo('Descripción de la mercancía', sInput('svm-desc', '', 'maxlength="250"'))}
+    <div id="svm-aviso" style="font-size:11px;color:var(--g500);margin-top:6px;min-height:14px"></div>
+    <div id="svm-error"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--g100);padding-top:12px;margin-top:10px">
+      <button class="btn btn-s btn-sm" onclick="soivreCerrarModal()">Cancelar</button>
+      <button class="btn btn-p" onclick="soivreManualSeguir()">Continuar</button>
+    </div>`, 560);
+  document.getElementById('svm-taric')?.focus();
+}
+
+// Si el catálogo TARIC conoce el código, propone el servicio que corresponde
+function soivreManualSugerir(){
+  const c = sVal('svm-taric').replace(/\D/g, '');
+  const aviso = document.getElementById('svm-aviso');
+  if(!aviso) return;
+  const a = c.length >= 8 ? soivreAplica(c) : null;
+  if(a && SOIVRE_SERVICIOS[a.servicio] && a.seguro){
+    document.getElementById('svm-servicio').value = a.servicio;
+    aviso.textContent = `Medida en el catálogo TARIC: ${(a.medidas || []).join(', ') || a.servicio} → ${a.servicio}`;
+  } else {
+    aviso.textContent = c.length >= 8 ? 'El catálogo TARIC no marca control SOIVRE del PUE para este código: elige el servicio a mano.' : '';
+  }
+}
+
+function soivreManualSeguir(){
+  const servicio = sVal('svm-servicio');
+  const codigo = sVal('svm-taric').replace(/\D/g, '');
+  const descripcion = sVal('svm-desc');
+  const err = document.getElementById('svm-error');
+  if(codigo.length < 8){ err.innerHTML = sAviso('El código TARIC debe tener al menos 8 dígitos.'); return; }
+  if(!descripcion){ err.innerHTML = sAviso('Escribe la descripción de la mercancía.'); return; }
+  const a = soivreAplica(codigo);
+  const medidas = a && a.servicio === servicio ? (a.medidas || []) : [];
+  const k = soivreRegistrarCtx({
+    codigo_taric: codigo, descripcion, servicio, medidas, manual: true,
+    flujo: servicio === 'CAL1' ? ((a && a.servicio === 'CAL1' && a.flujo) || '02') : undefined
+  });
+  abrirSolicitudSoivre(k);
+}
+
 // Fichero original de la factura de la que sale la línea (FACTURAS es global de taric.html)
 function soivreArchivoDe(l){
   if(typeof FACTURAS === 'undefined' || !l) return null;
