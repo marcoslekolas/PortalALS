@@ -15,7 +15,7 @@
 
 const SOIVRE_CFG_KEY = 'cw_soivre_cfg';
 const SOIVRE_CFG_DEF = {
-  codCice: '', codPI: '',
+  codCice: '58', codPI: '01',   // CICE 58 y puestos de inspección: confirmados por la Dirección de Comercio en Cádiz
   email: '',
   envasador: { nif:'', nombre:'', localidad:'', provincia:'', pais:'ES' },
   codigoRaee: '', codigoPya: ''   // nº de registro RII del importador habitual
@@ -63,8 +63,21 @@ const SOIVRE_TIPO_DOC = { FACTU:'Factura', JPAGO:'Justificante de pago', CERTIFI
 const SOIVRE_UNIDADES_AEE = ['UNIDADES FÍSICAS','DOCENAS','JUEGOS','PARES','METROS','METROS CUADRADOS','METROS CUBICOS'];
 
 function soivreCfg(){
-  try{ return Object.assign({}, SOIVRE_CFG_DEF, JSON.parse(localStorage.getItem(SOIVRE_CFG_KEY) || '{}')); }
+  try{
+    const c = Object.assign({}, SOIVRE_CFG_DEF, JSON.parse(localStorage.getItem(SOIVRE_CFG_KEY) || '{}'));
+    if(!c.codCice) c.codCice = SOIVRE_CFG_DEF.codCice;   // guardado vacío antes de conocer los códigos
+    if(!c.codPI) c.codPI = SOIVRE_CFG_DEF.codPI;
+    return c;
+  }
   catch(_){ return { ...SOIVRE_CFG_DEF }; }
+}
+// Puestos de inspección del CICE 58 (Dirección de Comercio en Cádiz, noviembre de 2026)
+const SOIVRE_PUESTOS = { '01':'Algeciras', '02':'La Línea / Gibraltar', '03':'PIF 1 Algeciras', '04':'Americold', '95':'Despacho en factoría' };
+function soivreSelectPI(id, valor){
+  const v = String(valor || '');
+  const ops = Object.entries(SOIVRE_PUESTOS);
+  if(v && !SOIVRE_PUESTOS[v]) ops.push([v, 'Otro']);   // código guardado antes de tener la lista
+  return `<select id="${id}" class="fi" style="width:100%">${ops.map(([k, n]) => `<option value="${sEsc(k)}" ${k === v ? 'selected' : ''}>${sEsc(k)} · ${sEsc(n)}</option>`).join('')}</select>`;
 }
 function soivreGuardarCfg(c){ try{ localStorage.setItem(SOIVRE_CFG_KEY, JSON.stringify(c)); }catch(_){} }
 const sEsc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -474,19 +487,19 @@ const sAviso = t => `<div style="background:var(--rd50);color:var(--rd600);paddi
 const SOIVRE_CERT_OPC = { '01':'Declaración normal', '02':'No procede', '03':'Consulta si procede' };
 const SOIVRE_TDECL = { '01':'Expediente nuevo', '02':'Relacionado', '03':'Mercancía en demora', '04':'No conformidades', '05':'Revisión conformidad', '06':'Consolidación', '07':'Reactivación', '99':'Otros' };
 
-// Selector de fichero (factura .zip; si no es .zip, el servidor lo comprime)
+// Selector de fichero: SOIVRE prefiere el PDF tal cual; un formato que PUE-7 no admita se comprime
 function soivreCampoFichero(id, etiqueta, obligatorio, previo){
   return `
     <div style="background:var(--b50);border:1px dashed var(--b500);border-radius:8px;padding:10px 12px;margin-bottom:10px">
       ${sLbl(etiqueta + (obligatorio ? ' *' : ''))}
       ${previo ? `<div style="font-size:12px;margin-bottom:6px">📎 <strong>${sEsc(previo.name)}</strong> <span style="color:var(--g500)">(factura leída, ${(previo.size/1048576).toFixed(1)} MB). Se adjunta sola; elige otro fichero solo si quieres sustituirla.</span></div>` : ''}
       <input type="file" id="${id}" accept=".zip,.7z,.pdf,.jpg,.jpeg,.tif,.tiff,.doc,.docx,.xls,.xlsx" style="font-size:12px;width:100%">
-      <div style="font-size:11px;color:var(--g500);margin-top:4px">Se envía a la AEAT en <strong>.zip</strong> (PUE-7). Si eliges un PDF u otro formato, el servidor lo comprime. Máx. 10 MB.</div>
+      <div style="font-size:11px;color:var(--g500);margin-top:4px">Se envía por PUE-7 tal cual: SOIVRE prefiere <strong>PDF</strong>. Lo habitual es factura comercial y packing list; si van en ficheros distintos, júntalos en un PDF. Máx. 10 MB.</div>
     </div>`;
 }
 
 function soivreComprobarFichero(f, obligatorio){
-  if(!f) return obligatorio ? ['Adjunta la factura comercial (.zip)'] : [];
+  if(!f) return obligatorio ? ['Adjunta la factura comercial (PDF)'] : [];
   if(f.size > SOIVRE_MAX_FICHERO) return [`El fichero pesa ${(f.size/1048576).toFixed(1)} MB (máx. 10 MB)`];
   if(!/\.(zip|7z|pdf|jpe?g|tiff?|docx?|xlsx?)$/i.test(f.name)) return ['Formato de fichero no admitido por la AEAT'];
   return [];
@@ -508,7 +521,7 @@ function soivreCamposComunes(ctx, cfg, unidadHtml){
     )}
     ${sGrid(140,
       sCampo('Cód. CICE', sInput('sv-cice', cfg.codCice, 'maxlength="2" placeholder="2 dígitos"')),
-      sCampo('Cód. puesto insp.', sInput('sv-pi', cfg.codPI, 'maxlength="2" placeholder="2 dígitos"')),
+      sCampo('Puesto de inspección', soivreSelectPI('sv-pi', cfg.codPI)),
       sCampo('Email de avisos', sInput('sv-email', cfg.email || (window.PortalGuard && PortalGuard.CU && PortalGuard.CU.email) || '', 'maxlength="40"'))
     )}
     <details style="margin-bottom:10px" ${ctx.flujo === '03' ? 'open' : ''}>
@@ -919,7 +932,7 @@ function loadSoivre(){
   const cf = document.getElementById('soivre-config');
   if(cf) cf.innerHTML = sGrid(170,
     sCampo('Cód. CICE por defecto', sInput('svc-cice', cfg.codCice, 'maxlength="2"')),
-    sCampo('Cód. puesto inspección', sInput('svc-pi', cfg.codPI, 'maxlength="2"')),
+    sCampo('Puesto de inspección', soivreSelectPI('svc-pi', cfg.codPI)),
     sCampo('Email de avisos', sInput('svc-email', cfg.email, 'maxlength="40"')),
     sCampo('Nº RII RAEE habitual', sInput('svc-raee', cfg.codigoRaee, 'maxlength="6"'))
   ) + (typeof vuaCfg === 'function' ? `<div style="font-size:12px;font-weight:700;color:var(--g600);margin:4px 0 6px">ESTACICE VUA</div>` + sGrid(170,
