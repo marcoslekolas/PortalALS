@@ -367,6 +367,25 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
 :root.dark #art-panel{background:#0f172a!important}
 :root.dark .ap-body{color:var(--g700)}
 
+
+/* ═══ ADJUNTOS DE ANÁLISIS (chat) ═══ */
+.adj-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}
+.adj-bar-lbl{font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.06em;margin-right:2px}
+.adj-chip{display:inline-flex;align-items:center;gap:6px;background:var(--b50);border:1px solid var(--b200);color:var(--b700);padding:4px 8px;border-radius:8px;font-size:11px;max-width:230px}
+.adj-chip .ic{flex-shrink:0}
+.adj-chip .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.adj-chip .mt{color:var(--b500);font-family:var(--mono);font-size:10px;flex-shrink:0}
+.adj-chip .rm{cursor:pointer;color:var(--b600);font-weight:800;flex-shrink:0;margin-left:2px}
+.adj-chip .rm:hover{color:var(--rd600)}
+.adj-chip.load{opacity:.65}
+.adj-chip.err{background:var(--rd50);border-color:var(--rd100);color:var(--rd600)}
+.adj-chip.err .mt,.adj-chip.err .rm{color:var(--rd600)}
+.adj-clear{font-size:10px;color:var(--g500);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.adj-clear:hover{color:var(--rd600)}
+.iconbtn{align-self:flex-end;padding:9px 12px;font-size:15px;line-height:1}
+#chat-msgs.drag{outline:2px dashed var(--b500);outline-offset:-4px;background:var(--b50)}
+:root.dark .adj-chip{background:#0f172a!important;border-color:#1e293b!important}
+
 </style>
 <link rel="stylesheet" href="portal-theme.css"><!-- PORTAL THEME: eliminar esta línea para desactivar el tema -->
 </head>
@@ -393,23 +412,19 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
     <div style="font-size:11px;font-weight:600;color:var(--g500)">Asesor Aduanero · Admin</div>
     <div style="font-size:10px;color:var(--g400)" id="sb-upd">Sin actualizar</div>
   </div>
-  <div class="sb-tag">Análisis</div>
-  <div class="ni active" onclick="goSec('dashboard',this)" style="position:relative"><span class="ic">📊</span>Dashboard<div class="upd-badge" id="b-dashboard"></div></div>
-  <div class="ni" onclick="goSec('briefing',this)"><span class="ic">📰</span>Briefing Diario</div>
-  <div class="ni" onclick="goSec('historial',this)"><span class="ic">🗂</span>Historial Briefings</div>
-  <div class="ni" onclick="goSec('hinformes',this)"><span class="ic">📁</span>Historial Informes</div>
-  <div class="sb-tag">Conocimiento</div>
-  <div class="ni" onclick="goSec('normativa',this)" style="position:relative"><span class="ic">📚</span>Normativa (PDF)<div class="upd-badge" id="b-normativa"></div></div>
-  <div class="ni" onclick="goSec('mapa',this)" style="position:relative"><span class="ic">🧠</span>Mapa Mental<div class="upd-badge" id="b-mapa"></div></div>
-  <div class="ni" onclick="goSec('infografia',this)"><span class="ic">📈</span>Infografías</div>
-  <div class="ni" onclick="goSec('informes',this)"><span class="ic">📑</span>Informes</div>
-  <div class="ni" onclick="goSec('tarjetas',this)" style="position:relative"><span class="ic">🃏</span>Tarjetas<div class="upd-badge" id="b-tarjetas"></div></div>
-  <div class="ni" onclick="goSec('tablas',this)" style="position:relative"><span class="ic">📋</span>Tablas<div class="upd-badge" id="b-tablas"></div></div>
-  <div class="sb-tag">Operativa</div>
-  <div class="ni" onclick="goSec('viales',this)"><span class="ic">🗺</span>Viales y Accesos</div>
-  <div class="ni" onclick="goSec('operativa',this)"><span class="ic">🏛</span>Operativa DCP</div>
+  <div class="sb-tag">Asistente</div>
+  <div class="ni active" onclick="goSec('inicio',this)"><span class="ic">🏠</span>Inicio</div>
   <div class="ni" onclick="goSec('chat',this)"><span class="ic">💬</span>Consulta IA</div>
   <div class="ni" onclick="goSec('informe',this)"><span class="ic">📨</span>Informes a Clientes</div>
+  <div class="ni" onclick="goSec('hinformes',this)"><span class="ic">📁</span>Historial Informes</div>
+  <div class="sb-tag">Conocimiento</div>
+  <div class="ni" onclick="goSec('normativa',this)" style="position:relative"><span class="ic">📚</span>Base Documental<div class="upd-badge" id="b-normativa"></div></div>
+  <div class="ni" onclick="goSec('guiadua',this)"><span class="ic">🧩</span>Guía DUA</div>
+  <div class="sb-tag">Actualidad</div>
+  <div class="ni" onclick="goSec('briefing',this)"><span class="ic">📰</span>Briefing aduanero</div>
+  <div class="ni" onclick="goSec('historial',this)"><span class="ic">🗂</span>Historial</div>
+  <div class="sb-tag">Gibraltar</div>
+  <div class="ni" onclick="goSec('gibraltar',this)"><span class="ic">🏛</span>Gibraltar</div>
   <div class="sb-ft">
     <div class="sb-back" onclick="window.location.href='index.html'">← Volver al Portal</div>
   </div>
@@ -419,63 +434,70 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
 <!-- CONTENT -->
 <div id="cnt">
 
-<!-- ████ DASHBOARD ████ -->
-<div class="sec on" id="sec-dashboard">
-  <div class="ph">📊 Dashboard Gibraltar <span class="bx bx-b">ADMIN</span></div>
-  <div class="ps">Estado del Acuerdo UE-RU · Indicadores clave · Alertas activas</div>
+<!-- ████ INICIO ████ -->
+<div class="sec on" id="sec-inicio">
+  <div class="ph">🏠 Asesor Aduanero <span class="bx bx-b">ADMIN</span></div>
+  <div class="ps">Consulta, análisis documental y conocimiento aduanero y fiscal · Customs-Way SL</div>
 
-  <div class="sbar sbar-a gap">⚠ <strong>Período transitorio activo.</strong> Gibraltar = territorio tercero hasta decisión del Consejo de Cooperación UE-RU. Aplicación provisional prevista <strong>15/07/2026</strong>. Adaptar garantías de tránsito antes de esa fecha (NI 12/2026).</div>
+  <div class="sbar sbar-b gap">👋 Asistente especializado en normativa y procedimientos aduaneros: CAU y reglamentos, LIVA/RIVA, LIIEE/RIIEE, LGT, LPACAP, regímenes, TARIC, origen, valor en aduana y cumplimentación del DUA. Pregunta, adjunta documentos para analizar o consulta la base documental y las guías DUA.</div>
 
-  <div class="g4 gap">
-    <div class="kpi"><div class="kpi-v" style="color:var(--am600)">79</div><div class="kpi-l">Días para 15/07/2026</div></div>
-    <div class="kpi"><div class="kpi-v" style="color:var(--tl600)">3</div><div class="kpi-l">DCPs designadas</div></div>
-    <div class="kpi"><div class="kpi-v" style="color:var(--b600)">6d</div><div class="kpi-l">Plazo máx. T1/T2GI</div></div>
-    <div class="kpi"><div class="kpi-v" style="color:var(--rd600)">0</div><div class="kpi-l">Vía aérea admitida</div></div>
+  <div class="g3 gap">
+    <div class="card" style="cursor:pointer" onclick="goSecById('chat')">
+      <div style="font-size:26px;margin-bottom:6px">💬</div>
+      <div class="ct" style="margin-bottom:4px">Consulta IA</div>
+      <div style="font-size:12px;color:var(--g500);line-height:1.5">Pregunta técnica o adjunta un documento (PDF/Word/Excel) para que lo analice.</div>
+    </div>
+    <div class="card" style="cursor:pointer" onclick="goSecById('normativa')">
+      <div style="font-size:26px;margin-bottom:6px">📚</div>
+      <div class="ct" style="margin-bottom:4px">Base Documental</div>
+      <div style="font-size:12px;color:var(--g500);line-height:1.5">Sube normativa y guías; se indexan por artículo/casilla y alimentan las consultas.</div>
+    </div>
+    <div class="card" style="cursor:pointer" onclick="goSecById('guiadua')">
+      <div style="font-size:26px;margin-bottom:6px">🧩</div>
+      <div class="ct" style="margin-bottom:4px">Guía DUA</div>
+      <div style="font-size:12px;color:var(--g500);line-height:1.5">Referencia de casillas y escenarios para cumplimentar el DUA (export, H1, tránsito…).</div>
+    </div>
+    <div class="card" style="cursor:pointer" onclick="goSecById('informe')">
+      <div style="font-size:26px;margin-bottom:6px">📨</div>
+      <div class="ct" style="margin-bottom:4px">Informes a Clientes</div>
+      <div style="font-size:12px;color:var(--g500);line-height:1.5">Genera informes de asesoramiento listos para enviar, con la normativa aplicable.</div>
+    </div>
+    <div class="card" style="cursor:pointer" onclick="goSecById('briefing')">
+      <div style="font-size:26px;margin-bottom:6px">📰</div>
+      <div class="ct" style="margin-bottom:4px">Briefing aduanero</div>
+      <div style="font-size:12px;color:var(--g500);line-height:1.5">Novedades AEAT, CAU, NCTS5/AES, IIEE y Gibraltar de los últimos días.</div>
+    </div>
+    <div class="card" style="cursor:pointer" onclick="goSecById('gibraltar')">
+      <div style="font-size:26px;margin-bottom:6px">🏛</div>
+      <div class="ct" style="margin-bottom:4px">Gibraltar</div>
+      <div style="font-size:12px;color:var(--g500);line-height:1.5">Referencia operativa del Acuerdo UE-RU: DCPs, T1GI/T2GI/H1, mapa y FAQs.</div>
+    </div>
   </div>
 
   <div class="g2 gap">
     <div class="card">
-      <div class="ct">📅 Hitos del Acuerdo</div>
-      <div class="tl">
-        <div class="tl-item"><div class="tl-dot done"></div><div class="tl-date">DIC 2025</div><div class="tl-t">Texto legal cerrado</div><div class="tl-d">Tras +4 años de negociaciones. 366 arts., 43 anexos.</div></div>
-        <div class="tl-item"><div class="tl-dot done"></div><div class="tl-date">01 ABR 2026</div><div class="tl-t">Aprobado por el Consejo UE</div><div class="tl-d">Luz verde de los 27 Estados Miembros (COREPER).</div></div>
-        <div class="tl-item"><div class="tl-dot done"></div><div class="tl-date">13 ABR 2026</div><div class="tl-t">NI 12/2026 — Garantías</div><div class="tl-d">AEAT publica nota sobre adaptación de garantías de tránsito.</div></div>
-        <div class="tl-item"><div class="tl-dot cur"></div><div class="tl-date">18 MAY 2026</div><div class="tl-t">Cierre IE615V4 (AES)</div><div class="tl-d">Web service exportación v4 cierra. Opera IE615V5.</div></div>
-        <div class="tl-item"><div class="tl-dot fut"></div><div class="tl-date">15 JUL 2026</div><div class="tl-t">Aplicación provisional</div><div class="tl-d">Inicio operativa T1GI, T2GI, H1. Eliminación controles en La Verja.</div></div>
-        <div class="tl-item"><div class="tl-dot fut"></div><div class="tl-date">PENDIENTE</div><div class="tl-t">Período definitivo</div><div class="tl-d">Gibraltar deja de ser territorio tercero. Requiere decisión Consejo de Cooperación.</div></div>
-      </div>
+      <div class="ct">📊 Estado de la base documental</div>
+      <div id="inicio-stats" style="font-size:13px;color:var(--g600);line-height:1.8">Cargando…</div>
     </div>
     <div class="card">
-      <div class="ct">⚡ Alertas operativas</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div class="sbar sbar-a" style="margin:0;font-size:12px">⚠ <strong>NI 12/2026:</strong> Actualizar garantías de tránsito antes del 15/07/2026 para incluir Gibraltar + datos fiador.</div>
-        <div class="sbar sbar-a" style="margin:0;font-size:12px">⚠ <strong>IE615V4:</strong> Cierre definitivo 18/05/2026 09:00h. Migrar a IE615V5.</div>
-        <div class="sbar sbar-b" style="margin:0;font-size:12px">ℹ <strong>Tabaco:</strong> Entrada en vigor definitiva condicionada a sistema de trazabilidad equivalente UE en Gibraltar.</div>
-        <div class="sbar sbar-b" style="margin:0;font-size:12px">ℹ <strong>EDIFACT v2.12:</strong> Nueva guía publicada AEAT con códigos para manifiestos de carga Gibraltar.</div>
-        <div class="sbar sbar-g" style="margin:0;font-size:12px">✓ <strong>Schengen:</strong> Controles duales en puerto/aeropuerto Gibraltar. Sin controles en La Verja desde 15/07/2026.</div>
+      <div class="ct">⚡ Accesos rápidos</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <button class="btn btn-s" style="font-size:12px" onclick="goSecById('chat')">💬 Nueva consulta</button>
+        <button class="btn btn-s" style="font-size:12px" onclick="goSecById('normativa')">⬆ Subir documento</button>
+        <button class="btn btn-s" style="font-size:12px" onclick="goSecById('informe')">📨 Nuevo informe</button>
+        <button class="btn btn-s" style="font-size:12px" onclick="goSecById('briefing')">📰 Briefing de hoy</button>
+      </div>
+      <div style="font-size:11px;color:var(--g400);margin-top:12px;line-height:1.6">
+        Modelo IA: Gemini 2.5 Flash vía proxy · Base de conocimiento: normativa + guías técnicas DUA · Análisis de documentos en el navegador (no se almacenan).
       </div>
     </div>
-  </div>
-
-  <div class="card gap" style="padding:0">
-    <div class="tbl-toolbar"><span class="tbl-toolbar-title">📐 Estado por declaración</span><div class="tbl-export-btns"><button class="btn btn-s" style="font-size:11px;padding:4px 8px" onclick="exportCSV('t-decl','declaraciones-gibraltar')">⬇ CSV</button><button class="btn btn-s" style="font-size:11px;padding:4px 8px" onclick="exportEmail('t-decl','Declaraciones Gibraltar')">✉ Email</button></div></div>
-    <div class="tbl-wrap" style="border:none;border-radius:0"><table class="tbl" id="t-decl">
-      <thead><tr><th>Declaración</th><th>Tipo</th><th>Mercancía</th><th>DCP requerida</th><th>Garantía</th><th>Plazo</th><th>Estado</th></tr></thead>
-      <tbody>
-        <tr><td><code>T2GI</code></td><td>Tránsito especial UE</td><td>Libre circulación UE → GIB</td><td>La Línea / Algeciras</td><td>IVA + IIEE</td><td>6 días</td><td><span class="bx bx-a">Activo 15/07/26</span></td></tr>
-        <tr><td><code>T1GI</code></td><td>Tránsito terceros países</td><td>3ºs países → GIB</td><td>La Línea</td><td>IVA + IIEE</td><td>6 días</td><td><span class="bx bx-a">Activo 15/07/26</span></td></tr>
-        <tr><td><code>H1</code></td><td>Importación en DCP</td><td>3ºs países en DCP para GIB</td><td>La Línea</td><td>❌ Pago previo</td><td>—</td><td><span class="bx bx-a">Activo 15/07/26</span></td></tr>
-        <tr><td><code>AES + T2GI</code></td><td>Exportación + tránsito</td><td>Libre circulación</td><td>DCP (salida)</td><td>IVA + IIEE</td><td>6 días</td><td><span class="bx bx-a">Activo 15/07/26</span></td></tr>
-        <tr><td><code>ENS</code></td><td>Decl. sumaria entrada</td><td>Procedente de GIB</td><td>La Línea</td><td>—</td><td>—</td><td><span class="bx bx-g">Ya activo</span></td></tr>
-      </tbody>
-    </table></div>
   </div>
 </div>
 
 <!-- ████ BRIEFING ████ -->
 <div class="sec" id="sec-briefing">
-  <div class="ph">📰 Briefing Diario <span class="bx bx-t">IA + Web search</span></div>
-  <div class="ps">Análisis automático diario · AEAT · Comisión Europea · Acuerdo Gibraltar · Operativa La Línea/Algeciras</div>
+  <div class="ph">📰 Briefing aduanero <span class="bx bx-t">IA + Web search</span></div>
+  <div class="ps">Novedades del ámbito aduanero y fiscal · AEAT · Comisión Europea · CAU · NCTS5/AES · IIEE · TARIC · Gibraltar</div>
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px">
     <div>
       <div style="font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Último análisis</div>
@@ -487,18 +509,15 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
     <div id="brief-out" style="border:none;border-radius:var(--rl)">
       <p style="color:var(--g400);font-style:italic;font-size:13px">Pulsa "Actualizar ahora" para el análisis de hoy.<br><br>
       <strong style="color:var(--g600)">Temas analizados automáticamente:</strong><br>
-      → Noticias de entrada en vigor del Acuerdo UE-RU Gibraltar<br>
-      → Condiciones del período provisional y definitivo<br>
-      → Viales de acceso y salida (La Verja, rutas terrestres/marítimas)<br>
-      → Recinto de aduanas La Línea de la Concepción<br>
-      → Competencias del Resguardo Fiscal (AEAT/GC)<br>
-      → Competencias del Oficial de Aduanas<br>
-      → Competencias del Administrador de Aduanas<br>
-      → Horarios de despacho de mercancías<br>
-      → AEAT: notas informativas, NCTS/AES/EDIFACT<br>
-      → Comisión Europea: normativa y comunicados<br>
-      → ATEIA Campo de Gibraltar: sector transitario<br><br>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--g300)">Configura auto-ejecución a las 08:00h vía Supabase Edge Function + cron</span></p>
+      → AEAT: notas informativas y circulares de Aduanas e IIEE<br>
+      → Sistemas: NCTS5, AES, ICS2, EMCS, DUA/TARIC<br>
+      → CAU y reglamentos de desarrollo (UE)<br>
+      → IVA e Impuestos Especiales en comercio exterior<br>
+      → Comisión Europea / DOUE: normativa aduanera relevante<br>
+      → Regímenes aduaneros y novedades operativas<br>
+      → Acuerdo UE-RU sobre Gibraltar (como subtema)<br>
+      → Sector: representantes aduaneros y transitarios<br><br>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--g300)">Puede auto-ejecutarse a diario vía Supabase Edge Function + cron</span></p>
     </div>
   </div>
 </div>
@@ -523,19 +542,26 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
 
 <!-- ████ NORMATIVA (base documental PDF) ████ -->
 <div class="sec" id="sec-normativa">
-  <div class="ph">📚 Base Documental Normativa <span class="bx bx-t">PDF + Full-text</span></div>
-  <div class="ps">Sube leyes, reglamentos y notas informativas en PDF. Se indexan por artículo y retroalimentan las consultas y los informes de la IA.</div>
+  <div class="ph">📚 Base Documental <span class="bx bx-t">Normativa · Guías · Full-text</span></div>
+  <div class="ps">Sube leyes, reglamentos, notas informativas y guías técnicas (PDF, Word, Excel). Se indexan por artículo, hoja o sección y retroalimentan las consultas y los informes de la IA.</div>
 
-  <div class="sbar sbar-b gap">🔎 Los PDF se procesan en tu navegador (pdf.js), se trocean por artículo y se guardan en Supabase con búsqueda de texto completo. Cuando la IA cite un artículo que esté en esta base, aparecerá como enlace directo a su texto.</div>
+  <div class="sbar sbar-b gap">🔎 Los documentos se procesan en tu navegador y se guardan en Supabase con búsqueda de texto completo. La normativa se trocea por artículo; las guías por sección/hoja. Cuando la IA cite un artículo que esté en esta base, aparecerá como enlace directo a su texto.</div>
 
   <div class="g2 gap">
     <div class="card">
-      <div class="ct">⬆ Subir normativa</div>
+      <div class="ct">⬆ Subir documento</div>
+      <div style="margin-bottom:10px">
+        <label class="rpt-label">Colección</label>
+        <select id="nz-tipo" class="fi">
+          <option value="norma">📘 Normativa (troceo por artículo)</option>
+          <option value="guia">🧩 Guía técnica (troceo por sección/hoja)</option>
+        </select>
+      </div>
       <div class="nz-drop" id="nz-drop" onclick="document.getElementById('nz-file').click()">
         <div class="nz-ico">📄</div>
-        <div class="nz-t">Arrastra un PDF aquí o haz clic</div>
-        <div class="nz-s">Leyes consolidadas, reglamentos, notas informativas AEAT…</div>
-        <input type="file" id="nz-file" accept="application/pdf" style="display:none" multiple>
+        <div class="nz-t">Arrastra un archivo aquí o haz clic</div>
+        <div class="nz-s">PDF · Word (.docx) · Excel (.xlsx) · texto (.txt/.csv/.md)</div>
+        <input type="file" id="nz-file" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv,.md,.json,.xml,.html" style="display:none" multiple>
       </div>
       <div class="nz-prog" id="nz-prog">
         <div class="nz-prog-txt" id="nz-prog-txt">Procesando…</div>
@@ -544,10 +570,10 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
       <div style="margin-top:12px">
         <label class="rpt-label">Metadatos (opcional, mejoran la cita)</label>
         <div class="rpt-form-grid" style="margin-bottom:0">
-          <div><input type="text" id="nz-meta-sigla" class="fi" placeholder="Sigla: LIVA, CAU, LIIEE…"></div>
+          <div><input type="text" id="nz-meta-sigla" class="fi" placeholder="Sigla: LIVA, CAU, GT-DUA…"></div>
           <div><input type="text" id="nz-meta-nombre" class="fi" placeholder="Nombre: Ley 37/1992 del IVA"></div>
         </div>
-        <div style="font-size:10px;color:var(--g400);margin-top:4px">Si lo dejas vacío, se intenta deducir del propio PDF.</div>
+        <div style="font-size:10px;color:var(--g400);margin-top:4px">Si lo dejas vacío, se intenta deducir del propio documento.</div>
       </div>
     </div>
 
@@ -567,6 +593,55 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
     <div id="nz-docs"><div style="text-align:center;padding:30px;color:var(--g400);font-size:13px">Cargando…</div></div>
   </div>
 </div>
+
+<!-- ████ GUÍA DUA ████ -->
+<div class="sec" id="sec-guiadua">
+  <div class="ph">🧩 Guía DUA <span class="bx bx-t">Casillas · Escenarios</span></div>
+  <div class="ps">Referencia rápida para cumplimentar el DUA: casillas, regímenes, documentos y escenarios (export, H1, tránsito, EXS…). Procede de las guías técnicas cargadas en la base documental.</div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <input type="text" id="gd-search" class="fi" style="flex:1;min-width:220px" placeholder="Buscar casilla, código, régimen o concepto… (p. ej. 'casilla 37 exportación', '5GI', 'avituallamiento')" oninput="gdSearchDebounced()">
+    <button class="btn btn-s" onclick="loadGuiaDua()" style="font-size:12px">↺ Recargar</button>
+  </div>
+  <div id="gd-search-res" class="nz-art-list" style="display:none;margin-bottom:14px"></div>
+  <div id="gd-list"><div style="text-align:center;padding:30px;color:var(--g400);font-size:13px">Cargando guías…</div></div>
+</div>
+
+<!-- ████ GIBRALTAR (hub consolidado) ████ -->
+<div class="sec" id="sec-gibraltar">
+  <div class="ph">🏛 Gibraltar <span class="bx bx-n">Acuerdo UE-RU en vigor</span></div>
+  <div class="ps">Referencia operativa del Acuerdo UE-RU sobre Gibraltar (en aplicación desde el 15/07/2026). Declaraciones, DCPs y material de apoyo.</div>
+
+  <div class="sbar sbar-b gap">ℹ El Acuerdo UE-RU está en aplicación. Gibraltar sigue siendo territorio tercero durante el período transitorio: las operaciones requieren formalidades aduaneras (T2GI, T1GI, H1) por las DCP designadas. Para dudas concretas, usa la <strong>Consulta IA</strong> o las <strong>FAQs T1GI/T2GI</strong> de la base documental.</div>
+
+  <div class="card gap" style="padding:0">
+    <div class="tbl-toolbar"><span class="tbl-toolbar-title">📐 Declaraciones Gibraltar</span><div class="tbl-export-btns"><button class="btn btn-s" style="font-size:11px;padding:4px 8px" onclick="exportCSV('t-decl','declaraciones-gibraltar')">⬇ CSV</button><button class="btn btn-s" style="font-size:11px;padding:4px 8px" onclick="exportEmail('t-decl','Declaraciones Gibraltar')">✉ Email</button></div></div>
+    <div class="tbl-wrap" style="border:none;border-radius:0"><table class="tbl" id="t-decl">
+      <thead><tr><th>Declaración</th><th>Tipo</th><th>Mercancía</th><th>DCP</th><th>Garantía</th><th>Plazo</th></tr></thead>
+      <tbody>
+        <tr><td><code>T2GI</code></td><td>Tránsito especial UE</td><td>Libre circulación UE → GIB</td><td>La Línea / Algeciras</td><td>IVA + IIEE</td><td>6 días</td></tr>
+        <tr><td><code>T1GI</code></td><td>Tránsito terceros países</td><td>3ºs países → GIB</td><td>La Línea</td><td>IVA + IIEE</td><td>6 días</td></tr>
+        <tr><td><code>H1</code></td><td>Importación en DCP</td><td>3ºs países en DCP para GIB</td><td>La Línea</td><td>❌ Pago previo</td><td>—</td></tr>
+        <tr><td><code>AES + T2GI</code></td><td>Exportación + tránsito</td><td>Libre circulación</td><td>DCP (salida)</td><td>IVA + IIEE</td><td>6 días</td></tr>
+        <tr><td><code>ENS</code></td><td>Decl. sumaria entrada</td><td>Procedente de GIB</td><td>La Línea</td><td>—</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <div class="ct">📂 Material de apoyo Gibraltar</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      <button class="btn btn-s" style="font-size:12px" onclick="goSecById('mapa')">🧠 Mapa mental</button>
+      <button class="btn btn-s" style="font-size:12px" onclick="goSecById('infografia')">📈 Infografías T2GI/H1</button>
+      <button class="btn btn-s" style="font-size:12px" onclick="goSecById('tablas')">📋 Tablas DCP</button>
+      <button class="btn btn-s" style="font-size:12px" onclick="goSecById('tarjetas')">🃏 Tarjetas</button>
+      <button class="btn btn-s" style="font-size:12px" onclick="goSecById('viales')">🗺 Viales y accesos</button>
+      <button class="btn btn-s" style="font-size:12px" onclick="goSecById('operativa')">🏛 Operativa DCP</button>
+      <button class="btn btn-s" style="font-size:12px" onclick="goSecById('informes')">📑 Informes técnicos</button>
+    </div>
+    <div style="font-size:11px;color:var(--g400);margin-top:10px">Este material es de referencia. Las FAQs T1GI/T2GI y los tutoriales que subas quedan consultables desde la Consulta IA.</div>
+  </div>
+</div>
+
 
 <!-- ████ MAPA MENTAL ████ -->
 <div class="sec" id="sec-mapa">
@@ -749,11 +824,14 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
   <div class="ps">Asesor Aduanero y Fiscal · CAU · LIVA · LIIEE · LGT · LPACAP · Regímenes · TARIC · Gibraltar</div>
   <div class="hints" id="hints"></div>
   <div id="chat-msgs"></div>
+  <div class="adj-bar" id="adj-bar" style="display:none"></div>
   <div class="crow">
-    <textarea id="cinput" class="fi" rows="2" style="flex:1" placeholder="Consulta aduanera técnica... (Enter enviar, Shift+Enter nueva línea)" onkeydown="handleKey(event)"></textarea>
+    <input type="file" id="chat-file" style="display:none" multiple accept=".pdf,.docx,.txt,.csv,.md,.json,.xml,.html,.xlsx,.xls">
+    <button class="btn btn-s iconbtn" onclick="document.getElementById('chat-file').click()" title="Adjuntar documento para analizar (PDF, Word, Excel, texto)">📎</button>
+    <textarea id="cinput" class="fi" rows="2" style="flex:1" placeholder="Consulta aduanera técnica, o adjunta un documento y pregúntame sobre él... (Enter enviar, Shift+Enter nueva línea)" onkeydown="handleKey(event)"></textarea>
     <button class="btn btn-p" id="csend" onclick="sendChat()" style="align-self:flex-end;padding:9px 16px">Enviar →</button>
   </div>
-  <div class="cmeta">CAU 952/2013 · RD 2446 · RE 2447 · LIVA 37/1992 · LIIEE 38/1992 · Acuerdo Gibraltar · NI 08/2026 · NI 12/2026</div>
+  <div class="cmeta">Analiza documentos aportados (PDF · Word · Excel · texto) · CAU · LIVA · LIIEE · LGT · base documental y guías</div>
 </div>
 
 <!-- ████ INFORME A CLIENTE ████ -->
@@ -869,6 +947,8 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="auth-guard.js"></script>
 <script>
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -917,29 +997,15 @@ const GIB = {
 
   propagate(patch) {
     if(patch) Object.assign(this, patch);
-    // KPI days
-    const diff = Math.ceil((new Date('2026-07-15') - new Date()) / 864e5);
-    const kpi = document.getElementById('kpi-days');
-    if(kpi) { kpi.textContent = diff > 0 ? diff : '✓'; kpi.closest('.kpi')?.classList.add('kpi-pulse'); setTimeout(()=>kpi.closest('.kpi')?.classList.remove('kpi-pulse'), 700); }
-    const pill = document.getElementById('hdr-status');
-    if(pill) {
-      if(diff <= 0) { pill.textContent = '✓ En vigor'; pill.className = 'hpill ok'; }
-      else if(diff <= 30) { pill.textContent = '⚠ ' + diff + 'd → 15/07'; pill.className = 'hpill rd'; }
-      else { pill.textContent = '⚠ ' + diff + 'd → 15/07'; pill.className = 'hpill'; }
-    }
     // Sidebar last update
     if(this.lastBriefingDate) {
       const el = document.getElementById('sb-upd');
-      if(el) el.textContent = 'Upd: ' + this.lastBriefingDate;
+      if(el) el.textContent = 'Briefing: ' + this.lastBriefingDate;
     }
-    // Cards
-    if(this.updCards.length) {
-      buildCards('all');
-      showBadge('tarjetas');
-    }
-    // Mind map
+    // Tarjetas Gibraltar (si el briefing detectó novedades)
+    if(this.updCards.length) { buildCards('all'); }
+    // Mapa mental Gibraltar
     if(this.updNodes.length && GIB.mmBuilt) buildMindMap();
-    if(this.updNodes.length) showBadge('mapa');
   }
 };
 GIB.mmBuilt = false;
@@ -1205,14 +1271,12 @@ async function checkAccess(){
   // Show app
   document.getElementById('gate').style.display='none';
   document.getElementById('app').style.display='flex';
-  // Set user info in header
-  const initials=(cu.nombre||'AD').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-  document.getElementById('huser-av').textContent=initials;
-  document.getElementById('huser-name').textContent=(cu.nombre||cu.email||'Admin').split(' ')[0];
-  // Days counter
-  const diff=Math.ceil((new Date('2026-07-15')-new Date())/(1000*60*60*24));
-  document.querySelector('.kpi-v').textContent=diff>0?diff:'0';
-  if(diff<=0) document.getElementById('hdr-status').className='hpill ok';
+  // User info en el header propio (si expone estos nodos)
+  try{
+    const initials=(cu.nombre||'AD').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const av=document.getElementById('huser-av'); if(av) av.textContent=initials;
+    const nm=document.getElementById('huser-name'); if(nm) nm.textContent=(cu.nombre||cu.email||'Admin').split(' ')[0];
+  }catch(e){}
   return true;
 }
 
@@ -1256,6 +1320,14 @@ function goSec(id,el){
     if(!GIB.normBuilt){ setupNormDrop(); GIB.normBuilt=true; }
     loadNormativa();
   }
+  if(id==='guiadua') loadGuiaDua();
+  if(id==='inicio') loadInicioStats();
+}
+
+// Navega por id activando también su entrada de sidebar (para accesos del Inicio)
+function goSecById(id){
+  const el=document.querySelector(`.ni[onclick*="goSec('${id}'"]`);
+  goSec(id, el||null);
 }
 
 // ═══ INFORMES DATA ═══
@@ -1607,36 +1679,39 @@ async function runBriefing(){
   lbl.textContent='Analizando · '+now.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+now.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   const prompt=`Eres un analista experto en derecho aduanero y comercio exterior. Hoy es ${today}.
 
-Realiza un briefing diario exhaustivo sobre los siguientes temas específicos:
+Realiza un briefing con las novedades RECIENTES (última/s semana/s) del ámbito aduanero y fiscal español y de la UE sobre estos temas:
 
-1. ENTRADA EN VIGOR DEL ACUERDO UE-RU SOBRE GIBRALTAR: cualquier novedad sobre la fecha de aplicación provisional (15/07/2026), condiciones cumplidas/pendientes (trazabilidad tabaco, transaction tax), comunicados Comisión Europea, declaraciones de Spain/UK/Gibraltar.
+1. AEAT · ADUANAS E IIEE: notas informativas, circulares, instrucciones y avisos del Departamento de Aduanas e Impuestos Especiales.
 
-2. VIALES DE ACCESO Y SALIDA: cambios en La Verja, estado de las obras/adaptaciones, nuevos protocolos en el paso fronterizo, noticias sobre el Puerto de Algeciras en relación con Gibraltar.
+2. SISTEMAS ADUANEROS: actualizaciones de NCTS5 (tránsito), AES (exportación), ICS2 (entrada), EMCS/e-DA (IIEE), DUA, TARIC y servicios web asociados (versiones, calendarios de migración, incidencias).
 
-3. RECINTO DE ADUANAS LA LÍNEA: noticias sobre infraestructura, nuevos procedimientos, contrataciones, comunicados de la Administración de Aduanas e IIEE de La Línea.
+3. NORMATIVA UE: CAU (Reglamento 952/2013) y reglamentos de desarrollo (2015/2446, 2015/2447), novedades publicadas en el DOUE relevantes para aduanas, origen, valor o clasificación.
 
-4. OPERATIVA ADUANERA — COMPETENCIAS FUNCIONARIOS: cualquier nueva instrucción interna AEAT, cambios en competencias del Resguardo Fiscal, Oficial de Aduanas o Administrador de Aduanas en el Campo de Gibraltar.
+4. FISCALIDAD DEL COMERCIO EXTERIOR: IVA a la importación/exportación, DDA, Impuestos Especiales, cambios con impacto aduanero.
 
-5. HORARIOS DE DESPACHO: cambios en horarios de despacho de mercancías en La Línea, Algeciras, o La Verja.
+5. REGÍMENES Y PROCEDIMIENTOS: regímenes especiales, OEA/AEO, garantías, representación aduanera, autodespacho, novedades operativas.
 
-6. AEAT GENERAL: notas informativas de aduanas, actualizaciones NCTS/AES, circulares relevantes (última semana).
+6. COMISIÓN EUROPEA / DG TAXUD: comunicados y normativa aduanera.
 
-7. COMISIÓN EUROPEA: normativa UE relevante para aduanas y Brexit/Gibraltar.
+7. ACUERDO UE-RU SOBRE GIBRALTAR (subtema): novedades operativas del Acuerdo ya en aplicación (T1GI/T2GI/H1, DCPs, garantías), si las hubiera.
 
-8. SECTOR TRANSITARIO: ATEIA Campo de Gibraltar, representantes aduaneros, impacto del Acuerdo en el sector.
+8. SECTOR: representantes aduaneros y transitarios (p. ej. ATEIA/FETEIA), impacto operativo.
+
+IMPORTANTE: No inventes. Si no encuentras novedades verificables de una sección, escribe "Sin novedades relevantes". Prioriza fuentes oficiales (AEAT, DOUE, Comisión Europea).
 
 FORMATO:
-### 🏛 ACUERDO · ENTRADA EN VIGOR
-### 🗺 VIALES Y ACCESOS
-### 🏗 RECINTO LA LÍNEA
-### 👮 OPERATIVA FUNCIONARIOS
-### 📋 AEAT · NORMATIVA
+### 📋 AEAT · ADUANAS E IIEE
+### 🖥 SISTEMAS (NCTS5 · AES · ICS2 · EMCS)
+### 📜 NORMATIVA UE (CAU · DOUE)
+### 💶 FISCALIDAD COMERCIO EXTERIOR
+### ⚙ REGÍMENES Y PROCEDIMIENTOS
 ### 🌐 COMISIÓN EUROPEA
-### 🏢 SECTOR TRANSITARIO
+### 🏛 GIBRALTAR (Acuerdo UE-RU)
+### 🏢 SECTOR (transitarios / representantes)
 ### 📎 FUENTES CONSULTADAS
 [URLs]
 
-Si no hay novedades en una sección, escribe "Sin novedades esta semana."`;
+Si no hay novedades en una sección, escribe "Sin novedades relevantes".`;
 
   try{
     let accum='';
@@ -1766,8 +1841,9 @@ function buildChat(){
   const msgs=document.getElementById('chat-msgs');
   const now=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   msgs.innerHTML=`<div class="msg"><div class="av ai">RA</div><div class="mw"><div class="ml">Repr. Aduanero · Customs-Way · ${now}</div>
-    <div class="bb ai">Asesor aduanero y fiscal · Customs-Way SL. Consulta sobre CAU y regímenes aduaneros, LIVA/RIVA, LIIEE/RIIEE, LGT, LPACAP, TARIC, origen, valor en aduana o Acuerdo de Gibraltar. Si has subido normativa en la sección 📚 Normativa, la usaré como fuente prioritaria y enlazaré los artículos citados. ¿En qué puedo ayudarte?</div></div></div>`;
+    <div class="bb ai">Asesor aduanero y fiscal · Customs-Way SL. Consulta sobre CAU y regímenes aduaneros, LIVA/RIVA, LIIEE/RIIEE, LGT, LPACAP, TARIC, origen, valor en aduana o Acuerdo de Gibraltar.<br><br>📎 Puedes <strong>adjuntar un documento</strong> (PDF, Word, Excel o texto) y pedirme que lo analice o que responda a tus preguntas sobre él. Si has subido normativa o guías en la sección 📚 Normativa, las usaré como fuente prioritaria y enlazaré los artículos citados. ¿En qué puedo ayudarte?</div></div></div>`;
   GIB.chatBuilt=true;
+  setupChatAdjuntos();
 }
 
 function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}
@@ -1792,6 +1868,128 @@ function showTp(){
   d.innerHTML=`<div class="av ai">RA</div><div class="mw"><div class="tp"><span></span><span></span><span></span></div></div>`;
   box.appendChild(d);box.scrollTop=box.scrollHeight;
 }
+// ══════════════════════════════════════════════════════════════════════
+// ADJUNTOS PARA ANÁLISIS — documentos que el usuario sube a la consulta
+// Se extrae el texto en el navegador y se inyecta como contexto en la IA.
+// No se guardan: viven en memoria mientras dure la conversación.
+// ══════════════════════════════════════════════════════════════════════
+let DOCS_ADJUNTOS=[]; // {nombre, tipo, texto, chars, estado:'ok'|'load'|'err', err}
+
+function setupChatAdjuntos(){
+  const inp=document.getElementById('chat-file');
+  if(inp && !inp._wired){
+    inp.addEventListener('change', e=>{ procesarAdjuntos([...e.target.files]); inp.value=''; });
+    inp._wired=true;
+  }
+  const zone=document.getElementById('chat-msgs');
+  if(zone && !zone._wired){
+    ['dragenter','dragover'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();zone.classList.add('drag');}));
+    ['dragleave','drop'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();zone.classList.remove('drag');}));
+    zone.addEventListener('drop',e=>{ const f=[...(e.dataTransfer?.files||[])]; if(f.length) procesarAdjuntos(f); });
+    zone._wired=true;
+  }
+}
+
+async function procesarAdjuntos(files){
+  for(const f of files){
+    const item={nombre:f.name, tipo:extTipo(f.name), texto:'', chars:0, estado:'load'};
+    DOCS_ADJUNTOS.push(item);
+    renderAdjuntos();
+    try{
+      item.texto=await extraerTextoFichero(f);
+      item.chars=item.texto.length;
+      if(!item.texto.trim()){ item.estado='err'; item.err='Sin texto legible (¿escaneado?)'; }
+      else item.estado='ok';
+    }catch(e){
+      item.estado='err'; item.err=(e.message||'error').substring(0,60);
+      console.error('[Adjunto]',f.name,e);
+    }
+    renderAdjuntos();
+  }
+}
+
+function extTipo(nombre){
+  const e=(nombre.split('.').pop()||'').toLowerCase();
+  return ({pdf:'PDF',docx:'Word',doc:'Word',xlsx:'Excel',xls:'Excel',csv:'CSV',txt:'Texto',md:'Markdown',json:'JSON',xml:'XML',html:'HTML'})[e]||e.toUpperCase();
+}
+
+async function extraerTextoFichero(f){
+  const ext=(f.name.split('.').pop()||'').toLowerCase();
+  if(ext==='pdf'){
+    if(!window.pdfjsLib) throw new Error('pdf.js no cargado');
+    return await pdfATexto(await f.arrayBuffer());
+  }
+  if(ext==='docx'){
+    if(!window.mammoth) throw new Error('mammoth no cargado');
+    const r=await mammoth.extractRawText({arrayBuffer:await f.arrayBuffer()});
+    return r.value||'';
+  }
+  if(ext==='xlsx'||ext==='xls'){
+    if(!window.XLSX) throw new Error('XLSX no cargado');
+    const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+    let out='';
+    wb.SheetNames.forEach(nm=>{
+      const ws=wb.Sheets[nm];
+      const csv=XLSX.utils.sheet_to_csv(ws,{blankrows:false});
+      if(csv.trim()) out+=`### Hoja: ${nm}\n${csv}\n\n`;
+    });
+    return out;
+  }
+  // Texto plano / csv / md / json / xml / html
+  if(['txt','csv','md','json','xml','html','htm'].includes(ext)) return await f.text();
+  // Último recurso: intentar como texto
+  return await f.text();
+}
+
+function renderAdjuntos(){
+  const bar=document.getElementById('adj-bar');
+  if(!bar) return;
+  if(!DOCS_ADJUNTOS.length){ bar.style.display='none'; bar.innerHTML=''; return; }
+  bar.style.display='flex';
+  let html='<span class="adj-bar-lbl">📎 En contexto</span>';
+  DOCS_ADJUNTOS.forEach((d,i)=>{
+    const cls=d.estado==='err'?'err':(d.estado==='load'?'load':'');
+    const meta=d.estado==='load'?'…':(d.estado==='err'?(d.err||'error'):(d.chars>999?(Math.round(d.chars/1000)+'k car.'):d.chars+' car.'));
+    html+=`<span class="adj-chip ${cls}"><span class="ic">${d.estado==='load'?'⏳':(d.estado==='err'?'⚠':'📄')}</span><span class="nm" title="${esc(d.nombre)}">${esc(d.nombre)}</span><span class="mt">${d.tipo} · ${meta}</span><span class="rm" onclick="quitarAdjunto(${i})" title="Quitar">✕</span></span>`;
+  });
+  const okCount=DOCS_ADJUNTOS.filter(d=>d.estado==='ok').length;
+  if(okCount){
+    html+=`<button class="btn btn-s" style="font-size:11px;padding:3px 9px" onclick="analizarAdjuntos()">🔍 Analizar</button>`;
+    html+=`<span class="adj-clear" onclick="limpiarAdjuntos()">quitar todos</span>`;
+  }
+  bar.innerHTML=html;
+}
+
+function quitarAdjunto(i){ DOCS_ADJUNTOS.splice(i,1); renderAdjuntos(); }
+function limpiarAdjuntos(){ DOCS_ADJUNTOS=[]; renderAdjuntos(); }
+
+function analizarAdjuntos(){
+  if(!DOCS_ADJUNTOS.some(d=>d.estado==='ok')){ alert('Adjunta primero un documento legible.'); return; }
+  const inp=document.getElementById('cinput');
+  inp.value='Analiza el/los documento(s) adjunto(s) y dame: (1) tipo de documento y resumen; (2) datos clave (fechas, plazos, importes, referencias, partes intervinientes); (3) implicaciones aduaneras y fiscales con la normativa aplicable; (4) posibles incidencias o riesgos; (5) acciones recomendadas y plazos a vigilar.';
+  sendChat();
+}
+
+// Construye el bloque de contexto con el texto de los adjuntos (con presupuesto)
+function contextoAdjuntos(){
+  const ok=DOCS_ADJUNTOS.filter(d=>d.estado==='ok'&&d.texto);
+  if(!ok.length) return '';
+  const MAXT=90000; let used=0;
+  let s='=== DOCUMENTOS APORTADOS POR EL USUARIO PARA ANÁLISIS ===\n';
+  s+='Analiza estos documentos y responde a lo que el usuario te pida sobre ellos. Básate en su contenido literal; no inventes datos que no aparezcan. Si un dato no consta, dilo.\n\n';
+  for(const d of ok){
+    let t=d.texto;
+    const rem=MAXT-used;
+    if(rem<=0){ s+=`--- ${d.nombre}: [omitido por límite de tamaño] ---\n\n`; continue; }
+    if(t.length>rem){ t=t.substring(0,rem)+'\n[…documento truncado por tamaño…]'; }
+    used+=t.length;
+    s+=`--- DOCUMENTO: ${d.nombre} (${d.tipo}) ---\n${t}\n\n`;
+  }
+  s+='=== FIN DE LOS DOCUMENTOS APORTADOS ===\n\n';
+  return s;
+}
+
+
 async function sendChat(){
   if(CB)return;
   const inp=document.getElementById('cinput');
@@ -1809,7 +2007,10 @@ async function sendChat(){
     // RAG: buscar normativa relevante en la base documental e inyectarla
     const rag=await construirContextoRAG(text,6);
     await cargarIndiceArticulos(); // asegurar índice para enlazar citas
-    const sysMsg=rag? SYS+'\n\n'+rag : SYS;
+    const adj=contextoAdjuntos(); // documentos que el usuario haya aportado para análisis
+    let sysMsg=SYS;
+    if(rag) sysMsg+='\n\n'+rag;
+    if(adj) sysMsg+='\n\n'+adj;
     const msgs=[{role:'system',content:sysMsg},...CH];
     const reply=await streamOR({
       model:IA.chat.model,
@@ -2203,7 +2404,43 @@ function trocearArticulos(texto){
     titulo:a.titulo.replace(/\s+/g,' ').trim().substring(0,160),
     texto:(a.num? 'Artículo '+a.num+(a.titulo?'. ':'. ') : '')+a.lineas.join('\n').replace(/\n{3,}/g,'\n\n').trim()
   })).filter(a=>a.texto.length>15);
+  // Fallback: si apenas hay artículos reconocibles (guías, manuales, FAQs),
+  // trocear por secciones/bloques para que sea igualmente consultable.
+  if(res.length<3 && texto.trim().length>1500){
+    return { articulos: trocearPorSecciones(texto), preambulo:preambulo.join('\n').trim(), fallback:true };
+  }
   return { articulos:res, preambulo:preambulo.join('\n').trim() };
+}
+
+// Trocea texto sin estructura de artículos en bloques manejables.
+// Detecta encabezados tipo "### ", "N. Título", "CAPÍTULO/TÍTULO/SECCIÓN", MAYÚSCULAS cortas;
+// si no, parte por párrafos acumulando ~1800 caracteres.
+function trocearPorSecciones(texto){
+  const lineas=texto.split('\n');
+  const RE_HEAD=/^\s*(?:#{1,4}\s+.+|(?:CAP[ÍI]TULO|T[ÍI]TULO|SECCI[ÓO]N|ANEXO|CASILLA)\b.*|\d{1,3}[.\)]\s+\S.{0,80}|[A-ZÁÉÍÓÚÑ0-9 ().\-\/]{6,70})\s*$/;
+  const chunks=[]; let cur={titulo:'', buf:[]}; let n=0;
+  const push=()=>{ const t=cur.buf.join('\n').replace(/\n{3,}/g,'\n\n').trim(); if(t.length>25){ n++; chunks.push({num:'Secc. '+n, titulo:(cur.titulo||('Sección '+n)).substring(0,140), texto:(cur.titulo? cur.titulo+'\n':'')+t}); } };
+  for(const ln of lineas){
+    const s=ln.trim();
+    const esHead = s.length>0 && RE_HEAD.test(s) && s.length<=80 && !/[.;:]$/.test(s);
+    if(esHead && cur.buf.length){ push(); cur={titulo:s.replace(/^#{1,4}\s+/,''), buf:[]}; }
+    else if(esHead && !cur.buf.length){ cur.titulo=s.replace(/^#{1,4}\s+/,''); }
+    else { cur.buf.push(ln); if(cur.buf.join('\n').length>1800){ push(); cur={titulo:(cur.titulo? cur.titulo+' (cont.)':''), buf:[]}; } }
+  }
+  push();
+  return chunks.map(c=>({num:c.num, titulo:c.titulo, texto:c.texto.substring(0,18000)})).filter(c=>c.texto.length>25);
+}
+
+// Trocea un Excel ya convertido a texto (con marcadores "### Hoja: X") por hoja.
+function trocearPorHojas(texto){
+  const partes=texto.split(/^### Hoja: (.+)$/m);
+  const res=[];
+  for(let i=1;i<partes.length;i+=2){
+    const hoja=(partes[i]||'').trim();
+    const cont=(partes[i+1]||'').trim();
+    if(cont.length>15) res.push({num:hoja.substring(0,60), titulo:hoja.substring(0,140), texto:('Hoja: '+hoja+'\n'+cont).substring(0,18000)});
+  }
+  return res;
 }
 
 // ── Subida y procesamiento ────────────────────────────────────────────
@@ -2212,18 +2449,18 @@ function setupNormDrop(){
   const drop=document.getElementById('nz-drop');
   const file=document.getElementById('nz-file');
   if(!drop||!file) return;
-  file.addEventListener('change', e=>{ if(e.target.files.length) procesarPDFs([...e.target.files]); file.value=''; });
+  file.addEventListener('change', e=>{ if(e.target.files.length) procesarDocs([...e.target.files]); file.value=''; });
   ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
   ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
   drop.addEventListener('drop',e=>{
-    const files=[...(e.dataTransfer?.files||[])].filter(f=>f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf'));
-    if(files.length) procesarPDFs(files);
+    const ok=/\.(pdf|docx|xlsx|xls|txt|csv|md|json|xml|html?)$/i;
+    const files=[...(e.dataTransfer?.files||[])].filter(f=>ok.test(f.name));
+    if(files.length) procesarDocs(files);
   });
 }
 
-async function procesarPDFs(files){
-  if(NZ_BUSY){ alert('Ya hay un PDF procesándose. Espera a que termine.'); return; }
-  if(!window.pdfjsLib){ alert('La librería de PDF no se ha cargado. Recarga la página.'); return; }
+async function procesarDocs(files){
+  if(NZ_BUSY){ alert('Ya hay un documento procesándose. Espera a que termine.'); return; }
   NZ_BUSY=true;
   const prog=document.getElementById('nz-prog');
   const txt=document.getElementById('nz-prog-txt');
@@ -2231,52 +2468,68 @@ async function procesarPDFs(files){
   prog.classList.add('on');
   const siglaManual=document.getElementById('nz-meta-sigla').value.trim();
   const nombreManual=document.getElementById('nz-meta-nombre').value.trim();
+  const tipoSel=document.getElementById('nz-tipo')?.value||'norma';
 
   for(let fi=0; fi<files.length; fi++){
     const f=files[fi];
+    const ext=(f.name.split('.').pop()||'').toLowerCase();
     try{
       txt.textContent=`(${fi+1}/${files.length}) Leyendo "${f.name}"…`;
-      bar.style.width='5%';
-      const buf=await f.arrayBuffer();
-      const texto=await pdfATexto(buf,(p,tot)=>{
-        bar.style.width=(5+ (p/tot)*55)+'%';
-        txt.textContent=`(${fi+1}/${files.length}) Extrayendo página ${p}/${tot}…`;
-      });
-      txt.textContent=`(${fi+1}/${files.length}) Troceando por artículos…`;
-      bar.style.width='65%';
-      const {articulos,preambulo}=trocearArticulos(texto);
-      const sigla=siglaManual||deducirSigla(preambulo+' '+texto)||f.name.replace(/\.pdf$/i,'').substring(0,20);
-      const nombre=nombreManual||preambulo.split('\n').find(l=>l.trim().length>15)?.trim().substring(0,180)||f.name;
+      bar.style.width='8%';
+      let texto='';
+      if(ext==='pdf'){
+        if(!window.pdfjsLib) throw new Error('pdf.js no cargado');
+        texto=await pdfATexto(await f.arrayBuffer(),(p,tot)=>{
+          bar.style.width=(8+(p/tot)*50)+'%';
+          txt.textContent=`(${fi+1}/${files.length}) Extrayendo página ${p}/${tot}…`;
+        });
+      } else {
+        texto=await extraerTextoFichero(f);
+      }
+      if(!texto||!texto.trim()) throw new Error('Sin texto legible (¿escaneado o imagen?)');
 
-      txt.textContent=`(${fi+1}/${files.length}) Guardando ${articulos.length} artículos…`;
+      bar.style.width='62%';
+      txt.textContent=`(${fi+1}/${files.length}) Troceando…`;
+      // Elegir troceado según tipo y formato
+      let articulos, preambulo='';
+      if(ext==='xlsx'||ext==='xls'){
+        articulos=trocearPorHojas(texto);
+      } else if(tipoSel==='guia'){
+        articulos=trocearPorSecciones(texto);
+      } else {
+        const r=trocearArticulos(texto); articulos=r.articulos; preambulo=r.preambulo||'';
+      }
+      const base=f.name.replace(/\.[^.]+$/,'');
+      const sigla=siglaManual||(tipoSel==='norma'?deducirSigla(preambulo+' '+texto):'')||base.substring(0,24).toUpperCase();
+      const nombre=nombreManual||(preambulo.split('\n').find(l=>l.trim().length>15)?.trim().substring(0,180))||base;
+
+      txt.textContent=`(${fi+1}/${files.length}) Guardando ${articulos.length} fragmentos…`;
       bar.style.width='75%';
 
-      // Insertar documento
       const {data:doc,error:docErr}=await sb.from('cw_normativa').insert({
-        sigla, nombre, fichero:f.name,
+        sigla, nombre, fichero:f.name, tipo:tipoSel,
         n_articulos:articulos.length,
         texto_completo:texto.substring(0,500000),
         creado_en:new Date().toISOString()
       }).select('id').single();
       if(docErr) throw new Error('Guardar documento: '+docErr.message);
 
-      // Insertar artículos en lotes
       if(articulos.length){
         const rows=articulos.map(a=>({
-          normativa_id:doc.id, sigla,
+          normativa_id:doc.id, sigla, tipo:tipoSel,
           articulo:a.num, articulo_key:normArtKey(a.num),
-          titulo:a.titulo, texto:a.texto.substring(0,20000)
+          titulo:a.titulo, texto:(a.texto||'').substring(0,20000)
         }));
         for(let i=0;i<rows.length;i+=100){
           const {error:artErr}=await sb.from('cw_articulos').insert(rows.slice(i,i+100));
-          if(artErr) throw new Error('Guardar artículos: '+artErr.message);
-          bar.style.width=(75+ (i/rows.length)*20)+'%';
+          if(artErr) throw new Error('Guardar fragmentos: '+artErr.message);
+          bar.style.width=(75+(i/rows.length)*20)+'%';
         }
       }
       bar.style.width='100%';
-      txt.textContent=`✓ "${sigla}" — ${articulos.length} artículos indexados.`;
+      txt.textContent=`✓ "${sigla}" — ${articulos.length} fragmentos (${tipoSel==='guia'?'guía':'normativa'}).`;
     }catch(e){
-      console.error('[Normativa] Error procesando',f.name,e);
+      console.error('[Base documental] Error procesando',f.name,e);
       txt.textContent='✗ Error: '+e.message;
       bar.style.width='0%';
       alert('Error procesando "'+f.name+'": '+e.message);
@@ -2296,28 +2549,31 @@ async function loadNormativa(){
   if(!el) return;
   el.innerHTML='<div style="text-align:center;padding:30px;color:var(--g400);font-size:13px">Cargando…</div>';
   try{
-    const {data,error}=await sb.from('cw_normativa').select('id,sigla,nombre,fichero,n_articulos,creado_en').order('creado_en',{ascending:false});
+    const {data,error}=await sb.from('cw_normativa').select('id,sigla,nombre,fichero,n_articulos,tipo,creado_en').order('creado_en',{ascending:false});
     if(error) throw error;
     const stats=document.getElementById('nz-stats');
     if(!data||!data.length){
-      el.innerHTML='<div style="text-align:center;padding:30px;color:var(--g400);font-size:13px">No hay documentos todavía.<br><span style="font-size:11px;font-family:var(--mono)">Sube un PDF para empezar a alimentar la base.</span></div>';
-      if(stats) stats.textContent='0 documentos · 0 artículos';
+      el.innerHTML='<div style="text-align:center;padding:30px;color:var(--g400);font-size:13px">No hay documentos todavía.<br><span style="font-size:11px;font-family:var(--mono)">Sube un documento o ejecuta la semilla de guías DUA.</span></div>';
+      if(stats) stats.textContent='0 documentos · 0 fragmentos';
       return;
     }
     const totalArts=data.reduce((s,d)=>s+(d.n_articulos||0),0);
-    if(stats) stats.textContent=`${data.length} documento${data.length!==1?'s':''} · ${totalArts} artículos indexados`;
-    el.innerHTML=data.map(d=>`
+    const nG=data.filter(d=>d.tipo==='guia').length;
+    if(stats) stats.textContent=`${data.length} docs (${data.length-nG} norma · ${nG} guías) · ${totalArts} fragmentos`;
+    el.innerHTML=data.map(d=>{
+      const esGuia=(d.tipo==='guia');
+      return `
       <div class="nz-doc">
-        <div class="nz-doc-ico">📘</div>
+        <div class="nz-doc-ico">${esGuia?'🧩':'📘'}</div>
         <div class="nz-doc-main">
           <div class="nz-doc-t">${esc(d.nombre||d.fichero||'Documento')}</div>
-          <div class="nz-doc-m">${esc(d.sigla||'—')} · ${d.n_articulos||0} art. · ${(d.creado_en||'').substring(0,10)}</div>
+          <div class="nz-doc-m">${esc(d.sigla||'—')} · ${d.n_articulos||0} ${esGuia?'secc.':'art.'} · <span class="bx ${esGuia?'bx-t':'bx-b'}" style="font-size:9px;padding:1px 6px">${esGuia?'guía':'norma'}</span> · ${(d.creado_en||'').substring(0,10)}</div>
         </div>
         <div class="nz-doc-acts">
-          <button class="btn btn-s" style="font-size:11px;padding:4px 9px" onclick="verArticulosDoc('${d.id}','${esc(d.sigla||'')}')">Artículos</button>
+          <button class="btn btn-s" style="font-size:11px;padding:4px 9px" onclick="verArticulosDoc('${d.id}','${esc(d.sigla||'')}')">${esGuia?'Secciones':'Artículos'}</button>
           <button class="btn btn-s" style="font-size:11px;padding:4px 9px;border-color:var(--rd200);color:var(--rd600)" onclick="borrarNormativa('${d.id}','${esc(d.sigla||d.fichero||'')}')">✕</button>
         </div>
-      </div>`).join('');
+      </div>`;}).join('');
   }catch(e){
     console.error('[Normativa] load:',e);
     el.innerHTML=`<div style="text-align:center;padding:30px;color:var(--rd600);font-size:13px">Error al cargar.<br><span style="font-size:11px;font-family:var(--mono)">${esc(e.message||'')}</span><br><span style="font-size:11px;color:var(--g400)">¿Creaste las tablas cw_normativa y cw_articulos?</span></div>`;
@@ -2384,7 +2640,7 @@ async function buscarArticulos(consulta,limite){
   // Fallback: ilike sobre palabras clave
   const palabras=consulta.toLowerCase().replace(/[^\wáéíóúñ\s]/g,' ').split(/\s+/).filter(w=>w.length>3).slice(0,4);
   if(!palabras.length) return [];
-  let qb=sb.from('cw_articulos').select('sigla,articulo,articulo_key,titulo,texto').limit(limite);
+  let qb=sb.from('cw_articulos').select('sigla,articulo,articulo_key,titulo,texto,tipo').limit(limite);
   qb=qb.or(palabras.map(p=>`texto.ilike.%${p}%`).join(','));
   const {data}=await qb;
   return data||[];
@@ -2393,18 +2649,100 @@ async function buscarArticulos(consulta,limite){
 // ── RAG: construir contexto normativo para inyectar en la IA ──────────
 // Busca en la base documental los artículos relevantes a la consulta y los
 // devuelve como bloque de texto para anteponer al prompt. Vacío si no hay base.
+// ══════════════════════════════════════════════════════════════════════
+// INICIO — estadísticas de la base documental
+// ══════════════════════════════════════════════════════════════════════
+async function loadInicioStats(){
+  const el=document.getElementById('inicio-stats'); if(!el) return;
+  try{
+    const {data,error}=await sb.from('cw_normativa').select('tipo,n_articulos');
+    if(error) throw error;
+    if(!data||!data.length){ el.innerHTML='La base documental está vacía.<br><span style="font-size:11px;color:var(--g400)">Sube normativa en 📚 Base Documental o ejecuta la semilla de guías DUA.</span>'; return; }
+    const norm=data.filter(d=>d.tipo!=='guia'), gui=data.filter(d=>d.tipo==='guia');
+    const aN=norm.reduce((s,d)=>s+(d.n_articulos||0),0), aG=gui.reduce((s,d)=>s+(d.n_articulos||0),0);
+    el.innerHTML=`📘 Normativa: <strong>${norm.length}</strong> docs · ${aN} artículos<br>🧩 Guías técnicas: <strong>${gui.length}</strong> docs · ${aG} secciones<br>📊 Total indexado: <strong>${aN+aG}</strong> fragmentos consultables`;
+  }catch(e){ el.innerHTML='<span style="color:var(--g400)">No se pudo leer la base (¿tablas creadas?).</span>'; }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// GUÍA DUA — vista de la colección de guías técnicas
+// ══════════════════════════════════════════════════════════════════════
+async function loadGuiaDua(){
+  const el=document.getElementById('gd-list'); if(!el) return;
+  const box=document.getElementById('gd-search-res'); if(box){ box.style.display='none'; }
+  el.innerHTML='<div style="text-align:center;padding:30px;color:var(--g400);font-size:13px">Cargando guías…</div>';
+  try{
+    const {data,error}=await sb.from('cw_normativa').select('id,sigla,nombre,n_articulos').eq('tipo','guia').order('sigla');
+    if(error) throw error;
+    if(!data||!data.length){
+      el.innerHTML='<div style="text-align:center;padding:30px;color:var(--g400);font-size:13px">No hay guías cargadas.<br><span style="font-size:11px;font-family:var(--mono)">Ejecuta <b>guias-dua-seed.sql</b> en Supabase, o súbelas en 📚 Base Documental marcando «Guía técnica».</span></div>';
+      return;
+    }
+    el.innerHTML=data.map(d=>`
+      <div class="nz-doc">
+        <div class="nz-doc-ico">🧩</div>
+        <div class="nz-doc-main">
+          <div class="nz-doc-t">${esc(d.nombre||d.sigla)}</div>
+          <div class="nz-doc-m">${esc(d.sigla||'—')} · ${d.n_articulos||0} secciones</div>
+        </div>
+        <div class="nz-doc-acts"><button class="btn btn-s" style="font-size:11px;padding:4px 9px" onclick="verSeccionesGuia('${d.id}','${esc(d.sigla||'')}')">Ver secciones</button></div>
+      </div>`).join('');
+  }catch(e){
+    el.innerHTML=`<div style="text-align:center;padding:30px;color:var(--rd600);font-size:13px">Error al cargar guías.<br><span style="font-size:11px;color:var(--g400)">${esc(e.message||'')}</span></div>`;
+  }
+}
+
+async function verSeccionesGuia(docId,sigla){
+  const el=document.getElementById('gd-list');
+  const {data,error}=await sb.from('cw_articulos').select('sigla,articulo,titulo,texto').eq('normativa_id',docId).order('id');
+  if(error||!data){ alert('Error: '+(error&&error.message||'')); return; }
+  const list=document.createElement('div'); list.className='card';
+  list.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div class="ct" style="margin-bottom:0">🧩 ${esc(sigla)} · ${data.length} secciones</div>
+      <button class="btn btn-s" style="font-size:11px" onclick="loadGuiaDua()">← Volver</button>
+    </div>
+    <div class="nz-art-list">${data.map(a=>`
+      <div class="nz-art" onclick='abrirArt(${JSON.stringify({sigla:a.sigla,articulo:a.articulo,titulo:a.titulo,texto:a.texto})})'>
+        <div class="nz-art-n">${esc(a.articulo||'')}</div>
+        <div class="nz-art-x">${esc((a.texto||'').substring(0,130))}…</div>
+      </div>`).join('')}</div>`;
+  el.innerHTML=''; el.appendChild(list);
+}
+
+let _gdTimer=null;
+function gdSearchDebounced(){ clearTimeout(_gdTimer); _gdTimer=setTimeout(gdSearch,300); }
+async function gdSearch(){
+  const q=document.getElementById('gd-search').value.trim();
+  const box=document.getElementById('gd-search-res');
+  if(q.length<3){ box.style.display='none'; return; }
+  const arts=await buscarArticulos(q,15);
+  const guias=arts.filter(a=>a.tipo==='guia');
+  const src=guias.length?guias:arts;
+  box.style.display='block';
+  if(!src.length){ box.innerHTML='<div style="padding:12px;text-align:center;color:var(--g400);font-size:12px">Sin resultados en las guías.</div>'; return; }
+  box.innerHTML=src.map(a=>`
+    <div class="nz-art" onclick='abrirArt(${JSON.stringify({sigla:a.sigla,articulo:a.articulo,titulo:a.titulo,texto:a.texto})})'>
+      <div class="nz-art-n">${esc(a.sigla||'')} · ${esc(a.articulo||'')}</div>
+      <div class="nz-art-x">${esc((a.texto||'').substring(0,130))}…</div>
+    </div>`).join('');
+}
+
+
 async function construirContextoRAG(consulta, maxArts){
   maxArts=maxArts||6;
   try{
     const arts=await buscarArticulos(consulta,maxArts);
     if(!arts||!arts.length) return '';
-    let ctx='=== DOCUMENTACIÓN NORMATIVA APORTADA (base documental del despacho) ===\n';
-    ctx+='Los siguientes artículos proceden de la base documental y son FUENTE PRIORITARIA. Cítalos textualmente cuando proceda.\n\n';
+    let ctx='=== DOCUMENTACIÓN DE LA BASE DOCUMENTAL (fuente prioritaria) ===\n';
+    ctx+='Los siguientes fragmentos proceden de la base documental del despacho (normativa y guías técnicas). Son FUENTE PRIORITARIA Y AUTORITATIVA; cítalos textualmente cuando proceda e indica su procedencia.\n\n';
     arts.forEach(a=>{
       const t=(a.texto||'').substring(0,1800);
-      ctx+=`[${a.sigla||''} · Artículo ${a.articulo||''}${a.titulo?' — '+a.titulo:''}]\n${t}\n\n`;
+      const esGuia=(a.tipo==='guia');
+      const art=String(a.articulo||'');
+      const etq=esGuia? `Guía ${a.sigla||''} · ${art}` : `${a.sigla||''} · Artículo ${art}`;
+      ctx+=`[${etq}${a.titulo&&a.titulo!==art?' — '+a.titulo:''}]\n${t}\n\n`;
     });
-    ctx+='=== FIN DE LA DOCUMENTACIÓN APORTADA ===\n\n';
+    ctx+='=== FIN DE LA DOCUMENTACIÓN DE LA BASE ===\n\n';
     return ctx;
   }catch(e){ console.warn('RAG:',e.message); return ''; }
 }
@@ -2426,8 +2764,10 @@ async function cargarIndiceArticulos(){
 
 // ── Visor de artículo (panel lateral) ─────────────────────────────────
 function abrirArt(a){
-  document.getElementById('ap-title').textContent='Artículo '+(a.articulo||'');
-  document.getElementById('ap-sub').textContent=(a.sigla||'')+(a.titulo?' · '+a.titulo:'');
+  const art=String(a.articulo||'').trim();
+  const esArt=/^\d/.test(art); // numérico → artículo; si no, es sección/casilla/hoja de guía
+  document.getElementById('ap-title').textContent=(esArt?'Artículo '+art:(art||'Sección'));
+  document.getElementById('ap-sub').textContent=(a.sigla||'')+(a.titulo&&a.titulo!==art?' · '+a.titulo:'');
   document.getElementById('ap-body').textContent=a.texto||'(Sin texto)';
   document.getElementById('ap-ft').textContent=(a.sigla||'')+' · Base documental Customs-Way SL';
   document.getElementById('art-panel').classList.add('on');
@@ -2464,13 +2804,16 @@ function enlazarCitas(html){
 (async function(){
   if(await checkAccess()){
     GIB.propagate();
+    // Contenido Gibraltar (se muestra desde el hub Gibraltar)
     buildInformes();
     buildCards();
     buildViales();
     buildOperativa();
+    // Inicio: estadísticas de la base documental
+    loadInicioStats();
     // Precargar índice de artículos para enlazar citas en chat/informes
     cargarIndiceArticulos();
-    // Normativa y Chat se construyen al visitarlos por primera vez
+    // Normativa, Guía DUA y Chat se construyen al visitarlos
   }
 })();
 </script>
