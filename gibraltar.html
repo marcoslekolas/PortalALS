@@ -560,20 +560,27 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
       <div class="nz-drop" id="nz-drop" onclick="document.getElementById('nz-file').click()">
         <div class="nz-ico">📄</div>
         <div class="nz-t">Arrastra un archivo aquí o haz clic</div>
-        <div class="nz-s">PDF · Word (.docx) · Excel (.xlsx) · texto (.txt/.csv/.md)</div>
-        <input type="file" id="nz-file" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv,.md,.json,.xml,.html" style="display:none" multiple>
+        <div class="nz-s">PDF · Word (.docx) · Excel (.xlsx) · texto · imágenes/escaneos (OCR automático)</div>
+        <input type="file" id="nz-file" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv,.md,.json,.xml,.html,.png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff" style="display:none" multiple>
       </div>
       <div class="nz-prog" id="nz-prog">
         <div class="nz-prog-txt" id="nz-prog-txt">Procesando…</div>
         <div class="nz-bar"><div class="nz-bar-fill" id="nz-bar-fill"></div></div>
       </div>
       <div style="margin-top:12px">
-        <label class="rpt-label">Metadatos (opcional, mejoran la cita)</label>
-        <div class="rpt-form-grid" style="margin-bottom:0">
+        <label class="rpt-label">Metadatos (opcional, mejoran la cita y la clasificación)</label>
+        <div class="rpt-form-grid" style="margin-bottom:8px">
           <div><input type="text" id="nz-meta-sigla" class="fi" placeholder="Sigla: LIVA, CAU, GT-DUA…"></div>
           <div><input type="text" id="nz-meta-nombre" class="fi" placeholder="Nombre: Ley 37/1992 del IVA"></div>
         </div>
-        <div style="font-size:10px;color:var(--g400);margin-top:4px">Si lo dejas vacío, se intenta deducir del propio documento.</div>
+        <input type="text" id="nz-meta-materia" class="fi" list="nz-materias" placeholder="Materia: ADUANA, IVA, IIEE, LGT…">
+        <datalist id="nz-materias">
+          <option value="ADUANA"><option value="IVA"><option value="IIEE"><option value="LEY GENERAL TRIBUTARIA">
+          <option value="LEY PROCEDIMIENTO ADMINISTRATIVO"><option value="CONTRABANDO"><option value="SANIDAD">
+          <option value="FITO"><option value="SOIVRE"><option value="FARMACIA"><option value="QUIMICO">
+          <option value="VETERINARIO"><option value="TRANSPORTE"><option value="EMBARCACIONES"><option value="GENERAL">
+        </datalist>
+        <div style="font-size:10px;color:var(--g400);margin-top:4px">Si lo dejas vacío, se intenta deducir del documento. La materia permite filtrar y acotar las búsquedas.</div>
       </div>
     </div>
 
@@ -826,8 +833,8 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
   <div id="chat-msgs"></div>
   <div class="adj-bar" id="adj-bar" style="display:none"></div>
   <div class="crow">
-    <input type="file" id="chat-file" style="display:none" multiple accept=".pdf,.docx,.txt,.csv,.md,.json,.xml,.html,.xlsx,.xls">
-    <button class="btn btn-s iconbtn" onclick="document.getElementById('chat-file').click()" title="Adjuntar documento para analizar (PDF, Word, Excel, texto)">📎</button>
+    <input type="file" id="chat-file" style="display:none" multiple accept=".pdf,.docx,.txt,.csv,.md,.json,.xml,.html,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff">
+    <button class="btn btn-s iconbtn" onclick="document.getElementById('chat-file').click()" title="Adjuntar documento o escaneo para analizar (PDF, Word, Excel, texto, imagen con OCR)">📎</button>
     <textarea id="cinput" class="fi" rows="2" style="flex:1" placeholder="Consulta aduanera técnica, o adjunta un documento y pregúntame sobre él... (Enter enviar, Shift+Enter nueva línea)" onkeydown="handleKey(event)"></textarea>
     <button class="btn btn-p" id="csend" onclick="sendChat()" style="align-self:flex-end;padding:9px 16px">Enviar →</button>
   </div>
@@ -949,6 +956,7 @@ code{font-family:var(--mono);font-size:12px;background:var(--b50);color:var(--b7
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script src="auth-guard.js"></script>
 <script>
 const SB_URL='https://bccqfqaehbmmqbisfbyv.supabase.co';
@@ -1892,16 +1900,21 @@ function setupChatAdjuntos(){
 
 async function procesarAdjuntos(files){
   for(const f of files){
-    const item={nombre:f.name, tipo:extTipo(f.name), texto:'', chars:0, estado:'load'};
+    const item={nombre:f.name, tipo:extTipo(f.name), texto:'', chars:0, estado:'load', prog:''};
     DOCS_ADJUNTOS.push(item);
     renderAdjuntos();
     try{
-      item.texto=await extraerTextoFichero(f);
-      item.chars=item.texto.length;
-      if(!item.texto.trim()){ item.estado='err'; item.err='Sin texto legible (¿escaneado?)'; }
+      const onProg=(fase,i,t)=>{
+        item.estado='load';
+        item.prog = fase==='ocr' ? ('OCR '+i+'/'+t) : (t>1?('pág '+i+'/'+t):'');
+        renderAdjuntos();
+      };
+      item.texto=await extraerTextoFichero(f, onProg);
+      item.chars=item.texto.length; item.prog='';
+      if(!item.texto.trim()){ item.estado='err'; item.err='Sin texto legible'; }
       else item.estado='ok';
     }catch(e){
-      item.estado='err'; item.err=(e.message||'error').substring(0,60);
+      item.estado='err'; item.err=(e.message||'error').substring(0,60); item.prog='';
       console.error('[Adjunto]',f.name,e);
     }
     renderAdjuntos();
@@ -1910,14 +1923,17 @@ async function procesarAdjuntos(files){
 
 function extTipo(nombre){
   const e=(nombre.split('.').pop()||'').toLowerCase();
-  return ({pdf:'PDF',docx:'Word',doc:'Word',xlsx:'Excel',xls:'Excel',csv:'CSV',txt:'Texto',md:'Markdown',json:'JSON',xml:'XML',html:'HTML'})[e]||e.toUpperCase();
+  return ({pdf:'PDF',docx:'Word',doc:'Word',xlsx:'Excel',xls:'Excel',csv:'CSV',txt:'Texto',md:'Markdown',json:'JSON',xml:'XML',html:'HTML',png:'Imagen',jpg:'Imagen',jpeg:'Imagen',webp:'Imagen',bmp:'Imagen',gif:'Imagen',tif:'Imagen',tiff:'Imagen'})[e]||e.toUpperCase();
 }
 
-async function extraerTextoFichero(f){
+async function extraerTextoFichero(f, onProgress){
   const ext=(f.name.split('.').pop()||'').toLowerCase();
   if(ext==='pdf'){
     if(!window.pdfjsLib) throw new Error('pdf.js no cargado');
-    return await pdfATexto(await f.arrayBuffer());
+    return await pdfATextoConOCR(f, onProgress); // OCR automático si está escaneado
+  }
+  if(EXT_IMAGEN.includes(ext)){
+    return await ocrImagen(f, onProgress); // foto/escaneo de documento
   }
   if(ext==='docx'){
     if(!window.mammoth) throw new Error('mammoth no cargado');
@@ -1949,8 +1965,10 @@ function renderAdjuntos(){
   let html='<span class="adj-bar-lbl">📎 En contexto</span>';
   DOCS_ADJUNTOS.forEach((d,i)=>{
     const cls=d.estado==='err'?'err':(d.estado==='load'?'load':'');
-    const meta=d.estado==='load'?'…':(d.estado==='err'?(d.err||'error'):(d.chars>999?(Math.round(d.chars/1000)+'k car.'):d.chars+' car.'));
-    html+=`<span class="adj-chip ${cls}"><span class="ic">${d.estado==='load'?'⏳':(d.estado==='err'?'⚠':'📄')}</span><span class="nm" title="${esc(d.nombre)}">${esc(d.nombre)}</span><span class="mt">${d.tipo} · ${meta}</span><span class="rm" onclick="quitarAdjunto(${i})" title="Quitar">✕</span></span>`;
+    const cargando=d.estado==='load';
+    const meta=cargando?(d.prog||'…'):(d.estado==='err'?(d.err||'error'):(d.chars>999?(Math.round(d.chars/1000)+'k car.'):d.chars+' car.'));
+    const ico=cargando?(d.prog&&d.prog.startsWith('OCR')?'🔎':'⏳'):(d.estado==='err'?'⚠':'📄');
+    html+=`<span class="adj-chip ${cls}"><span class="ic">${ico}</span><span class="nm" title="${esc(d.nombre)}">${esc(d.nombre)}</span><span class="mt">${d.tipo} · ${meta}</span><span class="rm" onclick="quitarAdjunto(${i})" title="Quitar">✕</span></span>`;
   });
   const okCount=DOCS_ADJUNTOS.filter(d=>d.estado==='ok').length;
   if(okCount){
@@ -2004,9 +2022,17 @@ async function sendChat(){
   showTp();
   const ac=new AbortController();
   try{
-    // RAG: buscar normativa relevante en la base documental e inyectarla
-    const rag=await construirContextoRAG(text,6);
-    await cargarIndiceArticulos(); // asegurar índice para enlazar citas
+    // RAG: buscar normativa aplicable. Si hay documento adjunto (requerimiento,
+    // sanción, diligencia…), la búsqueda se alimenta también de su contenido.
+    let ragQuery=text;
+    const _adjOk=DOCS_ADJUNTOS.filter(d=>d.estado==='ok'&&d.texto);
+    if(_adjOk.length){
+      const terms=terminosClaveDoc(_adjOk.map(d=>d.texto).join(' '));
+      const userTerms=(text.toLowerCase().match(/[a-záéíóúñ]{5,}/g)||[]).slice(0,8);
+      const q=[...new Set([...userTerms,...terms])].join(' OR ');
+      if(q) ragQuery=q;
+    }
+    const rag=await construirContextoRAG(ragQuery,8);
     const adj=contextoAdjuntos(); // documentos que el usuario haya aportado para análisis
     let sysMsg=SYS;
     if(rag) sysMsg+='\n\n'+rag;
@@ -2377,6 +2403,88 @@ async function pdfATexto(arrayBuffer, onPage){
   return full;
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// OCR (Tesseract.js) — para PDFs escaneados e imágenes de documentos
+// Se activa solo cuando el PDF no tiene capa de texto suficiente.
+// ══════════════════════════════════════════════════════════════════════
+const OCR_MAX_PAGINAS=40;      // tope de páginas a OCR por documento
+const OCR_DENSIDAD_MIN=40;     // caracteres/página por debajo = tratar como escaneado
+let _ocrWorker=null, _ocrInit=null;
+
+async function getOCR(){
+  if(_ocrWorker) return _ocrWorker;
+  if(_ocrInit) return _ocrInit;
+  if(!window.Tesseract) throw new Error('Tesseract.js no se ha cargado');
+  _ocrInit=(async()=>{
+    // Tesseract v5: idioma español + inglés (números, siglas)
+    const w=await Tesseract.createWorker(['spa','eng']);
+    _ocrWorker=w;
+    return w;
+  })();
+  return _ocrInit;
+}
+
+async function pdfPaginaACanvas(page, scale){
+  const vp=page.getViewport({scale:scale||2});
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.min(vp.width,2200);
+  canvas.height=Math.round(canvas.width*(vp.height/vp.width));
+  const ratio=canvas.width/vp.width;
+  const ctx=canvas.getContext('2d');
+  await page.render({canvasContext:ctx, viewport:page.getViewport({scale:(scale||2)*ratio})}).promise;
+  return canvas;
+}
+
+// Extrae texto de un PDF; si no tiene capa de texto, hace OCR página a página.
+// onProgress(fase, i, total): fase = 'text' | 'ocr'
+async function pdfATextoConOCR(file, onProgress){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const n=pdf.numPages;
+  // 1) Capa de texto
+  let full='';
+  for(let i=1;i<=n;i++){
+    const page=await pdf.getPage(i);
+    const content=await page.getTextContent();
+    let lastY=null,line='',lines=[];
+    for(const it of content.items){
+      const y=it.transform[5];
+      if(lastY!==null && Math.abs(y-lastY)>3){ lines.push(line); line=''; }
+      line+=it.str; lastY=y;
+    }
+    if(line) lines.push(line);
+    full+=lines.join('\n')+'\n';
+    if(onProgress) onProgress('text',i,n);
+  }
+  const densidad=full.replace(/\s/g,'').length/Math.max(1,n);
+  if(densidad>=OCR_DENSIDAD_MIN) return full; // tiene texto real → no OCR
+
+  // 2) Escaneado → OCR
+  const worker=await getOCR();
+  const lim=Math.min(n,OCR_MAX_PAGINAS);
+  const partes=[];
+  for(let i=1;i<=lim;i++){
+    if(onProgress) onProgress('ocr',i,lim);
+    const page=await pdf.getPage(i);
+    const canvas=await pdfPaginaACanvas(page,2);
+    try{ const {data}=await worker.recognize(canvas); partes.push(data.text||''); }
+    catch(e){ console.warn('OCR pág',i,e); }
+    canvas.width=canvas.height=0;
+  }
+  let res=partes.join('\n\n').trim();
+  if(n>OCR_MAX_PAGINAS) res+=`\n\n[OCR limitado a ${OCR_MAX_PAGINAS} de ${n} páginas; sube el resto por separado si lo necesitas.]`;
+  return res||full;
+}
+
+async function ocrImagen(file, onProgress){
+  const worker=await getOCR();
+  if(onProgress) onProgress('ocr',1,1);
+  const {data}=await worker.recognize(file);
+  return data.text||'';
+}
+
+const EXT_IMAGEN=['png','jpg','jpeg','webp','bmp','gif','tif','tiff'];
+
 // Trocea el texto por artículos. Devuelve [{num, titulo, texto}]
 // Detecta: "Artículo 21.", "Artículo 21 bis.", "Art. 21", al inicio de línea.
 function trocearArticulos(texto){
@@ -2453,7 +2561,7 @@ function setupNormDrop(){
   ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
   ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
   drop.addEventListener('drop',e=>{
-    const ok=/\.(pdf|docx|xlsx|xls|txt|csv|md|json|xml|html?)$/i;
+    const ok=/\.(pdf|docx|xlsx|xls|txt|csv|md|json|xml|html?|png|jpe?g|webp|bmp|gif|tiff?)$/i;
     const files=[...(e.dataTransfer?.files||[])].filter(f=>ok.test(f.name));
     if(files.length) procesarDocs(files);
   });
@@ -2468,6 +2576,7 @@ async function procesarDocs(files){
   prog.classList.add('on');
   const siglaManual=document.getElementById('nz-meta-sigla').value.trim();
   const nombreManual=document.getElementById('nz-meta-nombre').value.trim();
+  const materiaManual=document.getElementById('nz-meta-materia')?.value.trim()||'';
   const tipoSel=document.getElementById('nz-tipo')?.value||'norma';
 
   for(let fi=0; fi<files.length; fi++){
@@ -2479,14 +2588,18 @@ async function procesarDocs(files){
       let texto='';
       if(ext==='pdf'){
         if(!window.pdfjsLib) throw new Error('pdf.js no cargado');
-        texto=await pdfATexto(await f.arrayBuffer(),(p,tot)=>{
-          bar.style.width=(8+(p/tot)*50)+'%';
-          txt.textContent=`(${fi+1}/${files.length}) Extrayendo página ${p}/${tot}…`;
+        texto=await pdfATextoConOCR(f,(fase,p,tot)=>{
+          const ini=fase==='ocr'?40:8, span=fase==='ocr'?50:32;
+          bar.style.width=(ini+(p/tot)*span)+'%';
+          txt.textContent=`(${fi+1}/${files.length}) ${fase==='ocr'?'OCR (escaneado) página':'Extrayendo página'} ${p}/${tot}…`;
         });
+      } else if(EXT_IMAGEN.includes(ext)){
+        txt.textContent=`(${fi+1}/${files.length}) OCR de imagen…`; bar.style.width='35%';
+        texto=await ocrImagen(f,()=>{ bar.style.width='65%'; });
       } else {
         texto=await extraerTextoFichero(f);
       }
-      if(!texto||!texto.trim()) throw new Error('Sin texto legible (¿escaneado o imagen?)');
+      if(!texto||!texto.trim()) throw new Error('Sin texto legible (¿escaneado ilegible?)');
 
       bar.style.width='62%';
       txt.textContent=`(${fi+1}/${files.length}) Troceando…`;
@@ -2506,8 +2619,9 @@ async function procesarDocs(files){
       txt.textContent=`(${fi+1}/${files.length}) Guardando ${articulos.length} fragmentos…`;
       bar.style.width='75%';
 
+      const materia=materiaManual||(tipoSel==='guia'?'GUÍAS':'GENERAL');
       const {data:doc,error:docErr}=await sb.from('cw_normativa').insert({
-        sigla, nombre, fichero:f.name, tipo:tipoSel,
+        sigla, nombre, fichero:f.name, tipo:tipoSel, materia,
         n_articulos:articulos.length,
         texto_completo:texto.substring(0,500000),
         creado_en:new Date().toISOString()
@@ -2516,7 +2630,7 @@ async function procesarDocs(files){
 
       if(articulos.length){
         const rows=articulos.map(a=>({
-          normativa_id:doc.id, sigla, tipo:tipoSel,
+          normativa_id:doc.id, sigla, tipo:tipoSel, materia,
           articulo:a.num, articulo_key:normArtKey(a.num),
           titulo:a.titulo, texto:(a.texto||'').substring(0,20000)
         }));
@@ -2538,6 +2652,7 @@ async function procesarDocs(files){
   NZ_BUSY=false;
   document.getElementById('nz-meta-sigla').value='';
   document.getElementById('nz-meta-nombre').value='';
+  const _mm=document.getElementById('nz-meta-materia'); if(_mm) _mm.value='';
   ART_INDEX_DIRTY=true;
   setTimeout(()=>{ prog.classList.remove('on'); }, 2500);
   loadNormativa();
@@ -2549,7 +2664,7 @@ async function loadNormativa(){
   if(!el) return;
   el.innerHTML='<div style="text-align:center;padding:30px;color:var(--g400);font-size:13px">Cargando…</div>';
   try{
-    const {data,error}=await sb.from('cw_normativa').select('id,sigla,nombre,fichero,n_articulos,tipo,creado_en').order('creado_en',{ascending:false});
+    const {data,error}=await sb.from('cw_normativa').select('id,sigla,nombre,fichero,n_articulos,tipo,materia,creado_en').order('creado_en',{ascending:false});
     if(error) throw error;
     const stats=document.getElementById('nz-stats');
     if(!data||!data.length){
@@ -2567,7 +2682,7 @@ async function loadNormativa(){
         <div class="nz-doc-ico">${esGuia?'🧩':'📘'}</div>
         <div class="nz-doc-main">
           <div class="nz-doc-t">${esc(d.nombre||d.fichero||'Documento')}</div>
-          <div class="nz-doc-m">${esc(d.sigla||'—')} · ${d.n_articulos||0} ${esGuia?'secc.':'art.'} · <span class="bx ${esGuia?'bx-t':'bx-b'}" style="font-size:9px;padding:1px 6px">${esGuia?'guía':'norma'}</span> · ${(d.creado_en||'').substring(0,10)}</div>
+          <div class="nz-doc-m">${esc(d.sigla||'—')} · ${d.n_articulos||0} ${esGuia?'secc.':'art.'} · <span class="bx ${esGuia?'bx-t':'bx-b'}" style="font-size:9px;padding:1px 6px">${esGuia?'guía':'norma'}</span>${d.materia?' · '+esc(d.materia):''} · ${(d.creado_en||'').substring(0,10)}</div>
         </div>
         <div class="nz-doc-acts">
           <button class="btn btn-s" style="font-size:11px;padding:4px 9px" onclick="verArticulosDoc('${d.id}','${esc(d.sigla||'')}')">${esGuia?'Secciones':'Artículos'}</button>
@@ -2640,7 +2755,7 @@ async function buscarArticulos(consulta,limite){
   // Fallback: ilike sobre palabras clave
   const palabras=consulta.toLowerCase().replace(/[^\wáéíóúñ\s]/g,' ').split(/\s+/).filter(w=>w.length>3).slice(0,4);
   if(!palabras.length) return [];
-  let qb=sb.from('cw_articulos').select('sigla,articulo,articulo_key,titulo,texto,tipo').limit(limite);
+  let qb=sb.from('cw_articulos').select('sigla,articulo,articulo_key,titulo,texto,tipo,materia').limit(limite);
   qb=qb.or(palabras.map(p=>`texto.ilike.%${p}%`).join(','));
   const {data}=await qb;
   return data||[];
@@ -2729,17 +2844,18 @@ async function gdSearch(){
 
 
 async function construirContextoRAG(consulta, maxArts){
-  maxArts=maxArts||6;
+  maxArts=maxArts||8;
   try{
     const arts=await buscarArticulos(consulta,maxArts);
     if(!arts||!arts.length) return '';
     let ctx='=== DOCUMENTACIÓN DE LA BASE DOCUMENTAL (fuente prioritaria) ===\n';
-    ctx+='Los siguientes fragmentos proceden de la base documental del despacho (normativa y guías técnicas). Son FUENTE PRIORITARIA Y AUTORITATIVA; cítalos textualmente cuando proceda e indica su procedencia.\n\n';
+    ctx+='Los siguientes fragmentos proceden de la base documental del despacho (normativa y guías técnicas). Son FUENTE PRIORITARIA Y AUTORITATIVA; cítalos textualmente cuando proceda e indica su procedencia (sigla y artículo).\n\n';
     arts.forEach(a=>{
       const t=(a.texto||'').substring(0,1800);
       const esGuia=(a.tipo==='guia');
       const art=String(a.articulo||'');
-      const etq=esGuia? `Guía ${a.sigla||''} · ${art}` : `${a.sigla||''} · Artículo ${art}`;
+      const mat=a.materia?` · ${a.materia}`:'';
+      const etq=esGuia? `Guía ${a.sigla||''} · ${art}` : `${a.sigla||''} · Artículo ${art}${mat}`;
       ctx+=`[${etq}${a.titulo&&a.titulo!==art?' — '+a.titulo:''}]\n${t}\n\n`;
     });
     ctx+='=== FIN DE LA DOCUMENTACIÓN DE LA BASE ===\n\n';
@@ -2747,20 +2863,26 @@ async function construirContextoRAG(consulta, maxArts){
   }catch(e){ console.warn('RAG:',e.message); return ''; }
 }
 
+// Extrae términos clave de un documento adjunto para recuperar la normativa aplicable
+function terminosClaveDoc(texto){
+  const t=(texto||'').toLowerCase();
+  const refs=new Set();
+  (t.match(/art[íi]culos?\s+\d+[\w.]*/g)||[]).slice(0,8).forEach(x=>refs.add(x.replace(/\s+/g,' ')));
+  (t.match(/\b\d{2,4}\/\d{2,4}\b/g)||[]).slice(0,8).forEach(x=>refs.add(x));
+  const stop=new Set('para con los las del una que por como entre segun sobre este esta estos estas donde cuando desde hasta cada todo toda sus mas muy ser son han haya hace mediante dicha dicho citado presente numero fecha'.split(' '));
+  const freq={};
+  (t.match(/[a-záéíóúñ]{6,}/g)||[]).forEach(w=>{ if(!stop.has(w)) freq[w]=(freq[w]||0)+1; });
+  Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,12).forEach(([w])=>refs.add(w));
+  return [...refs].slice(0,20);
+}
+
 // ── Índice de artículos en memoria (para enlazar citas) ───────────────
 // Mapa "sigla|artkey" -> {sigla,articulo,titulo,texto}
 let ART_INDEX={};
 let ART_INDEX_DIRTY=true;
-async function cargarIndiceArticulos(){
-  if(!ART_INDEX_DIRTY) return ART_INDEX;
-  try{
-    const {data}=await sb.from('cw_articulos').select('sigla,articulo,articulo_key,titulo,texto');
-    ART_INDEX={};
-    (data||[]).forEach(a=>{ ART_INDEX[(a.sigla||'').toUpperCase()+'|'+a.articulo_key]=a; });
-    ART_INDEX_DIRTY=false;
-  }catch(e){ console.warn('Índice artículos:',e.message); }
-  return ART_INDEX;
-}
+// Con bases grandes (miles de artículos) no se precarga nada: las citas se
+// resuelven bajo demanda al hacer clic (abrirArtPorCita). No-op por compatibilidad.
+async function cargarIndiceArticulos(){ return {}; }
 
 // ── Visor de artículo (panel lateral) ─────────────────────────────────
 function abrirArt(a){
@@ -2782,21 +2904,30 @@ function closeArt(){
 // ── Enlazado de citas en texto de respuestas IA ───────────────────────
 // Convierte "art. 21 LIVA" / "artículo 256 CAU" en <span class="art-link">
 // SOLO si el artículo existe en la base. Devuelve HTML.
-const SIGLAS_RE='CAU|RD-?CAU|RE-?CAU|LIVA|RIVA|LIIEE|RIIEE|LGT|LPACAP|RGGI|RIEE';
-function enlazarCitas(html){
-  if(!Object.keys(ART_INDEX).length) return html;
-  // Patrón: art[.ículo] NUM [bis/ter] <SIGLA>  (sigla después)
-  const re1=new RegExp('(art(?:[íi]culo)?\\.?\\s+)(\\d+(?:\\s*(?:bis|ter|qu[aá]ter|quinquies))?)(\\s+(?:del?\\s+)?)('+SIGLAS_RE+')','gi');
-  html=html.replace(re1,(m,p1,num,mid,sig)=>{
-    const key=sig.toUpperCase().replace(/\s+/g,'')+'|'+normArtKey(num);
-    const norm=Object.keys(ART_INDEX).find(k=>k.replace(/-/g,'')===key.replace(/-/g,''));
-    if(norm){
-      const a=ART_INDEX[norm];
-      return `${p1}<span class="art-link" onclick='abrirArt(${JSON.stringify({sigla:a.sigla,articulo:a.articulo,titulo:a.titulo,texto:a.texto})})'>${num}</span>${mid}${sig}`;
+const SIGLAS_RE='RD-?CAU|RE-?CAU|CAU|CAC|RIVA|LIVA|RIIEE|LIIEE|LGT|LPACAP|RGGI';
+// Resuelve una cita (sigla + nº de artículo) consultando la base bajo demanda.
+async function abrirArtPorCita(sigla, num){
+  try{
+    const key=normArtKey(num);
+    let {data}=await sb.from('cw_articulos').select('sigla,articulo,titulo,texto,materia').eq('articulo_key',key).ilike('sigla',sigla).limit(1);
+    if(!data||!data.length){
+      const alt=sigla.replace(/-/g,'');
+      const r2=await sb.from('cw_articulos').select('sigla,articulo,titulo,texto,materia').eq('articulo_key',key).ilike('sigla','%'+alt+'%').limit(1);
+      data=r2.data;
     }
-    return m;
+    if(data&&data.length) abrirArt(data[0]);
+    else alert('El artículo '+num+' de '+sigla+' no está en la base documental.');
+  }catch(e){ alert('No se pudo abrir el artículo: '+(e.message||'')); }
+}
+function enlazarCitas(html){
+  // Enlaza "art. N SIGLA" de forma optimista; al hacer clic se resuelve contra
+  // la base (abrirArtPorCita). Escala a cualquier tamaño de base documental.
+  const re1=new RegExp('(art(?:[íi]culo)?\\.?\\s+)(\\d+(?:\\s*(?:bis|ter|qu[aá]ter|quinquies))?)(\\s+(?:del?\\s+)?)('+SIGLAS_RE+')\\b','gi');
+  return html.replace(re1,(m,p1,num,mid,sig)=>{
+    const s=sig.toUpperCase().replace(/\s+/g,'');
+    const n=String(num).replace(/\s+/g,' ').trim();
+    return `${p1}<span class="art-link" onclick="abrirArtPorCita('${s}','${n}')">${num}</span>${mid}${sig}`;
   });
-  return html;
 }
 
 
