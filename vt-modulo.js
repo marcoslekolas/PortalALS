@@ -8,6 +8,7 @@
 //   G4 · terceros a Gibraltar:         H1 → T1GI → (71.00) reexportación
 //   G4 · T1 (Málaga, Algeciras…):      T1
 //   G4 · pertrechos a buque:           EX 31.00 F61
+//   DAE de otra aduana (EX ajeno):     T2GI
 // ═══════════════════════════════════════════════════════════════════════
 const DUA = { x: null, t: null, t1Fichero: null };
 const DUA_NOMBRE = { EX: 'Exportación', H1F: 'H1', H1: 'H1', T1GI: 'T1GI', T2GI: 'T2GI', REEXP: 'Reexportación 31.71', T1: 'T1', PERT: 'Pertrechos 31.00' };
@@ -24,6 +25,7 @@ const DUA_MRN_RE = /^\d{2}[A-Z]{2}[A-Z0-9]{14}$/;
 const duaMrnValido = m => DUA_MRN_RE.test(String(m || '').trim());
 
 function duaPasos(x){
+  if(x.origen === 'dae') return ['T2GI'];
   const con71 = p => x.regimen === '71.00' ? [...p, 'REEXP'] : p;
   if(x.origen === 'g4'){
     const op = x.datos.comun?.opG4;
@@ -195,7 +197,7 @@ function duaLoteDe(x){
   const num = v => typeof v === 'number' ? v : gibNumES(v);
   const d = x.datos;
   const c = Object.assign({}, d.comun, { regimen: x.regimen, totalFactura: num(d.comun.totalFactura) || 0, valorH1: num(d.comun.valorH1) || 0 });
-  if(x.origen !== 'g4'){
+  if(x.origen !== 'g4' && x.origen !== 'dae'){
     const cab = d.cab || {}, parte = e => e ? { nombre: e.nombre_vt || e.nombre || '', nif: e.nif_vt || e.nif || e.eori || '', direccion: e.direccion || '', pais: _vtPaisISO(e.pais) } : {};
     c.exportador = parte(cab.exportador); c.destinatario = parte(cab.destinatario);
     if(!c.importador?.nombre) c.importador = c.destinatario;
@@ -230,15 +232,15 @@ async function duaPintarLista(){
   const mrns = x => [['EX', x.mrn_ex], ['H1', x.mrn_h1], ['T1GI', x.mrn_t1gi], ['T2GI', x.mrn_t2gi]].filter(m => m[1]).map(m => `${m[0]} ${sEsc(m[1])}`).join('<br>') || '—';
   el.innerHTML = data.length ? `<table class="tbl" style="width:100%;font-size:12px"><thead><tr><th>Actualizado</th><th>Referencia</th><th>Entrada</th><th>MRN</th><th>Etapa</th><th></th></tr></thead><tbody>
     ${data.map(x => `<tr><td>${new Date(x.updated_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td><td>${sEsc(x.referencia || '—')}</td>
-      <td>${x.origen === 'g4' ? 'G4 ' + sEsc(x.g4_mrn || '') : 'Factura'}</td><td style="font-family:var(--mono);font-size:11px">${mrns(x)}</td>
+      <td>${x.origen === 'g4' ? 'G4 ' + sEsc(x.g4_mrn || '') : x.origen === 'dae' ? 'DAE ' + sEsc(x.mrn_ex || '') : 'Factura'}</td><td style="font-family:var(--mono);font-size:11px">${mrns(x)}</td>
       <td>${sEsc(duaEtapaTexto(x.etapa))}</td><td style="white-space:nowrap"><button class="btn btn-p btn-sm" onclick="duaAbrir('${x.id}')">Abrir</button> <button class="btn btn-s btn-sm" onclick="duaBorrar('${x.id}')">Borrar</button></td></tr>`).join('')}</tbody></table>`
-    : '<div style="font-size:12px;color:var(--g400)">Sin expedientes. Se crean desde «VisualTrans (DUA)» en el clasificador o con «Nuevo desde G4».</div>';
+    : '<div style="font-size:12px;color:var(--g400)">Sin expedientes. Se crean desde «VisualTrans (DUA)» en el clasificador, con «Nuevo desde G4» o con «T2GI desde DAE».</div>';
 }
 async function duaAbrir(id){
   const { data, error } = await sbT().from('vt_expedientes').select('*').eq('id', id).single();
   if(error || !data) return showToast('No se pudo abrir: ' + (error ? error.message : 'no existe'));
   DUA.x = data; window._vtCliente = null;
-  if(data.origen !== 'g4') duaPrepararFactura(data);
+  if(data.origen !== 'g4' && data.origen !== 'dae') duaPrepararFactura(data);
   duaPintar();
 }
 async function duaBorrar(id){
@@ -695,19 +697,33 @@ function duaAvisos(){
   const x = DUA.x, av = [];
   // Casilla 44 N380 (factura comercial y su fecha): va en todas las partidas de cualquier DUA
   const fac = x.datos.comun?.factura || {}, cab = x.datos.cab || {};
-  const nFac = fac.numero || (x.origen !== 'g4' ? _vtFactura(cab) : ''), fFac = fac.fecha || (x.origen !== 'g4' ? cab.fecha : '');
+  const deFactura = x.origen !== 'g4' && x.origen !== 'dae';
+  const nFac = fac.numero || (deFactura ? _vtFactura(cab) : ''), fFac = fac.fecha || (deFactura ? cab.fecha : '');
   if(!nFac || !fFac) av.push(`Casilla 44 N380: falta ${!nFac && !fFac ? 'el nº y la fecha' : !nFac ? 'el nº' : 'la fecha'} de la factura comercial`);
   else if(!/^[A-Z]{2}/.test(String(nFac).trim().toUpperCase())) av.push(`Casilla 44 N380: el nº de factura ${nFac} debe llevar delante el código ISO del país emisor (ej. NL${nFac})`);
   if(!x.datos.lineas?.length) return { lote: null, av };
   const lote = duaLoteDe(x);
   // El T1 no lleva valor ni origen; ni el T1 ni los pertrechos usan el TARIC a 10 dígitos
   const op = x.origen === 'g4' ? x.datos.comun?.opG4 : '';
-  const fuera = op === 't1' ? /TARIC|valor|origen|suman/ : op === 'pertrechos' ? /TARIC/ : null;
+  // El T2GI desde un DAE lleva el TARIC de 8 del DAE
+  const fuera = op === 't1' ? /TARIC|valor|origen|suman/ : op === 'pertrechos' || x.origen === 'dae' ? /TARIC/ : null;
   av.push(...lote.avisos.filter(a => !fuera || !fuera.test(a)), ...(x.datos.avisosT1 || []));
   const sinPartida = (x.datos.facturaG4?.lineas || []).filter(l => !l.partida);
   if(sinPartida.length && op !== 't1' && op !== 'pertrechos') av.push(`${sinPartida.length} línea(s) de la factura sin partida (${Math.round(sinPartida.reduce((a, l) => a + l.importe, 0) * 100) / 100}): su importe no está en ningún valor`);
   const awb = x.datos.comun?.awbCargo;
   if(awb && parseInt(awb.bultos, 10) > 0 && parseInt(awb.bultos, 10) !== lote.bultos) av.push(`Cargo aéreo dice ${awb.bultos} bultos y la G4 ${lote.bultos}`);
+  if(x.origen === 'dae'){
+    const dae = x.datos.dae || {};
+    if(!duaMrnValido(x.mrn_ex)) av.unshift('Falta el MRN del DAE (casilla 40: N830 + MRN), o no tiene 18 caracteres');
+    if(dae.aduana_salida && !/^ES/i.test(dae.aduana_salida)) av.push(`El DAE declara como aduana de salida ${dae.aduana_salida}, no una aduana española: comprueba que el T2GI desde ${x.datos.comun.aduana} procede`);
+    if(dae.pais_destino && dae.pais_destino !== 'GI') av.push(`El DAE declara como destino ${dae.pais_destino}, no Gibraltar`);
+    if(dae.peso_bruto_total && Math.abs(dae.peso_bruto_total - lote.peso) > 0.5) av.push(`Las partidas suman ${lote.peso} kg y el DAE declara ${dae.peso_bruto_total} kg de masa bruta`);
+    const raros = [['exportador', x.datos.comun.exportador], ['destinatario', x.datos.comun.destinatario]].filter(([, e]) => Object.values(e || {}).some(duaNoLatino)).map(([k]) => k);
+    if(x.datos.lineas.some(l => duaNoLatino(l.descripcion))) raros.push('descripción');
+    if(raros.length) av.push(`Hay texto en otro alfabeto (${raros.join(', ')}): VisualTrans no lo admite, escríbelo en caracteres latinos o déjalo vacío`);
+    if(!x.datos.comun.exportador?.nombre) av.push('Falta el exportador del DAE (si el nombre venía en otro alfabeto, escríbelo en latino)');
+    if(!x.datos.comun.destinatario?.nombre) av.push('Falta el destinatario del DAE');
+  }
   if(x.origen === 'g4' && !x.mrn_h1 && x.datos.lineas.some(l => l.estado === 'Saldado')) av.unshift('La G4 figura como saldada: comprueba que no esté ya datada');
   x.datos.lineas.filter(l => l.parcial).forEach(l => av.unshift(`Partida ${l.partida} datada en parte: se usa el saldo, ${l.bultos} de ${l.bultosDec} bultos`));
   return { lote, av };
@@ -761,6 +777,155 @@ async function duaGenerarDesdeFactura(){
   duaDescargar(esImport ? 'H1F' : 'EX', esImport ? construirFilasImport(cab, lineas, cfg) : construirFilasExport(cab, lineas, cfg));
   vtTrasExportar();
   if(cfg.cliente) vtRecordarCliente(cfg.cliente);
+}
+
+// ── T2GI desde el DAE de un EX presentado en otra aduana ─────
+// No hay factura ni EX propio: el único precedente es el DAE (Documento de
+// Acompañamiento de Exportación, de cualquier país de la UE). Se lee con IA y
+// sus partidas pasan tal cual al T2GI, con N830 + MRN del DAE en la casilla 40.
+const DUA_PROMPT_DAE = `Esta es una página de un documento de acompañamiento de exportación de la UE (DAE, EAD, Export Accompanying Document, Documento de Acompanhamento de Exportação…), en cualquier idioma y formato (casillas clásicas o numeración del CAU «12 03 000 000»…). Extrae sus datos tal como aparecen. Responde solo con JSON:
+{"mrn":"","fecha_aceptacion":"dd/mm/aaaa","aduana_exportacion":"","aduana_salida":"","pais_exportacion":"ISO2","pais_destino":"ISO2",
+"exportador":{"nombre":"","nif":"","direccion":"","cp":"","poblacion":"","pais":"ISO2"},
+"destinatario":{"nombre":"","nif":"","direccion":"","cp":"","poblacion":"","pais":"ISO2"},
+"factura":{"numero":"","fecha":"dd/mm/aaaa"},"bultos_totales":0,"peso_bruto_total":0,"matricula":"","pais_matricula":"ISO2",
+"partidas":[{"n":1,"taric":"","descripcion":"","descripcion_es":"","bultos":0,"clase_bultos":"","bruto":0,"neto":0,"valor":0,"origen":"","otros_documentos":[{"codigo":"","ref":""}]}]}
+Reglas:
+- Números con punto decimal y sin separador de miles: «1 720,00» → 1720; «2491.5» → 2491.5.
+- factura: el documento N380 (factura comercial) de la casilla 44, 40 o 12 03; solo su número, sin «N380». Fecha solo si figura; si no, vacía.
+- valor: el valor estadístico de la partida (casilla 46 o 99 06).
+- taric: el código de mercancía de la partida (casilla 33 o 18 09), solo dígitos.
+- descripcion: literal, sin traducir. descripcion_es: la misma descripción traducida al español, breve y en mayúsculas.
+- bultos y clase_bultos: número y código de 2 caracteres de los bultos de la partida (casilla 31 o 18 06; p. ej. ZZ, PC, PK, CT).
+- Nombre, dirección y población del exportador y del destinatario: copiados tal cual, en el alfabeto del documento.
+- matricula y pais_matricula: identidad y nacionalidad del medio de transporte a la salida (casilla 18 o 19 05), tal cual.
+- otros_documentos: los demás documentos de la partida con código (casillas 40, 44 o 12 03), p. ej. {"codigo":"C651","ref":"26NL298962311770262S7"}; sin el N380.
+- Lo que no aparezca en esta página, vacío o 0. Si la página no tiene partidas, "partidas":[].`;
+
+const duaNumDae = v => { if(typeof v === 'number') return v; const s = String(v ?? '').replace(/\s/g, ''); const n = /,\d{1,3}$/.test(s) || /\.\d{3}(,|$)/.test(s) ? gibNumES(s) : parseFloat(s); return isFinite(n) ? n : 0; };
+const duaNoLatino = t => /[Ͱ-ϿЀ-ӿἀ-῿]/.test(String(t || ''));
+// Descripción del T2GI: la original del DAE y su traducción al español («ORIGINAL / TRADUCCIÓN»).
+// Si la original no está en alfabeto latino, solo la traducción. Máximo 512 caracteres (NCTS).
+function duaDescDae(orig, es){
+  const o = String(orig || '').trim().toUpperCase(), t = String(es || '').trim().toUpperCase();
+  const norm = v => v.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]/g, '');
+  const d = !o || duaNoLatino(o) ? t : !t || norm(o) === norm(t) ? o : `${o} / ${t}`;
+  return d.slice(0, 512);
+}
+function duaLeerRespuestaDae(texto){
+  const m = String(texto || '').match(/\{[\s\S]*\}/);
+  if(!m) throw new Error('la IA no devolvió datos del DAE');
+  return JSON.parse(m[0]);
+}
+// Une lo leído de cada página: la cabecera, el primer valor que aparezca; las partidas, por número
+function duaUnirDae(paginas){
+  const vacio = v => v == null || v === '' || v === 0 || (typeof v === 'object' && !Object.values(v).some(w => !vacio(w)));
+  const r = { partidas: [] };
+  paginas.forEach(p => {
+    Object.entries(p).forEach(([k, v]) => {
+      if(k === 'partidas') return;
+      if(v && typeof v === 'object'){ r[k] = r[k] || {}; Object.entries(v).forEach(([kk, vv]) => { if(vacio(r[k][kk]) && !vacio(vv)) r[k][kk] = vv; }); }
+      else if(vacio(r[k]) && !vacio(v)) r[k] = v;
+    });
+    (p.partidas || []).forEach((pt, i) => {
+      const n = parseInt(pt.n, 10) || (r.partidas.length + i + 1);
+      let o = r.partidas.find(x => x.n === n);
+      if(!o){ o = { n }; r.partidas.push(o); }
+      Object.entries(pt).forEach(([k, v]) => { if(vacio(o[k]) && !vacio(v)) o[k] = v; });
+    });
+  });
+  r.partidas.sort((a, b) => a.n - b.n);
+  return r;
+}
+async function duaNuevoDesdeDae(input){
+  const files = [...(input.files || [])];
+  input.value = '';
+  if(!files.length) return;
+  const est = t => { const el = document.getElementById('dua-dae-estado'); if(el) el.textContent = t; };
+  try{
+    const paginas = [];
+    for(const f of files){
+      if(/\.pdf$/i.test(f.name) || f.type === 'application/pdf'){
+        await duaCargarPdf();
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
+        for(let i = 1; i <= pdf.numPages; i++){
+          est(`Leyendo ${f.name}, página ${i} de ${pdf.numPages}…`);
+          const page = await pdf.getPage(i), texto = await duaTextoPagina(page);
+          let img = '';
+          if(texto.replace(/\s/g, '').length < 20){
+            const vp = page.getViewport({ scale: 2 }), cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+            await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+            img = cv.toDataURL('image/jpeg', 0.85);
+          }
+          paginas.push(duaLeerRespuestaDae(await duaLlamarIA(img, DUA_PROMPT_DAE, img ? '' : texto)));
+        }
+      } else {
+        est(`Leyendo ${f.name}…`);
+        const img = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+        paginas.push(duaLeerRespuestaDae(await duaLlamarIA(img, DUA_PROMPT_DAE)));
+      }
+    }
+    const dae = duaUnirDae(paginas);
+    if(!dae.partidas.length) throw new Error('no se ha encontrado ninguna partida en el DAE');
+    const mrn = String(dae.mrn || '').replace(/\s/g, '').toUpperCase();
+    const pais = _vtPaisISO(dae.pais_exportacion) || _vtPaisISO(dae.exportador?.pais) || '';
+    // VisualTrans y NCTS no admiten otros alfabetos (griego, cirílico): ese campo se deja vacío y la dirección se elige en VisualTrans
+    const lat = v => { const t = String(v || '').trim(); return duaNoLatino(t) ? '' : t; };
+    const ent = e => ({ nombre: lat(e?.nombre), nif: String(e?.nif || '').replace(/\s/g, ''), direccion: lat(e?.direccion), cp: lat(e?.cp), poblacion: lat(e?.poblacion), pais: _vtPaisISO(e?.pais) || '' });
+    const c = duaComunNuevo();
+    c.referencia = mrn; c.claseBultos = (dae.partidas.find(p => p.clase_bultos)?.clase_bultos || c.claseBultos).toUpperCase().slice(0, 2);
+    c.exportador = ent(dae.exportador); c.destinatario = ent(dae.destinatario);
+    if(!c.destinatario.pais && _vtPaisISO(dae.pais_destino) === 'GI') c.destinatario.pais = 'GI';
+    // N380 con el ISO del país emisor delante, aunque el número empiece por letras (FAT 80126/108 → PTFAT 80126/108)
+    const pEmisor = c.exportador.pais || pais, nFac = String(dae.factura?.numero || '').trim().replace(/^N380[\s\-:]*/i, '');
+    c.factura = { numero: !nFac ? '' : nFac.toUpperCase().startsWith(pEmisor) ? duaNumeroN380(nFac, '') : duaNumeroN380(pEmisor + nFac, ''), fecha: duaFechaFactura(dae.factura?.fecha || '') };
+    // Matrícula del DAE (casilla 18 / 19 05): suele ser el mismo camión que cruza; se puede cambiar
+    const mat = String(dae.matricula || '').trim().toUpperCase();
+    c.transporte.matricula = /^(CAMIAO|CAMION|TRUCK|LKW|---?|-)$/.test(mat) ? '' : mat;
+    if(c.transporte.matricula && _vtPaisISO(dae.pais_matricula)) c.transporte.pais = _vtPaisISO(dae.pais_matricula);
+    const lineas = dae.partidas.map((p, i) => {
+      const taric = String(p.taric || '').replace(/\D/g, '').slice(0, 8);
+      const bruto = duaNumDae(p.bruto), neto = duaNumDae(p.neto);
+      const desc = duaDescDae(p.descripcion, p.descripcion_es);
+      return { partida: i + 1, mrn: '', taric, taric10: '', bultos: Math.round(duaNumDae(p.bultos)) || 0, peso: bruto, neto: neto > 0 ? neto : bruto,
+               valor: duaNumDae(p.valor), origen: _vtPaisISO(p.origen) || pais, descripcion: desc, descripcionDae: String(p.descripcion || '').trim(),
+               otrosDocs: (Array.isArray(p.otros_documentos) ? p.otros_documentos : []).map(o => ({ codigo: String(o?.codigo || '').trim().toUpperCase(), ref: String(o?.ref || '').trim() })).filter(o => o.codigo && o.codigo !== 'N380') };
+    });
+    DUA.x = { id: null, origen: 'dae', regimen: '', mrn_h1: '', mrn_t1gi: '', mrn_ex: mrn, mrn_t2gi: '',
+              datos: { dae: { mrn, fecha: dae.fecha_aceptacion || '', aduana_exportacion: dae.aduana_exportacion || '', aduana_salida: String(dae.aduana_salida || '').toUpperCase(),
+                              pais_exportacion: pais, pais_destino: _vtPaisISO(dae.pais_destino) || '', bultos_totales: duaNumDae(dae.bultos_totales), peso_bruto_total: duaNumDae(dae.peso_bruto_total),
+                              ficheros: files.map(f => f.name) },
+                       lineas, generado: {}, cuotas: {}, comun: c } };
+    est('');
+    duaPintar();
+    await duaGuardar(); duaPintarLista();
+    showToast(`DAE leído: ${lineas.length} partida(s). Revísalo: lo ha leído la IA.`);
+  }catch(e){ est('No se pudo leer el DAE: ' + e.message); showToast('No se pudo leer el DAE: ' + e.message); }
+}
+// Corrección a mano de una partida del DAE (los números se guardan como número)
+function duaLineaDae(i, campo, v){
+  const l = DUA.x.datos.lineas[i];
+  if(['bultos', 'peso', 'neto', 'valor'].includes(campo)) l[campo] = duaNumDae(v) || 0;
+  else if(campo === 'taric') l.taric = String(v).replace(/\D/g, '').slice(0, 8);
+  else if(campo === 'origen') l.origen = String(v).trim().toUpperCase();
+  else l[campo] = String(v).trim();
+  if(campo === 'bultos') l.bultos = Math.round(l.bultos);
+  duaGuardarLuego(); duaPintarAvisos();
+}
+function duaSeccionDae(){
+  const x = DUA.x, d = x.datos, dae = d.dae || {}, ce = 'font-size:11px;padding:3px 4px';
+  const lote = duaLoteDe(x);
+  const inp = (i, campo, w, v, extra = '') => `<input class="fi" style="width:${w};${ce}" value="${sEsc(v ?? '')}" ${extra} onchange="duaLineaDae(${i},'${campo}',this.value)">`;
+  let h = duaTit('DAE de la exportación') + `<div style="font-size:12px;color:var(--g600);margin-bottom:10px">${dae.pais_exportacion ? `Exportación en ${sEsc(dae.pais_exportacion)}` : 'Exportación'}${dae.aduana_exportacion ? ` (${sEsc(dae.aduana_exportacion)})` : ''}${dae.fecha ? ` el ${sEsc(dae.fecha)}` : ''}${dae.aduana_salida ? ` · salida declarada ${sEsc(dae.aduana_salida)}` : ''} · ${d.lineas.length} partida(s) · ${lote.bultos} bultos · ${lote.peso} kg · valor ${lote.valor} EUR${(dae.ficheros || []).length ? ` · ${sEsc(dae.ficheros.join(', '))}` : ''}</div>`;
+  h += `<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:10px">${duaMrnHtml('MRN del DAE (casilla 40: N830)', 'mrn_ex')}</div>`;
+  h += duaRejilla(duaIn('Factura (N380)', 'datos.comun.factura.numero') + duaIn('Fecha factura', 'datos.comun.factura.fecha', 'placeholder="dd/mm/aaaa"') + duaIn('Clase de bultos', 'datos.comun.claseBultos', 'maxlength="2"') + duaIn('Referencia', 'datos.comun.referencia'));
+  h += duaEntidadHtml('Exportador (el del DAE)', 'datos.comun.exportador') + duaEntidadHtml('Destinatario', 'datos.comun.destinatario');
+  h += `<div style="overflow-x:auto;max-height:380px;overflow-y:auto;margin-bottom:10px"><table class="tbl" style="width:100%;font-size:11px"><thead><tr><th>Part.</th><th>TARIC</th><th>Descripción</th><th>Bultos</th><th>Bruto</th><th>Neto</th><th>Valor estad.</th><th>Origen</th></tr></thead><tbody>
+    ${d.lineas.map((l, i) => `<tr><td>${l.partida}</td><td>${inp(i, 'taric', '82px', l.taric, 'maxlength="8" style="font-family:var(--mono)"')}</td>
+      <td><input class="fi" style="min-width:240px;${ce}" value="${sEsc(l.descripcion)}" title="${sEsc(l.descripcionDae || '')}" onchange="duaLineaDae(${i},'descripcion',this.value)">${l.descripcionDae && l.descripcionDae.toUpperCase() !== l.descripcion ? `<div style="font-size:9px;color:var(--g400)">DAE: ${sEsc(l.descripcionDae.slice(0, 90))}</div>` : ''}</td>
+      <td>${inp(i, 'bultos', '56px', l.bultos)}</td><td>${inp(i, 'peso', '70px', l.peso)}</td><td>${inp(i, 'neto', '70px', l.neto)}</td><td>${inp(i, 'valor', '80px', l.valor)}</td>
+      <td>${inp(i, 'origen', '44px', l.origen, 'maxlength="2"')}</td></tr>${(l.otrosDocs || []).length ? `<tr><td></td><td colspan="7" style="font-size:10px;color:var(--g500)">Otros documentos del DAE (no pasan al T2GI): ${l.otrosDocs.map(o => sEsc(o.codigo + ' ' + o.ref)).join(' · ')}</td></tr>` : ''}`).join('')}</tbody></table></div>`;
+  h += `<div style="font-size:11px;color:var(--g500);margin-bottom:10px">Lo ha leído la IA: revisa MRN, pesos y valores con el DAE. El 7020 de cada partida es su valor estadístico. La descripción lleva la original del DAE y su traducción. Los datos en otro alfabeto (griego, cirílico) se dejan vacíos: la dirección se elige o teclea en VisualTrans. Si el exportador o el destinatario no están en las entidades de VisualTrans con ese NIF, VisualTrans no los rellenará.</div>`;
+  return h + `<div id="dua-avisos"></div>`;
 }
 
 // ── Pantalla ─────────────────────────────────────────────────
@@ -916,8 +1081,8 @@ function duaPintar(){
   const etapa = duaEtapa(x), pasos = duaPasos(x), d = x.datos, iActual = etapa === 'fin' ? pasos.length : pasos.indexOf(etapa);
   const chip = (t, activo) => `<span class="badge" style="${activo ? 'background:var(--b600);color:var(--w)' : 'background:var(--g100);color:var(--g600)'}">${sEsc(t)}</span>`;
   let h = `<div class="card" style="padding:12px 14px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-    <div>${x.origen === 'g4' ? chip('T1 y G4', etapa === 'inicio') + ' ' : ''}${pasos.map(p => chip(DUA_NOMBRE[p], p === etapa)).join(' ')} ${chip('Terminado', etapa === 'fin')}</div><button class="btn btn-s btn-sm" onclick="duaCerrar()">Guardar y cerrar</button></div>`;
-  h += x.origen === 'g4' ? duaSeccionG4() : duaSeccionFactura();
+    <div>${x.origen === 'g4' ? chip('T1 y G4', etapa === 'inicio') + ' ' : x.origen === 'dae' ? chip('DAE', false) + ' ' : ''}${pasos.map(p => chip(DUA_NOMBRE[p], p === etapa)).join(' ')} ${chip('Terminado', etapa === 'fin')}</div><button class="btn btn-s btn-sm" onclick="duaCerrar()">Guardar y cerrar</button></div>`;
+  h += x.origen === 'g4' ? duaSeccionG4() : x.origen === 'dae' ? duaSeccionDae() : duaSeccionFactura();
   if(etapa !== 'inicio'){
     const sec = { T1GI: duaSeccionT1GI, T2GI: duaSeccionT2GI, REEXP: duaSeccionReexp };
     pasos.forEach((p, i) => { if(sec[p] && i <= iActual) h += sec[p](); });
@@ -925,7 +1090,7 @@ function duaPintar(){
   }
   el.innerHTML = h + '</div>';
   duaPintarAvisos();
-  if(x.origen !== 'g4'){
+  if(x.origen !== 'g4' && x.origen !== 'dae'){
     // Repintar no pierde el cliente elegido
     if(window._vtCliente) d.cliente = window._vtCliente;
     vtPintarCliente(d.cab || {}, duaEsImport(x)).then(() => { if(d.cliente && DUA.x === x) vtElegirCliente(d.cliente); });
