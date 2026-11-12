@@ -57,6 +57,63 @@ const SOIVRE_ESPEC_COM = {
   '39':'AEE para investigación y desarrollo', '40':'AEE para instalar en AEE excluido', '41':'Comercio electrónico empresas',
   '42':'Muestrarios', '43':'Mercancías para ferias', '44':'Otras exenciones RAEE o RPyA', '45':'NO AEE, NO componente, NO repuesto'
 };
+// Calidad comercial (PUE CALCOM). Tabla del Manual PUE v8 (24/11/2025), 00–21,
+// más 23–26 de la Nota SOIVRE 4/2026 (Orden ECM/1002/2026). OJO: aquí 01 es
+// «Producto ecológico»; «sin especificidades» es 00 (en ROHS es 01).
+const SOIVRE_ESPEC_CAL = {
+  '00':'Sin especificidades', '01':'Producto ecológico', '02':'Sin carácter comercial', '03':'Granel', '04':'Envasado',
+  '05':'En tiempo alta datos provisionales', '06':'En tiempo alta datos definitivos',
+  '07':'Exc. sujeta a control de origen (anexos C, D y E)', '08':'Animales acuáticos vivos no consumo',
+  '09':'Setas y demás hongos cultivados', '10':'Setas y hongos no cultivados', '11':'Mercancía para investigación',
+  '12':'Muestras comerciales', '13':'Mercancías para ferias', '14':'Retorno de mercancía',
+  '15':'Destinado a otro EEMM de la UE', '16':'CITES', '17':'Producto excluido de control SOIVRE en este TARIC',
+  '18':'Certificado de calidad expedido en origen (país homologado)', '19':'Tráfico de perfeccionamiento activo',
+  '20':'Tráfico de perfeccionamiento pasivo', '21':'Mercancía sujeta a control de pesaje en aduana',
+  '23':'Producto de la IV gama', '24':'Con certificado de origen (según CAU)',
+  '25':'Materia prima para preparados de IV gama', '26':'Destino alimentación animal'
+};
+// Orden ECM/1002/2026, aplicable a solicitudes desde el 16/11/2026.
+// B: nuevos en control completo a la exportación · D: solo indicación del origen.
+// Sirve de respaldo mientras la lista de ESTACICE del portal (2023) no las tenga.
+const SOIVRE_ORDEN_2026 = [
+  ['040790','B','Los demás huevos con cáscara de gallina'], ['07096099','B','Pimientos tipo Padrón'],
+  ['07099960','B','Maíz dulce'], ['071420','B','Batatas'], ['07149090','B','Aguaturmas o patacas'],
+  ['080251','B','Pistachos con cáscara'], ['080261','B','Nueces de macadamia con cáscara'], ['080291','B','Piñones con cáscara'],
+  ['070951','D','Setas'], ['070952','D','Setas'], ['070953','D','Setas'], ['070954','D','Setas'], ['070955','D','Setas'],
+  ['070956','D','Setas'], ['070959','D','Setas y hongos'], ['07099940','D','Alcaparras'],
+  ['08021110','D','Almendras amargas'], ['080212','D','Almendras sin cáscara'], ['080222','D','Avellanas sin cáscara'],
+  ['080232','D','Nueces sin cáscara'], ['080252','D','Pistachos sin cáscara'], ['080262','D','Nueces de macadamia sin cáscara'],
+  ['080292','D','Piñones sin cáscara'], ['08029910','D','Pacanas'], ['08029990','D','Los demás frutos de cáscara'],
+  ['08031090','D','Plátanos hortaliza secos'], ['080390','D','Plátanos maduros (madurados en la UE)'],
+  ['08042090','D','Higos secos'], ['080620','D','Uvas secas, incluidas las pasas'], ['0813','D','Frutas secas y sus mezclas'],
+  ['091020','D','Azafrán']
+];
+function soivreOrden2026(codigo){
+  const c = String(codigo || '').replace(/\D/g, '');
+  return SOIVRE_ORDEN_2026.find(([p]) => c.startsWith(p)) || null;
+}
+// Especificidades CAL que se proponen según el código, el origen y la descripción.
+// Devuelve { sel: códigos preseleccionados, avisos: textos para el operador }.
+function soivreEspecCalSugeridas(codigo, origen, descripcion){
+  const c = String(codigo || '').replace(/\D/g, '');
+  const d = String(descripcion || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  const sel = [], avisos = [];
+  const o = soivreOrden2026(c);
+  const setas = /^0709(5[1-6]|59)/.test(c);
+  if(setas) avisos.push('Setas: marque 09 si son cultivadas (control completo) o 10 si no lo son (solo origen). Es obligatorio declarar una de las dos.');
+  else if(/^0803901/.test(c)) avisos.push('Plátanos: a la exportación, los madurados en la UE solo tienen control de origen; marque 07, o 24 si hay certificado de origen.');
+  else if(o && o[1] === 'D') { sel.push('07'); avisos.push(`${o[2]}: solo control de la indicación del país de origen (Orden ECM/1002/2026) → 07.`); }
+  if(/^07096099/.test(c)) avisos.push('0709.60.99: solo se controlan los pimientos tipo Padrón; si es Capsicum exclusivamente picante, marque 17.');
+  if(/CORTAD|TROCEAD|PELAD|LAVAD|RALLAD|IV GAMA|4A GAMA|CUARTA GAMA|FRESH.?CUT|SLICED|DICED|PEELED|READY TO EAT/.test(d))
+    avisos.push('Parece un producto preparado (IV gama): marque 07 y 23 (y 24 si hay certificado de origen). Si es materia prima para IV gama, marque 25.');
+  if(/PIENSO|ALIMENTACION ANIMAL|ANIMAL FEED|FODDER/.test(d)) avisos.push('Destino alimentación animal: marque 26.');
+  if(String(origen || '').toUpperCase() === 'EH'){
+    sel.push('24');
+    avisos.push('Sáhara Occidental: 24 (certificado de origen) y, en el etiquetado, la región («Dakhla Oued Ed-Dahab» o «Laâyoune-Sakia El Hamra»), nunca «Marruecos».');
+  }
+  return { sel: sel.length ? sel : ['00'], avisos };
+}
+
 const SOIVRE_TIPO_DOC = { FACTU:'Factura', JPAGO:'Justificante de pago', CERTIFICADO:'Certificado', DTPTE:'Documento de transporte',
                           DTECN:'Documentación técnica', COMPR:'Compromisos / cartas del operador', OTROS:'Otros' };
 // Unidades de la guía ROHS-RAEE (también para COM)
@@ -112,6 +169,9 @@ function soivreAplica(codigo){
     return { servicio: tipo === 'F' ? 'CAL1' : 'VUAO', seguro:true, flujo:'02', tipoVua: tipo, fuente:'lista',
              medidas:['Lista oficial de productos SOIVRE'], productos: oficial[tipo] };
   }
+  const orden = soivreOrden2026(c);
+  if(orden) return { servicio:'CAL1', seguro:true, flujo:'02', tipoVua:'F', fuente:'lista', orden,
+                     medidas:['Orden ECM/1002/2026, anexo ' + orden[1]], productos: [] };
   if(typeof TARIC_DB !== 'undefined' && TARIC_DB.ok) return null;
   return /^0[78]/.test(c) ? { servicio:'CAL1', seguro:false, medidas:[], flujo:'02', tipoVua:'F' } : null;
 }
@@ -179,7 +239,9 @@ function soivreBloqueVua(r, a){
       <span style="font-size:18px">${a.tipoVua === 'O' ? '🫒' : '🍊'}</span>
       <div style="flex:1;min-width:200px">
         <div style="font-size:12px;font-weight:700;color:var(--gr700,#15803d)">Control SOIVRE a la exportación · ${tipoTxt}</div>
-        <div style="font-size:11px;color:var(--g600);margin-top:2px">La partida ${sEsc(String(r.codigo_taric || '').slice(0, 4))} figura en la lista oficial de productos SOIVRE (ESTACICE)${ejemplos ? ': ' + sEsc(ejemplos) + '…' : ''}. Solicitud en ESTACICE VUA, sin MRN. El país de origen se toma de «Preferencias arancelarias»; si no hay ninguno, España.</div>
+        <div style="font-size:11px;color:var(--g600);margin-top:2px">${a.orden
+          ? `${sEsc(a.orden[2])}: sometido a control SOIVRE desde el 16/11/2026 por la Orden ECM/1002/2026 (anexo ${a.orden[1]}${a.orden[1] === 'D' ? ', solo indicación del país de origen' : ', control completo'}). Aún no figura en la lista de ESTACICE del portal: compruebe el producto en ESTACICE VUA.`
+          : `La partida ${sEsc(String(r.codigo_taric || '').slice(0, 4))} figura en la lista oficial de productos SOIVRE (ESTACICE)${ejemplos ? ': ' + sEsc(ejemplos) + '…' : ''}.`} Solicitud en ESTACICE VUA, sin MRN. El país de origen se toma de «Preferencias arancelarias»; si no hay ninguno, España.</div>
       </div>
       <button class="btn btn-p btn-sm" onclick="vuaNuevaDesdeResultado('${sEsc(r.codigo_taric)}', ${sEsc(JSON.stringify(r.descripcion_nc || ''))}, '${a.tipoVua}')">Solicitud ESTACICE</button>
     </div>`;
@@ -655,6 +717,9 @@ async function soivreFormCAL1(ctx, cfg){
   // Origen: el de la línea de factura; en búsqueda libre, el país elegido en preferencias o España
   const origen = ctx.origen || document.getElementById('spg-pais')?.value || (typeof ORIGEN_POR_DEFECTO !== 'undefined' ? ORIGEN_POR_DEFECTO : 'ES');
   ctx.flujo = soivreFlujoPorOrigen(origen, ctx.flujo);
+  const esp = soivreEspecCalSugeridas(ctx.codigo_taric, origen, ctx.descripcion);
+  const espAvisos = esp.avisos.length
+    ? `<div style="background:var(--am50);color:var(--am600);padding:6px 10px;border-radius:6px;font-size:11px;margin-top:6px">${esp.avisos.map(sEsc).join('<br>')}</div>` : '';
   return `${aviso}
     ${sGrid(160,
       sCampo('País de origen', sInput('sv-origen', origen, `maxlength="2" style="width:100%;font-family:var(--mono)" title="España → exportación · otro país → reexportación"
@@ -667,6 +732,10 @@ async function soivreFormCAL1(ctx, cfg){
     ${sCampo('Producto SOIVRE', productos.length
         ? `<select id="sv-producto" class="fi" style="width:100%">${productos.map(p => `<option value="${sEsc(p.codigo)}">${sEsc(p.codigo)} · ${sEsc(p.descripcion)}</option>`).join('')}</select>`
         : sInput('sv-producto', '', 'placeholder="Código SOIVRE de calidad"'))}
+    <div style="height:10px"></div>
+    ${sCampo('Especificidades (PUE CALCOM)', sMultiSel('sv-espec', SOIVRE_ESPEC_CAL, esp.sel))}
+    <div style="font-size:10px;color:var(--g500);margin-top:2px">Marque todas las que apliquen: una especificidad omitida o errónea se considera declaración no veraz. 00 solo si no aplica ninguna.</div>
+    ${espAvisos}
     <div style="height:10px"></div>
     ${soivreCamposComunes(ctx, cfg, unidad)}
     ${sGrid(200, sCampo('Certificado solicitado', sSelect('sv-certsol', SOIVRE_CERT_OPC, '01')))}
@@ -721,7 +790,8 @@ async function soivreFormCOM1(ctx, cfg){
 function soivreDatosSolicitud(servicio){
   const d = soivreDatosComunes();
   if(servicio === 'CAL1') return { ...d,
-    flujo: sVal('sv-flujo'), grupoProducto: sVal('sv-grupo'), especificidades: ['01'],
+    flujo: sVal('sv-flujo'), grupoProducto: sVal('sv-grupo'),
+    especificidades: (e => e.length ? e : ['00'])(sMulti('sv-espec')),
     certificadoSolicitado: sVal('sv-certsol'), codigoSoivre: sVal('sv-producto'),
     categoria: sVal('sv-cat'), envaseMas5kg: sVal('sv-env5'),
     envasador: { nif: sVal('sv-env-nif'), nombre: sVal('sv-env-nom'), localidad: sVal('sv-env-loc'),
