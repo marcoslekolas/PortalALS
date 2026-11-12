@@ -554,7 +554,8 @@ async function soivreProductosDe(certificado, codigoTaric){
   const clave = certificado + p4;
   if(SOIVRE.productos.has(clave)) return SOIVRE.productos.get(clave);
   const { data, error } = await sbT().from('soivre_productos')
-    .select('codigo,descripcion').eq('certificado', certificado).eq('partida4', p4).order('codigo');
+    .select('codigo,descripcion').eq('certificado', certificado).eq('partida4', p4)
+    .or(`vigente_hasta.is.null,vigente_hasta.gte.${new Date().toISOString().slice(0, 10)}`).order('codigo');
   if(error) throw error;
   SOIVRE.productos.set(clave, data || []);
   return data || [];
@@ -782,9 +783,22 @@ async function soivreFormCOM1(ctx, cfg){
     ${sCampo('Especificidades', sMultiSel('sv-espec', SOIVRE_ESPEC_COM, ['00']))}
     <div style="height:10px"></div>
     ${soivreCamposComunes(ctx, cfg, soivreSelectUnidadAEE(ctx))}
-    ${sGrid(200, sCampo('Certificado COM', sSelect('sv-cert-com', SOIVRE_CERT_OPC, '01')))}
+    ${sGrid(200, sCampo('Certificado COM', sSelect('sv-cert-com', SOIVRE_CERT_OPC, '01').replace('<select ', '<select onchange="soivreComNoProcede(this.value)" ')))}
+    <div id="sv-com-np" style="font-size:11px;color:var(--am600);margin:-4px 0 10px"></div>
     ${soivreCamposAEE(cfg)}
     ${sGrid(200, sCampo('Referencia DOCUCICE (opcional)', sInput('sv-docucice', '', 'placeholder="Separar varias con comas"')))}`;
+}
+
+// «No procede» en COM: el producto no está en el anexo del RD 330/2008 pero su
+// partida TARIC lleva la medida. Se declara con el código SOIVRE …9999 de la
+// partida (pestaña 8 del listado oficial). Responsabilidad del declarante.
+function soivreComNoProcede(cert){
+  const sel = document.getElementById('sv-producto'), info = document.getElementById('sv-com-np');
+  if(!sel || !info) return;
+  if(cert !== '02'){ info.textContent = ''; return; }
+  const np = sel.tagName === 'SELECT' ? [...sel.options].find(o => /9999$/.test(o.value)) : null;
+  if(np){ sel.value = np.value; info.textContent = `Producto SOIVRE cambiado a ${np.value} («no procede» de la partida). Úselo solo si el producto no está en el anexo del RD 330/2008; en caso de duda, consulte al SOIVRE.`; }
+  else info.textContent = 'No hay código «no procede» (…9999) para esta partida en el catálogo: compruébelo en el listado oficial antes de declarar «No procede».';
 }
 
 function soivreDatosSolicitud(servicio){
