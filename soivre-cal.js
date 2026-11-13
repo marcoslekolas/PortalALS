@@ -525,7 +525,10 @@ async function soivreLlamar(servicio, datos, idMensaje, soloXml, contexto, fiche
   if(!r) return { ok:false, pendiente:true,
     error:'El servidor no ha respondido en 2 minutos. La petición sigue en cola: si el servidor la procesa más tarde, la AEAT la recibirá. Comprueba en ESTACICE antes de reintentar.' };
 
-  sbT().from('soivre_cola').delete().eq('id', r.id).then(() => {});
+  // Las altas aceptadas se quedan en la cola: el servidor sigue su estado por
+  // PUE-15 y la vista SOIVRE las muestra 60 días. El resto se borra al leerlas.
+  const seguir = SOIVRE_SEGUIBLES.includes(servicio) && r.estado === 'aceptada' && r.numero_solicitud && !soloXml;
+  if(!seguir) sbT().from('soivre_cola').delete().eq('id', r.id).then(() => {});
   return {
     ok: r.estado === 'aceptada' || r.estado === 'generado',
     validacion: r.codigo_respuesta === 'VALID', errores: r.errores || [],
@@ -1095,6 +1098,88 @@ function loadSoivre(){
     sCampo('Gibraltar · aduana', sInput('svc-vua-gi-aduana', vuaCfg().gibraltar.aduana, 'maxlength="4"'))
   ) : '') + `<div style="display:flex;justify-content:flex-end"><button class="btn btn-p btn-sm" onclick="soivreGuardarConfigVista()">Guardar</button></div>`;
   soivrePintarSesion();
+  soivreSeguimientoPue();
+}
+
+// ── Seguimiento de solicitudes PUE (PUE-15) ──────────────────
+// El servidor consulta la AEAT cada 20 minutos (y al pulsar «Consultar») y
+// guarda en la fila de la solicitud el estado SOIVRE, el histórico y el certificado.
+const SOIVRE_SEGUIBLES = ['CAL1', 'ROHS1', 'COM1'];
+async function soivreSeguimientoPue(){
+  const cont = document.getElementById('soivre-pue-seguimiento');
+  if(!cont) return;
+  const desde = new Date(Date.now() - 60 * 86400000).toISOString();
+  const { data, error } = await sbT().from('soivre_cola')
+    .select('id,created_at,servicio,entorno,usuario,numero_solicitud,datos,contexto,estado_soivre,seguimiento,seguido_en,seguimiento_final,adjunto_estado')
+    .in('servicio', SOIVRE_SEGUIBLES).eq('estado', 'aceptada').not('numero_solicitud', 'is', null)
+    .gte('created_at', desde).order('created_at', { ascending: false }).limit(200);
+  if(error){ cont.innerHTML = sAviso('No se pudo leer el seguimiento: ' + sEsc(error.message) + '. ¿Se ha ejecutado seguimiento_pue15.sql?'); return; }
+  SOIVRE.seguimiento = data || [];
+  if(!SOIVRE.seguimiento.length){
+    cont.innerHTML = '<div style="padding:14px;text-align:center;color:var(--g400);font-size:12px">Sin solicitudes PUE en los últimos 60 días. Las nuevas aparecen aquí al quedar aceptadas.</div>';
+    return;
+  }
+  const f = v => v ? new Date(v).toLocaleString('es-ES', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+  cont.innerHTML = `<div style="overflow-x:auto"><table class="tbl" style="width:100%;font-size:12px">
+    <thead><tr><th>Fecha</th><th>Servicio</th><th>Nº solicitud</th><th>MRN-partida</th><th>Mercancía</th><th>Estado SOIVRE</th><th>Certificado</th><th>Consultado</th><th></th></tr></thead>
+    <tbody>${SOIVRE.seguimiento.map(x => {
+      const s = x.seguimiento || {}, c = s.certificado, d = x.datos || {}, alta = SOIVRE_SERVICIOS[x.servicio];
+      const mrn = d.mrn ? d.mrn + (d.partida ? '-' + d.partida : '') : (s.mrn_partida || '—');
+      return `<tr>
+        <td style="white-space:nowrap">${f(x.created_at)}${x.entorno === 'produccion' ? '' : '<div style="font-size:9px;color:var(--g400)">pruebas</div>'}</td>
+        <td><strong>${sEsc(x.servicio)}</strong></td>
+        <td style="font-family:var(--mono);font-weight:700">${sEsc(x.numero_solicitud)}</td>
+        <td style="font-family:var(--mono);font-size:11px">${sEsc(mrn)}</td>
+        <td><span style="font-family:var(--mono)">${sEsc((x.contexto || {}).codigo_taric || '')}</span> ${sEsc(((x.contexto || {}).descripcion || '').slice(0, 36))}</td>
+        <td>${s.estado ? `<span class="badge" style="${x.seguimiento_final ? SOIVRE_ESTADO_ESTILO.aceptada : 'background:var(--b50);color:var(--b700)'}">${sEsc(s.estado)}</span>` : '<span style="color:var(--g400)">Pendiente de consultar</span>'}</td>
+        <td>${c ? `<span style="font-family:var(--mono);font-weight:700">${sEsc(c.referencia)}</span><div style="font-size:10px;color:var(--g500)">${sEsc([c.tipo, c.estado, c.fecha].filter(Boolean).join(' · '))}</div>` : '—'}</td>
+        <td style="white-space:nowrap;font-size:11px;color:var(--g500)">${f(x.seguido_en)}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-s btn-sm" onclick="soivreConsultarPue('${sEsc(x.numero_solicitud)}')" title="Consulta ahora en la AEAT (PUE-15)">🔄</button>
+          <button class="btn btn-s btn-sm" onclick="soivreDetallePue('${x.id}')" ${s.estado ? '' : 'disabled'}>Detalle</button>
+          ${alta ? `<button class="btn btn-s btn-sm" onclick="abrirDatosAdicionales('${alta.adicional}','${sEsc(x.numero_solicitud)}')">+ ${alta.adicional}</button>
+            <button class="btn btn-s btn-sm" onclick="abrirEnvioDocumento('${alta.siglas}','${sEsc(x.numero_solicitud)}','${x.adjunto_estado === 'aceptada' ? 'OTROS' : 'FACTU'}')" title="Enviar documento (PUE-7)">📎</button>` : ''}
+        </td></tr>`; }).join('')}</tbody></table></div>
+    <div style="font-size:11px;color:var(--g400);margin-top:6px">El servidor consulta la AEAT cada 20 minutos hasta que hay certificado o la solicitud se cierra. 🔄 consulta en el momento.</div>`;
+}
+
+async function soivreConsultarPue(numero){
+  numero = String(numero || '').trim();
+  if(!numero) return;
+  showToast('Consultando ' + numero + ' en la AEAT…');
+  const r = await soivreLlamar('PUE15', { referenciaSolicitud: numero }, soivreIdMensaje('PUE15'), false, {});
+  if(!r.ok){ showToast('AEAT: ' + (r.descripcion || r.error || 'sin respuesta'), 6000); return r; }
+  await soivreSeguimientoPue();
+  // Solicitud que no está en el seguimiento (de otro equipo o anterior): se muestra el resultado
+  if(!(SOIVRE.seguimiento || []).some(x => x.numero_solicitud === numero)) soivreDetallePue(null, numero, r.resultado);
+  else showToast('Estado actualizado: ' + (r.descripcion || ''));
+  return r;
+}
+
+function soivreConsultarPorNumero(){
+  soivreModal('Estado de una solicitud PUE', `
+    ${sCampo('Nº de solicitud AEAT', sInput('svq-num', '', 'placeholder="El que devolvió la AEAT al dar de alta la solicitud"'))}
+    <div style="font-size:11px;color:var(--g500);margin:6px 0 10px">Consulta por el servicio PUE-15 de la AEAT: estado en SOIVRE, histórico y certificado. No modifica nada.</div>
+    <div style="display:flex;justify-content:flex-end"><button class="btn btn-p btn-sm" onclick="soivreConsultarPue(document.getElementById('svq-num').value)">Consultar</button></div>`, 460);
+}
+
+function soivreDetallePue(id, numero, info){
+  const x = id ? (SOIVRE.seguimiento || []).find(r => r.id === id) : null;
+  const s = info || (x && x.seguimiento) || {}, c = s.certificado;
+  const fila = (k, v) => v ? `<tr><td style="color:var(--g500);padding:3px 10px 3px 0;white-space:nowrap">${k}</td><td>${v}</td></tr>` : '';
+  const hist = (s.historico || []).length ? `<div style="font-size:11px;font-weight:700;color:var(--g500);margin:10px 0 4px">HISTÓRICO</div>
+    <table class="tbl" style="font-size:12px"><thead><tr><th>Fecha</th><th>Estado</th><th>Usuario</th></tr></thead><tbody>
+    ${s.historico.map(h => `<tr><td style="white-space:nowrap">${sEsc(h.fecha)}</td><td>${sEsc(h.estado)}</td><td>${sEsc(h.usuario)}</td></tr>`).join('')}</tbody></table>` : '';
+  const docs = (s.documentos || []).length ? `<div style="font-size:11px;font-weight:700;color:var(--g500);margin:10px 0 4px">DOCUMENTACIÓN ASOCIADA</div>
+    ${s.documentos.map(dc => `<div style="font-size:12px">${sEsc(dc.descripcion)} <span style="font-family:var(--mono);color:var(--g500)">${sEsc(dc.clave)}</span></div>`).join('')}` : '';
+  soivreModal(`Solicitud ${sEsc(numero || (x && x.numero_solicitud) || '')}`, `<table style="font-size:13px">
+    ${fila('Estado SOIVRE', `<strong>${sEsc(s.estado || '—')}</strong>`)}
+    ${fila('Ref. organismo', sEsc(s.referencia_organismo))}
+    ${fila('Fecha solicitud', sEsc(s.fecha_solicitud))}
+    ${fila('MRN-partida', `<span style="font-family:var(--mono)">${sEsc(s.mrn_partida)}</span>`)}
+    ${fila('Certificado', c ? `<strong style="font-family:var(--mono)">${sEsc(c.referencia)}</strong> · ${sEsc([c.tipo, c.estado, c.fecha].filter(Boolean).join(' · '))}` : 'Aún no emitido')}
+    ${fila('Consultado', x && x.seguido_en ? new Date(x.seguido_en).toLocaleString('es-ES') : '')}
+    </table>${hist}${docs}`, 620);
 }
 
 function soivrePintarSesion(){
