@@ -564,7 +564,7 @@ textarea.fi{resize:vertical;min-height:80px}
           <div style="display:flex;gap:8px">
             <button class="btn btn-g btn-sm" onclick="exportarFactura()" id="btn-exp-fact" style="display:none">⬇️ Excel</button>
             <button class="btn btn-p btn-sm" onclick="abrirModalVT()" id="btn-exp-vt" style="display:none">🚢 VisualTrans (DUA)</button>
-            <button class="btn btn-s btn-sm" onclick="abrirModalTransitoVT()" id="btn-transito-vt" title="Generar el T2GI (tras una exportación) o el T1GI (tras un H1 de terceros) a partir del MRN">🔄 Tránsito T1GI/T2GI</button>
+            <button class="btn btn-s btn-sm" onclick="abrirPanelExpedientesVT()" id="btn-transito-vt" title="Expedientes en curso: preparar el H1 por adelantado, generar el H1 con el G4 y el tránsito T1GI/T2GI con el MRN">🗂 Expedientes en curso</button>
             <button class="btn btn-s btn-sm" onclick="limpiarFactura()">Limpiar</button>
           </div>
         </div>
@@ -647,12 +647,11 @@ textarea.fi{resize:vertical;min-height:80px}
         <div class="ph">
           <div>
             <div class="pt">🍊 SOIVRE · ESTACICE y PUE</div>
-            <div class="ps">Frutas y hortalizas a la exportación por ESTACICE VUA; ROHS/RAEE y COM por el PUE de la AEAT. Se envían a través del servidor AEAT Monitor (certificado de la empresa) y se inician desde la clasificación TARIC, la lectura de facturas o a mano con «+ Solicitud PUE».</div>
+            <div class="ps">Frutas y hortalizas a la exportación por ESTACICE VUA; ROHS/RAEE y COM por el PUE de la AEAT. Se envían a través del servidor AEAT Monitor (certificado de la empresa) y se inician desde la clasificación TARIC o la lectura de facturas.</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-p btn-sm" onclick="vuaNuevaManual()">+ Solicitud ESTACICE</button>
             <button class="btn btn-s btn-sm" onclick="vuaConsultarPorNumero()">🔎 Estado ESTACICE</button>
-            <button class="btn btn-p btn-sm" onclick="soivreNuevaManual()">+ Solicitud PUE</button>
             <button class="btn btn-s btn-sm" onclick="abrirDatosAdicionales('CAL3','')">+ Datos adicionales PUE</button>
             <button class="btn btn-s btn-sm" onclick="abrirEnvioDocumento('CAL','','FACTU')">📎 Documento PUE</button>
           </div>
@@ -3495,7 +3494,27 @@ function construirFilasImport(cab, lineas, cfg){
   return filas;
 }
 
-async function exportarVisualTrans(){
+// Descarga un CSV para VisualTrans: ';' como separador, BOM UTF-8, sin ';' ni
+// saltos de línea dentro de los campos.
+function vtDescargarCSV(filas, nombre){
+  const escCampo = v => {
+    let s = (v==null?'':String(v));
+    if(s.includes(';')) s = s.replace(/;/g,',');
+    if(s.includes('\n')) s = s.replace(/[\r\n]+/g,' ');
+    return s;
+  };
+  const csv = filas.map(fila => fila.map(escCampo).join(';')).join('\r\n');
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  return nombre;
+}
+
+async function exportarVisualTrans(opts){
+  opts = opts || {};
   const detalle = window._facturaLineas || [];
   if(!detalle.length){ showToast('Primero lee una factura para tener datos que exportar'); return; }
   const cab = FACTURA_CABECERA || {};
@@ -3505,6 +3524,16 @@ async function exportarVisualTrans(){
   // Nombres exactos de VisualTrans por NIF y, en exportación, N003 de los certificados SOIVRE ya emitidos
   if(typeof vtPrepararExportacion === 'function' && !(await vtPrepararExportacion(detalle, cab, esImport))) return;
   const lineas = (cfg.origen === 'detalle') ? detalle : agruparLineasParaDUA(detalle, cab);
+
+  // EXPEDIENTE ANTICIPADO: el H1 queda preparado (sin fichero) hasta que llegue
+  // el camión y se obtenga el G4 en VisualTrans (Tránsito recibido).
+  if(opts.anticipado){
+    await vtGuardarDossierParaTransito(cab, lineas, cfg, esImport, { estado:'preparado', mrn_entrada: opts.mrnEntrada || null });
+    showToast('📋 Expediente preparado ('+lineas.length+' partidas). A la llegada, pon el G4 en 🗂 Expedientes en curso.');
+    if(typeof vtTrasExportar === 'function') vtTrasExportar();
+    if(cfg.cliente && typeof vtRecordarCliente === 'function') vtRecordarCliente(cfg.cliente);
+    return;
+  }
 
   const filas = esImport ? construirFilasImport(cab, lineas, cfg)
                          : construirFilasExport(cab, lineas, cfg);
@@ -3531,7 +3560,7 @@ async function exportarVisualTrans(){
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
   showToast('CSV VisualTrans generado ('+lineas.length+' partidas): '+a.download);
   // Se guarda el dossier para poder generar después su tránsito (T2GI/T1GI) con el MRN
-  vtGuardarDossierParaTransito(cab, lineas, cfg, esImport);
+  vtGuardarDossierParaTransito(cab, lineas, cfg, esImport, { estado:'pendiente_mrn', mrn_entrada: opts.mrnEntrada || null });
   if(typeof vtTrasExportar === 'function') vtTrasExportar();
   if(cfg.cliente && typeof vtRecordarCliente === 'function') vtRecordarCliente(cfg.cliente);
 }
@@ -3566,10 +3595,19 @@ function _vtLSset(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } cat
 // así la tabla nunca crece. Si la tabla aún no existe, se usa el navegador como
 // respaldo y se avisa.
 const VT_TMP_TABLA = 'vt_dossiers_tmp';
-const VT_TMP_DIAS = 15, VT_TMP_DIAS_HECHO = 3;
+const VT_TMP_DIAS = 15, VT_TMP_DIAS_HECHO = 7;
+// Estados del expediente: preparado (H1 listo, falta G4) → pendiente_mrn (H1
+// generado, falta MRN para el tránsito) → completado (tránsito generado; sigue
+// disponible para reutilizar y se borra solo a los 7 días).
+const VT_ESTADOS = {
+  preparado:     { txt:'Preparado · falta G4',  col:'#b45309', bg:'#fffbeb' },
+  pendiente_mrn: { txt:'Pendiente de MRN',      col:'#1d4ed8', bg:'#eff6ff' },
+  completado:    { txt:'Completado',            col:'#15803d', bg:'#f0fdf4' },
+};
 function _vtExpira(dias){ return new Date(Date.now() + dias*86400000).toISOString(); }
 
-async function vtGuardarDossierParaTransito(cab, lineas, cfg, esImport){
+async function vtGuardarDossierParaTransito(cab, lineas, cfg, esImport, extra){
+  extra = extra || {};
   const fila = {
     tipo: esImport ? 'import' : 'export',
     factura: cab.numero_factura || '',
@@ -3578,18 +3616,24 @@ async function vtGuardarDossierParaTransito(cab, lineas, cfg, esImport){
     expira_en: _vtExpira(VT_TMP_DIAS),
     datos: JSON.parse(JSON.stringify({ cab: cab || {}, lineas: lineas || [], cfg: cfg || {} })),
   };
+  const filaExt = Object.assign({}, fila, { estado: extra.estado || 'pendiente_mrn' }, extra.mrn_entrada ? { mrn_entrada: extra.mrn_entrada } : {});
   try {
     const db = sbT();
     // Purga de lo caducado y sustitución si se regenera el mismo DUA
     await db.from(VT_TMP_TABLA).delete().lt('expira_en', new Date().toISOString());
     if(fila.factura) await db.from(VT_TMP_TABLA).delete().eq('factura', fila.factura).eq('tipo', fila.tipo).is('mrn', null);
-    const { error } = await db.from(VT_TMP_TABLA).insert(fila);
+    let { error } = await db.from(VT_TMP_TABLA).insert(filaExt);
+    if(error && /column|estado|mrn_entrada/i.test(error.message||'')) {
+      // Tabla sin las columnas nuevas (falta ejecutar la migración): se guarda lo básico
+      console.warn('vt_dossiers_tmp sin columnas de estado; ejecuta vt_dossiers_tmp_estados.sql');
+      ({ error } = await db.from(VT_TMP_TABLA).insert(fila));
+    }
     if(error) throw error;
   } catch(e){
     console.warn('vt_dossiers_tmp no disponible; respaldo en el navegador:', e && e.message);
     showToast('⚠️ No se pudo guardar el DUA en el servidor para el tránsito (se guarda solo en este navegador)');
     const lista = _vtLS(VT_DOSSIERS_KEY, []);
-    const loc = { id:'l'+Date.now(), fecha:new Date().toISOString(), mrn:'', ...fila, ...fila.datos };
+    const loc = { id:'l'+Date.now(), fecha:new Date().toISOString(), mrn:'', ...filaExt, ...fila.datos };
     _vtLSset(VT_DOSSIERS_KEY, [loc].concat(lista.filter(d => !(d.factura && d.factura===loc.factura && d.tipo===loc.tipo))).slice(0, 40));
   }
 }
@@ -3599,17 +3643,150 @@ async function vtListarDossiers(){
   let lista = [];
   try {
     const { data, error } = await sbT().from(VT_TMP_TABLA)
-      .select('id,creado_en,tipo,factura,cliente,escenario,regimen,mrn,transito,datos')
+      .select('*')
       .gt('expira_en', new Date().toISOString())
       .order('creado_en', { ascending:false }).limit(60);
     if(error) throw error;
     lista = (data||[]).map(r => ({ id:r.id, fecha:r.creado_en, tipo:r.tipo, factura:r.factura, cliente:r.cliente,
       escenario:r.escenario, regimen:r.regimen, mrn:r.mrn||'', transito:r.transito||'',
+      estado: r.estado || (r.mrn ? 'completado' : 'pendiente_mrn'), g4: r.g4||'', partida_g4: r.partida_g4||'',
+      mrn_entrada: r.mrn_entrada||'', expira: r.expira_en,
       cab:(r.datos||{}).cab||{}, lineas:(r.datos||{}).lineas||[], cfg:(r.datos||{}).cfg||{} }));
   } catch(e){ console.warn('No se pudo leer vt_dossiers_tmp:', e && e.message); }
   const locales = _vtLS(VT_DOSSIERS_KEY, []);   // respaldo, solo si hubo fallo al guardar
   window._vtDossiers = lista.concat(locales);
   return window._vtDossiers;
+}
+
+// ═══ PANEL "EXPEDIENTES EN CURSO" ═══
+// Tablero de los expedientes vivos con su estado y la acción que toca:
+//   Preparado      → pegar el G4 (Declaración Sumaria asignada en el Tránsito
+//                    recibido de VisualTrans) → fichero del H1
+//   Pendiente MRN  → pegar el MRN del H1/EX → fichero T1GI/T2GI
+//   Completado     → disponible para regenerar; se borra solo a los 7 días
+function _vtEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _vtFechaCorta(iso){ const f = new Date(iso); return isNaN(f) ? '' : f.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'}) + ' ' + f.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}); }
+function _vtCopiar(txt){ try { navigator.clipboard.writeText(txt); showToast('📋 Copiado: ' + txt); } catch(_){ showToast(txt); } }
+
+async function abrirPanelExpedientesVT(){
+  const lista = await vtListarDossiers();
+  const orden = { preparado:0, pendiente_mrn:1, completado:2 };
+  lista.sort((a,b) => (orden[a.estado]??1) - (orden[b.estado]??1) || String(b.fecha).localeCompare(String(a.fecha)));
+  document.getElementById('modal-expedientes')?.remove();
+  const d = document.createElement('div');
+  d.id = 'modal-expedientes';
+  d.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+  const fila = x => {
+    const est = VT_ESTADOS[x.estado] || VT_ESTADOS.pendiente_mrn;
+    const tipo = x.tipo === 'import' ? 'H1' : 'EX';
+    const nP = (x.lineas||[]).length;
+    const bultos = (x.lineas||[]).reduce((a,l)=>a+(_vtNum(l.bultos)||0),0);
+    const id = _vtEsc(x.id);
+    let accion = '';
+    if(x.estado === 'preparado'){
+      accion = `
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input id="g4-${id}" class="fi" style="width:210px;font-family:var(--mono);text-transform:uppercase;padding:6px 8px" placeholder="G4 (Declaración Sumaria)">
+          <input id="g4p-${id}" class="fi" style="width:58px;padding:6px 8px;text-align:center" value="1" title="Partida del G4">
+          <button class="btn btn-p btn-sm" onclick="vtGenerarH1ConG4('${id}')">🚢 Generar H1</button>
+        </div>`;
+    } else if(x.estado === 'pendiente_mrn'){
+      accion = `<button class="btn btn-p btn-sm" onclick="abrirModalTransitoVT('${id}')">🔄 Generar ${x.tipo==='import'?'T1GI':'T2GI'} con el MRN</button>`;
+    } else {
+      accion = `<div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${x.tipo==='import' && x.g4 ? `<button class="btn btn-s btn-sm" onclick="vtGenerarH1ConG4('${id}', true)">↻ Regenerar H1</button>` : ''}
+        <button class="btn btn-s btn-sm" onclick="abrirModalTransitoVT('${id}')">↻ Regenerar tránsito</button></div>`;
+    }
+    const datos = [
+      x.mrn_entrada ? `Tránsito recibido <span style="font-family:var(--mono)">${_vtEsc(x.mrn_entrada)}</span> <a href="#" onclick="_vtCopiar('${_vtEsc(x.mrn_entrada)}');return false" title="Copiar para el Tránsito recibido de VisualTrans">📋</a>` : '',
+      x.g4 ? `G4 <span style="font-family:var(--mono)">${_vtEsc(x.g4)}</span>${x.partida_g4?' /'+_vtEsc(x.partida_g4):''}` : '',
+      x.mrn ? `MRN ${tipo} <span style="font-family:var(--mono)">${_vtEsc(x.mrn)}</span> <a href="#" onclick="_vtCopiar('${_vtEsc(x.mrn)}');return false">📋</a>` : '',
+      x.transito ? `${_vtEsc(x.transito)} generado` : '',
+    ].filter(Boolean).join(' · ');
+    return `
+      <div style="border:1px solid var(--g200);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fff">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
+          <div style="min-width:0;flex:1">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;color:${est.col};background:${est.bg}">${est.txt}</span>
+              <strong style="font-size:13px">${tipo} ${_vtEsc(x.regimen||'')}</strong>
+              <span style="font-size:12px;color:var(--g600)">Fra ${_vtEsc(x.factura||'—')} · ${_vtEsc(x.cliente||'')}</span>
+            </div>
+            <div style="font-size:11px;color:var(--g500);margin-top:3px">${nP} partida${nP===1?'':'s'} · ${bultos||'—'} bultos · creado ${_vtFechaCorta(x.fecha)}${x.expira?' · se borra '+_vtFechaCorta(x.expira):''}</div>
+            ${datos ? `<div style="font-size:11px;color:var(--g700);margin-top:4px">${datos}</div>` : ''}
+          </div>
+          <button title="Descartar el expediente" onclick="vtDescartarExpediente('${id}')" style="border:0;background:none;color:var(--g400);cursor:pointer;font-size:14px">🗑</button>
+        </div>
+        <div style="margin-top:8px">${accion}</div>
+      </div>`;
+  };
+  d.innerHTML = `
+    <div class="card" style="max-width:760px;width:100%;padding:18px 20px;max-height:90vh;overflow:auto;background:var(--g50)" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:15px;font-weight:700">🗂 Expedientes en curso</div>
+        <button onclick="document.getElementById('modal-expedientes').remove()" style="border:0;background:none;font-size:20px;cursor:pointer;color:var(--g400)">×</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--g500);margin-bottom:12px;line-height:1.5">
+        Prepara el H1 con antelación desde <strong>🚢 VisualTrans (DUA) → 📋 Preparar expediente</strong>. A la llegada, registra el
+        <strong>Tránsito recibido</strong> en VisualTrans con el MRN de entrada, pega aquí el G4 asignado y genera el H1. Con el MRN del H1, genera el T1GI.
+        Los completados se borran solos a los ${VT_TMP_DIAS_HECHO} días; los pendientes, a los ${VT_TMP_DIAS}.
+      </div>
+      ${lista.length ? lista.map(fila).join('') : `<div style="font-size:12px;color:var(--g500);padding:20px;text-align:center">No hay expedientes en curso.</div>`}
+    </div>`;
+  d.onclick = () => d.remove();
+  document.body.appendChild(d);
+}
+
+// Casilla 40 del H1 a partir del G4: N337 + G4/partida del G4/bultos b/kilos k
+// (formato de los H1 de la agencia: N337 26ESG4A002891044U6/1/1b/119k). Cada
+// partida del H1 descarga sus propios bultos y kilos de la partida del G4.
+function _vtKg(n){ const r = Math.round((Number(n)||0)*1000)/1000; return String(r).replace('.', ','); }
+async function vtGenerarH1ConG4(id, regenerar){
+  const dsr = (window._vtDossiers||[]).find(x => String(x.id) === String(id));
+  if(!dsr){ showToast('Expediente no encontrado'); return; }
+  let g4 = dsr.g4, partG4 = dsr.partida_g4 || '1';
+  if(!regenerar){
+    g4 = (document.getElementById('g4-'+id)?.value || '').trim().toUpperCase().replace(/\s+/g,'');
+    partG4 = (document.getElementById('g4p-'+id)?.value || '1').trim() || '1';
+    if(!/^[0-9]{2}[A-Z]{2}[A-Z0-9]{8,20}$/.test(g4)){ showToast('❌ El G4 no tiene un formato válido (p. ej. 26ESG4A002891044U6)'); return; }
+  }
+  const cab = dsr.cab || {}, lineas = dsr.lineas || [], cfg = dsr.cfg || {};
+  const filas = construirFilasImport(cab, lineas, cfg);
+  let k = 0;
+  for(let i = 1; i < filas.length; i++){
+    const P = filas[i];
+    if(P[0] === 'DOCS' || P[0] === 'V' || P[0] === 'LIQHCAB' || P[0] === 'LIQHPAR') continue;
+    const l = lineas[k++] || {};
+    const bul = _vtNum(l.bultos) || 0;
+    const kg = _vtNum(l.peso_bruto) || _vtNum(l.peso_estimado) || 0;
+    const docs = [];
+    for(let b = 17; b <= 59; b += 3) if(P[b]) docs.push([P[b], P[b+1], P[b+2]]);
+    const todos = [['N337', `${g4}/${partG4}/${bul}b/${_vtKg(kg)}k`, '']].concat(docs).slice(0, 15);
+    for(let b = 17; b <= 61; b++) P[b] = '';
+    todos.forEach((dd, j) => { const b = 17 + j*3; P[b] = dd[0]||''; P[b+1] = dd[1]||''; P[b+2] = dd[2]||''; });
+  }
+  const nombre = vtDescargarCSV(filas, 'VisualTrans_IMP_' + (cab.numero_factura||'dua').replace(/[^\w\-]/g,'_') + '.csv');
+  showToast(`🚢 H1 generado con el G4 ${g4} (${lineas.length} partidas): ${nombre}`);
+  if(!regenerar){
+    if(String(dsr.id).startsWith('l')){
+      const ll = _vtLS(VT_DOSSIERS_KEY, []); const x = ll.find(z => z.id === dsr.id);
+      if(x){ x.g4 = g4; x.partida_g4 = partG4; x.estado = 'pendiente_mrn'; _vtLSset(VT_DOSSIERS_KEY, ll); }
+    } else {
+      const { error } = await sbT().from(VT_TMP_TABLA).update({ g4, partida_g4:partG4, estado:'pendiente_mrn', expira_en:_vtExpira(VT_TMP_DIAS) }).eq('id', dsr.id);
+      if(error) showToast('⚠️ H1 generado, pero no se pudo anotar el G4 en el expediente: ' + error.message);
+    }
+    abrirPanelExpedientesVT();
+  }
+}
+
+async function vtDescartarExpediente(id){
+  if(!confirm('¿Descartar este expediente? Se borra para todo el equipo.')) return;
+  if(String(id).startsWith('l')) _vtLSset(VT_DOSSIERS_KEY, _vtLS(VT_DOSSIERS_KEY, []).filter(z => z.id !== id));
+  else {
+    const { error } = await sbT().from(VT_TMP_TABLA).delete().eq('id', id);
+    if(error){ showToast('❌ No se pudo descartar: ' + error.message); return; }
+  }
+  abrirPanelExpedientesVT();
 }
 
 // Tránsito que corresponde al dossier precedente
@@ -3625,8 +3802,8 @@ function _vtVinculoT1(regimen){
 }
 function _vtMRNvalido(m){ return /^\d{2}[A-Z]{2}[A-Z0-9]{13}\d$/.test(String(m||'').toUpperCase()); }
 
-async function abrirModalTransitoVT(){
-  const lista = await vtListarDossiers();
+async function abrirModalTransitoVT(preId){
+  const lista = (await vtListarDossiers()).filter(x => x.estado !== 'preparado');
   const prefs = {};   // sin memoria por navegador: siempre los valores fijos de la agencia
   const esch = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   document.getElementById('modal-transito')?.remove();
@@ -3710,7 +3887,10 @@ async function abrirModalTransitoVT(){
     </div>`;
   d.onclick = () => d.remove();
   document.body.appendChild(d);
-  if(lista.length) _vtTransitoPintar();
+  if(lista.length){
+    if(preId && document.getElementById('tr-dossier')) document.getElementById('tr-dossier').value = preId;
+    _vtTransitoPintar();
+  }
 }
 
 function _vtTransitoSel(){
@@ -3779,24 +3959,20 @@ function generarTransitoVT(){
 
   const filas = construirFilasTransito(dsr, { tipo, mrn, grn, grnImp, t7022, t7024, c1a, c1b, tipoGarantia, aduanaDestino, titular });
 
-  const escCampo = v => { let s = (v==null?'':String(v)); if(s.includes(';')) s = s.replace(/;/g,','); if(s.includes('\n')) s = s.replace(/[\r\n]+/g,' '); return s; };
-  const csv = filas.map(f => f.map(escCampo).join(';')).join('\r\n');
-  const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'VisualTrans_' + tipo + '_' + (dsr.factura||'dua').replace(/[^\w\-]/g,'_') + '.csv';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  const a = { download: vtDescargarCSV(filas, 'VisualTrans_' + tipo + '_' + (dsr.factura||'dua').replace(/[^\w\-]/g,'_') + '.csv') };
 
   // Recordar MRN en el dossier y el GRN para la próxima vez
-  // Anotar MRN y tránsito generado; el registro pasa a caducar en pocos días
+  // Anotar MRN y tránsito generado; el expediente pasa a Completado y caduca a los 7 días
   if(String(dsr.id).startsWith('l')){
     const lista = _vtLS(VT_DOSSIERS_KEY, []);
-    const x = lista.find(z => z.id === dsr.id); if(x){ x.mrn = mrn; x.transito = tipo; _vtLSset(VT_DOSSIERS_KEY, lista); }
+    const x = lista.find(z => z.id === dsr.id); if(x){ x.mrn = mrn; x.transito = tipo; x.estado = 'completado'; _vtLSset(VT_DOSSIERS_KEY, lista); }
   } else {
-    sbT().from(VT_TMP_TABLA).update({ mrn, transito:tipo, expira_en:_vtExpira(VT_TMP_DIAS_HECHO) }).eq('id', dsr.id)
-      .then(({error}) => { if(error) console.warn('No se pudo anotar el MRN:', error.message); });
+    sbT().from(VT_TMP_TABLA).update({ mrn, transito:tipo, estado:'completado', expira_en:_vtExpira(VT_TMP_DIAS_HECHO) }).eq('id', dsr.id)
+      .then(async ({error}) => {
+        if(error && /estado/i.test(error.message||'')) ({error} = await sbT().from(VT_TMP_TABLA).update({ mrn, transito:tipo, expira_en:_vtExpira(VT_TMP_DIAS_HECHO) }).eq('id', dsr.id));
+        if(error) console.warn('No se pudo anotar el MRN:', error.message);
+        if(document.getElementById('modal-expedientes')) abrirPanelExpedientesVT();
+      });
   }
   document.getElementById('modal-transito')?.remove();
   showToast(`✅ ${tipo} generado (${(dsr.lineas||[]).length} partidas): ${a.download}`);
@@ -3965,14 +4141,23 @@ function abrirModalVT(){
           <input id="vt-obs" class="fi">
         </div>
         <div id="vt-grn-wrap" style="grid-column:1/3;display:none">
-          <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Garantía GRN (H1)</label>
-          <input id="vt-grn" class="fi" style="width:100%;font-family:var(--mono)" value="${escHtml(_vtGrnH1Def())}">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">Garantía GRN (H1)</label>
+              <input id="vt-grn" class="fi" style="width:100%;font-family:var(--mono)" value="${escHtml(_vtGrnH1Def())}">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase">MRN tránsito recibido (opcional)</label>
+              <input id="vt-mrn-entrada" class="fi" style="width:100%;font-family:var(--mono);text-transform:uppercase" maxlength="18" placeholder="T1 de entrada (p. ej. de Reino Unido)">
+            </div>
+          </div>
         </div>
         <div id="vt-cliente" style="grid-column:1/3"></div>
       </div>
       <div id="vt-asistente" style="margin-top:14px"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
         <button class="btn btn-s btn-sm" onclick="document.getElementById('modal-vt').remove()">Cancelar</button>
+        <button class="btn btn-s" id="vt-btn-anticipado" style="display:none" onclick="confirmarVT(true)" title="Guarda el H1 listo en Expedientes en curso. A la llegada del camión solo hay que poner el G4 para generar el fichero.">📋 Preparar expediente (sin G4)</button>
         <button class="btn btn-p" onclick="confirmarVT()">🚢 Generar fichero</button>
       </div>
     </div>`;
@@ -3992,6 +4177,7 @@ function _vtGrnH1Def(){ return VT_GRN_H1_DEF; }
 function _vtToggleReg(){
   const tipo=document.getElementById('vt-tipo').value;
   const gw=document.getElementById('vt-grn-wrap'); if(gw) gw.style.display = tipo==='import' ? '' : 'none';
+  const ba=document.getElementById('vt-btn-anticipado'); if(ba) ba.style.display = tipo==='import' ? '' : 'none';
   const sel=document.getElementById('vt-regimen');
   const regs = tipo==='import' ? ['40.00','61.23'] : ['10.00','23.00','31.00','31.51'];
   sel.innerHTML = regs.map(r=>`<option value="${r}">${r}</option>`).join('');
@@ -4054,7 +4240,7 @@ function renderAsistenteVT(esc){
       </details>
     </div>`;
 }
-function confirmarVT(){
+function confirmarVT(anticipado){
   const escKey = document.getElementById('vt-escenario').value;
   const esc = GUIA_ESC_VT[escKey];
   const regimen = document.getElementById('vt-regimen').value;
@@ -4083,8 +4269,9 @@ function confirmarVT(){
     cliente: window._vtCliente || null,   // entidad que paga (columna 37)
     garantiaH1: (document.getElementById('vt-grn')?.value || '').trim(),
   };
+  const mrnEntrada = (document.getElementById('vt-mrn-entrada')?.value || '').trim().toUpperCase();
   document.getElementById('modal-vt').remove();
-  exportarVisualTrans();
+  exportarVisualTrans(anticipado === true ? { anticipado:true, mrnEntrada } : { mrnEntrada });
 }
 
 
@@ -6062,7 +6249,7 @@ function _buildAES(d, cfg){
 
 </script>
 <!-- ?v= obliga al navegador a descargar la versión nueva al publicar (GitHub Pages cachea 10 min) -->
-<script src="soivre-cal.js?v=2026111301"></script>
+<script src="soivre-cal.js?v=2026110212"></script>
 <script src="soivre-vua.js?v=2026110212"></script>
 </body>
 </html>
