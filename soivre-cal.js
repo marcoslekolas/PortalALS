@@ -1102,7 +1102,7 @@ function loadSoivre(){
 }
 
 // ── Seguimiento de solicitudes PUE (PUE-15) ──────────────────
-// El servidor consulta la AEAT cada 20 minutos (y al pulsar «Consultar») y
+// El servidor consulta la AEAT cada 5 minutos (y al pulsar «Consultar») y
 // guarda en la fila de la solicitud el estado SOIVRE, el histórico y el certificado.
 const SOIVRE_SEGUIBLES = ['CAL1', 'ROHS1', 'COM1'];
 async function soivreSeguimientoPue(){
@@ -1140,7 +1140,7 @@ async function soivreSeguimientoPue(){
           ${alta ? `<button class="btn btn-s btn-sm" onclick="abrirDatosAdicionales('${alta.adicional}','${sEsc(x.numero_solicitud)}')">+ ${alta.adicional}</button>
             <button class="btn btn-s btn-sm" onclick="abrirEnvioDocumento('${alta.siglas}','${sEsc(x.numero_solicitud)}','${x.adjunto_estado === 'aceptada' ? 'OTROS' : 'FACTU'}')" title="Enviar documento (PUE-7)">📎</button>` : ''}
         </td></tr>`; }).join('')}</tbody></table></div>
-    <div style="font-size:11px;color:var(--g400);margin-top:6px">El servidor consulta la AEAT cada 20 minutos hasta que hay certificado o la solicitud se cierra. 🔄 consulta en el momento.</div>`;
+    <div style="font-size:11px;color:var(--g400);margin-top:6px">El servidor consulta la AEAT cada 5 minutos hasta que hay certificado o la solicitud se cierra. 🔄 consulta en el momento.</div>`;
 }
 
 async function soivreConsultarPue(numero){
