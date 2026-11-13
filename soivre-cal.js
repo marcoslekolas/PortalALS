@@ -163,6 +163,11 @@ function soivreAplica(codigo){
     if(hay(/SOVEX/))                return { servicio:'CAL1',  seguro:true, medidas:cats, flujo:'02', tipoVua:'F' };
     if(hay(/SOVIM/))                return { servicio:'CAL1',  seguro:true, medidas:cats, flujo:'01' };
   }
+  // Medida COM que el catálogo TARIC del portal no trae: se mira el catálogo
+  // oficial de productos SOIVRE COM (RD 330/2008), donde el código SOIVRE
+  // coincide casi siempre con el TARIC de 10 dígitos.
+  if(SOIVRE.com && SOIVRE.com.has(c.padEnd(10, '0')))
+    return { servicio:'COM1', seguro:true, medidas:['Catálogo SOIVRE COM (RD 330/2008)'], fuente:'com' };
   const oficial = SOIVRE.lista && SOIVRE.lista.get(c.slice(0, 4));
   if(oficial){
     const tipo = oficial.F ? 'F' : 'O';
@@ -180,7 +185,13 @@ function soivreAplica(codigo){
 function soivreCargarLista(){
   if(SOIVRE.lista) return Promise.resolve(SOIVRE.lista);
   if(SOIVRE._cargaLista) return SOIVRE._cargaLista;
-  SOIVRE._cargaLista = sbT().from('estacice_productos').select('codigo,nombre,tipo,imex').in('tipo', ['F', 'O']).neq('imex', 'I')
+  const hoy = new Date().toISOString().slice(0, 10);
+  const com = sbT().from('soivre_productos').select('codigo').eq('certificado', 'COM')
+    .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`).not('codigo', 'like', '%9999')
+    .then(({ data, error }) => { if(error) throw error; SOIVRE.com = new Set((data || []).map(p => p.codigo)); })
+    .catch(e => { console.warn('Catálogo SOIVRE COM no disponible:', e.message); SOIVRE.com = new Set(); });
+  SOIVRE._cargaLista = com
+    .then(() => sbT().from('estacice_productos').select('codigo,nombre,tipo,imex').in('tipo', ['F', 'O']).neq('imex', 'I'))
     .then(({ data, error }) => {
       if(error) throw error;
       const m = new Map();
@@ -249,6 +260,11 @@ function soivreBloqueVua(r, a){
 
 // Botón compacto para la tabla de líneas de factura
 function soivreBotonLinea(l){
+  if(!SOIVRE.lista){
+    const id = 'soivre-linea-' + (++SOIVRE.seq);
+    soivreCargarLista().then(() => { const el = document.getElementById(id); if(el) el.outerHTML = soivreBotonLinea(l) || ''; });
+    return `<div id="${id}"></div>`;
+  }
   const a = soivreAplica(l && l.codigo_taric);
   if(!a) return '';
   if(a.tipoVua && a.flujo !== '01') return `<div style="margin-top:5px"><span class="badge" style="font-size:9px;background:var(--gr50,#f0fdf4);color:var(--gr700,#15803d)" title="Solicitud ESTACICE: recuadro «Control SOIVRE» de arriba">${a.tipoVua === 'O' ? '🫒' : '🍊'} SOIVRE · ESTACICE</span></div>`;
@@ -775,7 +791,10 @@ async function soivreFormCOM1(ctx, cfg){
   try{ productos = await soivreProductosDe('COM', ctx.codigo_taric); }
   catch(e){ aviso = sAviso(`Catálogo SOIVRE no disponible (${sEsc(e.message)}). ¿Se ha ejecutado instalar_soivre.sql?`); }
   const c10 = String(ctx.codigo_taric || '').replace(/\D/g, '');
-  return `${aviso}
+  // Partida «Ex»: el control solo alcanza a los productos del anexo del RD 330/2008
+  const ex = productos.some(p => /9999$/.test(p.codigo));
+  const exAviso = ex ? `<div style="background:var(--am50);color:var(--am600);padding:6px 10px;border-radius:6px;font-size:11px;margin-bottom:10px">Partida con control solo para algunos productos (ver la lista). Si su mercancía no es ninguno de ellos, elija «Certificado COM: 02 · No procede» y se usará el código …9999 de la partida.</div>` : '';
+  return `${aviso}${exAviso}
     ${sCampo('Producto SOIVRE industrial', productos.length
         ? `<select id="sv-producto" class="fi" style="width:100%">${productos.map(p => `<option value="${sEsc(p.codigo)}" ${p.codigo === c10 ? 'selected' : ''}>${sEsc(p.codigo)} · ${sEsc(p.descripcion.slice(0,110))}</option>`).join('')}</select>`
         : sInput('sv-producto', c10, 'placeholder="Código SOIVRE industrial (10 dígitos)"'))}
