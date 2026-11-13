@@ -247,12 +247,15 @@ function construirFilasImport(cab, lineas, cfg){
   C[37]=_vtNum(cab.total_factura)||'';
   C[39]=cfg.representante_nif||'';
   C[40]=cfg.refInterna||cab.numero_factura||'';
+  C[46]=cfg.garantiaH1||'';                            // Garantía (tipo GRN) del H1 — col 47 «Garantía VX»
 
   const filas=[C];
   const nFra=_vtFactura(cab);
   if(nFra) filas.push(['DOCS','N380',nFra]);
   if(cfg.docTransporteRef) filas.push(['DOCS',docTr,cfg.docTransporteRef]);
 
+  // Casilla 40 · documento de cargo: el G4 (depósito temporal) y su partida
+  const cargo=cfg.docCargo&&String(cfg.docCargo.mrn||'').trim()?cfg.docCargo:null;
   lineas.forEach(l=>{
     const P=new Array(105).fill('');
     const c44=(l._c44||[]);
@@ -264,6 +267,7 @@ function construirFilasImport(cab, lineas, cfg){
     P[6]=_vtTaric(l.codigo_taric);
     P[7]=_vtNum(l.importe)||'';
     P[9]=_vtPaisISO(l._origen||(l._cab&&l._cab.pais_origen)||cab.pais_origen)||'';
+    if(cargo){ P[11]=String(cargo.mrn).trim().toUpperCase(); P[12]=String(cargo.partida||'1').trim(); }
     P[13]=cfg.regimen||'40.00';
     P[103]='1';   // método valoración: 1 = valor de transacción
     // Escenario Gibraltar: casilla 36 (preferencia → col 63) y 37.2 (adicional → col 65-67)

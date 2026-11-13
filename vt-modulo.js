@@ -22,6 +22,8 @@ const DUA_MRN = { EX: 'mrn_ex', H1F: 'mrn_h1', H1: 'mrn_h1', T1GI: 'mrn_t1gi', T
 const DUA_OPERACIONES = { export_ue_gi: 'Exportación UE → Gibraltar', reexport_gi: 'Reexportación desde Gibraltar (tierra)', avituallamiento: 'Reexportación GI · avituallamiento',
   import_gi_ue: 'Importación Gibraltar → UE', terceros_gi: 'Terceros → Gibraltar (H1 + T1GI)', export: 'Exportación (sin escenario)', import: 'Importación H1 (sin escenario)' };
 const DUA_MRN_RE = /^\d{2}[A-Z]{2}[A-Z0-9]{14}$/;
+// Garantía (tipo GRN) del H1: fija de la agencia; se puede cambiar en cada expediente
+const DUA_GRN_H1 = '25ESAGL1120000930';
 const duaMrnValido = m => DUA_MRN_RE.test(String(m || '').trim());
 
 function duaPasos(x){
@@ -127,6 +129,9 @@ function duaPrepararFactura(x){
       concentrar: !det.every(l => parseNum(l.peso_bruto) > 0) };
     x.regimen = d.cfg.regimen;
   }
+  // H1: G4 de la casilla 40 (puede llegar después: el H1 se prepara sin él) y garantía
+  if(!d.comun.g4Cargo) d.comun.g4Cargo = { mrn: '', partida: '1' };
+  if(d.comun.garantiaH1 == null) d.comun.garantiaH1 = DUA_GRN_H1;
 }
 // Las líneas de factura con su cabecera (se guardan aparte para no repetirla)
 function duaDetalle(x){
@@ -217,24 +222,48 @@ async function duaGuardar(){
   if(!x || (x.origen === 'g4' && !x.datos.lineas.length)) return;
   clearTimeout(DUA.t);
   const fila = { usuario: (window.PortalGuard && PortalGuard.CU && PortalGuard.CU.nombre) || null, origen: x.origen, referencia: x.datos.comun?.referencia || null, regimen: x.regimen || '',
-    g4_mrn: x.datos.g4Mrn || null, t1_mrn: x.datos.t1Mrn || null, mrn_h1: x.mrn_h1 || null, mrn_t1gi: x.mrn_t1gi || null, mrn_ex: x.mrn_ex || null, mrn_t2gi: x.mrn_t2gi || null,
+    g4_mrn: x.datos.g4Mrn || x.datos.comun?.g4Cargo?.mrn || null, t1_mrn: x.datos.t1Mrn || null, mrn_h1: x.mrn_h1 || null, mrn_t1gi: x.mrn_t1gi || null, mrn_ex: x.mrn_ex || null, mrn_t2gi: x.mrn_t2gi || null,
     etapa: duaEtapa(x), datos: JSON.parse(JSON.stringify(x.datos, (k, v) => k === '_cab' ? undefined : v)), updated_at: new Date().toISOString() };
   const r = x.id ? await sbT().from('vt_expedientes').update(fila).eq('id', x.id).select('id').single()
                  : await sbT().from('vt_expedientes').insert(fila).select('id').single();
   if(r.error) return showToast('No se pudo guardar el expediente: ' + r.error.message);
   x.id = r.data.id;
 }
+// Lista de expedientes: primero los que están en curso, con el siguiente paso;
+// los terminados, plegados. Se crean desde el clasificador («Crear expediente
+// VisualTrans»), con «Nuevo desde G4» o con «T2GI desde DAE».
+const DUA_SIGUIENTE = {
+  inicio: 'Cargar el T1 y el G4',
+  EX: 'Exportación: generar el CSV o pegar su MRN',
+  T2GI: 'Generar el T2GI',
+  H1F: 'H1: generar el CSV o pegar su MRN',
+  H1: 'H1: generar el CSV o pegar su MRN',
+  T1GI: 'Generar el T1GI',
+  REEXP: 'Reexportación 31.71',
+  T1: 'Generar el T1', PERT: 'Generar pertrechos 31.00'
+};
+function duaSiguientePaso(x){
+  if(x.etapa === 'H1F' && !x.g4_mrn) return '⏳ H1 preparado · falta el G4';
+  return DUA_SIGUIENTE[x.etapa] || duaEtapaTexto(x.etapa);
+}
 async function duaPintarLista(){
   const el = document.getElementById('dua-lista');
   if(!el) return;
-  const { data, error } = await sbT().from('vt_expedientes').select('id,updated_at,origen,referencia,regimen,g4_mrn,mrn_ex,mrn_h1,mrn_t1gi,mrn_t2gi,etapa').order('updated_at', { ascending: false }).limit(60);
+  const { data, error } = await sbT().from('vt_expedientes').select('id,created_at,updated_at,usuario,origen,referencia,regimen,g4_mrn,mrn_ex,mrn_h1,mrn_t1gi,mrn_t2gi,etapa').order('updated_at', { ascending: false }).limit(200);
   if(error){ el.innerHTML = `<div style="font-size:12px;color:var(--g400)">${sEsc('Tabla vt_expedientes no disponible: ejecuta de nuevo instalar_soivre.sql en Supabase.')}</div>`; return; }
-  const mrns = x => [['EX', x.mrn_ex], ['H1', x.mrn_h1], ['T1GI', x.mrn_t1gi], ['T2GI', x.mrn_t2gi]].filter(m => m[1]).map(m => `${m[0]} ${sEsc(m[1])}`).join('<br>') || '—';
-  el.innerHTML = data.length ? `<table class="tbl" style="width:100%;font-size:12px"><thead><tr><th>Actualizado</th><th>Referencia</th><th>Entrada</th><th>MRN</th><th>Etapa</th><th></th></tr></thead><tbody>
-    ${data.map(x => `<tr><td>${new Date(x.updated_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td><td>${sEsc(x.referencia || '—')}</td>
-      <td>${x.origen === 'g4' ? 'G4 ' + sEsc(x.g4_mrn || '') : x.origen === 'dae' ? 'DAE ' + sEsc(x.mrn_ex || '') : 'Factura'}</td><td style="font-family:var(--mono);font-size:11px">${mrns(x)}</td>
-      <td>${sEsc(duaEtapaTexto(x.etapa))}</td><td style="white-space:nowrap"><button class="btn btn-p btn-sm" onclick="duaAbrir('${x.id}')">Abrir</button> <button class="btn btn-s btn-sm" onclick="duaBorrar('${x.id}')">Borrar</button></td></tr>`).join('')}</tbody></table>`
-    : '<div style="font-size:12px;color:var(--g400)">Sin expedientes. Se crean desde «VisualTrans (DUA)» en el clasificador, con «Nuevo desde G4» o con «T2GI desde DAE».</div>';
+  const enCurso = data.filter(x => x.etapa !== 'fin'), hechos = data.filter(x => x.etapa === 'fin');
+  const f = v => new Date(v).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const mrns = x => [['G4', x.origen !== 'g4' ? x.g4_mrn : ''], ['EX', x.mrn_ex], ['H1', x.mrn_h1], ['T1GI', x.mrn_t1gi], ['T2GI', x.mrn_t2gi]].filter(m => m[1]).map(m => `${m[0]} ${sEsc(m[1])}`).join('<br>') || '—';
+  const entrada = x => x.origen === 'g4' ? 'G4 ' + sEsc(x.g4_mrn || '') : x.origen === 'dae' ? 'DAE ' + sEsc(x.mrn_ex || '') : 'Factura';
+  const actual = DUA.x && DUA.x.id;
+  const tabla = (filas, curso) => `<table class="tbl" style="width:100%;font-size:12px"><thead><tr><th>Actualizado</th><th>Referencia</th><th>Entrada</th><th>MRN</th><th>${curso ? 'Siguiente paso' : 'Etapa'}</th><th></th></tr></thead><tbody>
+    ${filas.map(x => `<tr${x.id === actual ? ' style="background:var(--b50)"' : ''}><td style="white-space:nowrap">${f(x.updated_at)}${x.usuario ? `<div style="font-size:10px;color:var(--g400)">${sEsc(x.usuario)}</div>` : ''}</td><td>${sEsc(x.referencia || '—')}</td>
+      <td>${entrada(x)}</td><td style="font-family:var(--mono);font-size:11px">${mrns(x)}</td>
+      <td>${curso ? `<strong style="color:${/falta el G4/.test(duaSiguientePaso(x)) ? 'var(--am600)' : 'var(--b700)'}">${sEsc(duaSiguientePaso(x))}</strong>` : sEsc(duaEtapaTexto(x.etapa))}</td>
+      <td style="white-space:nowrap"><button class="btn btn-p btn-sm" onclick="duaAbrir('${x.id}')">Abrir</button> <button class="btn btn-s btn-sm" onclick="duaBorrar('${x.id}')">Borrar</button></td></tr>`).join('')}</tbody></table>`;
+  el.innerHTML = (enCurso.length ? tabla(enCurso, true)
+      : '<div style="font-size:12px;color:var(--g400);padding:6px 0">No hay expedientes en curso. Se crean desde el clasificador (Leer factura → «🚢 Crear expediente VisualTrans»), con «+ Nuevo desde G4» o con «+ T2GI desde DAE».</div>')
+    + (hechos.length ? `<details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--g600)">Terminados (${hechos.length}) · se borran solos a los 7 días</summary><div style="height:6px"></div>${tabla(hechos, false)}</details>` : '');
 }
 async function duaAbrir(id){
   const { data, error } = await sbT().from('vt_expedientes').select('*').eq('id', id).single();
@@ -701,6 +730,11 @@ function duaAvisos(){
   const nFac = fac.numero || (deFactura ? _vtFactura(cab) : ''), fFac = fac.fecha || (deFactura ? cab.fecha : '');
   if(!nFac || !fFac) av.push(`Casilla 44 N380: falta ${!nFac && !fFac ? 'el nº y la fecha' : !nFac ? 'el nº' : 'la fecha'} de la factura comercial`);
   else if(!/^[A-Z]{2}/.test(String(nFac).trim().toUpperCase())) av.push(`Casilla 44 N380: el nº de factura ${nFac} debe llevar delante el código ISO del país emisor (ej. NL${nFac})`);
+  if(deFactura && duaEsImport(x)){
+    const g = String(x.datos.comun?.g4Cargo?.mrn || '').trim();
+    if(!g) av.push('Casilla 40: falta el G4 (documento de cargo). Puedes dejar el H1 preparado y generarlo cuando llegue el camión');
+    else if(!duaMrnValido(g)) av.push(`Casilla 40: el G4 ${g} no tiene el formato de un MRN (18 caracteres)`);
+  }
   if(!x.datos.lineas?.length) return { lote: null, av };
   const lote = duaLoteDe(x);
   // El T1 no lleva valor ni origen; ni el T1 ni los pertrechos usan el TARIC a 10 dígitos
@@ -761,14 +795,15 @@ function duaGenerarReexp(){ const x = DUA.x, { lote, av } = duaAvisos(); if(duaC
 async function duaGenerarDesdeFactura(){
   const x = DUA.x, d = x.datos, c = d.cfg, esImport = duaEsImport(x), detalle = duaDetalle(x), cab = d.cab || {};
   const esc = GUIA_ESC_VT[c.operacion];
-  if(!duaConfirmar(duaAvisos().av.filter(a => a.startsWith('Casilla 44 N380')))) return;
+  if(!duaConfirmar(duaAvisos().av.filter(a => a.startsWith('Casilla 44 N380') || a.startsWith('Casilla 40')))) return;
   if(!(await vtPrepararExportacion(detalle, cab, esImport))) return;
   const docsEscenario = esc ? (esc.c44 || []).map(k => ({ codigo: k.codigo, valor: k.pedir ? (c.c44?.[k.codigo] || '') : '' })) : [];
   const t = d.comun.transporte || {};
   const cfg = { origen: c.origen, tipo: esImport ? 'import' : 'export', aduana: c.aduana, regimen: c.regimen, transporte: c.transporte, docTransporteRef: c.docTransporteRef, ubicacion: c.ubicacion, ubicacionCod: c.ubicacionCod,
     incoterm: d.comun.incoterm, lugarIncoterm: d.comun.lugarIncoterm, matricula: t.matricula, paisMatricula: t.pais, tipoMedioFrontera: { 1: '10', 3: '30' }[c.transporte] || '', claseBultos: d.comun.claseBultos,
     provincia: c.provincia, representante_nif: d.comun.representanteNif,
-    observaciones: c.observaciones, escenario: esc ? c.operacion : '', preferencia: esc ? (esc.preferencia || '') : '', adicionales: esc ? adicionalesVT(esc, c.regimen) : [], docsEscenario, cliente: window._vtCliente || null };
+    observaciones: c.observaciones, escenario: esc ? c.operacion : '', preferencia: esc ? (esc.preferencia || '') : '', adicionales: esc ? adicionalesVT(esc, c.regimen) : [], docsEscenario, cliente: window._vtCliente || null,
+    docCargo: esImport ? d.comun.g4Cargo : null, garantiaH1: esImport ? (d.comun.garantiaH1 || '') : '' };
   const lineas = duaPartidasFactura(x);
   d.lineas = duaLineasDesdeDua(lineas, cab);
   d.comun.aduana = (VT_ADUANAS[c.aduana] || {}).cod || c.aduana;
@@ -1031,6 +1066,14 @@ function duaSeccionFactura(){
     + duaIn('Clase de bultos', 'datos.comun.claseBultos') + duaIn('Provincia de origen', 'datos.cfg.provincia', 'maxlength="2"') + duaIn('Observaciones', 'datos.cfg.observaciones')
     + pedir.map(k => duaIn(`${k.codigo} · ${k.ref}`, `datos.cfg.c44.${k.codigo}`)).join(''));
   if(esc) h += `<div style="font-size:11px;color:var(--g500);margin-bottom:10px">${esc.notas.map(sEsc).join(' · ')}</div>`;
+  if(esImport){
+    const g4 = String(d.comun.g4Cargo?.mrn || '').trim();
+    h += `<div style="background:${g4 ? 'var(--g50)' : 'var(--am50)'};border:1px solid var(--g200);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:var(--g700);margin-bottom:6px">${g4 ? 'Documento de cargo (casilla 40) y garantía' : '⏳ H1 preparado · falta el G4'}</div>
+      ${g4 ? '' : '<div style="font-size:11px;color:var(--am600);margin-bottom:8px">Deja el expediente así: queda en «Expedientes en curso». Cuando llegue el camión y tengas el G4 en VisualTrans, pégalo aquí y genera el H1.</div>'}
+      ${duaRejilla(`<div><label style="font-size:10px;font-weight:700;color:var(--g500);text-transform:uppercase">G4 · MRN (casilla 40)</label><input class="fi" style="width:100%;font-family:var(--mono);text-transform:uppercase" maxlength="18" placeholder="26ESG4A00…" value="${sEsc(g4)}" onchange="duaSet('datos.comun.g4Cargo.mrn',this.value.toUpperCase().replace(/\\s+/g,''));duaPintar()"></div>`
+        + duaIn('G4 · partida', 'datos.comun.g4Cargo.partida', 'maxlength="5"') + duaIn('Garantía H1 (GRN)', 'datos.comun.garantiaH1', 'style="width:100%;font-family:var(--mono)"'))}</div>`;
+  }
   h += `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px;cursor:pointer"><input type="checkbox" ${c.concentrar ? 'checked' : ''} onchange="duaConcentrar(this.checked)"> Bultos y peso bruto totales solo en la primera partida</label>${duaTablaFactura(lineas)}`;
   h += `<div id="vt-cliente" style="margin-bottom:10px"></div><div id="dua-soivre" style="font-size:12px;margin-bottom:10px"></div>`;
   h += duaAvisoCambio(d.comun.moneda);
