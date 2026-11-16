@@ -36,6 +36,7 @@ if SRV.startswith('sb_publishable_') or SRV.startswith('sbp_'):
     sys.exit(2)
 
 H = {'apikey': SRV, 'Authorization': f'Bearer {SRV}'}
+TIENE_EXCLUIDOS = False   # se comprueba al conectar: columna taric_medidas.excluidos
 WORK = 'taric_work'
 os.makedirs(WORK, exist_ok=True)
 
@@ -118,13 +119,15 @@ def _norm(s):
 
 def detectar_tipo(ruta):
     """Identifica QUÉ es el fichero por su CONTENIDO (cabeceras / hojas), no por su
-    nombre. Devuelve 'nomenclatura' | 'medidas' | 'casilla44' | 'correlacion' | None.
+    nombre. Devuelve 'nomenclatura' | 'medidas' | 'casilla44' | 'correlacion' |
+    'exclusiones' | None.
     None = fichero sin contenido relevante (footnotes, conditions, additional...) → se descarta.
     Firmas únicas verificadas contra los ficheros oficiales de CIRCABC:
       · Nomenclature_EN      → cabecera con 'goods code' + 'indent'
       · TARIC_measures       → cabecera con 'red_ind'
       · Box_44_codes_...     → cabecera con 'certificate code'
       · Correlation tables   → hojas 'New codes' + 'Old codes'
+      · Measure_exclusions   → cabecera con 'excluded country code'
     """
     try:
         wb = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
@@ -142,6 +145,8 @@ def detectar_tipo(ruta):
             break
         if 'certificate code' in cab:
             return 'casilla44'
+        if 'excluded country code' in cab:
+            return 'exclusiones'
         if 'red_ind' in cab:
             return 'medidas'
         if 'indent' in cab and 'goods code' in cab:
@@ -206,6 +211,45 @@ CAT = {
     '564': ('ANTIDUMPING_REG', 'Registro antidumping/compensatorio'),
     '109': ('UNIDAD_SUPL', 'Unidad suplementaria'),
     '110': ('UNIDAD_SUPL', 'Unidad suplementaria (importación)'),
+    '764': ('ACERO_FUSION', 'Acero: país de fusión y colada (Reg. 2026/1963)'),
+}
+
+# ══════════ Controles a la EXPORTACIÓN ══════════
+# Categorías EXP_*: el portal las usa solo en exportaciones (EX, reexportación) y
+# nunca en la casilla 44 de importación. Cada medida pide en casilla 44 una
+# licencia (C/E/X…) o el código Y de «no afectado»; si no, no se autoriza la salida.
+CAT_EXP = {
+    '478': ('EXP_DOBLE_USO', 'Doble uso: autorización de exportación (Reg. 2021/821)'),
+    '751': ('EXP_RESIDUOS', 'Traslado de residuos (Reg. 2024/1157)'),
+    '765': ('EXP_FGAS', 'Gases fluorados (Reg. 2024/573)'),
+    '725': ('EXP_OZONO', 'Sustancias que agotan la capa de ozono (Reg. 2024/590)'),
+    '749': ('EXP_MERCURIO', 'Mercurio (Reg. 2017/852)'),
+    '479': ('EXP_QUIMICOS', 'Productos químicos peligrosos (Reg. 649/2012)'),
+    '715': ('EXP_CITES', 'CITES: especies protegidas'),
+    '735': ('EXP_CULTURAL', 'Bienes culturales (Reg. 116/2009)'),
+    '716': ('EXP_PESCA', 'Pesca: documentos CICAA/CAOI/CIAT'),
+    '740': ('EXP_PIEL', 'Piel de perro y gato (Reg. 1523/2007)'),
+    '706': ('EXP_TORTURA', 'Bienes para tortura o represión: prohibición'),
+    '708': ('EXP_TORTURA', 'Bienes para tortura o represión: licencia'),
+    '278': ('EXP_SANCION', 'Prohibición de exportación'),
+    '467': ('EXP_SANCION', 'Restricción a la exportación'),
+    '476': ('EXP_SANCION', 'Restricción a la exportación'),
+    '473': ('EXP_SANCION', 'Autorización de exportación'),
+    '709': ('EXP_SANCION', 'Control a la exportación (sanciones)'),
+    '717': ('EXP_SANCION', 'Bienes y tecnologías restringidos (sanciones)'),
+    '718': ('EXP_SANCION', 'Bienes de lujo (sanciones)'),
+    '736': ('EXP_SANCION', 'Control a la exportación (sanciones)'),
+    '737': ('EXP_SANCION', 'Control a la exportación (sanciones)'),
+    '766': ('EXP_SANCION', 'Control a la exportación (sanciones)'),
+    '767': ('EXP_SANCION', 'Control a la exportación (sanciones)'),
+    '768': ('EXP_SANCION', 'Control a la exportación (sanciones)'),
+    '780': ('EXP_SANCION', 'Control a la exportación (sanciones)'),
+    '781': ('EXP_SANCION', 'Control a la exportación (sanciones)'),
+}
+# La misma medida cambia de sentido según el reglamento que la crea
+ETIQUETA_EXP_BASE = {
+    ('780', '0833/14'): 'Cláusula «no Rusia» (Reg. 833/2014, art. 12 octies)',
+    ('781', '0765/06'): 'Cláusula «no Bielorrusia» (Reg. 765/2006, art. 8 octies)',
 }
 SANCIONES = {'707', '714', '731', '732', '760', '762', '763'}
 
@@ -213,6 +257,8 @@ SANCIONES = {'707', '714', '731', '732', '760', '762', '763'}
 def categoria_de(codigo, base):
     if codigo in CAT:
         return CAT[codigo]
+    if codigo in CAT_EXP:
+        return CAT_EXP[codigo]
     if codigo in SANCIONES:
         b = base or ''
         if any(x in b for x in ('0833/14', '0263/22', '0692/14', '0813/25')):
@@ -319,7 +365,39 @@ def procesar_nomenclatura(ruta):
     return ruta_csv, len(filas)
 
 
-def procesar_medidas(ruta):
+def procesar_exclusiones(ruta):
+    """Países excluidos de cada medida (Measure_exclusions): {(tipo, origen_code,
+    inicio_iso): [(prefijo_codigo, pais)]}. El fichero da la medida al nivel en que
+    se define (p. ej. 0100000000), así que se compara por prefijo."""
+    wb = openpyxl.load_workbook(ruta, read_only=True)
+    it = wb[wb.sheetnames[0]].iter_rows(values_only=True)
+    cab = [_norm(c) for c in next(it)]
+    i_cod, i_ini = cab.index('goods code'), cab.index('start date')
+    i_org, i_tipo = cab.index('origin code'), cab.index('meas. type code')
+    # Las cabeceras de CIRCABC van cruzadas: «Excluded country code» trae el nombre
+    # y «Excluded country» el código ISO. Se elige la columna con códigos de 2 letras.
+    i_a, i_b = cab.index('excluded country code'), cab.index('excluded country')
+    excl, n = collections.defaultdict(list), 0
+    for r in it:
+        a, b = str(r[i_a] or '').strip(), str(r[i_b] or '').strip()
+        pais = b if re.match(r'^[A-Z]{2}$', b) else a if re.match(r'^[A-Z]{2}$', a) else ''
+        cod = str(r[i_cod] or '').strip()
+        if not pais or not re.match(r'^\d{10}$', cod):
+            continue
+        k = (str(r[i_tipo] or '').strip(), str(r[i_org] or '').strip(), _fecha_iso(r[i_ini]))
+        excl[k].append((cod.rstrip('0') or cod, pais)); n += 1
+    wb.close()
+    log(f'exclusiones: {n:,} países excluidos en {len(excl):,} medidas')
+    return excl
+
+
+def excluidos_de(excl, tipo, origen_code, inicio, cod):
+    if not excl:
+        return ''
+    return '|'.join(sorted({p for pref, p in excl.get((tipo, origen_code, inicio), ()) if cod.startswith(pref)}))
+
+
+def procesar_medidas(ruta, excl=None):
     wb = openpyxl.load_workbook(ruta, read_only=True)
     vistos, filas, n = set(), [], 0
     for sh in wb:
@@ -339,7 +417,10 @@ def procesar_medidas(ruta):
             if not re.match(r'^\d{10}$', cod):
                 continue
             origen = (r[6] or '').strip()
-            k = (cod, c[0], origen)
+            exp = c[0].startswith('EXP_')
+            # Exportación: una fila por tipo y base legal (cada una pide sus códigos)
+            k = ((cod, c[0], origen, tipo, (r[8] or '').strip(), bool(str(r[1] or '').strip()))
+                 if exp else (cod, c[0], origen))
             if k in vistos:
                 continue
             vistos.add(k)
@@ -348,16 +429,28 @@ def procesar_medidas(ruta):
                             for m in re.finditer(r'\b([A-Z])-?(\d{3})\b', derecho)})
             reales = [x for x in certs if x[0] in 'NCLAU']
             erga = 1 if origen.upper() in ('ERGA OMNES', '', 'ALL THIRD COUNTRIES') else 0
-            if reales:                              exig = 'DOCUMENTO'
+            if exp:
+                reales = [x for x in certs if x[0] != 'Y']
+            adicional = str(r[1] or '').strip()
+            if exp and adicional:
+                # Solo afecta a la mercancía con ese código adicional (precursores,
+                # bienes culturales de Irak…): aviso informativo, no pide casilla 44
+                exig = 'INFORMATIVA'
+            elif reales:                            exig = 'DOCUMENTO'
             elif certs:                             exig = 'ATESTACION_Y'
-            elif c[0] in ('PROHIBICION', 'RESTRICCION', 'LIMITE_CUANT'): exig = 'PROHIBICION'
+            elif exp or c[0] in ('PROHIBICION', 'RESTRICCION', 'LIMITE_CUANT'): exig = 'PROHIBICION'
             elif c[0] in ('ANTIDUMPING', 'ANTISUBVENCION', 'UNIDAD_SUPL'): exig = 'ARANCELARIA'
             else:                                   exig = 'REVISAR'
-            filas.append([cod, cod[:8], c[0], c[1], tipo, (r[7] or '').strip(),
+            etiqueta = next((v for (t, b), v in ETIQUETA_EXP_BASE.items() if t == tipo and b in (r[8] or '')), c[1])
+            if exp and adicional:
+                etiqueta = f'{etiqueta} · solo con código adicional {adicional}'
+            filas.append([cod, cod[:8], c[0], etiqueta, tipo, (r[7] or '').strip(),
                           origen, (r[10] or '').strip(), (r[8] or '').strip(), derecho,
                           r[3].date().isoformat() if hasattr(r[3], 'date') else None,
                           r[4].date().isoformat() if hasattr(r[4], 'date') else None,
-                          '|'.join(certs), erga, exig])
+                          '|'.join(certs), erga, exig]
+                         + ([excluidos_de(excl, tipo, (r[10] or '').strip(), _fecha_iso(r[3]), cod)]
+                            if TIENE_EXCLUIDOS else []))
     wb.close()
     ruta_csv = f'{WORK}/med.csv'
     with open(ruta_csv, 'w', newline='', encoding='utf-8') as f:
@@ -469,7 +562,8 @@ def cargar(nom_csv=None, med_csv=None, c44_csv=None, muertos=None):
                            f"WHERE sufijo='80' AND codigo IN ('{lista}');")
     if med_csv:
         sql.append('DELETE FROM public.taric_medidas;')
-        sql.append(f"\\copy public.taric_medidas (codigo,nc8,categoria,etiqueta,tipo_medida,desc_medida,origen,origen_code,base_legal,derecho,inicio,fin,certificados,erga_omnes,exigencia) FROM '{med_csv}' WITH (FORMAT csv)")
+        cols = 'codigo,nc8,categoria,etiqueta,tipo_medida,desc_medida,origen,origen_code,base_legal,derecho,inicio,fin,certificados,erga_omnes,exigencia' + (',excluidos' if TIENE_EXCLUIDOS else '')
+        sql.append(f"\\copy public.taric_medidas ({cols}) FROM '{med_csv}' WITH (FORMAT csv)")
     if c44_csv:
         sql.append('DELETE FROM public.taric_casilla44;')
         sql.append(f"\\copy public.taric_casilla44 (codigo,descripcion,inicio,fin) FROM '{c44_csv}' WITH (FORMAT csv)")
@@ -496,6 +590,14 @@ def main():
     if r.returncode != 0:
         raise RuntimeError(f'No se pudo conectar a la base: {r.stderr.strip()[-400:]}')
     log(f'conexión OK · medidas actuales: {r.stdout.strip()}')
+    global TIENE_EXCLUIDOS
+    r = subprocess.run(['psql', DB, '-tAc', "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_schema='public' AND table_name='taric_medidas' AND column_name='excluidos';"],
+                       capture_output=True, text=True)
+    TIENE_EXCLUIDOS = r.returncode == 0 and r.stdout.strip() == '1'
+    if not TIENE_EXCLUIDOS:
+        log('aviso: taric_medidas no tiene la columna «excluidos» (controles_exportacion.sql); '
+            'se carga sin países excluidos')
 
     estado(mensaje='Descargando ficheros del bucket')
 
@@ -506,7 +608,7 @@ def main():
         log(f'contenido de taric-updates/{EXTR}/ : {listar_bucket(EXTR + "/")}')
         raise RuntimeError(f'No hay ficheros .xlsx en taric-updates/{EXTR}/.')
 
-    tipos = {'nomenclatura': None, 'medidas': None, 'casilla44': None}
+    tipos = {'nomenclatura': None, 'medidas': None, 'casilla44': None, 'exclusiones': None}
     correlaciones = []
     descartados = []
     for n in nombres:
@@ -528,7 +630,9 @@ def main():
     if descartados:
         log(f'descartados ({len(descartados)}): {", ".join(descartados)}')
 
-    if not any(tipos.values()) and not correlaciones:
+    if tipos['exclusiones'] and not tipos['medidas']:
+        log('aviso: las exclusiones solo se aplican junto con el fichero de medidas; se ignoran')
+    if not any(v for k, v in tipos.items() if k != 'exclusiones') and not correlaciones:
         raise RuntimeError('Ningún fichero aportado contiene datos TARIC reconocibles '
                            '(nomenclatura, medidas, casilla 44 o tabla de correlación).')
 
@@ -545,7 +649,8 @@ def main():
 
     if tipos['medidas']:
         estado(mensaje='Procesando medidas (puede tardar varios minutos)')
-        med_csv, n_med = procesar_medidas(tipos['medidas'])
+        excl = procesar_exclusiones(tipos['exclusiones']) if tipos['exclusiones'] and TIENE_EXCLUIDOS else None
+        med_csv, n_med = procesar_medidas(tipos['medidas'], excl)
         if n_med < 10000:
             raise RuntimeError(f'Medidas con muy pocas filas ({n_med}); no se carga.')
 
