@@ -1706,6 +1706,7 @@ async function enriquecerConCatalogo(r){
     r._verif = v;
     r._descOficial = TARIC_DB.desc.get(r.codigo_taric) || '';
     r._c44 = casilla44De(linea);
+    if(typeof texpCargar === 'function') await texpCargar([r.codigo_taric]);
   }catch(e){ console.warn('Catálogo no aplicado:', e.message); }
   return r;
 }
@@ -1751,6 +1752,7 @@ function mostrarResultado(r, container){
               style="border:0;background:none;cursor:pointer;font-size:11px" title="Copiar códigos">📋</button>
           </div>`
         : '<div style="font-size:11px;color:var(--g400);padding-top:6px;border-top:1px dashed #bfdbfe">Sin medidas paraduaneras asociadas a este código.</div>'}
+        ${typeof texpHtmlLinea === 'function' ? texpHtmlLinea(r.codigo_taric) : ''}
       </div>`;
   }
 
@@ -2663,6 +2665,7 @@ async function pintarPanelCatalogo(){
           <br>· <strong>Nomenclatura</strong> — códigos y descripciones (Nomenclature_EN.xlsx)
           <br>· <strong>Medidas</strong> — paraduaneras, ~68 MB (TARIC_measures.xlsx)
           <br>· <strong>Casilla 44</strong> — códigos de documento (Box_44_codes_of_the_SAD.xlsx)
+          <br>· <strong>Exclusiones</strong> — países excluidos de cada medida (Measure_exclusions.xlsx). Súbelo junto con las medidas
           <br>· <strong>Tablas de correlación</strong> — cierran los códigos NC retirados (correlation table)
           <br><span style="color:var(--g400)">Puedes subir todo junto para un refresco completo, o solo una parte (p. ej. solo las correlaciones).</span>
         </div>
@@ -2709,6 +2712,7 @@ function quitarFicheroTaric(nombre){
 function _pistaTipoTaric(nombre){
   const n = nombre.toLowerCase();
   if(/nomenclature|nomenclatura/.test(n)) return 'nomenclatura';
+  if(/exclusion/.test(n))                 return 'exclusiones';
   if(/measures|medidas/.test(n))          return 'medidas';
   if(/box_?44|casilla/.test(n))           return 'casilla 44';
   if(/correlation|correlaci/.test(n))     return 'correlación';
@@ -2898,8 +2902,10 @@ async function cargarCatalogoTaric(lineas){
     // Medidas: solo de los códigos de 10 dígitos que hayan quedado resueltos
     const cods = [...TARIC_DB.desc.keys()];
     if(cods.length){
+      // Solo importación: las de exportación (EXP_*) van aparte (taric-exportacion.js)
       const med = await sbT().from('taric_medidas')
-                             .select('codigo,categoria').in('codigo', cods);
+                             .select('codigo,categoria').in('codigo', cods)
+                             .not('categoria', 'like', 'EXP_%');
       if(!med.error){
         TARIC_DB.med.clear();
         (med.data||[]).forEach(r => {
@@ -3088,6 +3094,11 @@ async function renderLineasFactura(data, filename){
   `;
 
   await cargarCatalogoTaric(lineas);
+  // Medidas con casilla 44 a elegir (exportación y acero), una sola ida y vuelta
+  if(typeof texpCargar === 'function'){
+    lineas.forEach(l => { const v = verificarSubpartida(l); if(v.codigo && !l.codigo_taric) l._texpCod = v.codigo; });
+    await texpCargar(lineas.map(l => l._texpCod || l.codigo_taric)).catch(e => console.warn(e.message));
+  }
 
   let html = '';
   for(const l of lineas){
@@ -3156,6 +3167,7 @@ async function renderLineasFactura(data, filename){
             </div>
             ${l._c44.map(d=>`<span class="badge" style="font-size:9px;margin:1px;background:${d.negativa?'var(--g100)':'var(--am50)'};color:${d.negativa?'var(--g600)':'var(--am600)'}" title="${d.descripcion||''}${d.obligatorio?'':' (no obligatorio)'}">${d.codigo_doc}${d.obligatorio?'':'*'}</span>`).join('')}
           </div>` : ''}
+        ${typeof texpHtmlLinea === 'function' ? texpHtmlLinea(l.codigo_taric) : ''}
         ${typeof soivreBotonLinea === 'function' ? soivreBotonLinea(l) : ''}
       </td>
       <td>
@@ -5206,6 +5218,7 @@ function _buildAES(d, cfg){
 
 </script>
 <!-- ?v= obliga al navegador a descargar la versión nueva al publicar (GitHub Pages cachea 10 min) -->
+<script src="taric-exportacion.js?v=2026111701"></script>
 <script src="soivre-cal.js?v=2026111601"></script>
 <script src="vt-entidades.js?v=2026111304"></script>
 <script src="soivre-vua.js?v=2026111601"></script>

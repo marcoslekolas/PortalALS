@@ -735,6 +735,7 @@ function duaAvisos(){
     if(!g) av.push('Casilla 40: falta el G4 (documento de cargo). Puedes dejar el H1 preparado y generarlo cuando llegue el camión');
     else if(!duaMrnValido(g)) av.push(`Casilla 40: el G4 ${g} no tiene el formato de un MRN (18 caracteres)`);
   }
+  if(deFactura) av.push(...duaTexpAvisos(x));
   if(!x.datos.lineas?.length) return { lote: null, av };
   const lote = duaLoteDe(x);
   // El T1 no lleva valor ni origen; ni el T1 ni los pertrechos usan el TARIC a 10 dígitos
@@ -795,7 +796,8 @@ function duaGenerarReexp(){ const x = DUA.x, { lote, av } = duaAvisos(); if(duaC
 async function duaGenerarDesdeFactura(){
   const x = DUA.x, d = x.datos, c = d.cfg, esImport = duaEsImport(x), detalle = duaDetalle(x), cab = d.cab || {};
   const esc = GUIA_ESC_VT[c.operacion];
-  if(!duaConfirmar(duaAvisos().av.filter(a => a.startsWith('Casilla 44 N380') || a.startsWith('Casilla 40')))) return;
+  await duaPintarTexp();   // medidas con casilla 44 a elegir, cargadas antes de avisar
+  if(!duaConfirmar(duaAvisos().av.filter(a => a.startsWith('Casilla 44 N380') || a.startsWith('Casilla 40') || a.startsWith('Exportación') || a.startsWith('Acero')))) return;
   if(!(await vtPrepararExportacion(detalle, cab, esImport))) return;
   const docsEscenario = esc ? (esc.c44 || []).map(k => ({ codigo: k.codigo, valor: k.pedir ? (c.c44?.[k.codigo] || '') : '' })) : [];
   const t = d.comun.transporte || {};
@@ -805,6 +807,9 @@ async function duaGenerarDesdeFactura(){
     observaciones: c.observaciones, escenario: esc ? c.operacion : '', preferencia: esc ? (esc.preferencia || '') : '', adicionales: esc ? adicionalesVT(esc, c.regimen) : [], docsEscenario, cliente: window._vtCliente || null,
     docCargo: esImport ? d.comun.g4Cargo : null, garantiaH1: esImport ? (d.comun.garantiaH1 || '') : '' };
   const lineas = duaPartidasFactura(x);
+  // Casilla 44 elegida para los controles a la exportación (EX) o el acero (H1)
+  const elegidos = new Map(duaTexpPartidas(x).map(p => [p.clave, p.medidas.filter(m => !m.informativa).flatMap(m => Object.entries(m.elegidos))]));
+  lineas.forEach(l => { l._c44elegidos = [...new Map(elegidos.get(l._clave) || []).entries()].map(([k, v]) => [k, v || (/^Y/.test(k) ? 'ESCRITO' : ''), cab.fecha || '']); });
   d.lineas = duaLineasDesdeDua(lineas, cab);
   d.comun.aduana = (VT_ADUANAS[c.aduana] || {}).cod || c.aduana;
   if(cfg.cliente?.nif) d.comun.clienteNif = cfg.cliente.nif;
@@ -1075,6 +1080,7 @@ function duaSeccionFactura(){
         + duaIn('G4 · partida', 'datos.comun.g4Cargo.partida', 'maxlength="5"') + duaIn('Garantía H1 (GRN)', 'datos.comun.garantiaH1', 'style="width:100%;font-family:var(--mono)"'))}</div>`;
   }
   h += `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px;cursor:pointer"><input type="checkbox" ${c.concentrar ? 'checked' : ''} onchange="duaConcentrar(this.checked)"> Bultos y peso bruto totales solo en la primera partida</label>${duaTablaFactura(lineas)}`;
+  h += `<div id="dua-texp">${duaTexpHtml()}</div>`;
   h += `<div id="vt-cliente" style="margin-bottom:10px"></div><div id="dua-soivre" style="font-size:12px;margin-bottom:10px"></div>`;
   h += duaAvisoCambio(d.comun.moneda);
   const tipo = esImport ? 'H1F' : 'EX';
@@ -1139,7 +1145,87 @@ function duaPintar(){
     vtPintarCliente(d.cab || {}, duaEsImport(x)).then(() => { if(d.cliente && DUA.x === x) vtElegirCliente(d.cliente); });
     duaPintarSoivre();
     duaMarcarSupl();
+    duaPintarTexp();
   }
+}
+
+// ── Casilla 44 a elegir: controles a la exportación (EX) y acero (H1) ─────────
+// Las medidas vienen de taric_medidas (taric-exportacion.js). Cada una pide una
+// licencia (C/E/X…, con su número) o una declaración Y. Se preselecciona el «no
+// afectado» cuando la medida lo tiene; la elección se guarda en datos.cfg.texp.
+function duaTexpDestino(x){ const cab = x.datos.cab || {}; return _vtPaisISO(cab.destinatario?.pais || cab.pais_destino) || 'GI'; }
+function duaTexpPartidas(x){
+  if(typeof texpMedidas !== 'function') return [];
+  const c = x.datos.cfg || {}, det = duaDetalle(x), importacion = duaEsImport(x), destino = duaTexpDestino(x);
+  return duaPartidasFactura(x).map((l, i) => {
+    const cods = c.origen === 'detalle' ? [l.codigo_taric] : det.filter(d => String(d.codigo_taric || '').slice(0, 4) === l._clave).map(d => d.codigo_taric);
+    const medidas = texpMedidas(cods.length ? cods : [l.codigo_taric], { destino, importacion });
+    const elegido = c.texp?.[l._clave] || {};
+    medidas.forEach(m => { m.elegidos = m.clave in elegido ? elegido[m.clave] : Object.fromEntries(m.porDefecto.map(k => [k, ''])); });
+    return { n: i + 1, clave: l._clave, taric: l.codigo_taric, medidas };
+  }).filter(p => p.medidas.length);
+}
+function duaTexpAvisos(x){
+  const av = [], pref = duaEsImport(x) ? 'Acero' : 'Exportación';
+  duaTexpPartidas(x).forEach(p => p.medidas.filter(m => !m.informativa).forEach(m => {
+    const que = `${pref}: partida ${p.n} (${p.taric}) · ${m.etiqueta}`;
+    if(m.prohibicion) av.push(`${que}: exportación prohibida con destino ${duaTexpDestino(x)}`);
+    else if(!Object.keys(m.elegidos).length) av.push(`${que}: elige en casilla 44 ${m.certs.map(c => c.codigo).join(' / ')}`);
+    else Object.entries(m.elegidos).filter(([k, v]) => !/^Y/.test(k) && !v).forEach(([k]) => av.push(`${que}: falta el nº de ${k}`));
+  }));
+  return av;
+}
+function duaTexpHtml(){
+  const x = DUA.x;
+  if(!x) return '';
+  const partes = duaTexpPartidas(x);
+  if(!partes.length) return '';
+  const imp = duaEsImport(x);
+  const opcion = (p, m, c) => {
+    const marcado = c.codigo in m.elegidos, args = `'${sEsc(p.clave)}','${sEsc(m.clave)}','${c.codigo}'`;
+    return `<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin:2px 0" title="${sEsc(c.desc)}">
+      <input type="checkbox" ${marcado ? 'checked' : ''} onchange="duaTexpMarcar(${args},this.checked)">
+      <b style="font-family:var(--mono);min-width:38px">${c.codigo}</b>
+      <span style="color:${c.noAfectado ? 'var(--g500)' : 'var(--g700)'};flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sEsc(c.desc || '')}</span>
+      ${marcado && !/^Y/.test(c.codigo) ? `<input class="fi" style="width:130px;font-size:11px;padding:2px 4px" placeholder="nº de la licencia" value="${sEsc(m.elegidos[c.codigo] || '')}" onchange="duaTexpRef(${args},this.value)">` : ''}</label>`;
+  };
+  const medida = (p, m) => m.informativa
+    ? `<div style="font-size:11px;color:var(--g500);margin:4px 0">Partida ${p.n} · ${sEsc(m.etiqueta)} (solo si se declara ese código adicional)</div>`
+    : `<div style="background:var(--w);border-radius:6px;padding:6px 8px;margin:5px 0">
+        <div style="font-size:11px;font-weight:600;color:var(--g700);margin-bottom:2px">Partida ${p.n} · <span style="font-family:var(--mono)">${sEsc(p.taric)}</span> · ${sEsc(m.etiqueta)}${m.alcance === 'grupo' ? ` <span style="font-weight:400;color:var(--g500)">(${sEsc(m.origen)}: comprueba si incluye el destino)</span>` : ''}${m.umbral ? ` <span style="font-weight:400;color:var(--g500)">· umbral ${sEsc(m.umbral)}</span>` : ''}</div>
+        ${m.prohibicion ? '<span class="badge badge-red">Exportación prohibida a este destino</span>' : m.certs.map(c => opcion(p, m, c)).join('')}
+        ${!m.prohibicion && !Object.keys(m.elegidos).length ? '<div style="font-size:11px;font-weight:600;color:var(--rd600)">Falta elegir el código de casilla 44</div>' : ''}</div>`;
+  return `<div style="border:1px solid var(--b100,#c5dbff);background:var(--b50,#e7f1ff);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+    <div style="font-size:12px;font-weight:700;color:var(--b700,#1d4ed8)">${imp ? 'Acero · país de fusión y colada (casilla 44)' : `Controles a la exportación · destino ${sEsc(duaTexpDestino(x))} (casilla 44)`}</div>
+    <div style="font-size:11px;color:var(--g600);margin:2px 0 4px">${imp ? 'Marca el país de fusión (Y376–Y388) y el de colada (C131–C139).' : 'Marca la licencia (con su número) o la declaración Y. Si la medida tiene «no afectado», viene marcado: cámbialo si la mercancía sí está sujeta.'}</div>
+    ${partes.map(p => p.medidas.map(m => medida(p, m)).join('')).join('')}</div>`;
+}
+function duaTexpEstado(clavePartida, claveMedida){
+  const c = DUA.x.datos.cfg;
+  c.texp = c.texp || {}; c.texp[clavePartida] = c.texp[clavePartida] || {};
+  if(!(claveMedida in c.texp[clavePartida])){
+    const m = duaTexpPartidas(DUA.x).find(p => p.clave === clavePartida)?.medidas.find(q => q.clave === claveMedida);
+    c.texp[clavePartida][claveMedida] = Object.assign({}, m ? m.elegidos : {});
+  }
+  return c.texp[clavePartida][claveMedida];
+}
+function duaTexpMarcar(clavePartida, claveMedida, codigo, marcado){
+  const e = duaTexpEstado(clavePartida, claveMedida);
+  if(marcado) e[codigo] = e[codigo] || ''; else delete e[codigo];
+  duaGuardarLuego(); duaPintarTexp();
+}
+function duaTexpRef(clavePartida, claveMedida, codigo, v){
+  duaTexpEstado(clavePartida, claveMedida)[codigo] = String(v).trim();
+  duaGuardarLuego(); duaPintarAvisos();
+}
+async function duaPintarTexp(){
+  const x = DUA.x;
+  if(!x || x.origen === 'g4' || x.origen === 'dae' || typeof texpCargar !== 'function') return;
+  await texpCargar(duaDetalle(x).map(l => l.codigo_taric).concat(duaPartidasFactura(x).map(l => l.codigo_taric))).catch(e => console.warn(e.message));
+  if(DUA.x !== x) return;
+  const el = document.getElementById('dua-texp');
+  if(el) el.innerHTML = duaTexpHtml();
+  duaPintarAvisos();
 }
 function loadVisualTrans(){
   duaPintarLista();

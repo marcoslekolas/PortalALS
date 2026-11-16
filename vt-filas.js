@@ -206,6 +206,8 @@ function construirFilasExport(cab, lineas, cfg){
     const docs=[['N380',nFra,cab.fecha||'']];
     if(cfg.docTransporteRef) docs.push([docTr,cfg.docTransporteRef,'']);
     c44.forEach(d=>{ if(d.codigo_doc) docs.push(_vtDoc44(d,cab.fecha)); });
+    // Casilla 44 elegida en el módulo: controles a la exportación (EX) o acero (H1)
+    (l._c44elegidos||[]).forEach(d=>{ if(!docs.some(x=>x[0]===d[0])) docs.push(d); });
     // SOIVRE: N003 · nº certificado + línea en el certificado (2 dígitos) · fecha del certificado
     (l._n003s || (l._n003 ? [l._n003] : [])).forEach(n=>docs.push(['N003', n.num, n.fecha]));
     (cfg.docsEscenario||[]).forEach(d=>{ if(d.codigo) docs.push([d.codigo, d.valor||'', cab.fecha||'']); });
@@ -276,6 +278,8 @@ function construirFilasImport(cab, lineas, cfg){
     const docs=[['N380',nFra,cab.fecha||'']];
     if(cfg.docTransporteRef) docs.push([docTr,cfg.docTransporteRef,'']);
     c44.forEach(d=>{ if(d.codigo_doc) docs.push(_vtDoc44(d,cab.fecha)); });
+    // Casilla 44 elegida en el módulo: controles a la exportación (EX) o acero (H1)
+    (l._c44elegidos||[]).forEach(d=>{ if(!docs.some(x=>x[0]===d[0])) docs.push(d); });
     (cfg.docsEscenario||[]).forEach(d=>{ if(d.codigo) docs.push([d.codigo, d.valor||'', cab.fecha||'']); });
     docs.slice(0,15).forEach((d,k)=>{ const b=17+k*3; P[b]=d[0]||''; P[b+1]=d[1]||''; P[b+2]=d[2]||''; });
     filas.push(P);
