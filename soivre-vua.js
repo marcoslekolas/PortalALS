@@ -81,6 +81,8 @@ async function vuaCatalogo(){
 const VUA_SINONIMOS = [
   // TARIC 1509 90: definición legal de la categoría «Aceite de oliva» (mezcla), no un aceite refinado ni virgen
   [/(CONTIENE|COMPUESTO DE|COMPOSED OF)? *EXCLUSIVAMENTE ACEITES? DE OLIVA REFINADOS? Y (ACEITES? DE OLIVA )?VIRGEN\w*/g, ' '],
+  // Plátanos de postre → «080300 Bananas frescas»; el plátano macho/hortaliza sigue siendo 080301
+  [/\bPLATANOS?\b(?! *(HORTALIZA|MACHO|PLANTAIN))/g, 'BANANAS'],
   [/CHAMPI\w*/g, 'SETAS OTRAS ESPECIES'], [/BROCOLI\w*/g, 'BROCULI'], [/MEZCLUM/g, 'ENSALADAS'],
                        [/HIERBABUENA/g, 'MENTA HIERBABUENA']];
 function vuaNormal(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }

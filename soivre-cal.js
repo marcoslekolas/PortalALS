@@ -92,6 +92,12 @@ function soivreOrden2026(codigo){
   const c = String(codigo || '').replace(/\D/g, '');
   return SOIVRE_ORDEN_2026.find(([p]) => c.startsWith(p)) || null;
 }
+// Anexos B y D de la Orden ECM/1002/2026 (tabla soivre_anexo_export): fila del
+// prefijo más largo que coincide. parte 'X' = excepción expresa, sin control.
+function soivreAnexoExport(codigo){
+  const c = String(codigo || '').replace(/\D/g, '');
+  return (SOIVRE.anexo || []).find(r => c.startsWith(r.prefijo)) || null;
+}
 // Especificidades CAL que se proponen según el código, el origen y la descripción.
 // Devuelve { sel: códigos preseleccionados, avisos: textos para el operador }.
 function soivreEspecCalSugeridas(codigo, origen, descripcion){
@@ -169,6 +175,14 @@ function soivreAplica(codigo){
   if(SOIVRE.com && SOIVRE.com.has(c.padEnd(10, '0')))
     return { servicio:'COM1', seguro:true, medidas:['Catálogo SOIVRE COM (RD 330/2008)'], fuente:'com' };
   const oficial = SOIVRE.lista && SOIVRE.lista.get(c.slice(0, 4));
+  // Anexo de exportación de la Orden ECM/1002/2026: más preciso que la partida de 4 dígitos
+  const anx = soivreAnexoExport(c);
+  if(anx){
+    if(anx.parte === 'X') return null;
+    const tipo = anx.tipo_vua === 'O' ? 'O' : 'F';
+    return { servicio: tipo === 'F' ? 'CAL1' : 'VUAO', seguro:true, flujo:'02', tipoVua: tipo, fuente:'lista', anexo: anx,
+             medidas:['Orden ECM/1002/2026, anexo ' + anx.parte], productos: (oficial && oficial[tipo]) || [] };
+  }
   if(oficial){
     const tipo = oficial.F ? 'F' : 'O';
     return { servicio: tipo === 'F' ? 'CAL1' : 'VUAO', seguro:true, flujo:'02', tipoVua: tipo, fuente:'lista',
@@ -190,7 +204,10 @@ function soivreCargarLista(){
     .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`).not('codigo', 'like', '%9999')
     .then(({ data, error }) => { if(error) throw error; SOIVRE.com = new Set((data || []).map(p => p.codigo)); })
     .catch(e => { console.warn('Catálogo SOIVRE COM no disponible:', e.message); SOIVRE.com = new Set(); });
-  SOIVRE._cargaLista = com
+  const anexo = sbT().from('soivre_anexo_export').select('prefijo,parte,tipo_vua,nombre,ex,nota').lte('vigente_desde', hoy)
+    .then(({ data, error }) => { if(error) throw error; SOIVRE.anexo = (data || []).sort((a, b) => b.prefijo.length - a.prefijo.length); })
+    .catch(e => { console.warn('Anexo de exportación SOIVRE no disponible (¿orden_ecm_1002_2026_exportacion.sql?):', e.message); SOIVRE.anexo = []; });
+  SOIVRE._cargaLista = Promise.all([com, anexo])
     .then(() => sbT().from('estacice_productos').select('codigo,nombre,tipo,imex').in('tipo', ['F', 'O']).neq('imex', 'I'))
     .then(({ data, error }) => {
       if(error) throw error;
@@ -239,7 +256,8 @@ function soivreBloqueResultado(r){
 
 // Producto de la lista oficial (frutas y hortalizas u otros productos) → ESTACICE VUA
 function soivreBloqueVua(r, a){
-  const tipoTxt = a.tipoVua === 'O' ? 'calidad comercial (otros productos)' : 'calidad de frutas y hortalizas';
+  const tipoTxt = (a.anexo && a.anexo.parte === 'D') || (a.orden && a.orden[1] === 'D') ? 'indicación del país de origen'
+                : a.tipoVua === 'O' ? 'calidad comercial (otros productos)' : 'calidad de frutas y hortalizas';
   // Ejemplos de la partida: primero los que comparten palabras con la descripción («Limones…» antes que «Naranjas…»)
   const norm = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
   const palabras = norm(r.descripcion_nc).split(/[^A-Z]+/).filter(w => w.length > 3).map(w => w.slice(0, 5));
@@ -250,7 +268,9 @@ function soivreBloqueVua(r, a){
       <span style="font-size:18px">${a.tipoVua === 'O' ? '🫒' : '🍊'}</span>
       <div style="flex:1;min-width:200px">
         <div style="font-size:12px;font-weight:700;color:var(--gr700,#15803d)">Control SOIVRE a la exportación · ${tipoTxt}</div>
-        <div style="font-size:11px;color:var(--g600);margin-top:2px">${a.orden
+        <div style="font-size:11px;color:var(--g600);margin-top:2px">${a.anexo
+          ? `<b>${sEsc(a.anexo.nombre)}</b>: anexo ${a.anexo.parte} de la Orden ECM/1002/2026${a.anexo.parte === 'D' ? ' · <b>solo control de la indicación del país de origen</b>' : ' · control de calidad comercial completo'}.${a.anexo.nota ? ' ' + sEsc(a.anexo.nota) : ''}`
+          : a.orden
           ? `${sEsc(a.orden[2])}: sometido a control SOIVRE desde el 16/11/2026 por la Orden ECM/1002/2026 (anexo ${a.orden[1]}${a.orden[1] === 'D' ? ', solo indicación del país de origen' : ', control completo'}). Aún no figura en la lista de ESTACICE del portal: compruebe el producto en ESTACICE VUA.`
           : `La partida ${sEsc(String(r.codigo_taric || '').slice(0, 4))} figura en la lista oficial de productos SOIVRE (ESTACICE)${ejemplos ? ': ' + sEsc(ejemplos) + '…' : ''}.`} Solicitud en ESTACICE VUA, sin MRN. El país de origen se toma de «Preferencias arancelarias»; si no hay ninguno, España.</div>
       </div>
