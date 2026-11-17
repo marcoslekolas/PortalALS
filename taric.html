@@ -1708,10 +1708,12 @@ async function enriquecerConCatalogo(r){
     r._c44 = casilla44De(linea);
     if(typeof texpCargar === 'function') await texpCargar([r.codigo_taric]);
   }catch(e){ console.warn('Catálogo no aplicado:', e.message); }
+  if(typeof ncnCargar === 'function') await ncnCargar();
   return r;
 }
 
 function mostrarResultado(r, container){
+  window._ncnResultado = container && container.id === 'busqueda-result' ? r : null;
   if(!r){ container.innerHTML = '<div style="padding:24px;color:var(--rd600)">Error al procesar resultado</div>'; return; }
 
   const confianzaColor = r.confianza >= 85 ? 'var(--gr600)' : r.confianza >= 65 ? 'var(--am600)' : 'var(--rd600)';
@@ -1753,6 +1755,9 @@ function mostrarResultado(r, container){
           </div>`
         : '<div style="font-size:11px;color:var(--g400);padding-top:6px;border-top:1px dashed #bfdbfe">Sin medidas paraduaneras asociadas a este código.</div>'}
         ${typeof texpHtmlLinea === 'function' ? texpHtmlLinea(r.codigo_taric) : ''}
+        ${typeof ncnHtml === 'function' ? ncnHtml(r.codigo_taric) : ''}
+        ${typeof ncnRevHtml === 'function' && NCN.datos && r === window._ncnResultado ? `<div id="ncrev-busqueda">${r._ncrev ? ncnRevHtml(r._ncrev, 'aplicarBusquedaNotas()')
+          : (r.confianza < 80 || (r._verif && r._verif.estado === 'reclasificado')) ? '<button class="btn btn-s btn-sm" style="margin-top:6px;font-size:11px" onclick="revisarBusquedaConNotas()">📘 Revisar con las notas explicativas</button>' : ''}</div>` : ''}
       </div>`;
   }
 
@@ -3071,7 +3076,7 @@ function reconciliarPesosFactura(lineas, cab){
   })();
 }
 
-async function renderLineasFactura(data, filename){
+async function renderLineasFactura(data, filename, opc = {}){
   // data puede ser: objeto con .lineas, array directo, o el resultado de parseClaudeResponse
   let lineas = [];
   if(Array.isArray(data)) lineas = data;
@@ -3125,6 +3130,7 @@ async function renderLineasFactura(data, filename){
     lineas.forEach(l => { const v = verificarSubpartida(l); if(v.codigo && !l.codigo_taric) l._texpCod = v.codigo; });
     await texpCargar(lineas.map(l => l._texpCod || l.codigo_taric)).catch(e => console.warn(e.message));
   }
+  if(typeof ncnCargar === 'function') await ncnCargar();
 
   let html = '';
   for(const l of lineas){
@@ -3194,6 +3200,8 @@ async function renderLineasFactura(data, filename){
             ${l._c44.map(d=>`<span class="badge" style="font-size:9px;margin:1px;background:${d.negativa?'var(--g100)':'var(--am50)'};color:${d.negativa?'var(--g600)':'var(--am600)'}" title="${d.descripcion||''}${d.obligatorio?'':' (no obligatorio)'}">${d.codigo_doc}${d.obligatorio?'':'*'}</span>`).join('')}
           </div>` : ''}
         ${typeof texpHtmlLinea === 'function' ? texpHtmlLinea(l.codigo_taric) : ''}
+        ${typeof ncnHtml === 'function' ? ncnHtml(l.codigo_taric || l.nc8, { compacto: true }) : ''}
+        <div id="ncrev-${lineas.indexOf(l)}">${l._ncrev && typeof ncnRevHtml === 'function' ? ncnRevHtml(l._ncrev, `aplicarRevisionNotas(${lineas.indexOf(l)})`) : ''}</div>
         ${typeof soivreBotonLinea === 'function' ? soivreBotonLinea(l) : ''}
       </td>
       <td>
@@ -3205,6 +3213,9 @@ async function renderLineasFactura(data, filename){
     </tr>`;
   }
   tbody.innerHTML = html;
+  pintarPanelNotasNC(lineas);
+  // Al aplicar una revisión con las notas se repinta sin repetir alertas ni historial
+  if(opc.sinHistorial) return;
 
   // Alertas de medidas de control por línea de factura
   const todasDescripciones = lineas.map(l=>l.descripcion_original||l.descripcion_es||'').join(' ');
@@ -3237,6 +3248,75 @@ async function renderLineasFactura(data, filename){
     }
   }
   loadHistorialBadge();
+}
+
+// ── Revisión de las líneas dudosas con las notas explicativas de la NC ──
+// Botón encima de la tabla: manda a la IA (clasificar-factura, modo revisar_notas)
+// las líneas dudosas con las notas de su partida. El dictamen sale bajo cada código;
+// cambiar la NC8 lo decide el usuario con «Aplicar».
+function pintarPanelNotasNC(lineas){
+  const info = document.getElementById('factura-info');
+  if(!info || typeof ncnDudosa !== 'function' || !NCN.datos) return;
+  let panel = document.getElementById('ncrev-panel');
+  if(!panel){ panel = document.createElement('div'); panel.id = 'ncrev-panel'; info.after(panel); }
+  const dudosas = lineas.filter(l => ncnDudosa(l) && !l._ncrev);
+  panel.innerHTML = dudosas.length ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0;padding:8px 12px;background:var(--b50);border:1px solid var(--b100);border-radius:8px">
+      <span style="font-size:12px;color:var(--b700)">📘 ${dudosas.length} línea${dudosas.length > 1 ? 's' : ''} con clasificación dudosa (confianza baja o NC8 corregida).</span>
+      <button class="btn btn-s btn-sm" id="ncrev-btn" onclick="revisarFacturaConNotas()">Revisar con las notas explicativas</button>
+      <span style="font-size:10px;color:var(--g500)">Una consulta a la IA${dudosas.length > 15 ? ' (las 15 primeras)' : ''}</span></div>` : '';
+}
+async function revisarFacturaConNotas(){
+  const lineas = window._facturaLineas || [];
+  const dudosas = lineas.map((l, i) => ({ l, i })).filter(x => ncnDudosa(x.l) && !x.l._ncrev).slice(0, 15);
+  if(!dudosas.length) return;
+  const btn = document.getElementById('ncrev-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Revisando…'; }
+  try{
+    const revs = await ncnRevisar(dudosas.map(x => ({ id: x.i, nc8: String(x.l.nc8 || x.l.codigo_taric).replace(/\D/g, '').slice(0, 8),
+      descripcion: [x.l.descripcion_original, x.l.descripcion_es].filter(Boolean).join(' · ') })));
+    dudosas.forEach(x => {
+      const rev = revs.get(String(x.i));
+      if(!rev) return;
+      x.l._ncrev = rev;
+      const el = document.getElementById('ncrev-' + x.i);
+      if(el) el.innerHTML = ncnRevHtml(rev, `aplicarRevisionNotas(${x.i})`);
+    });
+    pintarPanelNotasNC(lineas);
+  }catch(e){
+    if(btn){ btn.disabled = false; btn.textContent = 'Revisar con las notas explicativas'; }
+    showToast('No se pudo revisar con las notas: ' + e.message);
+  }
+}
+async function aplicarRevisionNotas(i){
+  const lineas = window._facturaLineas || [], l = lineas[i];
+  if(!l || !l._ncrev || l._ncrev.dictamen !== 'CAMBIA') return;
+  l._ncrevPrevio = l.codigo_taric || l.nc8;
+  l.nc8 = l._ncrev.nc8; l.codigo_taric = ''; l.descripcion_nc = '';
+  l._ncrev.aplicada = true;
+  TARIC_DB.ok = null;
+  await renderLineasFactura({ lineas, cabecera: FACTURA_CABECERA }, null, { sinHistorial: true });
+}
+// Búsqueda suelta: la misma revisión para el resultado mostrado
+async function revisarBusquedaConNotas(){
+  const r = window._ncnResultado, el = document.getElementById('ncrev-busqueda');
+  if(!r || !el) return;
+  const nc8 = String(r.nc8 || r.codigo_taric || '').replace(/\D/g, '').slice(0, 8);
+  el.innerHTML = '<span style="font-size:11px;color:var(--g500)">Revisando con las notas explicativas…</span>';
+  try{
+    const desc = (document.getElementById('desc-input') || {}).value || r.descripcion_nc || '';
+    const revs = await ncnRevisar([{ id: 'b', nc8, descripcion: desc }]);
+    r._ncrev = revs.get('b') || null;
+    el.innerHTML = r._ncrev ? ncnRevHtml(r._ncrev, 'aplicarBusquedaNotas()') : '<span style="font-size:11px;color:var(--g500)">La IA no devolvió dictamen.</span>';
+  }catch(e){ el.innerHTML = `<span style="font-size:11px;color:var(--rd600)">No se pudo revisar: ${ncnEsc(e.message)}</span>`; }
+}
+async function aplicarBusquedaNotas(){
+  const r = window._ncnResultado;
+  if(!r || !r._ncrev || r._ncrev.dictamen !== 'CAMBIA') return;
+  r._taric_previo = r.codigo_taric;
+  r.codigo_taric = r._ncrev.nc8; r.nc8 = r._ncrev.nc8; r.descripcion_nc = '';
+  r._ncrev.aplicada = true;
+  await enriquecerConCatalogo(r);
+  mostrarResultado(r, document.getElementById('busqueda-result'));
 }
 
 function limpiarFactura(){
@@ -5245,6 +5325,7 @@ function _buildAES(d, cfg){
 </script>
 <!-- ?v= obliga al navegador a descargar la versión nueva al publicar (GitHub Pages cachea 10 min) -->
 <script src="taric-exportacion.js?v=2026111801"></script>
+<script src="notas-nc.js?v=2026111802"></script>
 <script src="soivre-cal.js?v=2026111601"></script>
 <script src="vt-entidades.js?v=2026111304"></script>
 <script src="soivre-vua.js?v=2026111601"></script>
