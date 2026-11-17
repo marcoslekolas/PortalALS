@@ -128,6 +128,7 @@ def detectar_tipo(ruta):
       · Box_44_codes_...     → cabecera con 'certificate code'
       · Correlation tables   → hojas 'New codes' + 'Old codes'
       · Measure_exclusions   → cabecera con 'excluded country code'
+      · Geographical areas composition → cabecera con 'country group' + 'member country'
     """
     try:
         wb = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
@@ -147,6 +148,8 @@ def detectar_tipo(ruta):
             return 'casilla44'
         if 'excluded country code' in cab:
             return 'exclusiones'
+        if 'country group' in cab and 'member country' in cab:
+            return 'grupos'
         if 'red_ind' in cab:
             return 'medidas'
         if 'indent' in cab and 'goods code' in cab:
@@ -459,6 +462,31 @@ def procesar_medidas(ruta, excl=None):
     return ruta_csv, len(filas)
 
 
+def procesar_grupos(ruta):
+    """Países que forman cada grupo geográfico (1008 terceros países, 2038 países
+    sometidos a control por Chernóbil…). Sin esto el portal no sabe si una medida de
+    grupo alcanza al país de origen o de destino."""
+    wb = openpyxl.load_workbook(ruta, read_only=True)
+    it = wb[wb.sheetnames[0]].iter_rows(values_only=True); next(it)
+    vistos, filas = set(), []
+    for r in it:
+        grupo, pais = str(r[0] or '').strip(), str(r[5] or '').strip()
+        if not grupo or not pais:
+            continue
+        ini = _fecha_iso(r[8])
+        k = (grupo, pais, ini)
+        if k in vistos:
+            continue
+        vistos.add(k)
+        filas.append([grupo, (r[4] or '').strip(), pais, ini, _fecha_iso(r[9]) or _fecha_iso(r[10])])
+    wb.close()
+    ruta_csv = f'{WORK}/grupos.csv'
+    with open(ruta_csv, 'w', newline='', encoding='utf-8') as f:
+        csv.writer(f).writerows(filas)
+    log(f'grupos de países: {len(filas):,} pertenencias')
+    return ruta_csv, len(filas)
+
+
 def procesar_casilla44(ruta):
     wb = openpyxl.load_workbook(ruta, read_only=True)
     it = wb[wb.sheetnames[0]].iter_rows(values_only=True); next(it)
@@ -522,7 +550,7 @@ def retirados_de_correlaciones(rutas):
     return muertos
 
 
-def cargar(nom_csv=None, med_csv=None, c44_csv=None, muertos=None):
+def cargar(nom_csv=None, med_csv=None, c44_csv=None, muertos=None, grupos_csv=None):
     """Carga PARCIAL y atómica: actualiza SOLO las tablas cuyos ficheros se han
     aportado en esta tanda. Todo en una transacción (o entra completo o nada).
       · nom_csv  → reconstruye taric_nomenclatura
@@ -531,6 +559,7 @@ def cargar(nom_csv=None, med_csv=None, c44_csv=None, muertos=None):
                    subió nomenclatura: así valen las correlaciones por sí solas)
       · med_csv  → reconstruye taric_medidas
       · c44_csv  → reconstruye taric_casilla44
+      · grupos_csv → reconstruye taric_grupos_paises
     """
     sql = ['\\set ON_ERROR_STOP on', 'BEGIN;']
     if nom_csv:
@@ -567,6 +596,9 @@ def cargar(nom_csv=None, med_csv=None, c44_csv=None, muertos=None):
     if c44_csv:
         sql.append('DELETE FROM public.taric_casilla44;')
         sql.append(f"\\copy public.taric_casilla44 (codigo,descripcion,inicio,fin) FROM '{c44_csv}' WITH (FORMAT csv)")
+    if grupos_csv:
+        sql.append('DELETE FROM public.taric_grupos_paises;')
+        sql.append(f"\\copy public.taric_grupos_paises (grupo,descripcion,pais,inicio,fin) FROM '{grupos_csv}' WITH (FORMAT csv)")
     sql.append('COMMIT;')
 
     ruta = f'{WORK}/carga.sql'
@@ -608,7 +640,7 @@ def main():
         log(f'contenido de taric-updates/{EXTR}/ : {listar_bucket(EXTR + "/")}')
         raise RuntimeError(f'No hay ficheros .xlsx en taric-updates/{EXTR}/.')
 
-    tipos = {'nomenclatura': None, 'medidas': None, 'casilla44': None, 'exclusiones': None}
+    tipos = {'nomenclatura': None, 'medidas': None, 'casilla44': None, 'exclusiones': None, 'grupos': None}
     correlaciones = []
     descartados = []
     for n in nombres:
@@ -634,11 +666,18 @@ def main():
         log('aviso: las exclusiones solo se aplican junto con el fichero de medidas; se ignoran')
     if not any(v for k, v in tipos.items() if k != 'exclusiones') and not correlaciones:
         raise RuntimeError('Ningún fichero aportado contiene datos TARIC reconocibles '
-                           '(nomenclatura, medidas, casilla 44 o tabla de correlación).')
+                           '(nomenclatura, medidas, casilla 44, grupos de países o tabla de correlación).')
+    if tipos['grupos']:
+        r = subprocess.run(['psql', DB, '-tAc', "SELECT count(*) FROM information_schema.tables "
+                            "WHERE table_schema='public' AND table_name='taric_grupos_paises';"],
+                           capture_output=True, text=True)
+        if not (r.returncode == 0 and r.stdout.strip() == '1'):
+            log('aviso: falta la tabla taric_grupos_paises (medidas_importacion.sql); se ignoran los grupos')
+            tipos['grupos'] = None
 
     # Procesar solo lo aportado
-    nom_csv = med_csv = c44_csv = None
-    n_nom = n_med = n_c44 = 0
+    nom_csv = med_csv = c44_csv = grp_csv = None
+    n_nom = n_med = n_c44 = n_grp = 0
     muertos = {}
 
     if tipos['nomenclatura']:
@@ -658,6 +697,10 @@ def main():
         estado(mensaje='Procesando casilla 44')
         c44_csv, n_c44 = procesar_casilla44(tipos['casilla44'])
 
+    if tipos['grupos']:
+        estado(mensaje='Procesando grupos de países')
+        grp_csv, n_grp = procesar_grupos(tipos['grupos'])
+
     if correlaciones:
         estado(mensaje='Aplicando tablas de correlación (códigos retirados)')
         muertos = retirados_de_correlaciones(correlaciones)
@@ -666,12 +709,14 @@ def main():
     cargar(os.path.abspath(nom_csv) if nom_csv else None,
            os.path.abspath(med_csv) if med_csv else None,
            os.path.abspath(c44_csv) if c44_csv else None,
-           muertos)
+           muertos,
+           os.path.abspath(grp_csv) if grp_csv else None)
 
     partes = []
     if nom_csv: partes.append(f'nomenclatura {n_nom:,}')
     if med_csv: partes.append(f'medidas {n_med:,}')
     if c44_csv: partes.append(f'casilla44 {n_c44:,}')
+    if grp_csv: partes.append(f'grupos {n_grp:,}')
     if muertos: partes.append(f'{len(muertos)} retirados cerrados')
     resumen = ' · '.join(partes) if partes else 'sin cambios'
     estado(estado='ok', filas_nom=n_nom, filas_med=n_med, filas_c44=n_c44,
