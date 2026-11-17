@@ -488,6 +488,8 @@ function gibFilasH1(lote){
     const docs = [['N380', c.factura?.numero, c.factura?.fecha]];
     if(c.regimen === '71.00') docs.push(['7025', l.neto, c.fechaDeclaracion], ['7018', 'ES0', c.fechaDeclaracion]);
     if(c.imo) docs.push(['5012', c.imo, c.fechaDeclaracion]);
+    // Medidas de importación elegidas en el módulo (ecológicos, Chernóbil, sanciones, acero)
+    (l.c44elegidos || []).forEach(d => { if(!docs.some(x => x[0] === d[0])) docs.push(d); });
     gibDocs(P, docs);
     filas.push(P);
   });
