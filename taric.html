@@ -2848,6 +2848,19 @@ function codigoVigente(r, hoy){
   return true;
 }
 
+// PostgREST devuelve como mucho 1.000 filas por consulta: se piden por páginas.
+// consulta() debe crear la consulta de nuevo cada vez (ordenada, para que las
+// páginas no se solapen).
+async function leerTodasTaric(consulta){
+  const filas = [];
+  for(let desde = 0; ; desde += 1000){
+    const { data, error } = await consulta().range(desde, desde + 999);
+    if(error) return { data: filas, error };
+    filas.push(...(data || []));
+    if(!data || data.length < 1000) return { data: filas, error: null };
+  }
+}
+
 // Carga en bloque lo necesario para un lote de líneas. Una sola ida y vuelta
 // por tabla, en vez de una consulta por línea.
 async function cargarCatalogoTaric(lineas){
@@ -2861,12 +2874,12 @@ async function cargarCatalogoTaric(lineas){
   const partidas4 = [...new Set(nc8s.map(n => n.substring(0,4)))];
   try{
     const [nom, nomP, dua] = await Promise.all([
-      sbT().from('taric_nomenclatura')
+      leerTodasTaric(() => sbT().from('taric_nomenclatura')
            .select('codigo,nc8,descripcion,inicio,fin')
-           .in('nc8', nc8s).eq('declarable', 1),
-      sbT().from('taric_nomenclatura')
+           .in('nc8', nc8s).eq('declarable', 1).order('codigo')),
+      leerTodasTaric(() => sbT().from('taric_nomenclatura')
            .select('codigo,nc8,partida4,descripcion,inicio,fin')
-           .in('partida4', partidas4).eq('declarable', 1),
+           .in('partida4', partidas4).eq('declarable', 1).order('codigo')),
       TARIC_DB.dua ? Promise.resolve({data:TARIC_DB.dua}) :
         sbT().from('cw_medidas_dua')
              .select('clave,categoria,codigo_doc,formato,obligatorio,negativa,descripcion,orden')
@@ -2903,9 +2916,19 @@ async function cargarCatalogoTaric(lineas){
     const cods = [...TARIC_DB.desc.keys()];
     if(cods.length){
       // Solo importación: las de exportación (EXP_*) van aparte (taric-exportacion.js)
-      const med = await sbT().from('taric_medidas')
-                             .select('codigo,categoria').in('codigo', cods)
-                             .not('categoria', 'like', 'EXP_%');
+      // Por trozos y paginado: una factura con varias partidas pasa de largo
+      // las 1.000 filas que devuelve cada consulta, y lo que quedaba fuera
+      // salía «sin medidas» (p. ej. el control veterinario del 1905).
+      const med = { data: [], error: null };
+      for(let i = 0; i < cods.length && !med.error; i += 150){
+        const trozo = cods.slice(i, i + 150);
+        const r = await leerTodasTaric(() => sbT().from('taric_medidas')
+                             .select('codigo,categoria').in('codigo', trozo)
+                             .not('categoria', 'like', 'EXP_%')
+                             .order('codigo').order('categoria'));
+        med.data.push(...r.data); med.error = r.error;
+      }
+      if(med.error) console.warn('Medidas TARIC incompletas:', med.error.message);
       if(!med.error){
         TARIC_DB.med.clear();
         (med.data||[]).forEach(r => {
