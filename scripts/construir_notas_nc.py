@@ -1,13 +1,20 @@
 # Genera notas-nc.json desde el HTML oficial de EUR-Lex de las Notas explicativas de la NC.
-# Uso: python construir_notas_nc.py c119.html "Nomenclature EN.csv" notas-nc.json  (requiere beautifulsoup4)
-# HTML: https://eur-lex.europa.eu/legal-content/ES/TXT/HTML/?uri=OJ:C:2019:119:FULL
+# Uso: python construir_notas_nc.py consolidado.html "Nomenclature EN.csv" base.json "fuente" "url"  (requiere beautifulsoup4)
+# Consolidado (ES): EUR-Lex CELEX 02019XC0329(02)-AAAAMMDD; si es muy grande, EUR-Lex da el enlace "Click here" a Cellar.
 # Trocea las Notas explicativas de la NC (DO C 119 de 29.3.2019, HTML de EUR-Lex) por capítulo y código
 import sys, re, json, csv
 from bs4 import BeautifulSoup, NavigableString, Tag
 html_path, nom_csv, out = sys.argv[1], sys.argv[2], sys.argv[3]
-soup = BeautifulSoup(open(html_path, encoding='utf-8').read(), 'html.parser')
+FUENTE = sys.argv[4] if len(sys.argv) > 4 else 'Notas explicativas de la Nomenclatura Combinada de la Unión Europea, DO C 119 de 29.3.2019'
+URL = sys.argv[5] if len(sys.argv) > 5 else 'https://eur-lex.europa.eu/legal-content/ES/TXT/?uri=OJ:C:2019:119:FULL'
+crudo = re.sub(r'src="data:[^"]+"', 'src=""', open(html_path, encoding='utf-8').read())
+soup = BeautifulSoup(crudo, 'html.parser')
+for x in soup.select('.modref, .arrow, img, .toc-item, .title-toc, .footnote'):
+    x.decompose()
+ES_TITULO = lambda cls: bool(set(cls) & {'ti-grseq-1', 'title-gr-seq-level-1', 'title-gr-seq-level-2'})
 def limpia(s):
     s = s.replace('\xa0', ' ')
+    s = re.sub(r'►\s*[A-Z]\d+\s*|◄', ' ', s)   # marcas de modificación del consolidado
     s = re.sub(r'\s+', ' ', s).strip()
     s = re.sub(r'\s+([,.;:)\]»])', r'\1', s); s = re.sub(r'([(\[«])\s+', r'\1', s)
     return s
@@ -30,6 +37,9 @@ def lineas(el):
             if t: out.append(t)
         elif ch.name == 'table':
             out.extend(filas_tabla(ch))
+        elif ch.name == 'div' and 'grid-container' in (ch.get('class') or []):
+            t = limpia(' '.join(' '.join(lineas(c)) for c in ch.find_all('div', recursive=False)))
+            if t: out.append(t)
         elif isinstance(ch, Tag):
             out.extend(lineas(ch))
     return out
@@ -52,12 +62,35 @@ estado = {'sec': None, 'cap': None, 'dest': None}
 def añade_general(texto):
     if estado['cap']: caps.setdefault(estado['cap'], []).append(texto)
     elif estado['sec']: secs.setdefault(estado['sec'], []).append(texto)
+def fila_codigo(tr):
+    tds = tr.find_all('td', recursive=False)
+    if len(tds) < 2:
+        return
+    cel = limpia(tds[0].get_text(' '))
+    cuerpo_t = []
+    for td in tds[1:]:
+        cuerpo_t.extend(lineas(td))
+    cs = codigos(cel)
+    if cs:
+        neg = tds[1].find('span', class_=['boldface', 'bold'])
+        tit = limpia(neg.get_text(' ')) if neg else (cuerpo_t[0] if cuerpo_t else '')
+        if cuerpo_t and cuerpo_t[0] == tit:
+            resto = cuerpo_t[1:]
+        elif cuerpo_t and tit and cuerpo_t[0].startswith(tit):
+            resto = [cuerpo_t[0][len(tit):].strip()] + cuerpo_t[1:]
+        else:
+            resto = cuerpo_t
+        ent.append({'cap': estado['cap'], 'c': cs, 'cel': cel, 'tit': tit, 't': [x for x in resto if x]})
+    elif not cel and ent:
+        ent[-1]['t'].extend(cuerpo_t)
+    elif estado['cap'] and (cel or cuerpo_t):
+        añade_general((f'{cel}: ' if cel else '') + ' '.join(cuerpo_t))
 cuerpo = soup.find('body')
 def recorre(el):
     for ch in el.children:
         if not isinstance(ch, Tag): continue
         cls = ch.get('class') or []
-        if ch.name == 'p' and 'ti-grseq-1' in cls:
+        if ch.name == 'p' and ES_TITULO(cls):
             t = limpia(ch.get_text(' '))
             m = re.match(r'SECCIÓN ([IVXL]+)$', t); m2 = re.match(r'CAPÍTULO (\d+)$', t)
             if m: estado.update(sec=m.group(1), cap=None)
@@ -67,21 +100,18 @@ def recorre(el):
             elif t == 'PREFACIO': estado.update(sec=None, cap=None)
             else: añade_general('## ' + t) if (estado['cap'] or estado['sec']) and not (estado['cap'] in caps or estado['sec'] in secs) else None
             continue
-        if ch.name == 'tr' and 'table' in cls and ch.find_parent('td') is None:
-            tds = ch.find_all('td', recursive=False)
-            if len(tds) < 2: continue
-            cel = limpia(tds[0].get_text(' '))
-            cuerpo_t = lineas(tds[1])
-            cs = codigos(cel)
-            if cs:
-                titulo = cuerpo_t[0] if cuerpo_t else ''
-                ent.append({'cap': estado['cap'], 'c': cs, 'cel': cel, 'tit': titulo, 't': cuerpo_t[1:]})
-            elif not cel and ent:
-                ent[-1]['t'].extend(cuerpo_t)
-            elif estado['cap']:
-                añade_general(f'{cel}: ' + ' '.join(cuerpo_t))
+        if ch.name == 'table' and ch.find_parent('td') is None and any(codigos(limpia(tr.find('td').get_text(' '))) for tr in ch.find_all('tr') if tr.find_parent('table') is ch and tr.find('td')):
+            for tr in [tr for tr in ch.find_all('tr') if tr.find_parent('table') is ch]:
+                fila_codigo(tr)
             continue
-        if ch.name in ('p', 'table') and (estado['cap'] or estado['sec']) and not ch.find('tr', class_='table'):
+        if ch.name == 'tr' and 'table' in cls and ch.find_parent('td') is None:
+            fila_codigo(ch)
+            continue
+        if ch.name == 'div' and 'grid-container' in cls and (estado['cap'] or estado['sec']):
+            t = limpia(' '.join(' '.join(lineas(c)) for c in ch.find_all('div', recursive=False)))
+            if t: añade_general(t)
+            continue
+        if ch.name in ('p', 'table') and (estado['cap'] or estado['sec']):
             for t in filas_tabla(ch) if ch.name == 'table' else [limpia(ch.get_text(' '))]:
                 if t: añade_general(t)
             continue
@@ -90,8 +120,8 @@ recorre(cuerpo)
 def plano(c):
     return [x for x in c if isinstance(x, str)] + [y for x in c if isinstance(x, list) for y in x[1:]]
 salida = {
-  'fuente': 'Notas explicativas de la Nomenclatura Combinada de la Unión Europea, DO C 119 de 29.3.2019',
-  'url': 'https://eur-lex.europa.eu/legal-content/ES/TXT/?uri=OJ:C:2019:119:FULL',
+  'fuente': FUENTE,
+  'url': URL,
   'capitulos': {k: '\n'.join(v) for k, v in caps.items()},
   'secciones': {k: '\n'.join(v) for k, v in secs.items()},
   'seccionDe': sec_de,
