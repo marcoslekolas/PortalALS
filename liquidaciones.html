@@ -65,6 +65,8 @@ tr.grp td{background:var(--g50);font-weight:700;color:var(--g700);font-size:12px
 .p-g{background:var(--g100);color:var(--g600)}
 .imp-n{color:var(--g500);font-size:11px;display:block}
 .link{color:var(--b600);cursor:pointer;text-decoration:underline dotted}
+td.m a{color:var(--b600);text-decoration:none}
+td.m a:hover{text-decoration:underline}
 .empty{padding:40px;text-align:center;color:var(--g500)}
 tr.done td{opacity:.55}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
@@ -144,7 +146,11 @@ function semana() {
 
 const viva = f => f.estado_aeat === 'pendiente' && !f.pagada_manual;
 
+// Ficha de la liquidación en la Sede AEAT (se abre con el certificado de quien pulsa)
+const urlLiq = f => f.nc ? 'https://www1.agenciatributaria.gob.es/wlpl/inwinvoc/es.aeat.dit.adu.adco.agrupaciones.acc.DetLiquida?NC='+encodeURIComponent(f.nc)+'&TIPO_OPERADOR=D' : '';
+
 function estado(f) {
+  if (f.estado_aeat === 'ingresada') return '<span class="pill p-gr" title="La AEAT la da como Ingresada">✓ Pagada (AEAT)</span>';
   if (f.pagada_manual) return '<span class="pill p-gr">Pagada (marcada)</span>';
   if (f.estado_aeat !== 'pendiente') return '<span class="pill p-g">Ya no figura pendiente</span>';
   const d = diasHasta(f.fecha_limite);
@@ -200,7 +206,7 @@ function pintar() {
   let html = '<table><thead><tr><th>Vence</th><th>Estado</th><th>Justificante</th><th>Documento</th><th>Importador</th><th class="r">Importe</th><th>MRN</th><th></th></tr></thead><tbody>';
   let grupoPrevio = '';
   lista.forEach(f => {
-    const g = !viva(f) ? 'Fuera de pendientes' : f.fecha_limite <= h ? 'Vencidas / hoy' :
+    const g = !viva(f) ? 'Pagadas / fuera de pendientes' :f.fecha_limite <= h ? 'Vencidas / hoy' :
               f.fecha_limite <= sf ? 'Esta semana' : 'Próximas';
     if (g !== grupoPrevio) { html += '<tr class="grp"><td colspan="8">'+g+'</td></tr>'; grupoPrevio = g; }
     const dow = DIAS[new Date(f.fecha_limite+'T12:00:00').getDay()];
@@ -208,7 +214,9 @@ function pintar() {
     html += '<tr class="'+(viva(f)?'':'done')+'">'+
       '<td><b>'+dow+' '+fmt(f.fecha_limite)+'</b></td>'+
       '<td>'+estado(f)+'</td>'+
-      '<td class="m">'+esc(f.justificante)+'</td>'+
+      '<td class="m">'+(urlLiq(f)
+          ? '<a href="'+esc(urlLiq(f))+'" target="_blank" rel="noopener" title="Abrir la liquidación en la Sede AEAT">'+esc(f.justificante)+' ↗</a>'
+          : esc(f.justificante))+'</td>'+
       '<td class="m">'+esc(f.documento)+'</td>'+
       '<td><span class="m">'+esc(f.importador)+'</span>'+
         (nom ? '<span class="imp-n">'+esc(nom)+' <span class="link" data-nif="'+esc(f.importador)+'">editar</span></span>'
