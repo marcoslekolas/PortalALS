@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>ALS · Liquidaciones AEAT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --w:#fff;--g50:#f8f9fa;--g100:#f1f3f5;--g200:#e9ecef;--g300:#dee2e6;
+  --g400:#ced4da;--g500:#adb5bd;--g600:#6c757d;--g700:#495057;--g800:#343a40;--g900:#212529;
+  --b50:#e7f1ff;--b100:#c5dbff;--b500:#3b82f6;--b600:#2563eb;--b700:#1d4ed8;
+  --gr50:#f0fdf4;--gr600:#16a34a;--gr700:#15803d;
+  --rd50:#fff1f2;--rd600:#dc2626;
+  --am50:#fffbeb;--am600:#d97706;
+  --f:'Inter',sans-serif;--mono:'DM Mono',monospace;
+  --r:8px;--rl:12px;--rxl:16px;
+  --sh:0 1px 3px rgba(0,0,0,.08);--shl:0 4px 16px rgba(0,0,0,.1);
+}
+body{font-family:var(--f);background:var(--g50);color:var(--g900);min-height:100vh}
+.hdr{height:52px;background:var(--w);border-bottom:1px solid var(--g200);display:flex;align-items:center;gap:12px;padding:0 20px;position:sticky;top:0;z-index:10}
+.hdr-logo{width:32px;height:32px;background:var(--b600);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0}
+.hdr-title{font-size:15px;font-weight:700}
+.hdr-sep{width:1px;height:18px;background:var(--g200)}
+.hdr-mod{font-size:13px;color:var(--g600);font-weight:500}
+.hdr-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.hdr-a{font-size:12px;font-weight:600;color:var(--g600);text-decoration:none;padding:5px 10px;border-radius:var(--r);border:1px solid var(--g200);background:var(--w);display:inline-flex;align-items:center;gap:5px}
+.hdr-a.primary{background:var(--b600);border-color:var(--b600);color:#fff}
+.wrap{max-width:1200px;margin:0 auto;padding:20px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px;box-shadow:var(--sh)}
+.kpi .l{font-size:12px;color:var(--g600);font-weight:600}
+.kpi .v{font-size:22px;font-weight:800;margin-top:4px}
+.kpi .s{font-size:12px;color:var(--g500);margin-top:2px}
+.kpi.rd{border-left:4px solid var(--rd600)} .kpi.rd .v{color:var(--rd600)}
+.kpi.am{border-left:4px solid var(--am600)} .kpi.am .v{color:var(--am600)}
+.kpi.b{border-left:4px solid var(--b600)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.bar .grow{flex:1}
+.sync{font-size:12px;color:var(--g600)}
+.sync.err{color:var(--rd600);font-weight:600}
+.btn{border:none;border-radius:var(--r);padding:7px 14px;font-family:var(--f);font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--b600);color:#fff}
+.btn-sec{background:var(--w);color:var(--g700);border:1px solid var(--g200)}
+.btn-ok{background:var(--gr50);color:var(--gr700);border:1px solid #bbf7d0}
+.seg{display:inline-flex;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden;background:var(--w)}
+.seg button{border:none;background:none;padding:7px 12px;font:600 12px var(--f);color:var(--g600);cursor:pointer}
+.seg button.on{background:var(--b50);color:var(--b700)}
+.card{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);box-shadow:var(--sh)}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{text-align:left;padding:9px 10px;font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid var(--g200);background:var(--g50);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--g100);vertical-align:middle;white-space:nowrap}
+tr.grp td{background:var(--g50);font-weight:700;color:var(--g700);font-size:12px}
+.m{font-family:var(--mono);font-size:12px}
+.r{text-align:right}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+.p-rd{background:var(--rd50);color:var(--rd600)}
+.p-am{background:var(--am50);color:var(--am600)}
+.p-b{background:var(--b50);color:var(--b700)}
+.p-gr{background:var(--gr50);color:var(--gr700)}
+.p-g{background:var(--g100);color:var(--g600)}
+.imp-n{color:var(--g500);font-size:11px;display:block}
+.link{color:var(--b600);cursor:pointer;text-decoration:underline dotted}
+.empty{padding:40px;text-align:center;color:var(--g500)}
+tr.done td{opacity:.55}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal{background:var(--w);border-radius:var(--rxl);box-shadow:var(--shl);width:100%;max-width:440px}
+.mhdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--g200)}
+.mhdr h2{font-size:15px}
+.mhdr button{border:none;background:none;font-size:22px;cursor:pointer;color:var(--g500)}
+.mbody{padding:16px 18px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.mbody label{font-size:12px;font-weight:600;color:var(--g700)}
+.mbody input,.mbody textarea{width:100%;border:1px solid var(--g300);border-radius:var(--r);padding:8px 10px;font:13px var(--f)}
+.mfoot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--g200)}
+@media(max-width:640px){.hdr-mod,.hdr-sep:nth-of-type(2){display:none}.wrap{padding:12px}}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="hdr-logo">ALS</div>
+  <span class="hdr-sep"></span>
+  <div class="hdr-title">Liquidaciones AEAT</div>
+  <span class="hdr-sep"></span>
+  <span class="hdr-mod">Deudas de Comercio Exterior pendientes de pago</span>
+  <div class="hdr-r"><a href="index.html" class="hdr-a primary">&#127968; Men&uacute; principal</a></div>
+</div>
+
+<div class="wrap" id="app">
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <div class="seg" id="seg">
+      <button data-f="pend" class="on">Pendientes</button>
+      <button data-f="semana">Esta semana</button>
+      <button data-f="todas">Todas</button>
+    </div>
+    <span class="grow"></span>
+    <span class="sync" id="sync"></span>
+    <button class="btn btn-sec" onclick="cargar()">&#8635; Actualizar</button>
+  </div>
+  <div class="card"><div class="tbl-wrap" id="tabla"><div class="empty">Cargando…</div></div></div>
+</div>
+<div id="modal-root"></div>
+
+<script>
+var CU = null;
+try { CU = JSON.parse(sessionStorage.getItem('als_cu') || localStorage.getItem('als_cu') || 'null'); } catch(e) {}
+var ROLES_OK = ['admin','oficina','aduanas'];
+var accesoOk = !!CU && (ROLES_OK.includes(CU.rol) || (CU.roles||[]).some(function(r){return ROLES_OK.includes(r);}));
+if (!accesoOk) {
+  document.body.innerHTML = '<div style="font-family:Inter,sans-serif;max-width:420px;margin:15vh auto;text-align:center;padding:24px">'+
+    '<h2 style="margin-bottom:8px">Acceso restringido</h2><p style="color:#6c757d;margin-bottom:20px">Inicia sesión en el portal con un usuario autorizado.</p>'+
+    '<a href="index.html" style="background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;padding:10px 24px;font-weight:700">Ir al portal</a></div>';
+}
+</script>
+<script>
+if (accesoOk) (function(){
+const SB_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
+const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
+let sb = null;
+try { sb = supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:false}}); } catch(e) {}
+
+let filas = [], nombres = {}, filtro = 'pend';
+const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'];
+
+const hoyISO = () => { const d = new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
+const sumaDias = (iso, n) => { const d = new Date(iso+'T12:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+// Formato propio: es-ES no pone punto de miles en cifras de 4 dígitos (1064,43)
+const eur = n => { const [e, d] = Number(n||0).toFixed(2).split('.'); return e.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + d + ' €'; };
+const fmt = iso => iso ? iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4) : '';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const diasHasta = iso => Math.round((new Date(iso+'T12:00:00') - new Date(hoyISO()+'T12:00:00'))/86400000);
+
+// Semana de pago: de martes a lunes. El lunes se muestra la semana que empieza mañana.
+function semana() {
+  const h = hoyISO(), dow = new Date(h+'T12:00:00').getDay(); // 0=dom
+  const offset = dow === 1 ? 1 : (dow === 0 ? -5 : 2 - dow); // martes de la semana en curso
+  const ini = sumaDias(h, offset);
+  return [ini, sumaDias(ini, 6)];
+}
+
+const viva = f => f.estado_aeat === 'pendiente' && !f.pagada_manual;
+
+function estado(f) {
+  if (f.pagada_manual) return '<span class="pill p-gr">Pagada (marcada)</span>';
+  if (f.estado_aeat !== 'pendiente') return '<span class="pill p-g">Ya no figura pendiente</span>';
+  const d = diasHasta(f.fecha_limite);
+  if (d < 0) return '<span class="pill p-rd">Vencida hace '+(-d)+' d</span>';
+  if (d === 0) return '<span class="pill p-rd">Vence HOY</span>';
+  if (d <= 3) return '<span class="pill p-am">'+d+' día'+(d>1?'s':'')+'</span>';
+  return '<span class="pill p-b">'+d+' días</span>';
+}
+
+async function cargar() {
+  if (!sb) { document.getElementById('tabla').innerHTML = '<div class="empty">Sin conexión con Supabase</div>'; return; }
+  const desde = sumaDias(hoyISO(), -120);
+  const [liq, imp, log] = await Promise.all([
+    sb.from('aeat_liquidaciones').select('*').gte('fecha_limite', desde).order('fecha_limite').order('justificante'),
+    sb.from('aeat_importadores').select('nif,nombre'),
+    sb.from('aeat_sync_log').select('*').order('created_at', {ascending:false}).limit(1)
+  ]);
+  if (liq.error) {
+    document.getElementById('tabla').innerHTML = '<div class="empty">Error: '+esc(liq.error.message)+
+      '<br><small>¿Se ha ejecutado supabase_liquidaciones.sql?</small></div>';
+    return;
+  }
+  filas = liq.data || [];
+  nombres = {}; (imp.data||[]).forEach(r => nombres[r.nif] = r.nombre);
+  pintarSync((log.data||[])[0]);
+  pintar();
+}
+
+function pintarSync(l) {
+  const el = document.getElementById('sync');
+  if (!l) { el.textContent = 'Aún no hay consultas del servidor'; el.className = 'sync err'; return; }
+  const t = new Date(l.created_at), horas = (Date.now() - t) / 36e5;
+  const cuando = t.toLocaleString('es-ES', {weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+  if (!l.ok) { el.textContent = '⚠ Última consulta AEAT FALLIDA (' + cuando + ')'; el.className = 'sync err'; el.title = l.error || ''; }
+  else if (horas > 80) { el.textContent = '⚠ Sin datos nuevos desde ' + cuando; el.className = 'sync err'; }
+  else { el.textContent = 'Consultado en la AEAT: ' + cuando; el.className = 'sync'; }
+}
+
+function pintar() {
+  const h = hoyISO(), [si, sf] = semana();
+  const vivas = filas.filter(viva);
+  const venc = vivas.filter(f => f.fecha_limite <= h);
+  const sem = vivas.filter(f => f.fecha_limite > h && f.fecha_limite >= si && f.fecha_limite <= sf);
+  const sum = a => a.reduce((s,f) => s + Number(f.importe||0), 0);
+  document.getElementById('kpis').innerHTML =
+    '<div class="kpi rd"><div class="l">Vencidas o vencen hoy</div><div class="v">'+eur(sum(venc))+'</div><div class="s">'+venc.length+' liquidaciones</div></div>'+
+    '<div class="kpi am"><div class="l">Resto de la semana (hasta '+DIAS[new Date(sf+'T12:00:00').getDay()]+' '+fmt(sf).slice(0,5)+')</div><div class="v">'+eur(sum(sem))+'</div><div class="s">'+sem.length+' liquidaciones</div></div>'+
+    '<div class="kpi b"><div class="l">Total pendiente</div><div class="v">'+eur(sum(vivas))+'</div><div class="s">'+vivas.length+' liquidaciones</div></div>';
+
+  let lista = filtro === 'pend' ? vivas : filtro === 'semana' ? venc.concat(sem) : filas;
+  if (!lista.length) { document.getElementById('tabla').innerHTML = '<div class="empty">No hay liquidaciones en esta vista 🎉</div>'; return; }
+
+  let html = '<table><thead><tr><th>Vence</th><th>Estado</th><th>Justificante</th><th>Documento</th><th>Importador</th><th class="r">Importe</th><th>MRN</th><th></th></tr></thead><tbody>';
+  let grupoPrevio = '';
+  lista.forEach(f => {
+    const g = !viva(f) ? 'Fuera de pendientes' : f.fecha_limite <= h ? 'Vencidas / hoy' :
+              f.fecha_limite <= sf ? 'Esta semana' : 'Próximas';
+    if (g !== grupoPrevio) { html += '<tr class="grp"><td colspan="8">'+g+'</td></tr>'; grupoPrevio = g; }
+    const dow = DIAS[new Date(f.fecha_limite+'T12:00:00').getDay()];
+    const nom = nombres[f.importador];
+    html += '<tr class="'+(viva(f)?'':'done')+'">'+
+      '<td><b>'+dow+' '+fmt(f.fecha_limite)+'</b></td>'+
+      '<td>'+estado(f)+'</td>'+
+      '<td class="m">'+esc(f.justificante)+'</td>'+
+      '<td class="m">'+esc(f.documento)+'</td>'+
+      '<td><span class="m">'+esc(f.importador)+'</span>'+
+        (nom ? '<span class="imp-n">'+esc(nom)+' <span class="link" data-nif="'+esc(f.importador)+'">editar</span></span>'
+             : '<span class="imp-n link" data-nif="'+esc(f.importador)+'">+ poner nombre</span>')+'</td>'+
+      '<td class="r"><b>'+eur(f.importe)+'</b></td>'+
+      '<td class="m">'+esc(f.mrn)+'</td>'+
+      '<td>'+(f.pagada_manual
+          ? '<button class="btn btn-sec" data-desmarcar="'+esc(f.justificante)+'" title="'+esc((f.pagada_por||'')+' · '+(f.pagada_en?new Date(f.pagada_en).toLocaleString('es-ES'):''))+'">Deshacer</button>'
+          : (f.estado_aeat==='pendiente' ? '<button class="btn btn-ok" data-pagar="'+esc(f.justificante)+'">✓ Pagada</button>' : ''))+'</td>'+
+      '</tr>';
+  });
+  document.getElementById('tabla').innerHTML = html + '</tbody></table>';
+}
+
+document.getElementById('tabla').addEventListener('click', e => {
+  const t = e.target;
+  if (t.dataset.pagar) modalPagar(t.dataset.pagar);
+  else if (t.dataset.desmarcar) marcar(t.dataset.desmarcar, false);
+  else if (t.dataset.nif) modalNombre(t.dataset.nif);
+});
+document.getElementById('seg').addEventListener('click', e => {
+  const f = e.target.dataset.f; if (!f) return;
+  filtro = f;
+  document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+  pintar();
+});
+
+function cerrarModal() { document.getElementById('modal-root').innerHTML = ''; }
+window.cerrarModal = cerrarModal;
+
+function modal(titulo, cuerpo, onOk, txtOk) {
+  document.getElementById('modal-root').innerHTML =
+    '<div class="modal-overlay" onclick="if(event.target===this)cerrarModal()"><div class="modal" onclick="event.stopPropagation()">'+
+    '<div class="mhdr"><h2>'+titulo+'</h2><button onclick="cerrarModal()">&times;</button></div>'+
+    '<div class="mbody">'+cuerpo+'</div>'+
+    '<div class="mfoot"><button class="btn btn-sec" onclick="cerrarModal()">Cancelar</button><button class="btn btn-primary" id="m-ok">'+txtOk+'</button></div></div></div>';
+  document.getElementById('m-ok').onclick = onOk;
+}
+
+function modalPagar(j) {
+  const f = filas.find(x => x.justificante === j); if (!f) return;
+  modal('Marcar como pagada',
+    '<div>Justificante <b class="m">'+esc(j)+'</b><br>'+esc(f.documento)+' · <b>'+eur(f.importe)+'</b> · vence '+fmt(f.fecha_limite)+'</div>'+
+    '<label>Nota (opcional)</label><textarea id="m-nota" rows="2" placeholder="Fecha de pago, NRC…">'+esc(f.notas||'')+'</textarea>'+
+    '<div style="font-size:12px;color:var(--g600)">Deja de salir en el email y en pendientes aunque la AEAT tarde en actualizarla.</div>',
+    () => marcar(j, true, document.getElementById('m-nota').value), '✓ Marcar pagada');
+}
+
+async function marcar(j, pagada, nota) {
+  const upd = pagada
+    ? {pagada_manual:true, pagada_por:(CU && CU.nombre)||'', pagada_en:new Date().toISOString(), notas:nota||null}
+    : {pagada_manual:false, pagada_por:null, pagada_en:null};
+  const {error} = await sb.from('aeat_liquidaciones').update(upd).eq('justificante', j);
+  if (error) { alert('Error: ' + error.message); return; }
+  cerrarModal(); cargar();
+}
+
+function modalNombre(nif) {
+  modal('Nombre del importador',
+    '<label>NIF</label><input value="'+esc(nif)+'" disabled class="m">'+
+    '<label>Nombre (se usa también en el email)</label><input id="m-nom" value="'+esc(nombres[nif]||'')+'" autofocus>',
+    async () => {
+      const nombre = document.getElementById('m-nom').value.trim(); if (!nombre) return;
+      const {error} = await sb.from('aeat_importadores').upsert({nif, nombre});
+      if (error) { alert('Error: ' + error.message); return; }
+      cerrarModal(); cargar();
+    }, 'Guardar');
+}
+
+window.cargar = cargar;
+cargar();
+})();
+</script>
+</body>
+</html>
