@@ -6,7 +6,7 @@
 <title>ALS · Liquidaciones AEAT</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="auth-guard.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -21,14 +21,6 @@
   --sh:0 1px 3px rgba(0,0,0,.08);--shl:0 4px 16px rgba(0,0,0,.1);
 }
 body{font-family:var(--f);background:var(--g50);color:var(--g900);min-height:100vh}
-.hdr{height:52px;background:var(--w);border-bottom:1px solid var(--g200);display:flex;align-items:center;gap:12px;padding:0 20px;position:sticky;top:0;z-index:10}
-.hdr-logo{width:32px;height:32px;background:var(--b600);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0}
-.hdr-title{font-size:15px;font-weight:700}
-.hdr-sep{width:1px;height:18px;background:var(--g200)}
-.hdr-mod{font-size:13px;color:var(--g600);font-weight:500}
-.hdr-r{margin-left:auto;display:flex;align-items:center;gap:8px}
-.hdr-a{font-size:12px;font-weight:600;color:var(--g600);text-decoration:none;padding:5px 10px;border-radius:var(--r);border:1px solid var(--g200);background:var(--w);display:inline-flex;align-items:center;gap:5px}
-.hdr-a.primary{background:var(--b600);border-color:var(--b600);color:#fff}
 .wrap{max-width:1200px;margin:0 auto;padding:20px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
 .kpi{background:var(--w);border:1px solid var(--g200);border-radius:var(--rl);padding:14px 16px;box-shadow:var(--sh)}
@@ -78,20 +70,18 @@ tr.done td{opacity:.55}
 .mbody label{font-size:12px;font-weight:600;color:var(--g700)}
 .mbody input,.mbody textarea{width:100%;border:1px solid var(--g300);border-radius:var(--r);padding:8px 10px;font:13px var(--f)}
 .mfoot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--g200)}
-@media(max-width:640px){.hdr-mod,.hdr-sep:nth-of-type(2){display:none}.wrap{padding:12px}}
+.tit{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.tit h1{font-size:18px;font-weight:800}
+.tit span{font-size:13px;color:var(--g600)}
+@media(max-width:640px){.wrap{padding:12px}}
 </style>
 </head>
 <body>
-<div class="hdr">
-  <div class="hdr-logo">ALS</div>
-  <span class="hdr-sep"></span>
-  <div class="hdr-title">Liquidaciones AEAT</div>
-  <span class="hdr-sep"></span>
-  <span class="hdr-mod">Deudas de Comercio Exterior pendientes de pago</span>
-  <div class="hdr-r"><a href="index.html" class="hdr-a primary">&#127968; Men&uacute; principal</a></div>
-</div>
+<!-- Header unificado: PortalGuard.mountHeader -->
+<div id="pg-header-app"></div>
 
 <div class="wrap" id="app">
+  <div class="tit"><h1>Liquidaciones AEAT</h1><span>Deudas de Comercio Exterior pendientes de pago</span></div>
   <div class="kpis" id="kpis"></div>
   <div class="bar">
     <div class="seg" id="seg">
@@ -108,22 +98,28 @@ tr.done td{opacity:.55}
 <div id="modal-root"></div>
 
 <script>
-var CU = null;
-try { CU = JSON.parse(sessionStorage.getItem('als_cu') || localStorage.getItem('als_cu') || 'null'); } catch(e) {}
-var ROLES_OK = ['admin','oficina','aduanas'];
-var accesoOk = !!CU && (ROLES_OK.includes(CU.rol) || (CU.roles||[]).some(function(r){return ROLES_OK.includes(r);}));
-if (!accesoOk) {
-  document.body.innerHTML = '<div style="font-family:Inter,sans-serif;max-width:420px;margin:15vh auto;text-align:center;padding:24px">'+
-    '<h2 style="margin-bottom:8px">Acceso restringido</h2><p style="color:#6c757d;margin-bottom:20px">Inicia sesión en el portal con un usuario autorizado.</p>'+
-    '<a href="index.html" style="background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;padding:10px 24px;font-weight:700">Ir al portal</a></div>';
-}
+// Guard: sesión Supabase vía PortalGuard + permiso DUA o TARIC (mismo criterio que RMT
+// en la pantalla de Aduanas). auth-guard.js pone también el icono CW de la pestaña.
+var CU = null, sb = null;
+(async function () {
+  if (!window.PortalGuard) { document.body.innerHTML = '<p style="font-family:sans-serif;padding:2rem">No se pudo cargar auth-guard.js</p>'; return; }
+  const ok = await PortalGuard.require(null);
+  if (!ok) return;
+  if (!(PortalGuard.puedeAcceder('dua', 'ver') || PortalGuard.puedeAcceder('taric', 'ver'))) {
+    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f8f9fa"><div style="text-align:center;padding:2rem">' +
+      '<div style="font-size:48px;margin-bottom:12px">🔒</div><h2 style="margin-bottom:8px;color:#212529">Acceso denegado</h2>' +
+      '<p style="color:#6c757d;margin-bottom:20px">No tienes permisos para Liquidaciones AEAT.</p>' +
+      '<a href="index.html" style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">← Volver al portal</a></div></div>';
+    return;
+  }
+  sb = PortalGuard.sb;
+  CU = PortalGuard.CU;
+  try { PortalGuard.mountHeader({ mount: '#pg-header-app', module: 'Aduanas', section: 'Liquidaciones AEAT' }); } catch (e) {}
+  iniciarLiquidaciones();
+})();
 </script>
 <script>
-if (accesoOk) (function(){
-const SB_URL = 'https://bccqfqaehbmmqbisfbyv.supabase.co';
-const SB_KEY = 'sb_publishable_tHKTtGyJmYQVnp66v1Dfjw_pCyyrLx1';
-let sb = null;
-try { sb = supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:false}}); } catch(e) {}
+function iniciarLiquidaciones() {
 
 let filas = [], nombres = {}, filtro = 'pend';
 const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'];
@@ -288,7 +284,7 @@ function modalNombre(nif) {
 
 window.cargar = cargar;
 cargar();
-})();
+}
 </script>
 </body>
 </html>
