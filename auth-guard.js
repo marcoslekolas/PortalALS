@@ -44,10 +44,14 @@
   (function(){
     try {
       if (document.querySelector('link[rel~="icon"]')) return;
+      // «CW» dibujado con trazos (no con texto): nítido a 16 px y no depende de
+      // que el equipo tenga instalada una fuente concreta.
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
-              + '<rect width="32" height="32" rx="6" fill="#0369a1"/>'
-              + '<text x="16" y="25" font-family="Arial Black,Arial,sans-serif" font-size="17"'
-              + ' font-weight="900" fill="white" text-anchor="middle">CW</text></svg>';
+              + '<rect width="32" height="32" rx="7" fill="#0369a1"/>'
+              + '<g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">'
+              + '<path d="M14.2 9.1A7.6 7.6 0 1 0 14.2 22.9" stroke-width="4.2"/>'
+              + '<path d="M16.4 8.8 19.4 23.2 22.9 13.6 26.4 23.2 29.4 8.8" stroke-width="3.6"/>'
+              + '</g></svg>';
       var lnk = document.createElement('link');
       lnk.rel = 'icon'; lnk.type = 'image/svg+xml';
       lnk.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
