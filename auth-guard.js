@@ -45,12 +45,12 @@
     try {
       if (document.querySelector('link[rel~="icon"]')) return;
       // «CW» dibujado con trazos (no con texto): nítido a 16 px y no depende de
-      // que el equipo tenga instalada una fuente concreta.
+      // que el equipo tenga instalada una fuente concreta. Azul del portal
+      // (#2563eb) sobre fondo transparente.
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
-              + '<rect width="32" height="32" rx="7" fill="#0369a1"/>'
-              + '<g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">'
-              + '<path d="M14.2 9.1A7.6 7.6 0 1 0 14.2 22.9" stroke-width="4.2"/>'
-              + '<path d="M16.4 8.8 19.4 23.2 22.9 13.6 26.4 23.2 29.4 8.8" stroke-width="3.6"/>'
+              + '<g fill="none" stroke="#2563eb" stroke-linecap="round" stroke-linejoin="round">'
+              + '<path d="M13.6 7.4A9.2 9.2 0 1 0 13.6 24.6" stroke-width="4.8"/>'
+              + '<path d="M15.8 5.4 19.4 26.6 23.2 13.2 27 26.6 30.6 5.4" stroke-width="4.2"/>'
               + '</g></svg>';
       var lnk = document.createElement('link');
       lnk.rel = 'icon'; lnk.type = 'image/svg+xml';
