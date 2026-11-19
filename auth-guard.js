@@ -682,6 +682,21 @@
     window.location.href = dir + 'index.html';
   }
 
+  // Clic en el nombre del módulo del breadcrumb («Aduanas»): vuelve a la
+  // pantalla de ese área en index.html, no al inicio general. Las áreas sin
+  // pantalla propia en index.html siguen yendo al inicio, como la casita.
+  const _AREAS = { 'aduanas': 'aduanas' };
+  function _goArea(nombre){
+    const area = _AREAS[String(nombre || '').trim().toLowerCase()];
+    if (!area) return _goHome();
+    if (area === 'aduanas' && typeof window.abrirMenuAduanas === 'function') {
+      try { window.abrirMenuAduanas(); return; } catch(e) {}
+    }
+    const path = window.location.pathname;
+    const dir  = path.substring(0, path.lastIndexOf('/') + 1);
+    window.location.href = dir + 'index.html#' + area;
+  }
+
   function _toggleUserMenu(ev){
     if (ev) ev.stopPropagation();
     const btn  = document.getElementById('pg-user-btn');
@@ -885,7 +900,7 @@
       leftHtml =
         '<button class="pg-btn-icon" onclick="PortalGuard._goHome()" title="Inicio" aria-label="Volver al inicio">' + _ICONS.home + '</button>' +
         '<div class="pg-breadcrumb">' +
-          '<span class="pg-bc-module" onclick="PortalGuard._goHome()">' + mod + '</span>' +
+          '<span class="pg-bc-module" onclick="PortalGuard._goArea(this.textContent)">' + mod + '</span>' +
           (sec ? '<span class="pg-bc-sep">' + _ICONS.chevRight + '</span><span class="pg-bc-section">' + sec + '</span>' : '') +
         '</div>';
     }
@@ -949,6 +964,7 @@
     toggleTheme,
     toggleNotifs,
     _goHome,
+    _goArea,
     _toggleUserMenu,
     _closeModal,
     _submitChangePwd,
