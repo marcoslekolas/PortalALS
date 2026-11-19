@@ -96,7 +96,7 @@ tr.done td{opacity:.55}
   <div class="bar">
     <div class="seg" id="seg">
       <button data-f="pend" class="on">Pendientes</button>
-      <button data-f="semana">Esta semana</button>
+      <button data-f="semana">Próximos 15 días</button>
       <button data-f="todas">Todas</button>
     </div>
     <span class="grow"></span>
@@ -136,12 +136,11 @@ const fmt = iso => iso ? iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4) :
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const diasHasta = iso => Math.round((new Date(iso+'T12:00:00') - new Date(hoyISO()+'T12:00:00'))/86400000);
 
-// Semana de pago: de martes a lunes. El lunes se muestra la semana que empieza mañana.
-function semana() {
-  const h = hoyISO(), dow = new Date(h+'T12:00:00').getDay(); // 0=dom
-  const offset = dow === 1 ? 1 : (dow === 0 ? -5 : 2 - dow); // martes de la semana en curso
-  const ini = sumaDias(h, offset);
-  return [ini, sumaDias(ini, 6)];
+// Periodo de aviso: los próximos 15 días contando hoy (igual que el email de los miércoles)
+const DIAS_AVISO = 15;
+function periodo() {
+  const h = hoyISO();
+  return [h, sumaDias(h, DIAS_AVISO - 1)];
 }
 
 const viva = f => f.estado_aeat === 'pendiente' && !f.pagada_manual;
@@ -190,14 +189,15 @@ function pintarSync(l) {
 }
 
 function pintar() {
-  const h = hoyISO(), [si, sf] = semana();
+  const h = hoyISO(), [si, sf] = periodo();
   const vivas = filas.filter(viva);
-  const venc = vivas.filter(f => f.fecha_limite <= h);
-  const sem = vivas.filter(f => f.fecha_limite > h && f.fecha_limite >= si && f.fecha_limite <= sf);
+  const venc = vivas.filter(f => f.fecha_limite < h);
+  const sem = vivas.filter(f => f.fecha_limite >= si && f.fecha_limite <= sf);
+  const nHoy = sem.filter(f => f.fecha_limite === h).length;
   const sum = a => a.reduce((s,f) => s + Number(f.importe||0), 0);
   document.getElementById('kpis').innerHTML =
-    '<div class="kpi rd"><div class="l">Vencidas o vencen hoy</div><div class="v">'+eur(sum(venc))+'</div><div class="s">'+venc.length+' liquidaciones</div></div>'+
-    '<div class="kpi am"><div class="l">Resto de la semana (hasta '+DIAS[new Date(sf+'T12:00:00').getDay()]+' '+fmt(sf).slice(0,5)+')</div><div class="v">'+eur(sum(sem))+'</div><div class="s">'+sem.length+' liquidaciones</div></div>'+
+    '<div class="kpi rd"><div class="l">Vencidas sin pagar</div><div class="v">'+eur(sum(venc))+'</div><div class="s">'+venc.length+' liquidaciones</div></div>'+
+    '<div class="kpi am"><div class="l">Próximos '+DIAS_AVISO+' días (hoy a '+DIAS[new Date(sf+'T12:00:00').getDay()]+' '+fmt(sf).slice(0,5)+')</div><div class="v">'+eur(sum(sem))+'</div><div class="s">'+sem.length+' liquidaciones'+(nHoy ? ' · <b style="color:var(--rd600)">'+nHoy+' vence(n) hoy</b>' : '')+'</div></div>'+
     '<div class="kpi b"><div class="l">Total pendiente</div><div class="v">'+eur(sum(vivas))+'</div><div class="s">'+vivas.length+' liquidaciones</div></div>';
 
   let lista = filtro === 'pend' ? vivas : filtro === 'semana' ? venc.concat(sem) : filas;
@@ -206,8 +206,8 @@ function pintar() {
   let html = '<table><thead><tr><th>Vence</th><th>Estado</th><th>Justificante</th><th>Documento</th><th>Importador</th><th class="r">Importe</th><th>MRN</th><th></th></tr></thead><tbody>';
   let grupoPrevio = '';
   lista.forEach(f => {
-    const g = !viva(f) ? 'Pagadas / fuera de pendientes' :f.fecha_limite <= h ? 'Vencidas / hoy' :
-              f.fecha_limite <= sf ? 'Esta semana' : 'Próximas';
+    const g = !viva(f) ? 'Pagadas / fuera de pendientes' : f.fecha_limite < h ? 'Vencidas sin pagar' :
+              f.fecha_limite <= sf ? 'Próximos '+DIAS_AVISO+' días' : 'Más adelante';
     if (g !== grupoPrevio) { html += '<tr class="grp"><td colspan="8">'+g+'</td></tr>'; grupoPrevio = g; }
     const dow = DIAS[new Date(f.fecha_limite+'T12:00:00').getDay()];
     const nom = nombres[f.importador];
