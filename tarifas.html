@@ -254,11 +254,17 @@ body{font-family:var(--f);background:var(--g50);color:var(--g900);font-size:14px
 .doc-conditions strong{display:block;font-size:12px;color:var(--g900);margin-bottom:.3rem;font-weight:600}
 
 /* Modal */
-#modal-root .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto;backdrop-filter:blur(3px)}
-#modal-root .modal-box{background:#fff;border-radius:var(--rxl);width:100%;max-width:900px;margin:auto;box-shadow:0 24px 64px rgba(0,0,0,.25)}
-#modal-root .modal-toolbar{background:linear-gradient(135deg,#0f172a 60%,#1e3a5f 100%);padding:.75rem 1.25rem;display:flex;align-items:center;justify-content:space-between;border-radius:var(--rxl) var(--rxl) 0 0;flex-wrap:wrap;gap:.5rem}
-#modal-root .modal-toolbar-title{color:rgba(255,255,255,.85);font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#modal-root .modal-toolbar-btns{display:flex;gap:.5rem;flex-shrink:0}
+/* Visor de tarifa: pantalla completa, estilo visor de PDF, un solo scroll */
+#modal-root .modal-overlay{position:fixed;inset:0;background:#525659;z-index:1000;overflow-y:auto;overscroll-behavior:contain}
+#modal-root .modal-box{min-height:100%;display:flex;flex-direction:column}
+#modal-root .modal-toolbar{position:sticky;top:0;z-index:2;background:linear-gradient(135deg,#0f172a 60%,#1e3a5f 100%);padding:.6rem 1.25rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+#modal-root .modal-toolbar-title{color:rgba(255,255,255,.9);font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#modal-root .modal-toolbar-btns{display:flex;gap:.5rem;flex-shrink:0;flex-wrap:wrap;align-items:center}
+#modal-root .modal-nav{display:flex;align-items:center;gap:.35rem;color:rgba(255,255,255,.75);font-size:12px;font-weight:600}
+#modal-root .modal-sep{width:1px;height:20px;background:rgba(255,255,255,.2);margin:0 .15rem}
+#modal-content{flex:1;padding:28px 16px 48px}
+#modal-content > .doc-body{background:#fff;width:210mm;max-width:100%;min-height:297mm;margin:0 auto;box-shadow:0 4px 24px rgba(0,0,0,.35);border-radius:2px}
+@media (max-width:700px){#modal-content{padding:0}#modal-content > .doc-body{min-height:0;box-shadow:none}#modal-root .modal-toolbar{padding:.5rem .75rem}}
 .mbtn{padding:5px 13px;border-radius:5px;font-size:12px;font-family:var(--f);font-weight:600;cursor:pointer;border:none;transition:.15s}
 .mbtn-default{background:rgba(255,255,255,.13);color:#fff}
 .mbtn-default:hover{background:rgba(255,255,255,.22)}
@@ -758,6 +764,8 @@ const state = {
 };
 
 let _modalOfertaId = null;
+let _modalLista = 'tarifas';
+const _listaVisible = { tarifas: [], rev: [] };
 
 // ══════════════════════════════════════════════════════
 //  TOAST
@@ -1158,13 +1166,14 @@ function renderHistory() {
       : '<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><p>Sin tarifas registradas</p><span>Crea la primera desde "Nueva oferta"</span></div>';
     return;
   }
+  _listaVisible.tarifas = list.map(e => e.id);
   const rows = list.map(e => {
     const due=e.next_review<=today, s30=!due&&e.next_review<=ss;
     const rev=due?`<span class="rev-due">⚠ ${e.next_review}</span>`:s30?`<span class="rev-soon">⏰ ${e.next_review}</span>`:`<span class="rev-ok">✓ ${e.next_review}</span>`;
     const d=e.date?new Date(e.date+'T00:00:00').toLocaleDateString('es-ES'):'—';
     const secs=(e.sections||[]).filter(s=>s.defaultOn).map(s=>s.title.split('→')[0].trim().split(' ').slice(0,2).join(' ')).join(' · ');
     const flag = e.lang==='en' ? ' <span class="lang-tag" title="Documento en inglés">EN</span>' : '';
-    return `<tr ondblclick="openModal('${e.id}')">
+    return `<tr onclick="filaClick(event,'${e.id}')" title="Abrir tarifa">
       <td><span class="vbadge">${e.ref||'—'}</span></td>
       <td style="font-weight:500">${e.client}${flag}</td>
       <td style="color:var(--g600);font-size:12px">${e.client_cif||'—'}</td>
@@ -1192,21 +1201,22 @@ function renderRevisiones() {
   if (due.length) {
     html+='<div class="section-divider">⚠ Vencidas ('+due.length+')</div>';
     html+='<table class="htable"><thead><tr><th>Ref.</th><th>Cliente</th><th>CIF</th><th>Venció</th><th></th></tr></thead><tbody>';
-    html+=due.map(e=>`<tr><td><span class="vbadge">${e.ref||'—'}</span></td><td style="font-weight:500">${e.client}</td><td style="color:var(--g600)">${e.client_cif||'—'}</td><td><span class="rev-due">${e.next_review}</span></td><td><button class="btn btn-primary btn-xs" onclick="loadOfferInForm('${e.id}')">Revisar</button></td></tr>`).join('');
+    html+=due.map(e=>`<tr onclick="filaClick(event,'${e.id}','rev')" title="Abrir tarifa"><td><span class="vbadge">${e.ref||'—'}</span></td><td style="font-weight:500">${e.client}</td><td style="color:var(--g600)">${e.client_cif||'—'}</td><td><span class="rev-due">${e.next_review}</span></td><td><button class="btn btn-primary btn-xs" onclick="loadOfferInForm('${e.id}')">Revisar</button></td></tr>`).join('');
     html+='</tbody></table>';
   }
   if (s30.length) {
     html+='<div class="section-divider" style="margin-top:24px">⏰ Próximas 30 días ('+s30.length+')</div>';
     html+='<table class="htable"><thead><tr><th>Ref.</th><th>Cliente</th><th>CIF</th><th>Vence</th><th></th></tr></thead><tbody>';
-    html+=s30.map(e=>`<tr><td><span class="vbadge">${e.ref||'—'}</span></td><td style="font-weight:500">${e.client}</td><td style="color:var(--g600)">${e.client_cif||'—'}</td><td><span class="rev-soon">${e.next_review}</span></td><td><button class="btn btn-outline btn-xs" onclick="loadOfferInForm('${e.id}')">Ver</button></td></tr>`).join('');
+    html+=s30.map(e=>`<tr onclick="filaClick(event,'${e.id}','rev')" title="Abrir tarifa"><td><span class="vbadge">${e.ref||'—'}</span></td><td style="font-weight:500">${e.client}</td><td style="color:var(--g600)">${e.client_cif||'—'}</td><td><span class="rev-soon">${e.next_review}</span></td><td><button class="btn btn-outline btn-xs" onclick="loadOfferInForm('${e.id}')">Ver</button></td></tr>`).join('');
     html+='</tbody></table>';
   }
   if (ok.length) {
     html+='<div class="section-divider" style="margin-top:24px">✓ Al día ('+ok.length+')</div>';
     html+='<table class="htable"><thead><tr><th>Ref.</th><th>Cliente</th><th>Próxima revisión</th></tr></thead><tbody>';
-    html+=ok.map(e=>`<tr><td><span class="vbadge">${e.ref||'—'}</span></td><td style="font-weight:500">${e.client}</td><td><span class="rev-ok">✓ ${e.next_review}</span></td></tr>`).join('');
+    html+=ok.map(e=>`<tr onclick="filaClick(event,'${e.id}','rev')" title="Abrir tarifa"><td><span class="vbadge">${e.ref||'—'}</span></td><td style="font-weight:500">${e.client}</td><td><span class="rev-ok">✓ ${e.next_review}</span></td></tr>`).join('');
     html+='</tbody></table>';
   }
+  _listaVisible.rev = [...due, ...s30, ...ok].map(e => e.id);
   if (!html) html='<div class="empty-state"><p>Sin ofertas en el sistema</p></div>';
   document.getElementById('revisiones-container').innerHTML=html;
 }
@@ -1426,9 +1436,12 @@ function renderDoc() {
 // ══════════════════════════════════════════════════════
 //  MODAL — inyección dinámica (patrón portal)
 // ══════════════════════════════════════════════════════
-function openModal(id) {
+function openModal(id, lista) {
   const e = state.history.find(x=>x.id===id); if(!e) return;
   _modalOfertaId = id;
+  if (lista) _modalLista = lista;
+  const ids = (_listaVisible[_modalLista] || []).filter(x => state.history.some(h => h.id === x));
+  const pos = ids.indexOf(id);
   const lang=e.lang==='en'?'en':'es';
   const docDate=e.date?new Date(e.date+'T00:00:00').toLocaleDateString(T(lang).locale,{day:'2-digit',month:'long',year:'numeric'}):'';
   const meta={
@@ -1440,21 +1453,53 @@ function openModal(id) {
   const html = buildDocHTML(e.sections||[],meta);
   const title = (e.ref||'')+(e.client?' · '+e.client:'');
   document.getElementById('modal-root').innerHTML = `
-    <div class="modal-overlay" onclick="if(event.target===this)cerrarModal()">
+    <div class="modal-overlay" onclick="if(event.target===this||event.target.id==='modal-content')cerrarModal()">
       <div class="modal-box" onclick="event.stopPropagation()">
         <div class="modal-toolbar">
           <span class="modal-toolbar-title">${title}</span>
           <div class="modal-toolbar-btns">
+            ${ids.length > 1 && pos >= 0 ? `<span class="modal-nav">
+              <button class="mbtn mbtn-default" onclick="navModal(-1)" ${pos === 0 ? 'disabled' : ''} title="Anterior (←)">‹</button>
+              ${pos + 1} / ${ids.length}
+              <button class="mbtn mbtn-default" onclick="navModal(1)" ${pos === ids.length - 1 ? 'disabled' : ''} title="Siguiente (→)">›</button>
+            </span><span class="modal-sep"></span>` : ''}
+            <button class="mbtn mbtn-default" onclick="cerrarModal();loadOfferInForm('${id}')">✎ Editar</button>
+            <button class="mbtn mbtn-default" onclick="cerrarModal();duplicateOffer('${id}')">⧉ Duplicar</button>
+            <span class="modal-sep"></span>
             <button class="mbtn mbtn-default" onclick="printModal()">🖨 Imprimir</button>
             <button class="mbtn mbtn-pdf" id="btn-pdf" onclick="downloadPDF('${id}')">⬇ PDF</button>
             <button class="mbtn mbtn-email" onclick="sendEmailModal('${id}')">✉ Email</button>
-            <button class="mbtn mbtn-default" onclick="cerrarModal()">✕</button>
+            <button class="mbtn mbtn-default" onclick="cerrarModal()" title="Cerrar (Esc)">✕</button>
           </div>
         </div>
-        <div id="modal-content" style="overflow-y:auto;max-height:82vh">${html}</div>
+        <div id="modal-content">${html}</div>
       </div>
     </div>`;
 }
+
+// Un clic en la fila abre la tarifa; los botones y enlaces de la fila hacen lo suyo
+function filaClick(ev, id, lista) {
+  if (ev.target.closest('button, a, input, select, textarea')) return;
+  if (window.getSelection && String(window.getSelection()).length) return; // seleccionando texto
+  openModal(id, lista || 'tarifas');
+}
+
+function navModal(paso) {
+  const ids = (_listaVisible[_modalLista] || []).filter(x => state.history.some(h => h.id === x));
+  const i = ids.indexOf(_modalOfertaId) + paso;
+  if (i < 0 || i >= ids.length) return;
+  openModal(ids[i]);
+  const ov = document.querySelector('#modal-root .modal-overlay');
+  if (ov) ov.scrollTop = 0;
+}
+
+document.addEventListener('keydown', ev => {
+  if (!_modalOfertaId || !document.querySelector('#modal-root .modal-overlay')) return;
+  if (ev.target.closest && ev.target.closest('input, textarea, select')) return;
+  if (ev.key === 'Escape') { ev.preventDefault(); cerrarModal(); }
+  else if (ev.key === 'ArrowLeft') { ev.preventDefault(); navModal(-1); }
+  else if (ev.key === 'ArrowRight') { ev.preventDefault(); navModal(1); }
+});
 
 function cerrarModal() { document.getElementById('modal-root').innerHTML=''; _modalOfertaId=null; }
 
